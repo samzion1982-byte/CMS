@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs sed *)",
+      "Bash(node scripts/create-bible-verses.cjs)",
+      "Bash(supabase --version)",
+      "Bash(supabase status *)",
+      "Bash(supabase functions *)",
+      "Bash(node -e \"require\\('xlsx'\\); console.log\\('xlsx ok'\\)\")",
+      "Bash(node -e ' *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:cdn.jsdelivr.net)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(node scripts/update-tamil-verses.cjs)"
+    ]
+  }
+}
