@@ -280,8 +280,10 @@ export async function getDeletedMemberDetails(deletedMemberId) {
 
 /**
  * Check if a member ID is available (not in use)
+ * @param {string} memberId
+ * @param {string|null} excludeDeletedId - UUID of a deleted_members row to skip (used when restoring with original ID)
  */
-export async function checkMemberIdAvailable(memberId) {
+export async function checkMemberIdAvailable(memberId, excludeDeletedId = null) {
   try {
     // Check in active members
     const { data: activeData, error: activeError } = await supabase
@@ -293,15 +295,18 @@ export async function checkMemberIdAvailable(memberId) {
     if (activeError && activeError.code !== 'PGRST116') throw activeError // 116 = not found
     if (activeData) return false
 
-    // Check in deleted members
-    const { data: deletedData, error: deletedError } = await supabase
+    // Check in deleted members — skip the record we're about to restore
+    let deletedQuery = supabase
       .from('deleted_members')
       .select('id')
       .eq('member_id', memberId)
-      .single()
+      .is('restored_at', null)
 
-    if (deletedError && deletedError.code !== 'PGRST116') throw deletedError
-    if (deletedData) return false
+    if (excludeDeletedId) deletedQuery = deletedQuery.neq('id', excludeDeletedId)
+
+    const { data: deletedRows, error: deletedError } = await deletedQuery
+    if (deletedError) throw deletedError
+    if (deletedRows && deletedRows.length > 0) return false
 
     return true
   } catch (err) {

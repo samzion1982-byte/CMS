@@ -38,14 +38,29 @@ serve(async () => {
 
     const members = allMembers || []
 
+    // Load exclusion list
+    const { data: exclusionRows } = await supabase
+      .from('announcement_exclusions')
+      .select('member_id,family_id,exclusion_type')
+    const excRows = exclusionRows || []
+    const birthdayExcluded = new Set(
+      excRows.filter(e => e.exclusion_type === 'birthday' || e.exclusion_type === 'both').map(e => e.member_id)
+    )
+    const anniversaryExcludedFamilies = new Set(
+      excRows.filter(e => e.exclusion_type === 'anniversary' || e.exclusion_type === 'both').map(e => e.family_id).filter(Boolean)
+    )
+
     const birthdayMembers = members.filter(m => {
       if (!m.dob_actual) return false
+      if (birthdayExcluded.has(m.member_id)) return false
       const dob = new Date(m.dob_actual)
       return dob.getMonth() + 1 === mon && dob.getDate() === day
     })
 
-    // Today's anniversaries (deduplicated by family_id)
-    const marriedMembers = members.filter(m => m.marital_status === 'Married' && m.date_of_marriage)
+    // Today's anniversaries (deduplicated by family_id, exclusions applied)
+    const marriedMembers = members.filter(m =>
+      m.marital_status === 'Married' && m.date_of_marriage && !anniversaryExcludedFamilies.has(m.family_id)
+    )
     const seenFamilies = new Set<string>()
     const anniversaryMembers = marriedMembers.filter(m => {
       const dom = new Date(m.date_of_marriage)

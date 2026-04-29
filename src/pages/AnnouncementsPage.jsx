@@ -17,11 +17,12 @@ import {
   getBibleVerses, saveBibleVerse, deleteBibleVerse, toggleVerseActive,
   getRandomVerse, getAnnouncementSettings, saveAnnouncementSettings,
   logAnnouncement, uploadToStorage, getNextWeekRange, bulkUpsertVerses,
+  getExclusions, upsertExclusion, removeExclusion,
 } from '../lib/announcements'
 import {
   Megaphone, Cake, Heart, BookOpen, Settings, Loader2,
   Send, CheckCircle, XCircle, Plus, Pencil, Trash2,
-  FileDown, ToggleLeft, ToggleRight, Eye, Upload, Download,
+  FileDown, ToggleLeft, ToggleRight, Eye, Upload, Download, UserX,
 } from 'lucide-react'
 
 const TABS = [
@@ -896,6 +897,216 @@ function VersesTab({ perms, profile, toast }) {
 }
 
 /* ════════════════════════════════════════════════════════════
+   EXCLUSION WISH LIST PANEL
+   ════════════════════════════════════════════════════════════ */
+function ExclusionPanel({ perms, profile, toast }) {
+  const [exclusions,   setExclusions]   = useState([])
+  const [loadingList,  setLoadingList]  = useState(true)
+  const [searchVal,    setSearchVal]    = useState('')
+  const [searchResults,setSearchResults]= useState([])
+  const [searching,    setSearching]    = useState(false)
+  const [showDrop,     setShowDrop]     = useState(false)
+  const [selected,     setSelected]     = useState(null)   // {member_id,member_name,family_id}
+  const [exType,       setExType]       = useState('anniversary')
+  const [reason,       setReason]       = useState('')
+  const [adding,       setAdding]       = useState(false)
+  const [removingIds,  setRemovingIds]  = useState(new Set())
+  const searchTimer = useRef(null)
+
+  const load = useCallback(async () => {
+    setLoadingList(true)
+    try { setExclusions(await getExclusions()) } catch {}
+    finally { setLoadingList(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const onSearch = val => {
+    setSearchVal(val); setSelected(null)
+    clearTimeout(searchTimer.current)
+    if (!val.trim()) { setSearchResults([]); setShowDrop(false); return }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true)
+      const { data } = await supabase.from('members')
+        .select('member_id,member_name,family_id')
+        .or(`member_id.ilike.%${val}%,member_name.ilike.%${val}%`)
+        .eq('is_active', true).order('member_id').limit(10)
+      setSearchResults(data || [])
+      setShowDrop(true)
+      setSearching(false)
+    }, 300)
+  }
+
+  const pick = m => {
+    setSelected(m)
+    setSearchVal(`${m.member_id} — ${m.member_name}`)
+    setShowDrop(false)
+  }
+
+  const add = async () => {
+    if (!selected) { toast('Select a member first', 'error'); return }
+    setAdding(true)
+    try {
+      await upsertExclusion({
+        member_id: selected.member_id, member_name: selected.member_name,
+        family_id: selected.family_id, exclusion_type: exType,
+        reason, added_by: profile?.full_name || profile?.email,
+      })
+      toast(`${selected.member_name} added to exclusion list`, 'success')
+      setSelected(null); setSearchVal(''); setReason(''); setExType('anniversary')
+      await load()
+    } catch (err) { toast('Error: ' + err.message, 'error') }
+    finally { setAdding(false) }
+  }
+
+  const remove = async (id, name) => {
+    setRemovingIds(s => new Set(s).add(id))
+    try {
+      await removeExclusion(id)
+      toast(`${name} removed from exclusion list`, 'success')
+      setExclusions(e => e.filter(x => x.id !== id))
+    } catch (err) { toast('Error: ' + err.message, 'error') }
+    finally { setRemovingIds(s => { const n = new Set(s); n.delete(id); return n }) }
+  }
+
+  const typeLabel = t => t === 'anniversary' ? 'Anniversary' : t === 'birthday' ? 'Birthday' : 'Both'
+  const typePill  = t => t === 'both' ? 'pill-red' : t === 'anniversary' ? 'pill-purple' : 'pill-blue'
+
+  return (
+    <div className="space-y-4 mt-6 pt-6" style={{ borderTop: '1px solid var(--card-border)' }}>
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <UserX size={16} className="text-red-500" />
+        <h3 className="font-semibold text-sm text-gray-800 dark:text-white">Exclusion Wish List</h3>
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+        Members listed here are skipped in all wish sends — WhatsApp (auto &amp; manual) and PDF reports.
+        Useful for widowed or divorced members who prefer not to receive anniversary wishes.
+      </p>
+
+      {/* Add form */}
+      {perms?.canEdit && (
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+          {/* Member search */}
+          <div style={{ position: 'relative' }}>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+              Search member
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                className="field-input w-full"
+                placeholder="Type member ID or name…"
+                value={searchVal}
+                onChange={e => onSearch(e.target.value)}
+                onFocus={() => searchResults.length > 0 && setShowDrop(true)}
+                onBlur={() => setTimeout(() => setShowDrop(false), 200)}
+                autoComplete="off"
+              />
+              {searching && (
+                <Loader2 size={14} className="animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }} />
+              )}
+            </div>
+            {showDrop && searchResults.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300,
+                background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+                borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.13)',
+                maxHeight: 200, overflowY: 'auto', marginTop: 3,
+              }}>
+                {searchResults.map(m => (
+                  <div key={m.member_id} onMouseDown={() => pick(m)}
+                    className="hover:bg-gray-50 dark:hover:bg-slate-700"
+                    style={{ padding: '7px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', gap: 10 }}>
+                    <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--info)', minWidth: 84 }}>{m.member_id}</span>
+                    <span style={{ color: 'var(--text-2)' }}>{m.member_name}</span>
+                    <span style={{ color: 'var(--text-3)', fontSize: 11, marginLeft: 'auto' }}>{m.family_id}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Exclude from */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">
+              Exclude from
+            </label>
+            <div className="flex gap-5 flex-wrap">
+              {[['anniversary','Anniversary wishes'],['birthday','Birthday wishes'],['both','Both']].map(([val, lbl]) => (
+                <label key={val} className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                  <input type="radio" name="exType" value={val} checked={exType === val}
+                    onChange={() => setExType(val)} className="accent-red-600" />
+                  {lbl}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Reason */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+              Reason <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              className="field-input w-full"
+              placeholder="e.g. Widowed, Divorced"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            />
+          </div>
+
+          <button onClick={add} disabled={adding || !selected}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white font-medium disabled:opacity-50 transition"
+            style={{ background: '#991b1b' }}>
+            {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            Add to Exclusion List
+          </button>
+        </div>
+      )}
+
+      {/* Current list */}
+      {loadingList ? <Spinner label="Loading exclusions…" /> : exclusions.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">No exclusions configured — all members receive wishes.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--page-bg)', borderBottom: '2px solid var(--card-border)' }}>
+                {['Member ID','Name','Excluded From','Reason','Added By',''].map(h => (
+                  <th key={h} style={{ padding: '7px 10px', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {exclusions.map(ex => (
+                <tr key={ex.id} style={{ borderBottom: '1px solid var(--table-border)' }}>
+                  <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--info)' }}>{ex.member_id}</td>
+                  <td style={{ padding: '7px 10px', color: 'var(--text-1)', fontWeight: 600 }}>{ex.member_name}</td>
+                  <td style={{ padding: '7px 10px' }}>
+                    <span className={`pill ${typePill(ex.exclusion_type)}`}>{typeLabel(ex.exclusion_type)}</span>
+                  </td>
+                  <td style={{ padding: '7px 10px', color: 'var(--text-2)' }}>{ex.reason || '—'}</td>
+                  <td style={{ padding: '7px 10px', color: 'var(--text-3)', fontSize: 11 }}>{ex.added_by || '—'}</td>
+                  <td style={{ padding: '7px 10px' }}>
+                    {perms?.canEdit && (
+                      <button onClick={() => remove(ex.id, ex.member_name)}
+                        disabled={removingIds.has(ex.id)}
+                        className="text-red-400 hover:text-red-600 disabled:opacity-40 transition">
+                        {removingIds.has(ex.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════
    SETTINGS TAB
    ════════════════════════════════════════════════════════════ */
 function SettingsTab({ perms, profile, toast }) {
@@ -965,6 +1176,8 @@ function SettingsTab({ perms, profile, toast }) {
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
       )}
+
+      <ExclusionPanel perms={perms} profile={profile} toast={toast} />
     </div>
   )
 }

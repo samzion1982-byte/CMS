@@ -58,15 +58,29 @@ serve(async () => {
       .eq('is_active', true)
 
     const members = allMembers || []
+
+    // Load exclusion list
+    const { data: exclusionRows } = await supabase
+      .from('announcement_exclusions')
+      .select('member_id,family_id,exclusion_type')
+    const excRows = exclusionRows || []
+    const birthdayExcluded = new Set(
+      excRows.filter(e => e.exclusion_type === 'birthday' || e.exclusion_type === 'both').map(e => e.member_id)
+    )
+    const anniversaryExcludedFamilies = new Set(
+      excRows.filter(e => e.exclusion_type === 'anniversary' || e.exclusion_type === 'both').map(e => e.family_id).filter(Boolean)
+    )
+
     const startD = new Date(start), endD = new Date(end)
 
-    // Build birthday list
+    // Build birthday list (exclusions applied)
     const birthdays: any[] = []; let bSerial = 1
     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
       const mon = d.getMonth() + 1, day = d.getDate()
       const iso = new Date(d).toISOString().split('T')[0]
       members.filter(m => {
         if (!m.dob_actual) return false
+        if (birthdayExcluded.has(m.member_id)) return false
         const dob = new Date(m.dob_actual)
         return dob.getMonth() + 1 === mon && dob.getDate() === day
       }).forEach(m => {
@@ -79,7 +93,7 @@ serve(async () => {
       })
     }
 
-    // Build anniversary list (deduplicated by family_id)
+    // Build anniversary list (deduplicated by family_id, exclusions applied)
     const seenFam = new Set<string>()
     const anniversaries: any[] = []; let aSerial = 1
     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
@@ -87,6 +101,7 @@ serve(async () => {
       const iso = new Date(d).toISOString().split('T')[0]
       members.filter(m => {
         if (m.marital_status !== 'Married' || !m.date_of_marriage) return false
+        if (anniversaryExcludedFamilies.has(m.family_id)) return false
         const dom = new Date(m.date_of_marriage)
         return dom.getMonth() + 1 === mon && dom.getDate() === day && !seenFam.has(m.family_id)
       }).forEach(m => {

@@ -24,8 +24,29 @@ async function fetchActiveMembers(fields) {
   return data || []
 }
 
+// Returns Sets of excluded member_ids / family_ids for fast lookup
+async function fetchExclusionSets() {
+  const { data } = await supabase
+    .from('announcement_exclusions')
+    .select('member_id,family_id,exclusion_type')
+  const rows = data || []
+  return {
+    birthdayIds: new Set(
+      rows.filter(e => e.exclusion_type === 'birthday' || e.exclusion_type === 'both')
+          .map(e => e.member_id)
+    ),
+    anniversaryFamilyIds: new Set(
+      rows.filter(e => e.exclusion_type === 'anniversary' || e.exclusion_type === 'both')
+          .map(e => e.family_id).filter(Boolean)
+    ),
+  }
+}
+
 export async function getUpcomingBirthdays(days = 7) {
-  const members = await fetchActiveMembers('member_id,family_id,member_name,whatsapp,mobile,dob_actual')
+  const [members, { birthdayIds }] = await Promise.all([
+    fetchActiveMembers('member_id,family_id,member_name,whatsapp,mobile,dob_actual'),
+    fetchExclusionSets(),
+  ])
   const today = new Date()
   const results = []
 
@@ -36,6 +57,7 @@ export async function getUpcomingBirthdays(days = 7) {
 
     members.filter(m => {
       if (!m.dob_actual) return false
+      if (birthdayIds.has(m.member_id)) return false
       const dob = new Date(m.dob_actual)
       return dob.getMonth() + 1 === mon && dob.getDate() === day
     }).forEach(m => {
@@ -52,10 +74,13 @@ export async function getUpcomingBirthdays(days = 7) {
 }
 
 export async function getUpcomingAnniversaries(days = 7) {
-  const members = await fetchActiveMembers(
-    'member_id,family_id,member_name,spouse_name,whatsapp,mobile,date_of_marriage,marital_status'
+  const [members, { anniversaryFamilyIds }] = await Promise.all([
+    fetchActiveMembers('member_id,family_id,member_name,spouse_name,whatsapp,mobile,date_of_marriage,marital_status'),
+    fetchExclusionSets(),
+  ])
+  const married = members.filter(m =>
+    m.marital_status === 'Married' && m.date_of_marriage && !anniversaryFamilyIds.has(m.family_id)
   )
-  const married = members.filter(m => m.marital_status === 'Married' && m.date_of_marriage)
 
   // Deduplicate by family_id (keep first)
   const seen = new Set()
@@ -90,7 +115,10 @@ export async function getUpcomingAnniversaries(days = 7) {
 }
 
 export async function getBirthdaysInRange(startDate, endDate) {
-  const members = await fetchActiveMembers('member_id,family_id,member_name,whatsapp,mobile,dob_actual')
+  const [members, { birthdayIds }] = await Promise.all([
+    fetchActiveMembers('member_id,family_id,member_name,whatsapp,mobile,dob_actual'),
+    fetchExclusionSets(),
+  ])
   const start = new Date(startDate), end = new Date(endDate)
   const results = []
   let serial = 1
@@ -101,6 +129,7 @@ export async function getBirthdaysInRange(startDate, endDate) {
 
     members.filter(m => {
       if (!m.dob_actual) return false
+      if (birthdayIds.has(m.member_id)) return false
       const dob = new Date(m.dob_actual)
       return dob.getMonth() + 1 === mon && dob.getDate() === day
     }).forEach(m => {
@@ -117,10 +146,13 @@ export async function getBirthdaysInRange(startDate, endDate) {
 }
 
 export async function getAnniversariesInRange(startDate, endDate) {
-  const members = await fetchActiveMembers(
-    'member_id,family_id,member_name,spouse_name,whatsapp,mobile,date_of_marriage,marital_status'
+  const [members, { anniversaryFamilyIds }] = await Promise.all([
+    fetchActiveMembers('member_id,family_id,member_name,spouse_name,whatsapp,mobile,date_of_marriage,marital_status'),
+    fetchExclusionSets(),
+  ])
+  const married = members.filter(m =>
+    m.marital_status === 'Married' && m.date_of_marriage && !anniversaryFamilyIds.has(m.family_id)
   )
-  const married = members.filter(m => m.marital_status === 'Married' && m.date_of_marriage)
   const seen = new Set()
   const deduped = married.filter(m => {
     if (seen.has(m.family_id)) return false
@@ -213,6 +245,30 @@ export async function saveAnnouncementSettings(settings, updatedBy) {
     const { error } = await supabase.from('announcement_settings').insert(payload)
     if (error) throw error
   }
+}
+
+// ── Exclusion Wish List ───────────────────────────────────────
+
+export async function getExclusions() {
+  const { data, error } = await supabase
+    .from('announcement_exclusions').select('*').order('member_name')
+  if (error) throw error
+  return data || []
+}
+
+export async function upsertExclusion({ member_id, member_name, family_id, exclusion_type, reason, added_by }) {
+  const { error } = await supabase
+    .from('announcement_exclusions')
+    .upsert(
+      { member_id, member_name, family_id, exclusion_type, reason, added_by, added_at: new Date().toISOString() },
+      { onConflict: 'member_id' }
+    )
+  if (error) throw error
+}
+
+export async function removeExclusion(id) {
+  const { error } = await supabase.from('announcement_exclusions').delete().eq('id', id)
+  if (error) throw error
 }
 
 // ── Log ───────────────────────────────────────────────────────

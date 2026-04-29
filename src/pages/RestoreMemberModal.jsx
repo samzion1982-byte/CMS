@@ -72,9 +72,10 @@ export default function RestoreMemberModal({ deletedMember, isOpen, onClose, onR
       return
     }
 
-    // Pre-check: if restoring with original ID, verify it's not already in members
+    // Pre-check: if restoring with original ID, verify it's not in active members.
+    // Pass excludeDeletedId so the check ignores the current deleted_members record (which is expected to exist).
     if (!changeId) {
-      const isAvailable = await checkMemberIdAvailable(deletedMember.member_id)
+      const isAvailable = await checkMemberIdAvailable(deletedMember.member_id, deletedMember.id)
       if (!isAvailable) {
         toast(`Member ID '${deletedMember.member_id}' already exists in active members. Use "Assign new member ID" to restore with a different ID.`, 'error')
         return

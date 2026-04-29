@@ -5,13 +5,14 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms, fmtDate, initials } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Search, UserPlus, Printer, Users, Loader2, UserX, Save, RotateCcw, Trash2, Upload, FileDown, Archive } from 'lucide-react'
+import { getZones } from '../lib/zones'
 import MemberPrintModal from './MemberPrintModal'
 import BulkPrintModal  from './BulkPrintModal'
 import FamilyRecordsModal from './FamilyRecordsModal'
 import DeleteMemberModal from './DeleteMemberModal'
 
 const BATCH_SIZE = 1000 // Supabase max per request
-const ZONES=['Ramalinga Nagar','Woraiyur','Kondayam Palayam','Ariyamangalam','Srirangam','Thillai Nagar','Puthur','Others']
+// ZONES loaded from church_zones table at runtime (see useEffect in MembersPage)
 const SECTORS=['Government','Private','Self Employed','Business','Student','Home Maker','Retired','Not Working','Diocese - Government','Diocese - Private']
 const RELS=['Self','Spouse','Son','Daughter','Father','Mother','Brother','Sister','Son-in-law','Daughter-in-law','Grandson','Granddaughter','Others']
 const DENOMS=['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Others']
@@ -76,6 +77,10 @@ export default function MembersPage() {
   const [restoredInfo, setRestoredInfo] = useState(null)   // { restore_reason, restored_by, restored_at }
   const [restoredIds, setRestoredIds] = useState(new Set()) // member_ids that were reinstated
   const searchTimer = useRef(null)
+  const [memberIdSuggestions, setMemberIdSuggestions] = useState([])
+  const [showMemberIdPopup, setShowMemberIdPopup] = useState(false)
+  const memberIdSuggestTimer = useRef(null)
+  const [zones, setZones] = useState([])
 
   const loadMembers = useCallback(async (ac=alpha, col=searchCol, val=searchVal) => {
     setLoading(true)
@@ -87,7 +92,7 @@ export default function MembersPage() {
       if (ac) q = q.ilike('family_id', ac + '%')
       if (val.trim()) {
         if (col === 'all') q = q.or(`family_id.ilike.%${val}%,member_id.ilike.%${val}%,member_name.ilike.%${val}%,mobile.ilike.%${val}%`)
-        else if (col === 'member_id') q = q.eq('member_id', val)
+        else if (col === 'member_id') q = q.ilike('member_id', `%${val}%`)
         else q = q.ilike(col, `%${val}%`)
       }
       return q
@@ -119,6 +124,7 @@ export default function MembersPage() {
     }
   }, [])
 
+  useEffect(() => { getZones().then(rows => setZones(rows.map(z => z.zone_name))).catch(() => {}) }, [])
   useEffect(() => { loadMembers(alpha, searchCol, searchVal) }, [alpha, searchCol])
   useEffect(() => {
     clearTimeout(searchTimer.current)
@@ -154,9 +160,39 @@ export default function MembersPage() {
     setTab('form')
   }
 
-  const newMember = () => { setSelected(null); setForm(EMPTY); setPhotoPreview(null); setPhotoFile(null); setRestoredInfo(null); setTab('form') }
+  const newMember = () => {
+    setSelected(null); setForm(EMPTY); setPhotoPreview(null); setPhotoFile(null); setRestoredInfo(null)
+    setMemberIdSuggestions([]); setShowMemberIdPopup(false)
+    setTab('form')
+  }
 
   const s = (k,v) => setForm(f=>({...f,[k]:v}))
+
+  const onMemberIdChange = (val) => {
+    s('member_id', val)
+    clearTimeout(memberIdSuggestTimer.current)
+    if (!val.trim()) { setShowMemberIdPopup(false); return }
+    memberIdSuggestTimer.current = setTimeout(async () => {
+      // If family_id is already filled use it; otherwise match member_id prefix
+      const familyId = form.family_id?.trim()
+      let rows = []
+      if (familyId) {
+        const { data } = await supabase
+          .from('members').select('member_id,member_name')
+          .eq('family_id', familyId).eq('is_active', true)
+          .order('member_id', { ascending: true })
+        rows = data || []
+      } else if (val.length >= 2) {
+        const { data } = await supabase
+          .from('members').select('member_id,member_name')
+          .ilike('member_id', `${val}%`).eq('is_active', true)
+          .order('member_id', { ascending: true }).limit(20)
+        rows = data || []
+      }
+      setMemberIdSuggestions(rows)
+      setShowMemberIdPopup(rows.length > 0)
+    }, 300)
+  }
 
   const onPhoto = e => {
     const f = e.target.files[0]; if(!f) return
@@ -645,8 +681,46 @@ export default function MembersPage() {
               <p className="form-section form-section-blue">Personal details</p>
               <div style={{display:'flex',flexDirection:'column',gap:14}}>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="field-group"><label className="field-label">Member ID *</label>
-                    <input className="field-input" value={form.member_id} onChange={e=>s('member_id',e.target.value)} disabled={isEdit} placeholder="A00101"/></div>
+                  <div className="field-group" style={{position:'relative'}}>
+                    <label className="field-label">Member ID *</label>
+                    <input
+                      className="field-input"
+                      value={form.member_id}
+                      onChange={e => isEdit ? s('member_id', e.target.value) : onMemberIdChange(e.target.value)}
+                      onFocus={() => !isEdit && memberIdSuggestions.length > 0 && setShowMemberIdPopup(true)}
+                      onBlur={() => setTimeout(() => setShowMemberIdPopup(false), 200)}
+                      disabled={isEdit}
+                      placeholder="A00101"
+                      autoComplete="off"
+                    />
+                    {!isEdit && showMemberIdPopup && memberIdSuggestions.length > 0 && (
+                      <div style={{
+                        position:'absolute', top:'100%', left:0, right:0, zIndex:200,
+                        background:'var(--card-bg)', border:'1px solid var(--card-border)',
+                        borderRadius:8, boxShadow:'0 8px 24px rgba(0,0,0,0.13)',
+                        maxHeight:220, overflowY:'auto', marginTop:3,
+                      }}>
+                        <div style={{
+                          padding:'5px 10px', fontSize:10, fontWeight:700,
+                          color:'var(--text-3)', borderBottom:'1px solid var(--card-border)',
+                          textTransform:'uppercase', letterSpacing:0.6, background:'var(--page-bg)',
+                          borderRadius:'8px 8px 0 0',
+                        }}>
+                          Already used in this family
+                        </div>
+                        {memberIdSuggestions.map(m => (
+                          <div key={m.member_id} style={{
+                            padding:'6px 10px', fontSize:12,
+                            display:'flex', gap:10, alignItems:'center',
+                            borderBottom:'1px solid var(--table-border)',
+                          }}>
+                            <span style={{fontWeight:700, fontFamily:'monospace', color:'var(--info)', minWidth:84}}>{m.member_id}</span>
+                            <span style={{color:'var(--text-2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.member_name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="field-group"><label className="field-label">Family ID *</label>
                     <input className="field-input" value={form.family_id} onChange={e=>s('family_id',e.target.value)} disabled={isEdit} placeholder="A001"/></div>
                 </div>
@@ -700,7 +774,7 @@ export default function MembersPage() {
                   <div className="field-group"><label className="field-label">City</label><input className="field-input" value={form.city||''} onChange={e=>s('city',e.target.value)}/></div>
                   <div className="field-group"><label className="field-label">State</label><input className="field-input" value={form.state||''} onChange={e=>s('state',e.target.value)}/></div>
                 </div>
-                <div className="field-group"><label className="field-label">Zonal area</label><Sel value={form.zonal_area} onChange={v=>s('zonal_area',v)} options={ZONES} placeholder="— Select zone —"/></div>
+                <div className="field-group"><label className="field-label">Zonal area</label><Sel value={form.zonal_area} onChange={v=>s('zonal_area',v)} options={zones} placeholder="— Select zone —"/></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="field-group"><label className="field-label">Mobile</label><input className="field-input" value={form.mobile||''} onChange={e=>s('mobile',e.target.value)}/></div>
                   <div className="field-group"><label className="field-label">WhatsApp</label><input className="field-input" value={form.whatsapp||''} onChange={e=>s('whatsapp',e.target.value)}/></div>

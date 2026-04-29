@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
-import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
+import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
+         Plus, Pencil, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
@@ -218,8 +220,11 @@ export default function ChurchSetupPage() {
     }
   }
 
-  if (profile?.role !== 'super_admin') {
-    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Access denied. Super Admin only.</div>
+  const isSuperAdmin = profile?.role === 'super_admin'
+  const isAdmin1     = profile?.role === 'admin1'
+
+  if (!isSuperAdmin && !isAdmin1) {
+    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Access denied. Super Admin or Admin1 only.</div>
   }
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 size={24} className="animate-spin text-blue-500"/></div>
@@ -264,20 +269,25 @@ export default function ChurchSetupPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-slate-900 tracking-tight">Church setup</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Configure church details, logo and license</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {isSuperAdmin ? 'Configure church details, logo, zones and license' : 'Manage zonal areas'}
+          </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={flush} disabled={flushing || saving || !church} className="btn btn-secondary"
-            style={{borderColor:'#fca5a5',color:'#dc2626',background:'#fff5f5'}}>
-            {flushing ? <><Loader2 size={14} className="animate-spin"/>Flushing...</> : <><Trash2 size={14}/>Flush</>}
-          </button>
-          <button onClick={save} disabled={saving || flushing} className="btn btn-primary" style={{background:'#14532d',borderColor:'#14532d'}}>
-            {saving ? <><Loader2 size={14} className="animate-spin"/>Saving...</> : <><Save size={14}/>Save changes</>}
-          </button>
-        </div>
+        {isSuperAdmin && (
+          <div className="flex gap-2">
+            <button onClick={flush} disabled={flushing || saving || !church} className="btn btn-secondary"
+              style={{borderColor:'#fca5a5',color:'#dc2626',background:'#fff5f5'}}>
+              {flushing ? <><Loader2 size={14} className="animate-spin"/>Flushing...</> : <><Trash2 size={14}/>Flush</>}
+            </button>
+            <button onClick={save} disabled={saving || flushing} className="btn btn-primary" style={{background:'#14532d',borderColor:'#14532d'}}>
+              {saving ? <><Loader2 size={14} className="animate-spin"/>Saving...</> : <><Save size={14}/>Save changes</>}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="space-y-6">
+      {isSuperAdmin && (<>
 
         {/* IDENTITY */}
         <div className="card p-6">
@@ -465,8 +475,189 @@ export default function ChurchSetupPage() {
             <p className="text-xs text-slate-400 mt-3">Need a license? Contact <strong className="text-slate-600">{VENDOR.name}</strong> — {VENDOR.phone}</p>
           )}
         </div>
+      </>)}
+
+        {/* ZONAL AREAS — visible to super_admin and admin1 */}
+        <ZonesPanel profile={profile} toast={toast} />
 
       </div>
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════
+   ZONES PANEL
+   ════════════════════════════════════════════════════════════ */
+function ZonesPanel({ profile, toast }) {
+  const [zones,      setZones]      = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [newName,    setNewName]    = useState('')
+  const [adding,     setAdding]     = useState(false)
+  const [editId,     setEditId]     = useState(null)   // id of zone being edited
+  const [editName,   setEditName]   = useState('')
+  const [savingId,   setSavingId]   = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+  const editRef = useRef(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setZones(await getZones()) } catch {}
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => { if (editRef.current) editRef.current.focus() }, [editId])
+
+  const add = async () => {
+    const name = newName.trim()
+    if (!name) return
+    setAdding(true)
+    try {
+      const maxOrder = zones.length ? Math.max(...zones.map(z => z.sort_order)) : 0
+      await addZone(name, maxOrder + 1, profile?.full_name || profile?.email)
+      setNewName('')
+      await load()
+      toast(`Zone "${name}" added`, 'success')
+    } catch (err) {
+      toast(err.message.includes('unique') ? `"${name}" already exists` : err.message, 'error')
+    }
+    setAdding(false)
+  }
+
+  const startEdit = z => { setEditId(z.id); setEditName(z.zone_name) }
+
+  const saveEdit = async (z) => {
+    const name = editName.trim()
+    if (!name || name === z.zone_name) { setEditId(null); return }
+    setSavingId(z.id)
+    try {
+      await updateZone(z.id, name, z.sort_order)
+      await load()
+      toast('Zone updated', 'success')
+    } catch (err) {
+      toast(err.message.includes('unique') ? `"${name}" already exists` : err.message, 'error')
+    }
+    setSavingId(null)
+    setEditId(null)
+  }
+
+  const remove = async (z) => {
+    if (!window.confirm(`Remove zone "${z.zone_name}"? Members already assigned to it will keep their zone value.`)) return
+    setDeletingId(z.id)
+    try {
+      await deleteZone(z.id)
+      setZones(prev => prev.filter(x => x.id !== z.id))
+      toast(`Zone "${z.zone_name}" removed`, 'success')
+    } catch (err) { toast(err.message, 'error') }
+    setDeletingId(null)
+  }
+
+  const move = async (idx, dir) => {
+    const next = [...zones]
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= next.length) return
+    // Swap sort_order values
+    const aOrder = next[idx].sort_order
+    const bOrder = next[swapIdx].sort_order
+    const a = next[idx], b = next[swapIdx]
+    next[idx]     = { ...a, sort_order: bOrder }
+    next[swapIdx] = { ...b, sort_order: aOrder }
+    setZones(next.sort((x, y) => x.sort_order - y.sort_order))
+    // Persist both
+    await Promise.all([
+      updateZone(a.id, a.zone_name, bOrder),
+      updateZone(b.id, b.zone_name, aOrder),
+    ])
+  }
+
+  return (
+    <div className="card p-6">
+      <p className="form-section form-section-blue" style={{color:'#0369a1',borderColor:'#bae6fd'}}>
+        Zonal Areas
+      </p>
+      <p className="text-xs text-slate-400 mb-4">
+        These zones appear in the member form. Changes apply immediately — no need to save.
+      </p>
+
+      {/* Add new zone */}
+      <div className="flex gap-2 mb-5">
+        <input
+          className="field-input flex-1"
+          placeholder="New zone name…"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && add()}
+          disabled={adding}
+        />
+        <button onClick={add} disabled={adding || !newName.trim()}
+          className="btn btn-primary btn-sm flex-shrink-0" style={{background:'#14532d',borderColor:'#14532d'}}>
+          {adding ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
+          Add
+        </button>
+      </div>
+
+      {/* Zone list */}
+      {loading ? (
+        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={14} className="animate-spin"/>Loading zones…</div>
+      ) : zones.length === 0 ? (
+        <p className="text-xs text-slate-400 italic">No zones configured. Add one above.</p>
+      ) : (
+        <div className="space-y-1">
+          {zones.map((z, idx) => (
+            <div key={z.id}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:border-slate-700 group transition-colors">
+
+              {/* Sort order buttons */}
+              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                <button onClick={() => move(idx, -1)} disabled={idx === 0}
+                  className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
+                  <ChevronUp size={13}/>
+                </button>
+                <button onClick={() => move(idx, 1)} disabled={idx === zones.length - 1}
+                  className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
+                  <ChevronDown size={13}/>
+                </button>
+              </div>
+
+              {/* Zone name / inline edit */}
+              {editId === z.id ? (
+                <input
+                  ref={editRef}
+                  className="field-input flex-1 py-1 text-sm"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveEdit(z)
+                    if (e.key === 'Escape') setEditId(null)
+                  }}
+                  onBlur={() => saveEdit(z)}
+                />
+              ) : (
+                <span className="flex-1 text-sm text-slate-700 dark:text-slate-200 font-medium">{z.zone_name}</span>
+              )}
+
+              {/* Action buttons — visible on row hover */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                {savingId === z.id ? (
+                  <Loader2 size={14} className="animate-spin text-slate-400"/>
+                ) : editId === z.id ? (
+                  <button onClick={() => setEditId(null)} className="text-slate-400 hover:text-slate-600 p-1">
+                    <X size={13}/>
+                  </button>
+                ) : (
+                  <button onClick={() => startEdit(z)} className="text-slate-400 hover:text-blue-600 p-1 transition-colors">
+                    <Pencil size={13}/>
+                  </button>
+                )}
+                <button onClick={() => remove(z)} disabled={deletingId === z.id}
+                  className="text-slate-400 hover:text-red-600 p-1 transition-colors disabled:opacity-40">
+                  {deletingId === z.id ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
