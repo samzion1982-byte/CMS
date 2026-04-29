@@ -214,9 +214,10 @@ export default function MembersPage() {
       const { error:upe } = await supabase.storage.from('member-photos').upload(path,photoFile,{upsert:true})
       if (!upe) { const {data:pd} = supabase.storage.from('member-photos').getPublicUrl(path); photo_url=pd.publicUrl }
     }
+    const isNewMigrant = !selected && saveType === 'migrant'
     const record = { ...form, age, photo_url,
-      old_member_id: saveType==='migrant'?oldMemberId:null,
-      change_reason: saveType==='migrant'?changeReason:null,
+      old_member_id: isNewMigrant ? oldMemberId : null,
+      change_reason: isNewMigrant ? changeReason : null,
       last_modified_by: profile?.full_name, last_modified_at: new Date().toISOString()
     }
     let err
@@ -849,7 +850,9 @@ export default function MembersPage() {
                 <button className="btn btn-secondary btn-sm" onClick={()=>setShowPrintModal(true)}><Printer size={13}/>Print</button>
               )}
               <button className="btn btn-secondary btn-sm" onClick={()=>{setTab('list');setSelected(null)}}><RotateCcw size={13}/>Reset</button>
-              <button className="btn btn-primary btn-sm" onClick={()=>setShowSaveDialog(true)} disabled={!form.member_id||!form.member_name||saving}>
+              <button className="btn btn-primary btn-sm"
+                onClick={isEdit ? doSave : ()=>setShowSaveDialog(true)}
+                disabled={!form.member_id||!form.member_name||saving}>
                 {saving ? <><Loader2 size={13} className="animate-spin"/>Saving…</> : <><Save size={13}/>{isEdit?'Update member':'Submit'}</>}
               </button>
             </div>

@@ -183,7 +183,7 @@ export default function ChurchSetupPage() {
 
   async function flush() {
     if (!church) { toast('No church record to flush.', 'error'); return }
-    if (!window.confirm('This will permanently clear ALL church details, logos and office bearer information from the database.\n\nAre you sure?')) return
+    if (!window.confirm('This will permanently clear ALL church details, logos, office bearer information, and church zones from the database.\n\nAre you sure?')) return
     setFlushing(true)
     try {
       // Remove logos from storage
@@ -206,6 +206,9 @@ export default function ChurchSetupPage() {
       }
       const { error } = await supabase.from('churches').update(blank).eq('id', church.id)
       if (error) throw error
+
+      // Clear all church zones
+      await supabase.from('church_zones').delete().gte('sort_order', 0)
 
       // Reset local state
       setLogoFile(null); setLogoPreview(null)
@@ -265,7 +268,8 @@ export default function ChurchSetupPage() {
   }
 
   return (
-    <div className="animate-fade-in max-w-3xl">
+    <div className="animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-slate-900 tracking-tight">Church setup</h1>
@@ -286,10 +290,13 @@ export default function ChurchSetupPage() {
         )}
       </div>
 
-      <div className="space-y-6">
-      {isSuperAdmin && (<>
+      {/* Two-column layout for super_admin; single for admin1 */}
+      {isSuperAdmin ? (
+        <div style={{display:'flex', gap:24, alignItems:'flex-start'}}>
 
-        {/* IDENTITY */}
+          {/* ── LEFT: main church cards ── */}
+          <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:24}}>
+          {/* IDENTITY */}
         <div className="card p-6">
           <p className="form-section form-section-blue">Church identity</p>
           <div className="flex gap-6">
@@ -458,29 +465,38 @@ export default function ChurchSetupPage() {
           </div>
         </div>
 
-        {/* LICENSE */}
-        <div className="card p-6">
-          <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
-          <p className="text-xs text-slate-400 mb-4">Enter the AUTH CODE provided by {VENDOR.name}. This must be verified before saving.</p>
-          <div className="flex gap-2 mb-3">
-            <input className="field-input flex-1" value={authCode} onChange={e=>setAuthCode(e.target.value.toUpperCase())}
-              placeholder="e.g. 0001-XXXXXXXX" style={{fontFamily:'monospace',letterSpacing:'0.05em'}}
-              onKeyDown={e=>e.key==='Enter'&&verifyLicense()}/>
-            <button onClick={verifyLicense} disabled={verifying||!authCode.trim()} className="btn btn-secondary" style={{flexShrink:0}}>
-              {verifying ? <><Loader2 size={13} className="animate-spin"/>Verifying...</> : <><ShieldCheck size={13}/>Verify</>}
-            </button>
+            {/* ZONAL AREAS */}
+            <ZonesPanel profile={profile} toast={toast} />
+
+          </div>{/* end left column */}
+
+          {/* ── RIGHT: license (sticky) ── */}
+          <div style={{width:280, flexShrink:0, position:'sticky', top:16, display:'flex', flexDirection:'column', gap:16}}>
+            <div className="card p-5">
+              <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
+              <p className="text-xs text-slate-400 mb-3">Enter the AUTH CODE provided by {VENDOR.name}.</p>
+              <div className="flex gap-2 mb-3">
+                <input className="field-input flex-1" value={authCode} onChange={e=>setAuthCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. 0001-XXXXXXXX" style={{fontFamily:'monospace',letterSpacing:'0.05em',fontSize:12}}
+                  onKeyDown={e=>e.key==='Enter'&&verifyLicense()}/>
+                <button onClick={verifyLicense} disabled={verifying||!authCode.trim()} className="btn btn-secondary btn-sm" style={{flexShrink:0}}>
+                  {verifying ? <Loader2 size={13} className="animate-spin"/> : <ShieldCheck size={13}/>}
+                </button>
+              </div>
+              <LicenseBadge/>
+              {licenseStatus !== 'valid' && (
+                <p className="text-xs text-slate-400 mt-3">Need a license?<br/><strong className="text-slate-600">{VENDOR.name}</strong> — {VENDOR.phone}</p>
+              )}
+            </div>
           </div>
-          <LicenseBadge/>
-          {licenseStatus !== 'valid' && (
-            <p className="text-xs text-slate-400 mt-3">Need a license? Contact <strong className="text-slate-600">{VENDOR.name}</strong> — {VENDOR.phone}</p>
-          )}
+
         </div>
-      </>)}
-
-        {/* ZONAL AREAS — visible to super_admin and admin1 */}
-        <ZonesPanel profile={profile} toast={toast} />
-
-      </div>
+      ) : (
+        /* admin1: zones only */
+        <div style={{maxWidth:560}}>
+          <ZonesPanel profile={profile} toast={toast} />
+        </div>
+      )}
     </div>
   )
 }

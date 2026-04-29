@@ -1109,19 +1109,53 @@ function ExclusionPanel({ perms, profile, toast }) {
 /* ════════════════════════════════════════════════════════════
    SETTINGS TAB
    ════════════════════════════════════════════════════════════ */
+const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const BEARER_OPTIONS = [
+  { key: 'presbyter',  label: 'Presbyter / Pastor' },
+  { key: 'secretary',  label: 'Secretary'           },
+  { key: 'treasurer',  label: 'Treasurer'           },
+  { key: 'admin1',     label: 'Admin 1'             },
+]
+
 function SettingsTab({ perms, profile, toast }) {
-  const [settings, setSettings] = useState({ auto_report_enabled: false, auto_greeting_enabled: false })
+  const DEFAULTS = {
+    auto_report_enabled: false,
+    auto_greeting_enabled: false,
+    report_day: 6,
+    report_hour: 18,
+    report_bearers: 'presbyter,secretary,treasurer',
+  }
+  const [settings, setSettings] = useState(DEFAULTS)
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
 
   useEffect(() => {
     getAnnouncementSettings().then(s => {
-      if (s) setSettings({ auto_report_enabled: s.auto_report_enabled, auto_greeting_enabled: s.auto_greeting_enabled })
+      if (s) setSettings({
+        auto_report_enabled:  s.auto_report_enabled  ?? false,
+        auto_greeting_enabled: s.auto_greeting_enabled ?? false,
+        report_day:    s.report_day    ?? 6,
+        report_hour:   s.report_hour   ?? 18,
+        report_bearers: s.report_bearers ?? 'presbyter,secretary,treasurer',
+      })
       setLoading(false)
     })
   }, [])
 
+  const set = (k, v) => setSettings(s => ({ ...s, [k]: v }))
+
+  const toggleBearer = key => {
+    const current = settings.report_bearers.split(',').filter(Boolean)
+    const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key]
+    set('report_bearers', next.join(','))
+  }
+
+  const bearerList = settings.report_bearers.split(',').filter(Boolean)
+
   const save = async () => {
+    if (settings.auto_report_enabled && bearerList.length === 0) {
+      toast('Select at least one office bearer to receive the report.', 'error'); return
+    }
     setSaving(true)
     try {
       await saveAnnouncementSettings(settings, profile?.full_name || profile?.email)
@@ -1132,23 +1166,23 @@ function SettingsTab({ perms, profile, toast }) {
 
   if (loading) return <Spinner label="Loading settings…" />
 
-  const toggleRow = (key, label, description) => (
-    <div className="flex items-start justify-between gap-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
-      <div>
-        <p className="font-semibold text-sm text-gray-800 dark:text-white">{label}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>
-      </div>
-      <button
-        onClick={() => perms?.canEdit && setSettings(s => ({ ...s, [key]: !s[key] }))}
-        disabled={!perms?.canEdit}
-        className="flex-shrink-0 transition"
-      >
-        {settings[key]
-          ? <ToggleRight size={36} className="text-green-500" />
-          : <ToggleLeft  size={36} className="text-gray-300 dark:text-gray-600" />}
-      </button>
-    </div>
+  const Toggle = ({ keyName }) => (
+    <button
+      onClick={() => perms?.canEdit && set(keyName, !settings[keyName])}
+      disabled={!perms?.canEdit}
+      className="flex-shrink-0 transition"
+    >
+      {settings[keyName]
+        ? <ToggleRight size={36} className="text-green-500" />
+        : <ToggleLeft  size={36} className="text-gray-300 dark:text-gray-600" />}
+    </button>
   )
+
+  // Friendly hour display e.g. 18 → "6:00 PM"
+  const hourLabel = h => {
+    const d = new Date(); d.setHours(h, 0, 0)
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  }
 
   return (
     <div className="space-y-4 max-w-xl">
@@ -1157,16 +1191,81 @@ function SettingsTab({ perms, profile, toast }) {
         Manual send from the Dashboard tab works independently.
       </div>
 
-      {toggleRow(
-        'auto_report_enabled',
-        'Auto Weekly Report',
-        'Every Saturday at 6:00 PM — sends the forthcoming week\'s birthday & anniversary report to Presbyter, Secretary and Treasurer via WhatsApp.'
-      )}
-      {toggleRow(
-        'auto_greeting_enabled',
-        'Auto Greeting Wishes',
-        'Every day at 12:01 AM — sends birthday and anniversary greeting cards to members on their special day via WhatsApp.'
-      )}
+      {/* ── Auto Weekly Report ── */}
+      <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div>
+            <p className="font-semibold text-sm text-gray-800 dark:text-white">Auto Weekly Report</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Sends the forthcoming week's birthday &amp; anniversary report via WhatsApp.
+            </p>
+          </div>
+          <Toggle keyName="auto_report_enabled" />
+        </div>
+
+        {settings.auto_report_enabled && (
+          <div className="px-4 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+
+            {/* Day + Time */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Send on day</label>
+                <select
+                  value={settings.report_day}
+                  onChange={e => set('report_day', Number(e.target.value))}
+                  disabled={!perms?.canEdit}
+                  className="field-input w-full"
+                >
+                  {DAYS_OF_WEEK.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Send at time</label>
+                <select
+                  value={settings.report_hour}
+                  onChange={e => set('report_hour', Number(e.target.value))}
+                  disabled={!perms?.canEdit}
+                  className="field-input w-full"
+                >
+                  {Array.from({length:24},(_,i)=>(
+                    <option key={i} value={i}>{hourLabel(i)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Office bearers */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Send report to</label>
+              <div className="flex flex-wrap gap-3">
+                {BEARER_OPTIONS.map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={bearerList.includes(key)}
+                      onChange={() => perms?.canEdit && toggleBearer(key)}
+                      disabled={!perms?.canEdit}
+                      className="accent-green-600 w-4 h-4"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Auto Greeting Wishes ── */}
+      <div className="flex items-start justify-between gap-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div>
+          <p className="font-semibold text-sm text-gray-800 dark:text-white">Auto Greeting Wishes</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Every day at 12:01 AM — sends birthday and anniversary greeting cards to members on their special day via WhatsApp.
+          </p>
+        </div>
+        <Toggle keyName="auto_greeting_enabled" />
+      </div>
 
       {perms?.canEdit && (
         <button onClick={save} disabled={saving}

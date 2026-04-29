@@ -15,28 +15,37 @@ CREATE TABLE IF NOT EXISTS church_zones (
 
 ALTER TABLE church_zones ENABLE ROW LEVEL SECURITY;
 
--- All authenticated users can read zones (needed in member form)
-CREATE POLICY "zones_select"
-  ON church_zones FOR SELECT TO authenticated USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='church_zones' AND policyname='zones_select') THEN
+    CREATE POLICY "zones_select" ON church_zones FOR SELECT TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='church_zones' AND policyname='zones_insert') THEN
+    CREATE POLICY "zones_insert" ON church_zones FOR INSERT TO authenticated WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='church_zones' AND policyname='zones_update') THEN
+    CREATE POLICY "zones_update" ON church_zones FOR UPDATE TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='church_zones' AND policyname='zones_delete') THEN
+    CREATE POLICY "zones_delete" ON church_zones FOR DELETE TO authenticated USING (true);
+  END IF;
+END $$;
 
--- Write access is controlled in the UI; allow any authenticated at DB level
-CREATE POLICY "zones_insert"
-  ON church_zones FOR INSERT TO authenticated WITH CHECK (true);
-
-CREATE POLICY "zones_update"
-  ON church_zones FOR UPDATE TO authenticated USING (true);
-
-CREATE POLICY "zones_delete"
-  ON church_zones FOR DELETE TO authenticated USING (true);
-
--- ── Seed with zones already imported from Excel ───────────────
+-- ── Seed with all zones (Others always last) ─────────────────
 INSERT INTO church_zones (zone_name, sort_order) VALUES
-  ('Ramalinga Nagar',   1),
-  ('Woraiyur',          2),
-  ('Kondayam Palayam',  3),
-  ('Ariyamangalam',     4),
-  ('Srirangam',         5),
-  ('Thillai Nagar',     6),
-  ('Puthur',            7),
-  ('Others',            8)
+  ('Ramalinga Nagar',                          1),
+  ('Woraiyur',                                 2),
+  ('Kondayam Palayam',                         3),
+  ('Ariyamangalam',                            4),
+  ('Srirangam',                                5),
+  ('Thillai Nagar',                            6),
+  ('Puthur',                                   7),
+  ('UKT Malai - Renga Nagar - Rettai Vaikkal', 8),
+  ('Srinivasa Nagar',                          9),
+  ('Bharathi Nagar',                           10),
+  ('Somarasampettai - Allithurai',             11),
+  ('Vasan Nagar - Vasan Valley - Nachikurichi',12),
+  ('Gandhi Market',                            13),
+  ('Thayanur',                                 14),
+  ('Lingam Nagar',                             15),
+  ('Others',                                   99)
 ON CONFLICT (zone_name) DO NOTHING;

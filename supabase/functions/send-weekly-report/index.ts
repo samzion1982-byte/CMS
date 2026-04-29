@@ -40,14 +40,28 @@ serve(async () => {
       return new Response('Auto report disabled', { status: 200 })
     }
 
+    // Check if today and current hour match the configured schedule
+    const now = new Date()
+    const configuredDay  = settings.report_day  ?? 6   // default Saturday
+    const configuredHour = settings.report_hour ?? 18  // default 6 PM
+    if (now.getDay() !== configuredDay || now.getHours() !== configuredHour) {
+      return new Response(`Not scheduled for today (day=${now.getDay()} hour=${now.getHours()})`, { status: 200 })
+    }
+
     const { data: church } = await supabase.from('churches').select('*').limit(1).maybeSingle()
     if (!church) return new Response('No church config', { status: 200 })
 
-    const bearers = [
-      { name: church.presbyter_name,  num: church.presbyter_whatsapp  },
-      { name: church.secretary_name,  num: church.secretary_whatsapp  },
-      { name: church.treasurer_name,  num: church.treasurer_whatsapp  },
-    ].filter(b => b.num)
+    // Build bearer list from settings
+    const selectedBearers = (settings.report_bearers || 'presbyter,secretary,treasurer').split(',').filter(Boolean)
+    const BEARER_MAP: Record<string, { name: string; num: string }> = {
+      presbyter: { name: church.presbyter_name, num: church.presbyter_whatsapp },
+      secretary: { name: church.secretary_name, num: church.secretary_whatsapp },
+      treasurer: { name: church.treasurer_name, num: church.treasurer_whatsapp },
+      admin1:    { name: church.admin1_name,    num: church.admin1_whatsapp    },
+    }
+    const bearers = selectedBearers
+      .map(k => BEARER_MAP[k])
+      .filter(b => b?.num)
 
     if (!bearers.length) return new Response('No office bearer numbers configured', { status: 200 })
 
