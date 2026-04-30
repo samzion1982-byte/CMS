@@ -347,6 +347,8 @@
    BASE
    ═══════════════════════════════════════════════════════════════ */
 
+html { zoom: 0.95; }
+
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', sans-serif;

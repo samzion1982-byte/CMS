@@ -45,7 +45,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
       borderRight: '1px solid var(--sidebar-border)',
       display: 'flex',
       flexDirection: 'column',
-      height: `calc(100vh - ${HEADER_H}px)`,
+      height: `calc(100vh / 0.95 - ${HEADER_H}px)`,
       position: 'fixed',
       left: 0, top: HEADER_H,
       zIndex: 300,
