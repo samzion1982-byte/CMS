@@ -279,6 +279,35 @@ export async function getDeletedMemberDetails(deletedMemberId) {
 }
 
 /**
+ * Permanently delete records from deleted_members table (and their archived photos)
+ */
+export async function permanentDeleteMembers(ids) {
+  if (!ids?.length) throw new Error('No IDs provided')
+
+  // Fetch member_ids so we can clean up storage photos
+  const { data: rows, error: fetchError } = await supabase
+    .from('deleted_members')
+    .select('id,member_id')
+    .in('id', ids)
+  if (fetchError) throw new Error(`Fetch error: ${fetchError.message}`)
+
+  // Remove archived photos (non-critical — don't throw on failure)
+  const photoPaths = (rows || []).map(r => `deleted/${r.member_id}.jpg`)
+  if (photoPaths.length) {
+    await supabase.storage.from('member-photos').remove(photoPaths)
+  }
+
+  // Permanently delete rows
+  const { error: deleteError } = await supabase
+    .from('deleted_members')
+    .delete()
+    .in('id', ids)
+  if (deleteError) throw new Error(`Delete error: ${deleteError.message}`)
+
+  return { success: true, count: ids.length }
+}
+
+/**
  * Check if a member ID is available (not in use)
  * @param {string} memberId
  * @param {string|null} excludeDeletedId - UUID of a deleted_members row to skip (used when restoring with original ID)

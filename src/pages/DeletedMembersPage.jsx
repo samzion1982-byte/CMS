@@ -7,9 +7,9 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { formatDate } from '../lib/date'
-import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileDown } from 'lucide-react'
+import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileDown, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { fetchDeletedMembers, getDeletedMemberDetails } from '../lib/memberDelete'
+import { fetchDeletedMembers, getDeletedMemberDetails, permanentDeleteMembers } from '../lib/memberDelete'
 import RestoreMemberModal from './RestoreMemberModal'
 
 export default function DeletedMembersPage() {
@@ -26,6 +26,9 @@ export default function DeletedMembersPage() {
   const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [memberDetails, setMemberDetails] = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const searchTimer = useRef(null)
   const BATCH_SIZE = 50
 
@@ -39,6 +42,7 @@ export default function DeletedMembersPage() {
       setDeletedMembers(data)
       setTotal(totalCount)
       setPage(pageNum)
+      setSelectedIds(new Set())
     } catch (err) {
       toast.error(`Error loading deleted members: ${err.message}`)
     } finally {
@@ -78,6 +82,38 @@ export default function DeletedMembersPage() {
 
   const handleRestored = () => {
     loadDeletedMembers(page, searchVal)
+  }
+
+  const allPageSelected = deletedMembers.length > 0 && deletedMembers.every(m => selectedIds.has(m.id))
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(deletedMembers.map(m => m.id)))
+    }
+  }
+
+  const toggleSelect = id => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handlePermanentDelete = async () => {
+    setDeleting(true)
+    try {
+      await permanentDeleteMembers([...selectedIds])
+      toast(`${selectedIds.size} record${selectedIds.size > 1 ? 's' : ''} permanently deleted.`, 'success')
+      setShowDeleteConfirm(false)
+      loadDeletedMembers(page, searchVal)
+    } catch (err) {
+      toast.error(`Permanent delete failed: ${err.message}`)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (!canRestore) {
@@ -226,15 +262,28 @@ export default function DeletedMembersPage() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Deleted Members Archive</h1>
           <p className="text-gray-600 dark:text-gray-400">Manage archived members and restore if needed</p>
         </div>
-        <button
-          onClick={exportExcel}
-          disabled={exporting || loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
-          style={{ background: '#15803d' }}
-        >
-          {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
-          {exporting ? 'Exporting...' : 'Export Excel'}
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleting}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
+              style={{ background: '#b91c1c' }}
+            >
+              <Trash2 size={16} />
+              Permanent Delete ({selectedIds.size})
+            </button>
+          )}
+          <button
+            onClick={exportExcel}
+            disabled={exporting || loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
+            style={{ background: '#15803d' }}
+          >
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+            {exporting ? 'Exporting...' : 'Export Excel'}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -280,6 +329,15 @@ export default function DeletedMembersPage() {
             <table className="w-full" style={{fontSize:12}}>
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <th className="px-3 py-2 text-center w-8">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer accent-red-700"
+                      title="Select all on this page"
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">ID</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Name</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">Deleted Date</th>
@@ -292,8 +350,16 @@ export default function DeletedMembersPage() {
                 {deletedMembers.map((m, idx) => (
                   <tr
                     key={m.id}
-                    className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition"
+                    className={`border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition ${selectedIds.has(m.id) ? 'bg-red-50 dark:bg-red-900/10' : ''}`}
                   >
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(m.id)}
+                        onChange={() => toggleSelect(m.id)}
+                        className="cursor-pointer accent-red-700"
+                      />
+                    </td>
                     <td className="px-3 py-2 font-mono text-gray-900 dark:text-white font-semibold">{m.member_id}</td>
                     <td className="px-3 py-2 text-gray-900 dark:text-white">{m.member_name}</td>
                     <td className="px-3 py-2 text-gray-600 dark:text-gray-400" style={{whiteSpace:'nowrap'}}>
@@ -344,6 +410,44 @@ export default function DeletedMembersPage() {
             >
               <ChevronRight size={18} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Permanent Delete Confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Trash2 size={20} className="text-red-600 dark:text-red-400" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Permanent Delete</h2>
+            </div>
+            <p className="text-gray-700 dark:text-gray-300 mb-2">
+              You are about to <strong>permanently delete {selectedIds.size} record{selectedIds.size > 1 ? 's' : ''}</strong> from the archive.
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400 mb-6">
+              This action cannot be undone. The records and their photos will be removed forever.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePermanentDelete}
+                disabled={deleting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition"
+                style={{ background: '#b91c1c' }}
+              >
+                {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {deleting ? 'Deleting...' : 'Yes, Delete Permanently'}
+              </button>
+            </div>
           </div>
         </div>
       )}

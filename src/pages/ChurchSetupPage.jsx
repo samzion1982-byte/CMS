@@ -509,10 +509,11 @@ function ZonesPanel({ profile, toast }) {
   const [loading,    setLoading]    = useState(true)
   const [newName,    setNewName]    = useState('')
   const [adding,     setAdding]     = useState(false)
-  const [editId,     setEditId]     = useState(null)   // id of zone being edited
+  const [editId,     setEditId]     = useState(null)
   const [editName,   setEditName]   = useState('')
   const [savingId,   setSavingId]   = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [expanded,   setExpanded]   = useState(false)
   const editRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -588,91 +589,120 @@ function ZonesPanel({ profile, toast }) {
 
   return (
     <div className="card p-6">
-      <p className="form-section form-section-blue" style={{color:'#0369a1',borderColor:'#bae6fd'}}>
-        Zonal Areas
-      </p>
-      <p className="text-xs text-slate-400 mb-4">
-        These zones appear in the member form. Changes apply immediately — no need to save.
-      </p>
-
-      {/* Add new zone */}
-      <div className="flex gap-2 mb-5">
-        <input
-          className="field-input flex-1"
-          placeholder="New zone name…"
-          value={newName}
-          onChange={e => setNewName(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && add()}
-          disabled={adding}
-        />
-        <button onClick={add} disabled={adding || !newName.trim()}
-          className="btn btn-primary btn-sm flex-shrink-0" style={{background:'#14532d',borderColor:'#14532d'}}>
-          {adding ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
-          Add
+      {/* Header row — always visible */}
+      <div className="flex items-center justify-between mb-0">
+        <div className="flex items-center gap-2">
+          <p className="form-section form-section-blue mb-0" style={{color:'#0369a1',borderColor:'#bae6fd',marginBottom:0}}>
+            Zonal Areas
+          </p>
+          {!expanded && !loading && zones.length > 0 && (
+            <span className="text-xs text-slate-400 font-normal">
+              ({zones.length} {zones.length === 1 ? 'zone' : 'zones'}: {zones.map(z => z.zone_name).join(', ')})
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium transition-colors"
+          style={{
+            borderColor: expanded ? '#bae6fd' : '#e2e8f0',
+            color:        expanded ? '#0369a1' : '#64748b',
+            background:   expanded ? '#f0f9ff' : '#f8fafc',
+          }}
+          title={expanded ? 'Minimize Zonal Areas' : 'Expand to edit zones'}
+        >
+          {expanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+          {expanded ? 'Minimize' : 'Edit Zones'}
         </button>
       </div>
 
-      {/* Zone list */}
-      {loading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={14} className="animate-spin"/>Loading zones…</div>
-      ) : zones.length === 0 ? (
-        <p className="text-xs text-slate-400 italic">No zones configured. Add one above.</p>
-      ) : (
-        <div className="space-y-1">
-          {zones.map((z, idx) => (
-            <div key={z.id}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:border-slate-700 group transition-colors">
+      {/* Collapsible body */}
+      {expanded && (
+        <>
+          <p className="text-xs text-slate-400 mt-2 mb-4">
+            These zones appear in the member form. Changes apply immediately — no need to save.
+          </p>
 
-              {/* Sort order buttons */}
-              <div className="flex flex-col gap-0.5 flex-shrink-0">
-                <button onClick={() => move(idx, -1)} disabled={idx === 0}
-                  className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
-                  <ChevronUp size={13}/>
-                </button>
-                <button onClick={() => move(idx, 1)} disabled={idx === zones.length - 1}
-                  className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
-                  <ChevronDown size={13}/>
-                </button>
-              </div>
+          {/* Add new zone */}
+          <div className="flex gap-2 mb-5">
+            <input
+              className="field-input flex-1"
+              placeholder="New zone name…"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && add()}
+              disabled={adding}
+            />
+            <button onClick={add} disabled={adding || !newName.trim()}
+              className="btn btn-primary btn-sm flex-shrink-0" style={{background:'#14532d',borderColor:'#14532d'}}>
+              {adding ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
+              Add
+            </button>
+          </div>
 
-              {/* Zone name / inline edit */}
-              {editId === z.id ? (
-                <input
-                  ref={editRef}
-                  className="field-input flex-1 py-1 text-sm"
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') saveEdit(z)
-                    if (e.key === 'Escape') setEditId(null)
-                  }}
-                  onBlur={() => saveEdit(z)}
-                />
-              ) : (
-                <span className="flex-1 text-sm text-slate-700 dark:text-slate-200 font-medium">{z.zone_name}</span>
-              )}
+          {/* Zone list */}
+          {loading ? (
+            <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={14} className="animate-spin"/>Loading zones…</div>
+          ) : zones.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">No zones configured. Add one above.</p>
+          ) : (
+            <div className="space-y-1">
+              {zones.map((z, idx) => (
+                <div key={z.id}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:border-slate-700 group transition-colors">
 
-              {/* Action buttons — visible on row hover */}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                {savingId === z.id ? (
-                  <Loader2 size={14} className="animate-spin text-slate-400"/>
-                ) : editId === z.id ? (
-                  <button onClick={() => setEditId(null)} className="text-slate-400 hover:text-slate-600 p-1">
-                    <X size={13}/>
-                  </button>
-                ) : (
-                  <button onClick={() => startEdit(z)} className="text-slate-400 hover:text-blue-600 p-1 transition-colors">
-                    <Pencil size={13}/>
-                  </button>
-                )}
-                <button onClick={() => remove(z)} disabled={deletingId === z.id}
-                  className="text-slate-400 hover:text-red-600 p-1 transition-colors disabled:opacity-40">
-                  {deletingId === z.id ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
-                </button>
-              </div>
+                  {/* Sort order buttons */}
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <button onClick={() => move(idx, -1)} disabled={idx === 0}
+                      className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
+                      <ChevronUp size={13}/>
+                    </button>
+                    <button onClick={() => move(idx, 1)} disabled={idx === zones.length - 1}
+                      className="text-slate-300 hover:text-slate-600 disabled:opacity-0 disabled:pointer-events-none transition-colors">
+                      <ChevronDown size={13}/>
+                    </button>
+                  </div>
+
+                  {/* Zone name / inline edit */}
+                  {editId === z.id ? (
+                    <input
+                      ref={editRef}
+                      className="field-input flex-1 py-1 text-sm"
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') saveEdit(z)
+                        if (e.key === 'Escape') setEditId(null)
+                      }}
+                      onBlur={() => saveEdit(z)}
+                    />
+                  ) : (
+                    <span className="flex-1 text-sm text-slate-700 dark:text-slate-200 font-medium">{z.zone_name}</span>
+                  )}
+
+                  {/* Action buttons — visible on row hover */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    {savingId === z.id ? (
+                      <Loader2 size={14} className="animate-spin text-slate-400"/>
+                    ) : editId === z.id ? (
+                      <button onClick={() => setEditId(null)} className="text-slate-400 hover:text-slate-600 p-1">
+                        <X size={13}/>
+                      </button>
+                    ) : (
+                      <button onClick={() => startEdit(z)} className="text-slate-400 hover:text-blue-600 p-1 transition-colors">
+                        <Pencil size={13}/>
+                      </button>
+                    )}
+                    <button onClick={() => remove(z)} disabled={deletingId === z.id}
+                      className="text-slate-400 hover:text-red-600 p-1 transition-colors disabled:opacity-40">
+                      {deletingId === z.id ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -84,7 +84,7 @@ export default function AnnouncementsPage() {
       {tab === 'dashboard' && <DashboardTab church={church} profile={profile} toast={toast} />}
       {tab === 'reports'   && <ReportsTab   church={church} profile={profile} toast={toast} />}
       {tab === 'verses'    && <VersesTab    perms={perms}   profile={profile} toast={toast} />}
-      {tab === 'settings'  && <SettingsTab  perms={perms}   profile={profile} toast={toast} />}
+      {tab === 'settings'  && <SettingsTab  perms={perms}   profile={profile} toast={toast} church={church} />}
     </div>
   )
 }
@@ -108,7 +108,8 @@ function DashboardTab({ church, profile, toast }) {
     const [b, a] = await Promise.all([getUpcomingBirthdays(7), getUpcomingAnniversaries(7)])
     setBirthdays(b); setAnniversaries(a)
     // Mark already-sent today (namespaced to avoid birthday/anniversary collision)
-    const today = new Date().toISOString().split('T')[0]
+    const n = new Date()
+    const today = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
     const { data: logs } = await supabase
       .from('announcements_log')
       .select('member_id, family_id, log_type')
@@ -353,6 +354,11 @@ function ReportsTab({ church, profile, toast }) {
     buildReportPdf(type, data, church, start, end, false)
   }
 
+  const downloadWeeklyPdf = () => {
+    if (!bdays?.length && !annivers?.length) { toast('Generate reports first.', 'error'); return }
+    buildWeeklyReportPdf(bdays || [], annivers || [], church, startBday, endBday, false)
+  }
+
   const openSendModal = (type) => {
     const data  = type === 'birthday' ? bdays : annivers
     const start = type === 'birthday' ? startBday : startAnniv
@@ -364,6 +370,16 @@ function ReportsTab({ church, profile, toast }) {
       toast('No office bearer WhatsApp numbers configured in Church Setup.', 'error'); return
     }
     setSendModal({ type, data, start, end })
+  }
+
+  const openWeeklySendModal = () => {
+    if (!bdays?.length && !annivers?.length) { toast('Generate reports first.', 'error'); return }
+    const hasBearer = church?.presbyter_whatsapp || church?.secretary_whatsapp ||
+                      church?.treasurer_whatsapp  || church?.admin1_whatsapp
+    if (!hasBearer) {
+      toast('No office bearer WhatsApp numbers configured in Church Setup.', 'error'); return
+    }
+    setSendModal({ type: 'weekly', data: { birthdays: bdays || [], anniversaries: annivers || [] }, start: startBday, end: endBday })
   }
 
   const REPORT_COLS = {
@@ -450,6 +466,19 @@ function ReportsTab({ church, profile, toast }) {
           onDownload={() => downloadPdf('anniversary')}
           onSend={() => openSendModal('anniversary')}
         />
+      )}
+
+      {(bdays?.length > 0 || annivers?.length > 0) && (
+        <div className="flex gap-2 justify-end pt-1">
+          <button onClick={downloadWeeklyPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-slate-400 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+            <FileDown size={13} /> Download Combined Weekly PDF
+          </button>
+          <button onClick={openWeeklySendModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500 transition">
+            <Send size={13} /> Send Combined Weekly Report
+          </button>
+        </div>
       )}
 
       {sendModal && (
@@ -540,11 +569,16 @@ function SendToBearersModal({ church, type, data, startDate, endDate, toast, onC
     if (!targets.length) { toast('Select at least one recipient.', 'error'); return }
     setSending(true)
     try {
-      const pdf    = buildReportPdf(type, data, church, startDate, endDate, true)
+      const isWeekly = type === 'weekly'
+      const pdf = isWeekly
+        ? buildWeeklyReportPdf(data.birthdays, data.anniversaries, church, startDate, endDate, true)
+        : buildReportPdf(type, data, church, startDate, endDate, true)
       const blob   = pdf.output('blob')
       const fname  = `${type}-report-${startDate}.pdf`
       const pdfUrl = await uploadToStorage('announcement-reports', fname, blob, 'application/pdf')
-      const msg    = `${church?.church_name || 'Church'} — ${type === 'birthday' ? 'Birthday' : 'Anniversary'} Report (${fmtDate(startDate)} to ${fmtDate(endDate)})`
+      const msg    = isWeekly
+        ? `${church?.church_name || 'Church'} — Weekly Report (${fmtDate(startDate)} to ${fmtDate(endDate)})`
+        : `${church?.church_name || 'Church'} — ${type === 'birthday' ? 'Birthday' : 'Anniversary'} Report (${fmtDate(startDate)} to ${fmtDate(endDate)})`
 
       const out = []
       for (const b of targets) {
@@ -582,7 +616,7 @@ function SendToBearersModal({ church, type, data, startDate, endDate, toast, onC
         <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 className="font-semibold text-gray-900 dark:text-white">Send to Office Bearers</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            {type === 'birthday' ? 'Birthday' : 'Anniversary'} report · {fmtDate(startDate)} to {fmtDate(endDate)}
+            {type === 'weekly' ? 'Combined Weekly' : type === 'birthday' ? 'Birthday' : 'Anniversary'} report · {fmtDate(startDate)} to {fmtDate(endDate)}
           </p>
         </div>
 
@@ -899,6 +933,118 @@ function VersesTab({ perms, profile, toast }) {
 /* ════════════════════════════════════════════════════════════
    EXCLUSION WISH LIST PANEL
    ════════════════════════════════════════════════════════════ */
+/* ────────────────────────────────────────────────────────────
+   Greeting card template generator
+   ──────────────────────────────────────────────────────────── */
+function GreetingTemplatesPanel({ perms, toast, church }) {
+  const [counts,      setCounts]      = useState({ birthday: 0, anniversary: 0 })
+  const [generating,  setGenerating]  = useState(null) // 'birthday' | 'anniversary' | null
+
+  const loadCounts = useCallback(async () => {
+    try {
+      const [bRes, aRes] = await Promise.all([
+        supabase.storage.from('announcement-cards').list('templates/birthday',  { limit: 100 }),
+        supabase.storage.from('announcement-cards').list('templates/anniversary', { limit: 100 }),
+      ])
+      const count = files => (files || []).filter(f => f.name.endsWith('.png') && !f.name.startsWith('.')).length
+      setCounts({ birthday: count(bRes.data), anniversary: count(aRes.data) })
+    } catch { /* bucket may not exist yet */ }
+  }, [])
+
+  useEffect(() => { loadCounts() }, [loadCounts])
+
+  const generate = async (type) => {
+    if (!perms?.canEdit) return
+    setGenerating(type)
+    try {
+      const { getRandomVerse } = await import('../lib/announcements')
+      const { generateGreetingCard } = await import('../lib/greetingCard')
+      const N = 5
+      for (let i = 0; i < N; i++) {
+        const verse = await getRandomVerse(type)
+        const blob  = await generateGreetingCard({
+          type,
+          names:      '',
+          churchName: church?.church_name || '',
+          city:       church?.city        || '',
+          address:    church?.address     || '',
+          verse,
+        })
+        const path = `templates/${type}/card_${Date.now()}_${i}.png`
+        const { error } = await supabase.storage
+          .from('announcement-cards')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: true })
+        if (error) throw error
+      }
+      toast(`${N} ${type} templates generated.`, 'success')
+      loadCounts()
+    } catch (err) {
+      toast('Generate failed: ' + err.message, 'error')
+    }
+    setGenerating(null)
+  }
+
+  const clear = async (type) => {
+    if (!perms?.canEdit) return
+    try {
+      const { data: files } = await supabase.storage
+        .from('announcement-cards').list(`templates/${type}`, { limit: 100 })
+      const names = (files || []).filter(f => f.name.endsWith('.png'))
+        .map(f => `templates/${type}/${f.name}`)
+      if (names.length) await supabase.storage.from('announcement-cards').remove(names)
+      toast(`${type} templates cleared.`, 'success')
+      loadCounts()
+    } catch (err) {
+      toast('Clear failed: ' + err.message, 'error')
+    }
+  }
+
+  const TypeRow = ({ type, label }) => (
+    <div className="flex items-center justify-between py-2">
+      <div>
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        <span className="ml-2 text-xs text-gray-400">({counts[type]} card{counts[type] !== 1 ? 's' : ''})</span>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => generate(type)}
+          disabled={!!generating || !perms?.canEdit}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white transition"
+          style={{ background: generating === type ? '#6b7280' : '#1d4ed8' }}
+        >
+          {generating === type
+            ? <><Loader2 size={11} className="animate-spin" /> Generating…</>
+            : <><Plus size={11} /> Generate 5</>}
+        </button>
+        {counts[type] > 0 && perms?.canEdit && (
+          <button
+            onClick={() => clear(type)}
+            disabled={!!generating}
+            className="px-2.5 py-1.5 rounded text-xs text-red-600 border border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20 transition"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+        <p className="font-semibold text-sm text-gray-800 dark:text-white">Greeting Card Templates</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          Pre-generated cards stored in Supabase Storage. Auto greetings pick one randomly per send.
+        </p>
+      </div>
+      <div className="px-4 divide-y divide-gray-100 dark:divide-gray-700">
+        <TypeRow type="birthday"    label="🎂 Birthday" />
+        <TypeRow type="anniversary" label="💍 Anniversary" />
+      </div>
+    </div>
+  )
+}
+
 function ExclusionPanel({ perms, profile, toast }) {
   const [exclusions,   setExclusions]   = useState([])
   const [loadingList,  setLoadingList]  = useState(true)
@@ -1117,26 +1263,29 @@ const BEARER_OPTIONS = [
   { key: 'admin1',     label: 'Admin 1'             },
 ]
 
-function SettingsTab({ perms, profile, toast }) {
+function SettingsTab({ perms, profile, toast, church }) {
   const DEFAULTS = {
     auto_report_enabled: false,
     auto_greeting_enabled: false,
     report_day: 6,
-    report_hour: 18,
+    report_time: '18:00',
     report_bearers: 'presbyter,secretary,treasurer',
+    greeting_time: '08:00',
   }
-  const [settings, setSettings] = useState(DEFAULTS)
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
+  const [settings,       setSettings]       = useState(DEFAULTS)
+  const [loading,        setLoading]        = useState(true)
+  const [savingReport,   setSavingReport]   = useState(false)
+  const [savingGreeting, setSavingGreeting] = useState(false)
 
   useEffect(() => {
     getAnnouncementSettings().then(s => {
       if (s) setSettings({
-        auto_report_enabled:  s.auto_report_enabled  ?? false,
+        auto_report_enabled:   s.auto_report_enabled   ?? false,
         auto_greeting_enabled: s.auto_greeting_enabled ?? false,
-        report_day:    s.report_day    ?? 6,
-        report_hour:   s.report_hour   ?? 18,
+        report_day:     s.report_day     ?? 6,
+        report_time:    s.report_time    ?? '18:00',
         report_bearers: s.report_bearers ?? 'presbyter,secretary,treasurer',
+        greeting_time:  s.greeting_time  ?? '08:00',
       })
       setLoading(false)
     })
@@ -1151,17 +1300,35 @@ function SettingsTab({ perms, profile, toast }) {
   }
 
   const bearerList = settings.report_bearers.split(',').filter(Boolean)
+  const by = profile?.full_name || profile?.email
 
-  const save = async () => {
+  const saveReport = async () => {
     if (settings.auto_report_enabled && bearerList.length === 0) {
       toast('Select at least one office bearer to receive the report.', 'error'); return
     }
-    setSaving(true)
+    setSavingReport(true)
     try {
-      await saveAnnouncementSettings(settings, profile?.full_name || profile?.email)
-      toast('Settings saved.', 'success')
+      await saveAnnouncementSettings({
+        auto_report_enabled: settings.auto_report_enabled,
+        report_day:          settings.report_day,
+        report_time:         settings.report_time,
+        report_bearers:      settings.report_bearers,
+      }, by)
+      toast('Weekly report settings saved.', 'success')
     } catch (err) { toast('Save failed: ' + err.message, 'error') }
-    setSaving(false)
+    setSavingReport(false)
+  }
+
+  const saveGreeting = async () => {
+    setSavingGreeting(true)
+    try {
+      await saveAnnouncementSettings({
+        auto_greeting_enabled: settings.auto_greeting_enabled,
+        greeting_time:         settings.greeting_time,
+      }, by)
+      toast('Greeting settings saved.', 'success')
+    } catch (err) { toast('Save failed: ' + err.message, 'error') }
+    setSavingGreeting(false)
   }
 
   if (loading) return <Spinner label="Loading settings…" />
@@ -1178,11 +1345,16 @@ function SettingsTab({ perms, profile, toast }) {
     </button>
   )
 
-  // Friendly hour display e.g. 18 → "6:00 PM"
-  const hourLabel = h => {
-    const d = new Date(); d.setHours(h, 0, 0)
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  }
+  const SaveBtn = ({ onClick, saving, label = 'Save' }) => (
+    perms?.canEdit ? (
+      <button onClick={onClick} disabled={saving}
+        className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-semibold text-white transition"
+        style={{ background: saving ? '#6b7280' : '#14532d' }}>
+        {saving && <Loader2 size={11} className="animate-spin" />}
+        {saving ? 'Saving…' : label}
+      </button>
+    ) : null
+  )
 
   return (
     <div className="space-y-4 max-w-xl">
@@ -1203,9 +1375,8 @@ function SettingsTab({ perms, profile, toast }) {
           <Toggle keyName="auto_report_enabled" />
         </div>
 
-        {settings.auto_report_enabled && (
-          <div className="px-4 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-700 pt-4">
-
+        <div className="px-4 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+          {settings.auto_report_enabled && (<>
             {/* Day + Time */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1221,16 +1392,13 @@ function SettingsTab({ perms, profile, toast }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Send at time</label>
-                <select
-                  value={settings.report_hour}
-                  onChange={e => set('report_hour', Number(e.target.value))}
+                <input
+                  type="time"
+                  value={settings.report_time}
+                  onChange={e => set('report_time', e.target.value)}
                   disabled={!perms?.canEdit}
                   className="field-input w-full"
-                >
-                  {Array.from({length:24},(_,i)=>(
-                    <option key={i} value={i}>{hourLabel(i)}</option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
 
@@ -1252,29 +1420,46 @@ function SettingsTab({ perms, profile, toast }) {
                 ))}
               </div>
             </div>
+          </>)}
+
+          <div className="flex justify-end">
+            <SaveBtn onClick={saveReport} saving={savingReport} label="Save Report Settings" />
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Auto Greeting Wishes ── */}
-      <div className="flex items-start justify-between gap-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
-        <div>
-          <p className="font-semibold text-sm text-gray-800 dark:text-white">Auto Greeting Wishes</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Every day at 12:01 AM — sends birthday and anniversary greeting cards to members on their special day via WhatsApp.
-          </p>
+      <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div>
+            <p className="font-semibold text-sm text-gray-800 dark:text-white">Auto Greeting Wishes</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Sends birthday &amp; anniversary greeting card images to members on their special day via WhatsApp.
+            </p>
+          </div>
+          <Toggle keyName="auto_greeting_enabled" />
         </div>
-        <Toggle keyName="auto_greeting_enabled" />
+
+        <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700 pt-4 space-y-4">
+          {settings.auto_greeting_enabled && (
+            <div className="max-w-[160px]">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Send at time</label>
+              <input
+                type="time"
+                value={settings.greeting_time}
+                onChange={e => set('greeting_time', e.target.value)}
+                disabled={!perms?.canEdit}
+                className="field-input w-full"
+              />
+            </div>
+          )}
+          <div className="flex justify-end">
+            <SaveBtn onClick={saveGreeting} saving={savingGreeting} label="Save Greeting Settings" />
+          </div>
+        </div>
       </div>
 
-      {perms?.canEdit && (
-        <button onClick={save} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm text-white font-medium transition"
-          style={{ background: '#14532d' }}>
-          {saving ? <Loader2 size={13} className="animate-spin" /> : null}
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
-      )}
+      <GreetingTemplatesPanel perms={perms} toast={toast} church={church} />
 
       <ExclusionPanel perms={perms} profile={profile} toast={toast} />
     </div>
@@ -1284,214 +1469,215 @@ function SettingsTab({ perms, profile, toast }) {
 /* ════════════════════════════════════════════════════════════
    PDF builder (jsPDF)
    ════════════════════════════════════════════════════════════ */
-function buildReportPages(doc, type, data, church, startDate, endDate) {
-  const pw = doc.internal.pageSize.getWidth()
-  const ph = doc.internal.pageSize.getHeight()
+function buildReportPages(doc, type, data, church, startDate, endDate, { skipFinalPass = false } = {}) {
+  const pw = doc.internal.pageSize.getWidth()   // 210
+  const ph = doc.internal.pageSize.getHeight()  // 297
   const isBday = type === 'birthday'
-  const MX = 10, MY = 10
-  const cw = pw - MX * 2
-  const ch = ph - MY * 2
 
-  // ── Palette ──────────────────────────────────────────────
-  const NAVY    = [18, 44, 88]
-  const ACCENT  = isBday ? [204, 102, 0] : [158, 18, 80]
-  const STEEL   = [55, 80, 116]
-  const WHITE   = [255, 255, 255]
-  const DIVIDER = [185, 200, 220]
-  const BODY    = [20, 32, 58]
+  const MX = 12, MY = 10
+  const cw = pw - MX * 2   // 186
+  const ch = ph - MY * 2   // 277
 
-  // Rich day colours — row background / day-cell bg / day-cell text
+  // Accent colour per section
+  const ACCENT = isBday ? [175, 75, 0] : [155, 20, 75]
+
+  // Professional pastel day palette
   const DAY = {
-    Sunday:    { row: [255, 222, 158], cell: [220, 135, 28],  txt: WHITE },
-    Monday:    { row: [170, 210, 255], cell: [50, 118, 208],  txt: WHITE },
-    Tuesday:   { row: [145, 228, 190], cell: [22, 152, 92],   txt: WHITE },
-    Wednesday: { row: [255, 228, 90],  cell: [198, 145, 4],   txt: WHITE },
-    Thursday:  { row: [215, 183, 255], cell: [124, 68, 208],  txt: WHITE },
-    Friday:    { row: [255, 166, 162], cell: [202, 45, 58],   txt: WHITE },
-    Saturday:  { row: [145, 220, 248], cell: [28, 155, 205],  txt: WHITE },
+    Sunday:    { row: [255, 247, 237], badge: [217, 119,   6] },
+    Monday:    { row: [239, 246, 255], badge: [ 37,  99, 235] },
+    Tuesday:   { row: [240, 253, 244], badge: [ 22, 163,  74] },
+    Wednesday: { row: [254, 252, 232], badge: [202, 138,   4] },
+    Thursday:  { row: [250, 245, 255], badge: [124,  58, 237] },
+    Friday:    { row: [255, 241, 242], badge: [225,  29,  72] },
+    Saturday:  { row: [236, 254, 255], badge: [ 14, 116, 144] },
   }
-  const DAY_DEF = { row: [238, 242, 248], cell: [168, 178, 198], txt: WHITE }
+  const DAY_DEF = { row: [248, 249, 251], badge: [120, 130, 150] }
 
-  // ── Layout ───────────────────────────────────────────────
-  const HEADER_H  = 44
-  const TH_H      = 11
-  const ROW_H     = 9
-  const FOOTER_H  = 9
-  const TABLE_TOP = MY + HEADER_H
-  const TABLE_BOT = ph - MY - FOOTER_H - 1
-  const FOOTER_Y  = ph - MY - FOOTER_H
+  // Layout
+  const HEADER_H  = 28
+  const TH_H      = 8
+  const ROW_H     = 8
+  const FOOTER_H  = 7
+  const TABLE_TOP = MY + HEADER_H      // 38
+  const TABLE_BOT = ph - MY - FOOTER_H // 280
+  const FOOTER_Y  = ph - MY - FOOTER_H // 280
 
-  // ── White canvas for table area ───────────────────────────
+  // Column defs: [label, width_mm, align]
+  const colDefs = isBday
+    ? [['#', 7, 'c'], ['Member ID', 22, 'c'], ['Member Name', 72, 'l'],
+       ['Date', 26, 'c'], ['Age', 18, 'c'], ['Day', 41, 'c']]
+    : [['#', 7, 'c'], ['Family ID', 20, 'c'], ['Couple Names', 76, 'l'],
+       ['Ann. Date', 26, 'c'], ['Years', 16, 'c'], ['Day', 41, 'c']]
+
   const initPage = () => {
-    doc.setFillColor(...WHITE)
+    doc.setFillColor(255, 255, 255)
     doc.rect(MX, MY, cw, ch, 'F')
   }
 
-  // ── Header (full navy block) ──────────────────────────────
   const drawHeader = () => {
-    doc.setFillColor(...NAVY)
+    doc.setFillColor(255, 255, 255)
     doc.rect(MX, MY, cw, HEADER_H, 'F')
 
-    // Top accent stripe
-    doc.setFillColor(...ACCENT)
-    doc.rect(MX, MY, cw, 3, 'F')
-
-    // Church name
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(17)
-    doc.setTextColor(...WHITE)
-    doc.text(church?.church_name || 'Church', pw / 2, MY + 15, { align: 'center' })
+    // Church name — Times Bold for elegance
+    doc.setFont('times', 'bold')
+    doc.setFontSize(16)
+    doc.setTextColor(25, 25, 35)
+    doc.text(church?.church_name || 'Church', pw / 2, MY + 9, { align: 'center' })
 
     // City / state
     const cityLine = [church?.city, church?.state].filter(Boolean).join(', ')
     if (cityLine) {
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(170, 196, 232)
-      doc.text(cityLine, pw / 2, MY + 22, { align: 'center' })
+      doc.setFontSize(7.5)
+      doc.setTextColor(120, 120, 130)
+      doc.text(cityLine, pw / 2, MY + 14, { align: 'center' })
     }
+
+    // Thin accent rule
+    const ruleY = cityLine ? MY + 17 : MY + 15
+    doc.setDrawColor(...ACCENT)
+    doc.setLineWidth(0.4)
+    doc.line(MX + 10, ruleY, MX + cw - 10, ruleY)
 
     // Report title
     doc.setFont('helvetica', 'bolditalic')
     doc.setFontSize(11)
-    doc.setTextColor(...(isBday ? [255, 210, 125] : [255, 170, 205]))
+    doc.setTextColor(...ACCENT)
     doc.text(
       isBday ? 'Birthday Report' : 'Wedding Anniversary Report',
-      pw / 2, cityLine ? MY + 31 : MY + 27, { align: 'center' }
+      pw / 2, ruleY + 6, { align: 'center' }
     )
 
-    // Bottom accent stripe
-    doc.setFillColor(...ACCENT)
-    doc.rect(MX, MY + HEADER_H - 2.5, cw, 2.5, 'F')
-
-    // Date range (left) + record count (right) above accent stripe
+    // Date range + record count
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(170, 198, 235)
-    doc.text(`${fmtDate(startDate)}  to  ${fmtDate(endDate)}`, MX + 5, MY + HEADER_H - 6)
+    doc.setFontSize(7)
+    doc.setTextColor(145, 148, 158)
+    doc.text(`${fmtDate(startDate)} – ${fmtDate(endDate)}`, MX + 3, MY + HEADER_H - 1.5)
     doc.text(`${data.length} Record${data.length !== 1 ? 's' : ''}`,
-      MX + cw - 5, MY + HEADER_H - 6, { align: 'right' })
+      MX + cw - 3, MY + HEADER_H - 1.5, { align: 'right' })
   }
-
-  // ── Column defs ──────────────────────────────────────────
-  const colDefs = isBday
-    ? [['#', 0.05, 'c'], ['Member ID', 0.13, 'c'], ['Member Name', 0.37, 'l'],
-       ['Date', 0.14, 'c'], ['Age', 0.16, 'c'], ['Day', 0.15, 'c']]
-    : [['#', 0.05, 'c'], ['Family ID', 0.12, 'c'], ['Couple Names', 0.48, 'l'],
-       ['Ann. Date', 0.14, 'c'], ['Years', 0.09, 'c'], ['Day', 0.12, 'c']]
-  const colW = colDefs.map(c => c[1] * cw)
 
   // ── Column header row ────────────────────────────────────
   const drawTableHeader = () => {
-    doc.setFillColor(...STEEL)
+    doc.setFillColor(242, 244, 247)
     doc.rect(MX, TABLE_TOP, cw, TH_H, 'F')
-    doc.setFillColor(...ACCENT)
-    doc.rect(MX, TABLE_TOP + TH_H - 1, cw, 1, 'F')
+
+    // Accent underline
+    doc.setDrawColor(...ACCENT)
+    doc.setLineWidth(0.55)
+    doc.line(MX, TABLE_TOP + TH_H, MX + cw, TABLE_TOP + TH_H)
 
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.setTextColor(...WHITE)
+    doc.setFontSize(7.5)
+    doc.setTextColor(55, 60, 75)
     let cx = MX
-    colDefs.forEach(([label, , align], i) => {
-      const x = align === 'c' ? cx + colW[i] / 2 : cx + 3
-      doc.text(label, x, TABLE_TOP + 7.5, { align: align === 'c' ? 'center' : 'left' })
-      if (i < colDefs.length - 1) {
-        doc.setDrawColor(100, 130, 172)
-        doc.setLineWidth(0.18)
-        doc.line(cx + colW[i], TABLE_TOP + 2, cx + colW[i], TABLE_TOP + TH_H - 2)
-      }
-      cx += colW[i]
+    colDefs.forEach(([label, w, align]) => {
+      const x = align === 'c' ? cx + w / 2 : cx + 3
+      doc.text(label, x, TABLE_TOP + 5.5, { align: align === 'c' ? 'center' : 'left' })
+      doc.setDrawColor(205, 210, 220)
+      doc.setLineWidth(0.15)
+      if (cx + w < MX + cw) doc.line(cx + w, TABLE_TOP + 1, cx + w, TABLE_TOP + TH_H - 1)
+      cx += w
     })
   }
 
-  // ── Footer ───────────────────────────────────────────────
   const drawFooter = (pageNum, pageCount) => {
-    doc.setFillColor(...NAVY)
-    doc.rect(MX, FOOTER_Y, cw, FOOTER_H, 'F')
-    doc.setFillColor(...ACCENT)
-    doc.rect(MX, FOOTER_Y + FOOTER_H - 1.5, cw, 1.5, 'F')
+    doc.setDrawColor(200, 205, 215)
+    doc.setLineWidth(0.3)
+    doc.line(MX, FOOTER_Y, MX + cw, FOOTER_Y)
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(170, 198, 235)
-    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, MX + 4, FOOTER_Y + 6)
-    doc.text(`Page ${pageNum} / ${pageCount}`, MX + cw - 4, FOOTER_Y + 6, { align: 'right' })
+    doc.setFontSize(6.5)
+    doc.setTextColor(150, 155, 165)
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, MX + 2, FOOTER_Y + 4.5)
+    doc.text(`Page ${pageNum} / ${pageCount}`, MX + cw - 2, FOOTER_Y + 4.5, { align: 'right' })
   }
 
-  // ── Double-border frame (drawn last so it's on top) ───────
   const drawBorder = () => {
-    doc.setDrawColor(...NAVY)
-    doc.setLineWidth(1.4)
+    doc.setDrawColor(25, 25, 35)
+    doc.setLineWidth(0.5)
     doc.rect(MX, MY, cw, ch)
-    doc.setDrawColor(...ACCENT)
-    doc.setLineWidth(0.4)
-    doc.rect(MX + 1.3, MY + 1.3, cw - 2.6, ch - 2.6)
   }
 
-  // ── Data rows ─────────────────────────────────────────────
   const rows = data.map(r => isBday
-    ? [r.serial, r.member_id || r.family_id, r.member_name, r.displayDate, r.age,   r.dayName]
+    ? [r.serial, r.member_id || r.family_id, r.member_name, r.displayDate, r.age, r.dayName]
     : [r.serial, r.member_id || r.family_id, r.displayName, r.displayDate, r.years, r.dayName]
   )
 
   const startNewPage = () => {
-    doc.addPage(); initPage(); drawHeader(); drawTableHeader()
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...BODY)
+    doc.addPage()
+    initPage()
+    drawHeader()
+    drawTableHeader()
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(30, 32, 42)
   }
 
-  initPage(); drawHeader(); drawTableHeader()
+  initPage()
+  drawHeader()
+  drawTableHeader()
   let y = TABLE_TOP + TH_H
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...BODY)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(30, 32, 42)
 
   rows.forEach(row => {
-    if (y + ROW_H > TABLE_BOT) { startNewPage(); y = TABLE_TOP + TH_H }
+    if (y + ROW_H > TABLE_BOT - 2) { startNewPage(); y = TABLE_TOP + TH_H }
 
     const dayKey = String(row[5] || '')
     const dc = DAY[dayKey] || DAY_DEF
 
-    // Row background — rich day colour
     doc.setFillColor(...dc.row)
     doc.rect(MX, y, cw, ROW_H, 'F')
 
     let cx = MX
-    colDefs.forEach(([, , align], i) => {
+    colDefs.forEach(([, w, align], i) => {
       const cell   = row[i] != null ? String(row[i]) : ''
       const isLast = i === colDefs.length - 1
 
       if (isLast) {
-        // Day cell — saturated bg + white bold text
-        doc.setFillColor(...dc.cell)
-        doc.rect(cx, y, colW[i], ROW_H, 'F')
+        const bPad = 2
+        doc.setFillColor(...dc.badge)
+        doc.roundedRect(cx + bPad, y + bPad, w - 2 * bPad, ROW_H - 2 * bPad, 1.5, 1.5, 'F')
         doc.setFont('helvetica', 'bold')
-        doc.setFontSize(8)
-        doc.setTextColor(...dc.txt)
-        doc.text(cell, cx + colW[i] / 2, y + 6, { align: 'center' })
+        doc.setFontSize(6.5)
+        doc.setTextColor(255, 255, 255)
+        doc.text(cell, cx + w / 2, y + 5.5, { align: 'center' })
         doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8.5)
-        doc.setTextColor(...BODY)
+        doc.setFontSize(8)
+        doc.setTextColor(30, 32, 42)
       } else {
-        const x = align === 'c' ? cx + colW[i] / 2 : cx + 3
-        doc.text(cell, x, y + 6, { align: align === 'c' ? 'center' : 'left' })
+        const x = align === 'c' ? cx + w / 2 : cx + 3
+        doc.text(cell, x, y + 5.5, {
+          align: align === 'c' ? 'center' : 'left',
+          maxWidth: align === 'l' ? w - 5 : undefined,
+        })
       }
 
       if (i < colDefs.length - 1) {
-        doc.setDrawColor(...DIVIDER)
+        doc.setDrawColor(210, 215, 228)
         doc.setLineWidth(0.12)
-        doc.line(cx + colW[i], y + 0.8, cx + colW[i], y + ROW_H - 0.8)
+        doc.line(cx + w, y + 1, cx + w, y + ROW_H - 1)
       }
-      cx += colW[i]
+      cx += w
     })
 
-    doc.setDrawColor(...DIVIDER)
+    doc.setDrawColor(225, 228, 238)
     doc.setLineWidth(0.1)
     doc.line(MX, y + ROW_H, MX + cw, y + ROW_H)
     y += ROW_H
   })
 
-  // Final pass: border + footer on every page
-  const totalPages = doc.getNumberOfPages()
-  for (let pg = 1; pg <= totalPages; pg++) {
-    doc.setPage(pg); drawBorder(); drawFooter(pg, totalPages)
+  if (!skipFinalPass) {
+    const totalPages = doc.getNumberOfPages()
+    for (let pg = 1; pg <= totalPages; pg++) {
+      doc.setPage(pg)
+      drawBorder()
+      drawFooter(pg, totalPages)
+    }
   }
+
+  return { drawBorder, drawFooter }
 }
 
 function buildReportPdf(type, data, church, startDate, endDate, returnDoc = false) {
@@ -1499,6 +1685,37 @@ function buildReportPdf(type, data, church, startDate, endDate, returnDoc = fals
   buildReportPages(doc, type, data, church, startDate, endDate)
   if (returnDoc) return doc
   doc.save(`${type}-report-${startDate}.pdf`)
+}
+
+function buildWeeklyReportPdf(birthdays, anniversaries, church, start, end, returnDoc = false) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  // Birthday section — skip final pass so we can continue adding pages
+  const bdHandles = buildReportPages(doc, 'birthday', birthdays, church, start, end, { skipFinalPass: true })
+  const bdPageCount = doc.getNumberOfPages()
+
+  // Anniversary section on new page
+  doc.addPage()
+  const annHandles = buildReportPages(doc, 'anniversary', anniversaries, church, start, end, { skipFinalPass: true })
+
+  // Single final pass over all pages with correct section numbering + accent colour
+  const totalPages = doc.getNumberOfPages()
+  const annPageCount = totalPages - bdPageCount
+
+  for (let pg = 1; pg <= totalPages; pg++) {
+    doc.setPage(pg)
+    if (pg <= bdPageCount) {
+      bdHandles.drawBorder()
+      bdHandles.drawFooter(pg, bdPageCount)
+    } else {
+      const annPg = pg - bdPageCount
+      annHandles.drawBorder()
+      annHandles.drawFooter(annPg, annPageCount)
+    }
+  }
+
+  if (returnDoc) return doc
+  doc.save(`weekly-report-${start}.pdf`)
 }
 
 /* ════════════════════════════════════════════════════════════

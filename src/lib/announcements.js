@@ -6,6 +6,10 @@ import { supabase } from './supabase'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
+function localIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
 function dayName(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number)
   return DAYS[new Date(y, m - 1, d).getDay()]
@@ -53,7 +57,7 @@ export async function getUpcomingBirthdays(days = 7) {
   for (let i = 0; i < days; i++) {
     const target = new Date(today); target.setDate(today.getDate() + i)
     const mon = target.getMonth() + 1, day = target.getDate()
-    const iso = target.toISOString().split('T')[0]
+    const iso = localIso(target)
 
     members.filter(m => {
       if (!m.dob_actual) return false
@@ -95,7 +99,7 @@ export async function getUpcomingAnniversaries(days = 7) {
   for (let i = 0; i < days; i++) {
     const target = new Date(today); target.setDate(today.getDate() + i)
     const mon = target.getMonth() + 1, day = target.getDate()
-    const iso = target.toISOString().split('T')[0]
+    const iso = localIso(target)
 
     deduped.filter(m => {
       if (!m.date_of_marriage) return false
@@ -125,7 +129,7 @@ export async function getBirthdaysInRange(startDate, endDate) {
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const mon = d.getMonth() + 1, day = d.getDate()
-    const iso = new Date(d).toISOString().split('T')[0]
+    const iso = localIso(d)
 
     members.filter(m => {
       if (!m.dob_actual) return false
@@ -165,7 +169,7 @@ export async function getAnniversariesInRange(startDate, endDate) {
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const mon = d.getMonth() + 1, day = d.getDate()
-    const iso = new Date(d).toISOString().split('T')[0]
+    const iso = localIso(d)
 
     deduped.filter(m => {
       const dom = new Date(m.date_of_marriage)
@@ -182,6 +186,39 @@ export async function getAnniversariesInRange(startDate, endDate) {
     })
   }
   return results
+}
+
+// ── Greeting backgrounds ─────────────────────────────────────
+
+export async function listGreetingBackgrounds() {
+  const { data, error } = await supabase.storage
+    .from('greeting-backgrounds').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } })
+  if (error) throw error
+  return (data || [])
+    .filter(f => f.name !== '.emptyFolderPlaceholder')
+    .map(f => ({
+      name: f.name,
+      url: supabase.storage.from('greeting-backgrounds').getPublicUrl(f.name).data.publicUrl,
+    }))
+}
+
+export async function uploadGreetingBackground(file) {
+  const ext  = file.name.split('.').pop()
+  const path = `bg_${Date.now()}.${ext}`
+  const { error } = await supabase.storage
+    .from('greeting-backgrounds').upload(path, file, { upsert: true })
+  if (error) throw error
+  return supabase.storage.from('greeting-backgrounds').getPublicUrl(path).data.publicUrl
+}
+
+export async function deleteGreetingBackground(name) {
+  const { error } = await supabase.storage.from('greeting-backgrounds').remove([name])
+  if (error) throw error
+}
+
+export function pickRandomBackground(backgrounds) {
+  if (!backgrounds?.length) return null
+  return backgrounds[Math.floor(Math.random() * backgrounds.length)].url
 }
 
 // ── Bible verses ──────────────────────────────────────────────
@@ -312,7 +349,7 @@ export function getNextWeekRange() {
   const nextSat = new Date(nextSun)
   nextSat.setDate(nextSun.getDate() + 6)
   return {
-    start: nextSun.toISOString().split('T')[0],
-    end: nextSat.toISOString().split('T')[0],
+    start: localIso(nextSun),
+    end: localIso(nextSat),
   }
 }
