@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { getAnnouncementsLog } from '../lib/announcements'
+import { exportToExcel } from '../lib/exportExcel'
 import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -70,23 +71,29 @@ export default function AnnouncementsLogPage() {
   async function exportExcel() {
     setExporting(true)
     try {
-      const XLSX = await import('xlsx')
       const { data: all } = await getAnnouncementsLog({ limit: 10000, offset: 0, logType, status })
-      const sheetData = (all || []).map(r => ({
-        'Sent At':       fmtDT(r.sent_at),
-        'Type':          TYPE_LABELS[r.log_type]?.label || r.log_type || '—',
-        'Recipient':     r.recipient_name   || '—',
-        'Number':        r.recipient_number || '—',
-        'Event Date':    r.event_date       || '—',
-        'Status':        r.status           || '—',
-        'Triggered By':  r.triggered_by     || 'auto',
-        'Message':       r.message_preview  || '—',
+      const columns = [
+        { header: 'Sent At',      key: 'sent_at',      width: 20 },
+        { header: 'Type',         key: 'type',         width: 22 },
+        { header: 'Recipient',    key: 'recipient',    width: 28 },
+        { header: 'Number',       key: 'number',       width: 18 },
+        { header: 'Event Date',   key: 'event_date',   width: 14 },
+        { header: 'Status',       key: 'status',       width: 12 },
+        { header: 'Triggered By', key: 'triggered_by', width: 14 },
+        { header: 'Message',      key: 'message',      width: 50 },
+      ]
+      const rows = (all || []).map(r => ({
+        sent_at:      fmtDT(r.sent_at),
+        type:         TYPE_LABELS[r.log_type]?.label || r.log_type || '—',
+        recipient:    r.recipient_name   || '—',
+        number:       r.recipient_number || '—',
+        event_date:   r.event_date       || '—',
+        status:       r.status           || '—',
+        triggered_by: r.triggered_by     || 'auto',
+        message:      r.message_preview  || '—',
       }))
-      const ws = XLSX.utils.json_to_sheet(sheetData)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Announcements Log')
       const date = new Date().toISOString().slice(0, 10)
-      XLSX.writeFile(wb, `announcements-log-${date}.xlsx`)
+      await exportToExcel(columns, rows, 'Announcements Log', `announcements-log-${date}.xlsx`)
     } finally {
       setExporting(false)
     }

@@ -199,6 +199,11 @@ function DashboardTab({ church, profile, toast }) {
         .catch(e => { throw new Error(`[whatsapp] ${e.message}`) })
 
       const msgId = result?.messages?.[0]?.id || result?.message_id || result?.id || null
+      await logAnnouncement({
+        log_type: 'birthday_wish', recipient_name: 'Self Test', recipient_number: SELF_TEST_NUMBER,
+        event_date: new Date().toISOString().slice(0, 10), status: 'sent',
+        triggered_by: 'manual', message_preview: message,
+      })
       setTestStatus({ ok: true, text: `Delivered${msgId ? ` · ID: ${msgId}` : ''}` })
       toast(`Test sent to ${SELF_TEST_NUMBER}!`, 'success')
     } catch (err) {

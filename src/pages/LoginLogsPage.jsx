@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { getLoginLogs } from '../lib/loginLogs'
+import { exportToExcel } from '../lib/exportExcel'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
   CheckCircle, Clock, MapPin, Monitor, Shield, FileDown,
@@ -108,26 +109,35 @@ export default function LoginLogsPage() {
   async function exportExcel() {
     setExporting(true)
     try {
-      const XLSX = await import('xlsx')
       const { data: all } = await getLoginLogs({ limit: 10000, offset: 0, email: filterEmail, role: filterRole })
-      const sheetData = (all || []).map(r => ({
-        'Login At':   fmtDT(r.login_at),
-        'Name':       r.full_name    || '—',
-        'Email':      r.email        || '—',
-        'Role':       ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
-        'City':       r.city         || '—',
-        'Region':     r.region       || '—',
-        'Country':    r.country      || '—',
-        'IP Address': r.ip_address   || '—',
-        'Browser/OS': parseBrowser(r.user_agent),
-        'Logout At':  fmtDT(r.logout_at),
-        'Duration':   fmtDuration(r.login_at, r.logout_at) || '—',
+      const columns = [
+        { header: 'Login At',   key: 'login_at',   width: 20 },
+        { header: 'Name',       key: 'name',        width: 26 },
+        { header: 'Email',      key: 'email',       width: 30 },
+        { header: 'Role',       key: 'role',        width: 14 },
+        { header: 'City',       key: 'city',        width: 18 },
+        { header: 'Region',     key: 'region',      width: 18 },
+        { header: 'Country',    key: 'country',     width: 14 },
+        { header: 'IP Address', key: 'ip_address',  width: 36 },
+        { header: 'Browser/OS', key: 'browser',     width: 20 },
+        { header: 'Logout At',  key: 'logout_at',   width: 20 },
+        { header: 'Duration',   key: 'duration',    width: 12 },
+      ]
+      const rows = (all || []).map(r => ({
+        login_at:   fmtDT(r.login_at),
+        name:       r.full_name  || '—',
+        email:      r.email      || '—',
+        role:       ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
+        city:       r.city       || '—',
+        region:     r.region     || '—',
+        country:    r.country    || '—',
+        ip_address: r.ip_address || '—',
+        browser:    parseBrowser(r.user_agent),
+        logout_at:  fmtDT(r.logout_at),
+        duration:   fmtDuration(r.login_at, r.logout_at) || '—',
       }))
-      const ws = XLSX.utils.json_to_sheet(sheetData)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Login Details')
       const date = new Date().toISOString().slice(0, 10)
-      XLSX.writeFile(wb, `login-details-${date}.xlsx`)
+      await exportToExcel(columns, rows, 'Login Details', `login-details-${date}.xlsx`)
     } finally {
       setExporting(false)
     }
