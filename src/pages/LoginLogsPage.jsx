@@ -216,7 +216,9 @@ export default function LoginLogsPage() {
                       </td>
 
                       {/* IP */}
-                      <td className="px-3 py-2.5 text-gray-500 dark:text-gray-400 font-mono" style={{ fontSize: 11 }}>
+                      <td className="px-3 py-2.5 text-gray-500 dark:text-gray-400 font-mono"
+                        style={{ fontSize: 11, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        title={r.ip_address || ''}>
                         {r.ip_address || '—'}
                       </td>
 
