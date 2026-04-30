@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { getAnnouncementsLog } from '../lib/announcements'
-import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
 const PAGE_SIZE   = 50
@@ -32,12 +32,13 @@ const fmtDT = iso => {
 export default function AnnouncementsLogPage() {
   const { profile } = useAuth()
 
-  const [rows,    setRows]    = useState([])
-  const [total,   setTotal]   = useState(0)
-  const [page,    setPage]    = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [logType, setLogType] = useState('')
-  const [status,  setStatus]  = useState('')
+  const [rows,      setRows]      = useState([])
+  const [total,     setTotal]     = useState(0)
+  const [page,      setPage]      = useState(0)
+  const [loading,   setLoading]   = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [logType,   setLogType]   = useState('')
+  const [status,    setStatus]    = useState('')
 
   if (!ADMIN_ROLES.includes(profile?.role)) {
     return (
@@ -66,6 +67,31 @@ export default function AnnouncementsLogPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const XLSX = await import('xlsx')
+      const { data: all } = await getAnnouncementsLog({ limit: 10000, offset: 0, logType, status })
+      const sheetData = (all || []).map(r => ({
+        'Sent At':       fmtDT(r.sent_at),
+        'Type':          TYPE_LABELS[r.log_type]?.label || r.log_type || '—',
+        'Recipient':     r.recipient_name   || '—',
+        'Number':        r.recipient_number || '—',
+        'Event Date':    r.event_date       || '—',
+        'Status':        r.status           || '—',
+        'Triggered By':  r.triggered_by     || 'auto',
+        'Message':       r.message_preview  || '—',
+      }))
+      const ws = XLSX.utils.json_to_sheet(sheetData)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Announcements Log')
+      const date = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(wb, `announcements-log-${date}.xlsx`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="animate-fade-in p-6">
       <div className="mb-6">
@@ -89,8 +115,15 @@ export default function AnnouncementsLogPage() {
           <option value="failed">Failed</option>
           <option value="pending">Pending</option>
         </select>
-        <div className="ml-auto flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <ClipboardList size={15} /> {total} records
+        <div className="ml-auto flex items-center gap-3">
+          <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <ClipboardList size={15} /> {total} records
+          </span>
+          <button onClick={exportExcel} disabled={exporting || !total}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 transition">
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getLoginLogs } from '../lib/loginLogs'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle, Clock, MapPin, Monitor, Shield,
+  CheckCircle, Clock, MapPin, Monitor, Shield, FileDown,
 } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -64,6 +64,7 @@ export default function LoginLogsPage() {
   const [total,       setTotal]       = useState(0)
   const [page,        setPage]        = useState(0)
   const [loading,     setLoading]     = useState(false)
+  const [exporting,   setExporting]   = useState(false)
   const [filterEmail, setFilterEmail] = useState('')
   const [filterRole,  setFilterRole]  = useState('')
   const [emailInput,  setEmailInput]  = useState('')
@@ -102,6 +103,34 @@ export default function LoginLogsPage() {
   function handleEmailSearch(e) {
     e.preventDefault()
     setFilterEmail(emailInput.trim())
+  }
+
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const XLSX = await import('xlsx')
+      const { data: all } = await getLoginLogs({ limit: 10000, offset: 0, email: filterEmail, role: filterRole })
+      const sheetData = (all || []).map(r => ({
+        'Login At':   fmtDT(r.login_at),
+        'Name':       r.full_name    || '—',
+        'Email':      r.email        || '—',
+        'Role':       ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
+        'City':       r.city         || '—',
+        'Region':     r.region       || '—',
+        'Country':    r.country      || '—',
+        'IP Address': r.ip_address   || '—',
+        'Browser/OS': parseBrowser(r.user_agent),
+        'Logout At':  fmtDT(r.logout_at),
+        'Duration':   fmtDuration(r.login_at, r.logout_at) || '—',
+      }))
+      const ws = XLSX.utils.json_to_sheet(sheetData)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Login Details')
+      const date = new Date().toISOString().slice(0, 10)
+      XLSX.writeFile(wb, `login-details-${date}.xlsx`)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -149,8 +178,15 @@ export default function LoginLogsPage() {
           <option value="demo">Demo</option>
         </select>
 
-        <div className="ml-auto flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <LogIn size={15} /> {total} records
+        <div className="ml-auto flex items-center gap-3">
+          <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <LogIn size={15} /> {total} records
+          </span>
+          <button onClick={exportExcel} disabled={exporting || !total}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 transition">
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
         </div>
       </div>
 
