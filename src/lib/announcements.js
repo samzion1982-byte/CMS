@@ -188,38 +188,6 @@ export async function getAnniversariesInRange(startDate, endDate) {
   return results
 }
 
-// ── Greeting backgrounds ─────────────────────────────────────
-
-export async function listGreetingBackgrounds() {
-  const { data, error } = await supabase.storage
-    .from('greeting-backgrounds').list('', { limit: 100, sortBy: { column: 'name', order: 'asc' } })
-  if (error) throw error
-  return (data || [])
-    .filter(f => f.name !== '.emptyFolderPlaceholder')
-    .map(f => ({
-      name: f.name,
-      url: supabase.storage.from('greeting-backgrounds').getPublicUrl(f.name).data.publicUrl,
-    }))
-}
-
-export async function uploadGreetingBackground(file) {
-  const ext  = file.name.split('.').pop()
-  const path = `bg_${Date.now()}.${ext}`
-  const { error } = await supabase.storage
-    .from('greeting-backgrounds').upload(path, file, { upsert: true })
-  if (error) throw error
-  return supabase.storage.from('greeting-backgrounds').getPublicUrl(path).data.publicUrl
-}
-
-export async function deleteGreetingBackground(name) {
-  const { error } = await supabase.storage.from('greeting-backgrounds').remove([name])
-  if (error) throw error
-}
-
-export function pickRandomBackground(backgrounds) {
-  if (!backgrounds?.length) return null
-  return backgrounds[Math.floor(Math.random() * backgrounds.length)].url
-}
 
 // ── Bible verses ──────────────────────────────────────────────
 

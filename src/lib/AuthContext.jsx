@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { supabase } from './supabase'
 import { getProfile, signIn as authSignIn } from './auth'
 import { useTheme } from './ThemeContext'
+import { stampLogout } from './loginLogs'
 
 const AuthContext = createContext(null)
 
@@ -151,6 +152,8 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     console.log('🔓 AuthContext.signOut called')
+    // Stamp logout time before clearing state
+    if (user?.id) await stampLogout(user.id)
     const { error } = await supabase.auth.signOut()
     if (error) {
       console.error('Sign out error:', error)

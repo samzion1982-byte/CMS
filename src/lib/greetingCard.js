@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   greetingCard.js — Canvas-based greeting card generation (1080×1080)
+   greetingCard.js — Canvas-based greeting card generation (1080×1920)
    ═══════════════════════════════════════════════════════════════ */
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -179,7 +179,7 @@ export async function generateGreetingCard({
 }) {
   await loadFonts()
 
-  const W = 1080, H = 1080
+  const W = 1080, H = 1920
   const canvas = document.createElement('canvas')
   canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d')
@@ -209,95 +209,95 @@ export async function generateGreetingCard({
   ctx.textAlign = 'center'
 
   // Cross
-  drawCross(ctx, W / 2, 108, 72, GOLD)
+  drawCross(ctx, W / 2, 168, 96, GOLD)
 
   // Church name
-  ctx.font = 'bold 38px "Playfair Display", Georgia, serif'
+  ctx.font = 'bold 44px "Playfair Display", Georgia, serif'
   ctx.fillStyle = WHITE
-  ctx.fillText(churchName || 'Church', W / 2, 194)
+  ctx.fillText(churchName || 'Church', W / 2, 300)
 
   // Location
   const loc = [address, city].filter(Boolean).join(', ')
-  ctx.font = '22px "Plus Jakarta Sans", sans-serif'
+  ctx.font = '26px "Plus Jakarta Sans", sans-serif'
   ctx.fillStyle = LGOLD
-  ctx.fillText(loc, W / 2, 228)
+  ctx.fillText(loc, W / 2, 342)
 
-  drawDivider(ctx, W, 258, GOLD, 'diamond')
+  drawDivider(ctx, W, 380, GOLD, 'diamond')
 
   // Event heading
   const isBday = type === 'birthday'
-  ctx.font = 'italic bold 58px "Playfair Display", Georgia, serif'
+  ctx.font = 'italic bold 70px "Playfair Display", Georgia, serif'
   ctx.fillStyle = '#f0c040'
-  ctx.fillText(isBday ? 'Happy Birthday!' : 'Happy Anniversary!', W / 2, 332)
+  ctx.fillText(isBday ? 'Happy Birthday!' : 'Happy Anniversary!', W / 2, 488)
 
   // Names — right below heading
-  ctx.font = 'bold 48px "Plus Jakarta Sans", sans-serif'
+  ctx.font = 'bold 54px "Plus Jakarta Sans", sans-serif'
   ctx.fillStyle = WHITE
-  ctx.fillText(names, W / 2, 406)
+  ctx.fillText(names, W / 2, 572)
 
-  let curY = 438
+  let curY = 618
 
   // Years (anniversary only)
   if (!isBday && years > 0) {
-    ctx.font = '26px Georgia, serif'
+    ctx.font = '30px Georgia, serif'
     ctx.fillStyle = GOLD
-    ctx.fillText(`${years} Blessed Years Together`, W / 2, curY + 14)
-    curY += 48
+    ctx.fillText(`${years} Blessed Years Together`, W / 2, curY + 16)
+    curY += 58
   }
 
   // Divider before verse
-  drawDivider(ctx, W, curY + 10, GOLD, 'dots')
-  curY += 52
+  drawDivider(ctx, W, curY + 12, GOLD, 'dots')
+  curY += 64
 
   // Verse reference
   if (verse?.verse_reference) {
-    ctx.font = 'bold 24px "Plus Jakarta Sans", sans-serif'
+    ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif'
     ctx.fillStyle = GOLD
     ctx.fillText(verse.verse_reference, W / 2, curY)
-    curY += 38
+    curY += 44
   }
 
   // English verse
-  ctx.font = 'italic 23px Georgia, serif'
+  ctx.font = 'italic 27px Georgia, serif'
   ctx.fillStyle = CREAM
   const engText = verse?.verse_text_english ? `"${verse.verse_text_english}"` : ''
   if (engText) {
-    const engH = wrapText(ctx, engText, W / 2, curY, 880, 34)
-    curY += engH + 14
+    const engH = wrapText(ctx, engText, W / 2, curY, 900, 40)
+    curY += engH + 18
   }
 
   // Tamil reference + verse
   if (verse?.verse_text_tamil) {
     if (verse.verse_text_tamil_reference) {
-      ctx.font = 'bold 20px "Noto Sans Tamil", sans-serif'
+      ctx.font = 'bold 24px "Noto Sans Tamil", sans-serif'
       ctx.fillStyle = GOLD
       ctx.fillText(verse.verse_text_tamil_reference, W / 2, curY)
-      curY += 32
+      curY += 36
     }
-    ctx.font = '22px "Noto Sans Tamil", sans-serif'
+    ctx.font = '26px "Noto Sans Tamil", sans-serif'
     ctx.fillStyle = LGOLD
-    const tamilH = wrapText(ctx, `"${verse.verse_text_tamil}"`, W / 2, curY, 880, 32)
-    curY += tamilH + 14
+    const tamilH = wrapText(ctx, `"${verse.verse_text_tamil}"`, W / 2, curY, 900, 38)
+    curY += tamilH + 18
   }
 
   // Top divider (cross style) right after verse, bottom divider fixed near footer
-  const topDivY = curY + 8
-  const botDivY = H - 145
+  const topDivY = curY + 12
+  const botDivY = H - 260
   drawDivider(ctx, W, topDivY, GOLD, 'cross')
 
   // Greeting message — center the visual midpoint of text in the zone between dividers
   const greetingMsg = isBday
     ? 'May the Almighty God bless you with good health, peace and prosperity!'
     : 'May the Lord bless your union with abundant love, joy and togetherness!'
-  const greetFontSize = 26
-  const greetLineH = 38
+  const greetFontSize = 32
+  const greetLineH = 48
   ctx.font = `italic ${greetFontSize}px "Playfair Display", Georgia, serif`
   const greetLines = (() => {
     const words = greetingMsg.split(' ')
     let line = '', n = 0
     for (const w of words) {
       const test = line ? `${line} ${w}` : w
-      if (ctx.measureText(test).width > 860 && line) { n++; line = w } else line = test
+      if (ctx.measureText(test).width > 880 && line) { n++; line = w } else line = test
     }
     return line ? n + 1 : n
   })()
@@ -305,16 +305,16 @@ export async function generateGreetingCard({
   // greetY is the baseline of the first line; add fontSize so visual top is centered
   const greetY = Math.round((topDivY + botDivY - greetH) / 2) + greetFontSize
   ctx.fillStyle = CREAM
-  wrapText(ctx, greetingMsg, W / 2, greetY, 860, greetLineH)
+  wrapText(ctx, greetingMsg, W / 2, greetY, 880, greetLineH)
 
   // Footer
   drawDivider(ctx, W, botDivY, GOLD, 'triple')
-  ctx.font = '20px Georgia, serif'
+  ctx.font = '24px Georgia, serif'
   ctx.fillStyle = LGOLD
-  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 38)
-  ctx.font = 'bold 24px "Playfair Display", Georgia, serif'
+  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 52)
+  ctx.font = 'bold 28px "Playfair Display", Georgia, serif'
   ctx.fillStyle = GOLD
-  ctx.fillText(`${churchName || 'Church'} Congregation`, W / 2, botDivY + 74)
+  ctx.fillText(`${churchName || 'Church'} Congregation`, W / 2, botDivY + 96)
 
   return new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', 0.92))
 }

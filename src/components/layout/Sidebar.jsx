@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { Menu, ChevronLeft,
   LayoutDashboard, Users, FileText, CreditCard, Receipt,
-  BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList,
+  BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -23,7 +23,10 @@ const NAV = [
     { label: 'Church Setup',      path: '/church-setup',    icon: Church,         superOnly: true },
     { label: 'Users',             path: '/users',           icon: UserCog,        superOnly: true },
     { label: 'Import Data',       path: '/import',          icon: Upload,         superOnly: true },
+  ]},
+  { group: 'LOGS', adminOnly: true, items: [
     { label: 'Announcements Log', path: '/announcements-log', icon: ClipboardList },
+    { label: 'Login Details',     path: '/login-logs',        icon: LogIn },
   ]},
 ]
 

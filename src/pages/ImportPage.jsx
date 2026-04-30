@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactDOM from 'react-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, adminSupabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
-import { Upload, FileSpreadsheet, Image, CheckCircle, Loader2, RefreshCw, Camera, Trash2, Database, History, ShieldAlert, AlertTriangle } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle, Loader2, RefreshCw, Camera, Trash2, Database, ShieldAlert, AlertTriangle, Zap, XCircle, Clock } from 'lucide-react'
 
 // ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
 // Add any table names here that should never appear in the Flush All modal
@@ -16,7 +16,6 @@ const EXCLUDED_TABLES = [
   'churches',
   'auth_tracker',
   'announcement_settings',
-  'announcements_log',
   'bible_verses',
   // Add more here as needed ↓
 ]
@@ -390,6 +389,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     setLoading(true)
     const discovered = []
 
+    const PRIMARY_TABLES   = new Set(['members', 'deleted_members'])
+    const PRIMARY_STORAGE  = new Set(['storage::member-photos::active', 'storage::member-photos::deleted'])
+
     // ── 1. Tables: try RPC; fallback = only 'members' ────────────────────────
     let knownTables = ['members']
     try {
@@ -402,13 +404,16 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     for (const tbl of knownTables) {
       try {
         const { count, error } = await supabase.from(tbl).select('*', { count:'exact', head:true })
-        if (!error) discovered.push({ id:`table::${tbl}`, label:tbl, type:'table', count:count||0, checked:false })
+        if (!error) discovered.push({
+          id: `table::${tbl}`, label: tbl, type: 'table', count: count||0, checked: false,
+          tier: PRIMARY_TABLES.has(tbl) ? 'primary' : 'secondary',
+        })
       } catch (_) {}
     }
 
     // ── 2. Storage: include photo folders for cleanup ─────────────────
     const KNOWN_STORAGE = [
-      { bucket: 'member-photos', folder: 'active', label: 'Photos - Active Members' },
+      { bucket: 'member-photos', folder: 'active',  label: 'Photos - Active Members'  },
       { bucket: 'member-photos', folder: 'deleted', label: 'Photos - Deleted Members' },
     ]
     for (const { bucket, folder, label } of KNOWN_STORAGE) {
@@ -416,12 +421,10 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         const { data: files, error } = await supabase.storage.from(bucket).list(folder, { limit: 10000 })
         if (!error) {
           const fileCount = (files||[]).filter(f => f.metadata).length
+          const id = `storage::${bucket}::${folder}`
           discovered.push({
-            id:      `storage::${bucket}::${folder}`,
-            label,
-            type:    'storage',
-            count:   fileCount,
-            checked: false
+            id, label, type: 'storage', count: fileCount, checked: false,
+            tier: PRIMARY_STORAGE.has(id) ? 'primary' : 'secondary',
           })
         }
       } catch (_) {}
@@ -436,6 +439,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   }
   function toggleAll(val) {
     setItems(prev => prev.map(it => ({ ...it, checked: val })))
+  }
+  function toggleTier(tier, val) {
+    setItems(prev => prev.map(it => it.tier === tier ? { ...it, checked: val } : it))
   }
 
   async function doFlush() {
@@ -452,22 +458,16 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         setProgress(`Flushing ${item.label}…`)
         if (item.type === 'table') {
           const tbl = item.id.replace('table::', '')
-          let error
-          if (tbl === 'deleted_members') {
-            const res = await supabase.from(tbl).delete().not('id', 'is', null)
-            error = res.error
-            console.log('[flush] deleted_members result:', res)
-          } else {
-            ({ error } = await supabase.from(tbl).delete().gte('created_at', '1970-01-01'))
-          }
+          // Use adminSupabase (service role) to bypass RLS on all tables.
+          // .not('id','is',null) works universally for any table with a UUID id column.
+          const { error } = await adminSupabase.from(tbl).delete().not('id', 'is', null)
           if (error) {
             console.error(`[flush] error on ${tbl}:`, error)
-            // Skip only if the table genuinely doesn't exist
             const msg = error.message?.toLowerCase() ?? ''
             const isNotFound = error.code === '42P01' || error.code === 'PGRST116' ||
               msg.includes('does not exist') ||
               error.details?.includes('404') || String(error.code) === '404'
-            if (isNotFound && tbl !== 'deleted_members') {
+            if (isNotFound) {
               skipped.push(item.label)
             } else {
               throw new Error(`${tbl}: ${error.message} (code: ${error.code})`)
@@ -505,26 +505,48 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
 
   if (!open) return null
 
-  const allChecked = items.length > 0 && items.every(i => i.checked)
-  const anyChecked = items.some(i => i.checked)
+  const allChecked      = items.length > 0 && items.every(i => i.checked)
+  const anyChecked      = items.some(i => i.checked)
+  const primaryItems    = items.filter(i => i.tier === 'primary')
+  const secondaryItems  = items.filter(i => i.tier === 'secondary')
+  const allPrimChecked  = primaryItems.length > 0 && primaryItems.every(i => i.checked)
+  const allSecChecked   = secondaryItems.length > 0 && secondaryItems.every(i => i.checked)
+
+  function FlushItem({ item }) {
+    const isPrimary = item.tier === 'primary'
+    const isStorage = item.type === 'storage'
+    return (
+      <label style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,
+        border:`1px solid ${item.checked ? (isPrimary ? '#bfdbfe' : '#e2e8f0') : '#e2e8f0'}`,
+        marginBottom:6,cursor:'pointer',
+        background: item.checked ? (isPrimary ? '#eff6ff' : '#f8fafc') : '#ffffff'}}>
+        <input type="checkbox" checked={item.checked} onChange={()=>toggle(item.id)} style={{width:14,height:14,accentColor:'#2563eb',flexShrink:0}}/>
+        {isStorage
+          ? <Camera size={13} style={{color:'#64748b',flexShrink:0}}/>
+          : <Database size={13} style={{color:'#64748b',flexShrink:0}}/>}
+        <span style={{flex:1,fontSize:13,color:'#0f172a',fontFamily:'var(--font-mono)'}}>{item.label}</span>
+        <span style={{fontSize:11,color:'#64748b',flexShrink:0}}>
+          {item.count.toLocaleString()} {isStorage ? 'files' : 'rows'}
+        </span>
+      </label>
+    )
+  }
 
   return ReactDOM.createPortal(
     <>
-      {/* Solid dark backdrop — not transparent */}
       <div style={{position:'fixed',inset:0,backgroundColor:'rgba(15,23,42,0.7)',backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)',zIndex:2999}} onClick={!flushing ? onClose : undefined}/>
-      {/* Modal box — solid white, never transparent */}
-      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'calc(100% - 48px)',maxWidth:500,maxHeight:'75vh',display:'flex',flexDirection:'column',backgroundColor:'#ffffff',borderRadius:12,border:'1px solid #e2e8f0',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.5)',zIndex:3000,overflow:'hidden'}}>
+      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'calc(100% - 48px)',maxWidth:520,maxHeight:'80vh',display:'flex',flexDirection:'column',backgroundColor:'#ffffff',borderRadius:12,border:'1px solid #e2e8f0',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.5)',zIndex:3000,overflow:'hidden'}}>
 
         {/* Header */}
         <div style={{padding:'20px 20px 14px',borderBottom:'1px solid #e2e8f0'}}>
           <p style={{margin:'0 0 2px',fontSize:15,fontWeight:500,color:'#0f172a'}}>Flush data</p>
           <p style={{margin:0,fontSize:12,color:'#64748b'}}>
-            Select tables and storage folders to clear. Records only — table structures and folder containers are preserved.
+            Records only — table structures and folder containers are preserved.
           </p>
         </div>
 
         {/* Body */}
-        <div style={{flex:1,overflowY:'auto',padding:'12px 20px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
           {loading ? (
             <div style={{display:'flex',alignItems:'center',gap:8,padding:'20px 0',color:'#64748b',fontSize:13}}>
               <Loader2 size={15} style={{animation:'spin 1s linear infinite'}}/> Scanning tables and storage…
@@ -532,39 +554,47 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           ) : (
             <>
               {/* Select all */}
-              <label style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:'#f8fafc',marginBottom:10,cursor:'pointer',fontSize:12,fontWeight:500,color:'#64748b'}}>
+              <label style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:'#f8fafc',marginBottom:14,cursor:'pointer',fontSize:12,fontWeight:500,color:'#64748b'}}>
                 <input type="checkbox" checked={allChecked} onChange={e=>toggleAll(e.target.checked)} style={{width:14,height:14,accentColor:'#2563eb'}}/>
                 Select all
               </label>
 
-              {/* Tables */}
-              {items.filter(i=>i.type==='table').length > 0 && (
-                <>
-                  <p style={{margin:'0 0 6px',fontSize:10,fontWeight:500,textTransform:'uppercase',letterSpacing:'.06em',color:'#64748b'}}>Database tables</p>
-                  {items.filter(i=>i.type==='table').map(item => (
-                    <label key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:6,cursor:'pointer',background: item.checked ? '#EFF6FF' : '#ffffff'}}>
-                      <input type="checkbox" checked={item.checked} onChange={()=>toggle(item.id)} style={{width:14,height:14,accentColor:'#2563eb',flexShrink:0}}/>
-                      <Database size={13} style={{color:'#64748b',flexShrink:0}}/>
-                      <span style={{flex:1,fontSize:13,color:'#0f172a',fontFamily:'var(--font-mono)'}}>{item.label}</span>
-                      <span style={{fontSize:11,color:'#64748b',flexShrink:0}}>{item.count.toLocaleString()} rows</span>
+              {/* ── PRIMARY ──────────────────────────────────────── */}
+              {primaryItems.length > 0 && (
+                <div style={{marginBottom:16}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7}}>
+                      <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#2563eb'}}/>
+                      <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#1e40af'}}>Primary</span>
+                    </div>
+                    <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:11,color:'#64748b'}}>
+                      <input type="checkbox" checked={allPrimChecked} onChange={e=>toggleTier('primary',e.target.checked)} style={{width:12,height:12,accentColor:'#2563eb'}}/>
+                      Select all
                     </label>
-                  ))}
-                </>
+                  </div>
+                  <div style={{borderRadius:10,border:'1px solid #bfdbfe',padding:'4px 6px',background:'#f8fbff'}}>
+                    {primaryItems.map(item => <FlushItem key={item.id} item={item}/>)}
+                  </div>
+                </div>
               )}
 
-              {/* Storage */}
-              {items.filter(i=>i.type==='storage').length > 0 && (
-                <>
-                  <p style={{margin:'10px 0 6px',fontSize:10,fontWeight:500,textTransform:'uppercase',letterSpacing:'.06em',color:'#64748b'}}>Storage folders</p>
-                  {items.filter(i=>i.type==='storage').map(item => (
-                    <label key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:6,cursor:'pointer',background: item.checked ? '#EFF6FF' : '#ffffff'}}>
-                      <input type="checkbox" checked={item.checked} onChange={()=>toggle(item.id)} style={{width:14,height:14,accentColor:'#2563eb',flexShrink:0}}/>
-                      <Camera size={13} style={{color:'#64748b',flexShrink:0}}/>
-                      <span style={{flex:1,fontSize:13,color:'#0f172a',fontFamily:'var(--font-mono)'}}>{item.label}</span>
-                      <span style={{fontSize:11,color:'#64748b',flexShrink:0}}>{item.count.toLocaleString()} files</span>
+              {/* ── SECONDARY ────────────────────────────────────── */}
+              {secondaryItems.length > 0 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7}}>
+                      <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}/>
+                      <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#64748b'}}>Secondary</span>
+                    </div>
+                    <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:11,color:'#64748b'}}>
+                      <input type="checkbox" checked={allSecChecked} onChange={e=>toggleTier('secondary',e.target.checked)} style={{width:12,height:12,accentColor:'#94a3b8'}}/>
+                      Select all
                     </label>
-                  ))}
-                </>
+                  </div>
+                  <div style={{borderRadius:10,border:'1px solid #e2e8f0',padding:'4px 6px',background:'#fafafa'}}>
+                    {secondaryItems.map(item => <FlushItem key={item.id} item={item}/>)}
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -825,10 +855,45 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       targetCategory = 'members'
     }
 
+    // ── Workings → church_zones ──────────────────────────────────────────────
+    if (sheetNorm.includes('working')) {
+      const zones = rows.map(r => String(r[3] ?? '').trim()).filter(Boolean)
+      if (!zones.length) {
+        setImportError('No zone names found in column D.')
+        return
+      }
+
+      setImporting(true); setStep(4); setProgress(0)
+
+      try {
+        const records = zones
+          .filter(z => z.toLowerCase() !== 'others')
+          .map((zone_name, idx) => ({ zone_name, sort_order: idx + 1, created_by: profile?.email }))
+        records.push({ zone_name: 'Others', sort_order: 99, created_by: profile?.email })
+
+        const { error: delErr } = await supabase.from('church_zones').delete().not('id', 'is', null)
+        if (delErr) throw new Error(`Clear failed: ${delErr.message}`)
+
+        const { error: insErr } = await supabase.from('church_zones').insert(records)
+        if (insErr) throw new Error(`Insert failed: ${insErr.message}`)
+
+        await logMigration('zones', sheetName, 'success', records.length, records.length, 0)
+        setResult({ total: records.length, inserted: records.length, errors: 0, dups: 0 })
+        toast(`${records.length} zones imported successfully.`, 'success')
+        onRefreshBoard?.()
+      } catch (err) {
+        setImportError(err.message)
+        await logMigration('zones', sheetName, 'error', zones.length, 0, 0, err.message)
+      } finally {
+        setImporting(false)
+      }
+      return
+    }
+
     if (!targetTable) {
       setImportError(
         `Sheet "${sheetName}" is not a recognised import sheet.\n` +
-        `Only sheets named "Members" or "Deleted Members" can be imported. ` +
+        `Only sheets named "Members", "Deleted Members", or "Workings" can be imported. ` +
         `Please select the correct worksheet.`
       )
       return
@@ -998,26 +1063,33 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       {step>=2 && wb && (
         <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
           <p style={{margin:'0 0 4px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'#3b82f6'}}>Step 2 — Select worksheet</p>
-          <p style={{margin:'0 0 14px',fontSize:12,color:'#94a3b8'}}>Only <strong style={{color:'#3b82f6'}}>Members</strong> and <strong style={{color:'#d97706'}}>Deleted Members</strong> sheets can be imported.</p>
+          <p style={{margin:'0 0 14px',fontSize:12,color:'#94a3b8'}}>Only <strong style={{color:'#3b82f6'}}>Members</strong>, <strong style={{color:'#d97706'}}>Deleted Members</strong> and <strong style={{color:'#059669'}}>Workings</strong> sheets can be imported.</p>
           <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
             {wb.SheetNames.map(name => {
-              const nl = name.toLowerCase().trim().replace(/\s+/g, '')
-              const isDeleted = nl.includes('deletedmember')
-              const isMember  = !isDeleted && nl.includes('member')
-              const isKnown   = isDeleted || isMember
-              const badge     = isDeleted ? 'Deleted Members' : isMember ? 'Members' : null
-              const isSelected = sheetName === name
+              const nl        = name.toLowerCase().trim().replace(/\s+/g, '')
+              const isDeleted  = nl.includes('deletedmember')
+              const isMember   = !isDeleted && nl.includes('member')
+              const isWorkings = nl.includes('working')
+              const isKnown    = isDeleted || isMember || isWorkings
+              const badge      = isDeleted ? 'Deleted Members' : isMember ? 'Members' : isWorkings ? 'Zonal Areas' : null
+              const accentColor = isDeleted ? '#d97706' : isWorkings ? '#059669' : '#2563eb'
+              const isSelected  = sheetName === name
+              const selBorder   = isDeleted ? '#fcd34d' : isWorkings ? '#6ee7b7' : '#93c5fd'
+              const selBg       = isDeleted ? '#fffbeb' : isWorkings ? '#ecfdf5' : '#eff6ff'
+              const badgeBg     = isDeleted ? '#fef3c7' : isWorkings ? '#d1fae5' : '#dbeafe'
+              const badgeColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : '#1e40af'
+              const labelColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : '#1e40af'
               return (
                 <label key={name} style={{
                   display:'flex',alignItems:'center',gap:8,padding:'8px 12px',borderRadius:9,
-                  border:`1px solid ${isSelected?(isDeleted?'#fcd34d':'#93c5fd'):isKnown?'#e2e8f0':'#f1f5f9'}`,
-                  background: isSelected?(isDeleted?'#fffbeb':'#eff6ff'):'#fff',
+                  border:`1px solid ${isSelected ? selBorder : isKnown ? '#e2e8f0' : '#f1f5f9'}`,
+                  background: isSelected ? selBg : '#fff',
                   cursor:'pointer',opacity:isKnown?1:0.45,transition:'all 0.15s ease'
                 }}>
-                  <input type="radio" name="sheet" value={name} checked={isSelected} onChange={()=>{setSheetName(name);loadSheet(wb,name)}} style={{accentColor:isDeleted?'#d97706':'#2563eb'}}/>
-                  <span style={{fontSize:13,fontWeight:500,color:isSelected?(isDeleted?'#92400e':'#1e40af'):'#475569'}}>{name}</span>
+                  <input type="radio" name="sheet" value={name} checked={isSelected} onChange={()=>{setSheetName(name);loadSheet(wb,name)}} style={{accentColor}}/>
+                  <span style={{fontSize:13,fontWeight:500,color:isSelected ? labelColor : '#475569'}}>{name}</span>
                   {badge && (
-                    <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:12,background:isDeleted?'#fef3c7':'#dbeafe',color:isDeleted?'#92400e':'#1e40af'}}>
+                    <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:12,background:badgeBg,color:badgeColor}}>
                       → {badge}
                     </span>
                   )}
@@ -1043,52 +1115,87 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       )}
 
       {/* Step 3: Preview */}
-      {step>=3 && rows.length>0 && (
-        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-            <div>
-              <p style={{margin:'0 0 2px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'#3b82f6'}}>Step 3 — Preview</p>
-              <p style={{margin:0,fontSize:12,color:'#64748b'}}><strong style={{color:'#0f172a'}}>{rows.length.toLocaleString()}</strong> rows from <strong style={{color:'#0f172a'}}>"{sheetName}"</strong></p>
+      {step>=3 && rows.length>0 && (() => {
+        const isWorkings = sheetName.toLowerCase().trim().replace(/\s+/g,'').includes('working')
+        const zoneNames  = isWorkings
+          ? rows.map(r => String(r[3] ?? '').trim()).filter(Boolean)
+          : []
+        return (
+          <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div>
+                <p style={{margin:'0 0 2px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color: isWorkings ? '#059669' : '#3b82f6'}}>Step 3 — Preview</p>
+                <p style={{margin:0,fontSize:12,color:'#64748b'}}>
+                  <strong style={{color:'#0f172a'}}>{isWorkings ? zoneNames.length : rows.length}</strong>
+                  {isWorkings ? ' zones' : ' rows'} from <strong style={{color:'#0f172a'}}>"{sheetName}"</strong>
+                  {isWorkings && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— reading column D only</span>}
+                </p>
+              </div>
+            </div>
+
+            {isWorkings ? (
+              /* Zone preview — simple numbered list */
+              <div style={{borderRadius:8,border:'1px solid #d1fae5',marginBottom:16,maxHeight:260,overflowY:'auto',background:'#f0fdf4'}}>
+                {zoneNames.map((name, i) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 12px',borderBottom:'1px solid #d1fae5',background:i%2===0?'#f0fdf4':'#fff'}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#6ee7b7',width:22,textAlign:'right',flexShrink:0}}>{i+1}</span>
+                    <span style={{fontSize:13,color:'#065f46'}}>{name}</span>
+                    {name.toLowerCase()==='others' && (
+                      <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'#fef3c7',color:'#92400e',marginLeft:'auto'}}>pinned last</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Normal member/deleted preview table */
+              <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #f1f5f9',marginBottom:16,maxHeight:260}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead>
+                    <tr style={{background:'#f8fafc'}}>
+                      {previewCols.map(({header, dbCol})=>(
+                        <th key={dbCol} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'#94a3b8',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0,5).map((row,i)=>(
+                      <tr key={i} style={{background:i%2===0?'#fff':'#fafafa'}}>
+                        {previewCols.map(({header, idx, dbCol})=>(
+                          <td key={header} style={{padding:'7px 10px',borderBottom:'1px solid #f8fafc',color:'#334155',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {row[idx]
+                              ? (DATE_COLS.includes(dbCol)
+                                  ? fmtDateDisplay(cleanVal(row[idx], dbCol)) || row[idx]
+                                  : row[idx])
+                              : <span style={{color:'#cbd5e1'}}>—</span>}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={doImport} disabled={importing}
+                style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',fontSize:13,fontWeight:600,borderRadius:9,border:'none',
+                  background:importing?'#93c5fd': isWorkings?'#059669':'#2563eb',
+                  color:'#fff',cursor:importing?'default':'pointer',
+                  boxShadow:`0 2px 8px ${isWorkings?'rgba(5,150,105,0.25)':'rgba(37,99,235,0.25)'}`}}>
+                {importing
+                  ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing…</>
+                  : isWorkings
+                  ? <><CheckCircle size={13}/>Replace {zoneNames.length} zones</>
+                  : <><CheckCircle size={13}/>Confirm &amp; import {rows.length.toLocaleString()} records</>}
+              </button>
+              <button onClick={reset}
+                style={{display:'flex',alignItems:'center',gap:6,padding:'9px 16px',fontSize:13,fontWeight:500,borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer'}}>
+                <RefreshCw size={13}/>Start over
+              </button>
             </div>
           </div>
-          <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #f1f5f9',marginBottom:16,maxHeight:260}}>
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-              <thead>
-                <tr style={{background:'#f8fafc'}}>
-                  {previewCols.map(({header, dbCol})=>(
-                    <th key={dbCol} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'#94a3b8',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0,5).map((row,i)=>(
-                  <tr key={i} style={{background:i%2===0?'#fff':'#fafafa'}}>
-                    {previewCols.map(({header, idx, dbCol})=>(
-                      <td key={header} style={{padding:'7px 10px',borderBottom:'1px solid #f8fafc',color:'#334155',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {row[idx]
-                          ? (DATE_COLS.includes(dbCol)
-                              ? fmtDateDisplay(cleanVal(row[idx], dbCol)) || row[idx]
-                              : row[idx])
-                          : <span style={{color:'#cbd5e1'}}>—</span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={doImport} disabled={importing}
-              style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',fontSize:13,fontWeight:600,borderRadius:9,border:'none',background:importing?'#93c5fd':'#2563eb',color:'#fff',cursor:importing?'default':'pointer',boxShadow:'0 2px 8px rgba(37,99,235,0.25)'}}>
-              {importing?<><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing…</>:<><CheckCircle size={13}/>Confirm &amp; import {rows.length.toLocaleString()} records</>}
-            </button>
-            <button onClick={reset}
-              style={{display:'flex',alignItems:'center',gap:6,padding:'9px 16px',fontSize:13,fontWeight:500,borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer'}}>
-              <RefreshCw size={13}/>Start over
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Step 4: Result */}
       {step>=4 && result && (
@@ -1288,6 +1395,182 @@ function PhotosTab({ onRefreshBoard }) {
   )
 }
 
+// ── AUTO FLUSH ────────────────────────────────────────────────────────────────
+const CLEANUP_RULES = [
+  { bucket: 'announcement-cards',   label: 'Announcement Cards',   maxAgeHours: 48,  note: 'Root-level files only — templates/ subfolder is never touched.' },
+  { bucket: 'announcement-reports', label: 'Announcement Reports', maxAgeHours: 48,  note: 'Files with "template" in the name are kept forever.' },
+  { bucket: 'family-records',       label: 'Family Records',       maxAgeHours: 168, note: 'Files with "template" in the name are kept forever.' },
+]
+
+// A file is a template if it has no metadata (folder) or name contains "template"
+const isTemplateFile = f => !f.metadata || f.name.toLowerCase().includes('template')
+
+function fmtAge(hours) {
+  return hours >= 24 ? `${hours / 24} day${hours / 24 !== 1 ? 's' : ''}` : `${hours}h`
+}
+
+function AutoFlushTab() {
+  const toast = useToast()
+  const [running,  setRunning]  = useState(false)
+  const [results,  setResults]  = useState(null)
+  const [lastRun,  setLastRun]  = useState(() => {
+    try { return localStorage.getItem('storage_cleanup_last_run') } catch { return null }
+  })
+
+  async function runCleanup() {
+    setRunning(true)
+    setResults(null)
+    const out = []
+
+    for (const rule of CLEANUP_RULES) {
+      // List root to discover both files and subfolders
+      const { data: rootItems, error: listErr } = await adminSupabase.storage
+        .from(rule.bucket).list('', { limit: 10_000 })
+
+      if (listErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, error: listErr.message })
+        continue
+      }
+
+      const toDelete = []
+      let kept = 0
+
+      for (const item of (rootItems || [])) {
+        if (item.metadata) {
+          // Root-level file
+          if (isTemplateFile(item)) { kept++; continue }
+          toDelete.push(item.name)
+        } else {
+          // Subfolder — skip anything named template*
+          if (item.name.toLowerCase().includes('template')) continue
+          const { data: subItems } = await adminSupabase.storage
+            .from(rule.bucket).list(item.name, { limit: 10_000 })
+          for (const f of (subItems || [])) {
+            if (!f.metadata) continue
+            if (isTemplateFile(f)) { kept++; continue }
+            toDelete.push(`${item.name}/${f.name}`)
+          }
+        }
+      }
+
+      if (!toDelete.length) {
+        out.push({ label: rule.label, deleted: 0, kept, error: null })
+        continue
+      }
+
+      const { error: delErr } = await adminSupabase.storage.from(rule.bucket).remove(toDelete)
+      out.push({ label: rule.label, deleted: toDelete.length, kept, error: delErr?.message ?? null })
+    }
+
+    const ts = new Date().toISOString()
+    try { localStorage.setItem('storage_cleanup_last_run', ts) } catch { /* ignore */ }
+    setLastRun(ts)
+    setResults(out)
+    setRunning(false)
+
+    const total = out.reduce((s, r) => s + r.deleted, 0)
+    toast(total > 0 ? `Cleanup done — ${total} file${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing to remove.', 'success')
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Config card */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
+          <div>
+            <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Storage Auto-Flush</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+              Runs automatically every hour via scheduled job (FIFO).<br/>
+              <strong style={{ color: '#64748b' }}>Templates are never deleted.</strong>
+            </p>
+          </div>
+          <button onClick={runCleanup} disabled={running} style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 16px', fontSize: 12, fontWeight: 600, borderRadius: 9,
+            border: 'none', background: running ? '#93c5fd' : '#2563eb', color: '#fff',
+            cursor: running ? 'default' : 'pointer', whiteSpace: 'nowrap',
+          }}>
+            {running
+              ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</>
+              : <><Zap size={13} />Run Now</>}
+          </button>
+        </div>
+
+        {/* Rules list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {CLEANUP_RULES.map(rule => (
+            <div key={rule.bucket} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc',
+            }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Camera size={15} style={{ color: '#3b82f6' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rule.bucket}</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={10} /> {fmtAge(rule.maxAgeHours)}
+                </span>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f0fdf4', color: '#166534', fontWeight: 500 }}>
+                  🛡 Templates safe
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {lastRun && (
+          <p style={{ margin: '14px 0 0', fontSize: 11, color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <CheckCircle size={11} style={{ color: '#22c55e' }} />
+            Last run: {fmtDateTime(lastRun)}
+          </p>
+        )}
+      </div>
+
+      {/* Results */}
+      {results && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Cleanup results — {fmtDateTime(new Date().toISOString())}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {results.map(r => (
+              <div key={r.label} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                borderRadius: 9, border: `1px solid ${r.error ? '#fecaca' : r.deleted > 0 ? '#bbf7d0' : '#e2e8f0'}`,
+                background: r.error ? '#fef2f2' : r.deleted > 0 ? '#f0fdf4' : '#f8fafc',
+              }}>
+                {r.error
+                  ? <XCircle size={15} style={{ color: '#ef4444', flexShrink: 0 }} />
+                  : r.deleted > 0
+                  ? <Trash2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} />
+                  : <CheckCircle size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />}
+                <span style={{ flex: 1, fontSize: 13, color: '#0f172a', fontWeight: 500 }}>{r.label}</span>
+                {r.error ? (
+                  <span style={{ fontSize: 11, color: '#dc2626' }}>{r.error}</span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, fontWeight: r.deleted > 0 ? 700 : 400, color: r.deleted > 0 ? '#15803d' : '#94a3b8' }}>
+                      {r.deleted > 0 ? `${r.deleted} removed` : 'Nothing to remove'}
+                    </span>
+                    {r.kept > 0 && (
+                      <span style={{ fontSize: 11, color: '#64748b', padding: '2px 7px', borderRadius: 12, background: '#f0fdf4' }}>
+                        {r.kept} template{r.kept !== 1 ? 's' : ''} kept
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function ImportPage() {
   const { profile } = useAuth()
@@ -1303,27 +1586,16 @@ export default function ImportPage() {
   const refreshStats = async () => {
     const newStats = []
 
-    // ── Tables: try RPC first; fallback = only 'members' (known to exist) ────
-    // Do NOT probe members_deleted by default — it may not exist yet and will
-    // log 404 errors in the console on every page load.
-    let tables = ['members']
-    try {
-      const { data } = await supabase.rpc('get_user_tables')
-      if (data?.length) {
-        tables = data.map(t => t.table_name).filter(n => !EXCLUDED_TABLES.includes(n))
-      }
-    } catch (_) {}
-
-    for (const tbl of tables) {
+    // Stats tiles show only the 4 primary items
+    for (const tbl of ['members', 'deleted_members']) {
       try {
         const { count, error } = await supabase.from(tbl).select('*', { count:'exact', head:true })
         if (!error) newStats.push({ label: tbl, count: count || 0 })
       } catch (_) {}
     }
 
-    // ── Storage photo counts for dashboard display only.
     const KNOWN_STORAGE = [
-      { bucket: 'member-photos', folder: 'active', label: 'Photos - Active Members' },
+      { bucket: 'member-photos', folder: 'active',  label: 'Photos - Active Members'  },
       { bucket: 'member-photos', folder: 'deleted', label: 'Photos - Deleted Members' },
     ]
     for (const { bucket, folder, label } of KNOWN_STORAGE) {
@@ -1457,7 +1729,7 @@ export default function ImportPage() {
           <div>
             {/* Tab bar */}
             <div style={{display:'flex',gap:4,marginBottom:20,background:'#f1f5f9',padding:4,borderRadius:10,width:'fit-content'}}>
-              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera]].map(([id,label,Icon])=>(
+              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap]].map(([id,label,Icon])=>(
                 <button key={id} onClick={()=>setTab(id)} className="imp-tab-btn"
                   style={{display:'flex',alignItems:'center',gap:7,padding:'7px 16px',fontSize:13,fontWeight:500,borderRadius:7,border:'none',cursor:'pointer',
                     background: tab===id ? '#fff' : 'transparent',
@@ -1467,8 +1739,9 @@ export default function ImportPage() {
                 </button>
               ))}
             </div>
-            {tab === 'import' && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
-            {tab === 'photos' && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
+            {tab === 'import'    && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
+            {tab === 'photos'    && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
+            {tab === 'autoflush' && <AutoFlushTab />}
           </div>
 
           {/* RIGHT: sticky import board */}

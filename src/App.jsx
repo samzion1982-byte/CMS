@@ -12,6 +12,7 @@ import ImportPage from './pages/ImportPage'
 import DeletedMembersPage from './pages/DeletedMembersPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
 import AnnouncementsLogPage from './pages/AnnouncementsLogPage'
+import LoginLogsPage from './pages/LoginLogsPage'
 
 console.log('📱 App component rendering')
 
@@ -147,6 +148,10 @@ function AppRoutes() {
       <Route
         path="/announcements-log"
         element={<PrivateRoute><AppLayout><AnnouncementsLogPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/login-logs"
+        element={<PrivateRoute><AppLayout><LoginLogsPage /></AppLayout></PrivateRoute>}
       />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

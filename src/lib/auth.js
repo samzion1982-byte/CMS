@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { formatDate } from './date'
+import { fetchGeoLocation, insertLoginLog } from './loginLogs'
 
 export const ROLE_PERMISSIONS = {
   super_admin: { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:true  },
@@ -87,16 +88,29 @@ export async function signIn(email, password) {
     }
     
     console.log('✅ Profile loaded:', profile.email)
+
+    // Fire-and-forget: capture login details without delaying the response
+    fetchGeoLocation().then(geo => {
+      insertLoginLog({
+        userId:    data.user?.id,
+        email:     profile.email,
+        fullName:  profile.full_name,
+        role:      profile.role,
+        userAgent: navigator.userAgent,
+        ...geo,
+      })
+    })
+
     return { data, error: null }
-    
+
   } catch (error) {
     console.error('❌ Sign in exception:', error)
-    
+
     // Handle specific Supabase auth errors
     if (error.message?.includes('Invalid login credentials')) {
       return { data: null, error: new Error('Invalid email or password. Please try again.') }
     }
-    
+
     return { data: null, error: new Error('Login failed. Please try again later.') }
   }
 }

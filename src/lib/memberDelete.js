@@ -87,38 +87,32 @@ export async function restoreMember(deletedMemberId, newMemberId, userEmail, res
  */
 async function movePhotoToDeleted(memberId) {
   try {
+    const activePath  = `active/${memberId}.jpg`
+    const deletedPath = `deleted/${memberId}.jpg`
+
     // Check if photo exists in active folder
-    const activePath = `member-photos/active/${memberId}.jpg`
-    
     const { data: fileExists } = await supabase.storage
       .from('member-photos')
       .list('active', { search: `${memberId}.jpg` })
 
     if (!fileExists || fileExists.length === 0) {
-      // No photo to move
       return { success: true, moved: false }
     }
 
     // Download the active photo
     const { data: photoData, error: downloadError } = await supabase.storage
       .from('member-photos')
-      .download(`active/${memberId}.jpg`)
+      .download(activePath)
 
     if (downloadError) throw downloadError
 
-    const deletedPath = `member-photos/deleted/${memberId}.jpg`
-
-    // Check if photo already exists in deleted folder
+    // Remove from deleted folder first if it already exists
     const { data: deletedExists } = await supabase.storage
       .from('member-photos')
       .list('deleted', { search: `${memberId}.jpg` })
 
     if (deletedExists && deletedExists.length > 0) {
-      // Photo already exists - user will be prompted to overwrite
-      // For now, we'll overwrite
-      await supabase.storage
-        .from('member-photos')
-        .remove([deletedPath])
+      await supabase.storage.from('member-photos').remove([deletedPath])
     }
 
     // Upload to deleted folder
@@ -129,9 +123,7 @@ async function movePhotoToDeleted(memberId) {
     if (uploadError) throw uploadError
 
     // Delete from active folder
-    await supabase.storage
-      .from('member-photos')
-      .remove([activePath])
+    await supabase.storage.from('member-photos').remove([activePath])
 
     return { success: true, moved: true }
   } catch (err) {
@@ -146,15 +138,15 @@ async function movePhotoToDeleted(memberId) {
  */
 async function movePhotoToActive(memberId) {
   try {
-    const deletedPath = `member-photos/deleted/${memberId}.jpg`
-    
+    const deletedPath = `deleted/${memberId}.jpg`
+    const activePath  = `active/${memberId}.jpg`
+
     // Check if photo exists in deleted folder
     const { data: fileExists } = await supabase.storage
       .from('member-photos')
       .list('deleted', { search: `${memberId}.jpg` })
 
     if (!fileExists || fileExists.length === 0) {
-      // No photo to move back
       return { success: true, moved: false }
     }
 
@@ -165,18 +157,13 @@ async function movePhotoToActive(memberId) {
 
     if (downloadError) throw downloadError
 
-    const activePath = `member-photos/active/${memberId}.jpg`
-
-    // Check if photo already exists in active folder
+    // Remove from active folder first if it already exists
     const { data: activeExists } = await supabase.storage
       .from('member-photos')
       .list('active', { search: `${memberId}.jpg` })
 
     if (activeExists && activeExists.length > 0) {
-      // Photo already exists in active - remove it first
-      await supabase.storage
-        .from('member-photos')
-        .remove([activePath])
+      await supabase.storage.from('member-photos').remove([activePath])
     }
 
     // Upload to active folder
@@ -187,9 +174,7 @@ async function movePhotoToActive(memberId) {
     if (uploadError) throw uploadError
 
     // Delete from deleted folder
-    await supabase.storage
-      .from('member-photos')
-      .remove([deletedPath])
+    await supabase.storage.from('member-photos').remove([deletedPath])
 
     return { success: true, moved: true }
   } catch (err) {
