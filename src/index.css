@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&family=Raleway:wght@400;500;600;700;800&family=Merriweather:wght@400;700&family=Crimson+Text:wght@400;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -50,8 +50,8 @@
   /* Inputs */
   --input-bg:                 #ffffff;
   --input-border:             #dde3ea;
-  --input-focus-border:       #d4a017;
-  --input-focus-ring:         rgba(212,160,23,0.18);
+  --input-focus-border:       #2563eb;
+  --input-focus-ring:         rgba(37,99,235,0.12);
 
   /* Status */
   --danger:                   #dc2626;
@@ -249,8 +249,8 @@
 
   --input-bg:                 #ffffff;
   --input-border:             #cdddd2;
-  --input-focus-border:       #d4a017;
-  --input-focus-ring:         rgba(212,160,23,0.18);
+  --input-focus-border:       #2563eb;
+  --input-focus-ring:         rgba(37,99,235,0.12);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -314,8 +314,8 @@
 
   --input-bg:                 #ffffff;
   --input-border:             #ddc0c8;
-  --input-focus-border:       #d4a017;
-  --input-focus-ring:         rgba(212,160,23,0.18);
+  --input-focus-border:       #2563eb;
+  --input-focus-ring:         rgba(37,99,235,0.12);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -351,7 +351,7 @@ html { zoom: 0.95; }
 
 @layer base {
   body {
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-family: var(--font-ui, 'Inter', sans-serif);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: var(--page-bg);
@@ -370,7 +370,7 @@ html { zoom: 0.95; }
    ═══════════════════════════════════════════════════════════════ */
 
 @layer components {
-  .font-display { font-family: 'Outfit', sans-serif; }
+  .font-display { font-family: var(--font-ui, 'Inter', sans-serif); }
 
   /* ── Cards ── */
   .card {
@@ -497,13 +497,14 @@ html { zoom: 0.95; }
     color: var(--text-1);
     background: var(--input-bg);
     font-family: inherit;
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.15s, border-width 0.12s;
     width: 100%;
     outline: none;
   }
   .field-input:focus {
     border-color: var(--input-focus-border);
-    box-shadow: 0 0 0 3px var(--input-focus-ring);
+    border-width: 2.5px;
+    box-shadow: none;
   }
   .field-input:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -573,10 +574,10 @@ html { zoom: 0.95; }
     border-bottom: 1px solid var(--card-border);
   }
   .page-title {
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-ui, 'Inter', sans-serif);
     font-size: 23px;
     font-weight: 800;
-    color: var(--text-1);
+    color: var(--sidebar-bg);
     letter-spacing: 0.1px;
     line-height: 1.25;
   }

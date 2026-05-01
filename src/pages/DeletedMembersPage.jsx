@@ -7,7 +7,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { formatDate } from '../lib/date'
-import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileDown, Trash2 } from 'lucide-react'
+import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileSpreadsheet, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchDeletedMembers, getDeletedMemberDetails, permanentDeleteMembers } from '../lib/memberDelete'
 import RestoreMemberModal from './RestoreMemberModal'
@@ -280,8 +280,8 @@ export default function DeletedMembersPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
             style={{ background: '#15803d' }}
           >
-            {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
-            {exporting ? 'Exporting...' : 'Export Excel'}
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+            {exporting ? 'Exporting...' : 'Excel Export'}
           </button>
         </div>
       </div>

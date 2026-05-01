@@ -3,8 +3,9 @@ import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
-         Plus, Pencil, ChevronUp, ChevronDown, X } from 'lucide-react'
+         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle } from 'lucide-react'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
+import { getCategories, updateCategory, toggleCategory } from '../lib/paymentCategories'
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
@@ -17,7 +18,11 @@ export default function ChurchSetupPage() {
   const [church, setChurch] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [flushing, setFlushing] = useState(false)
+  const [flushing,          setFlushing]          = useState(false)
+  const [showFlushConfirm,  setShowFlushConfirm]  = useState(false)
+  const [flushPassword,     setFlushPassword]     = useState('')
+  const [flushPwErr,        setFlushPwErr]        = useState(false)
+  const flushPwRef = useRef(null)
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -181,11 +186,22 @@ export default function ChurchSetupPage() {
     loadChurch()
   }
 
-  async function flush() {
+  function flush() {
     if (!church) { toast('No church record to flush.', 'error'); return }
-    if (!window.confirm('This will permanently clear ALL church details, logos, office bearer information, and church zones from the database.\n\nAre you sure?')) return
+    setFlushPassword('')
+    setFlushPwErr(false)
+    setShowFlushConfirm(true)
+    setTimeout(() => flushPwRef.current?.focus(), 80)
+  }
+
+  async function doFlush() {
+    if (!flushPassword || flushing) return
+    setFlushPwErr(false)
     setFlushing(true)
     try {
+      const { error: authErr } = await supabase.auth.signInWithPassword({ email: profile.email, password: flushPassword })
+      if (authErr) { setFlushPwErr(true); setFlushing(false); setTimeout(() => flushPwRef.current?.focus(), 30); return }
+
       // Remove logos from storage
       const logoFiles = ['church-logo.png','church-logo.jpg','church-logo.jpeg',
                          'diocese-logo.png','diocese-logo.jpg','diocese-logo.jpeg']
@@ -214,6 +230,7 @@ export default function ChurchSetupPage() {
       setLogoFile(null); setLogoPreview(null)
       setDioceseLogoFile(null); setDioceseLogoPreview(null)
       setAuthCode(''); setLicenseStatus(null); setLicenseInfo(null)
+      setShowFlushConfirm(false)
       toast('Church details flushed successfully.', 'success')
       loadChurch()
     } catch (err) {
@@ -440,7 +457,7 @@ export default function ChurchSetupPage() {
 
         {/* OFFICE BEARERS */}
         <div className="card p-6">
-          <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Key Office Bearers</p>
+          <p className="form-section form-section-blue" style={{color:'var(--accent)',borderColor:'var(--accent-ring)'}}>Key Office Bearers</p>
           <div className="space-y-4">
             {[
               { role: 'Presbyter / Pastor', nameKey: 'presbyter_name', waKey: 'presbyter_whatsapp' },
@@ -468,6 +485,9 @@ export default function ChurchSetupPage() {
             {/* ZONAL AREAS */}
             <ZonesPanel profile={profile} toast={toast} />
 
+            {/* PAYMENT CATEGORIES */}
+            <PaymentCategoriesPanel profile={profile} toast={toast} />
+
           </div>{/* end left column */}
 
           {/* ── RIGHT: license (sticky) ── */}
@@ -492,11 +512,84 @@ export default function ChurchSetupPage() {
 
         </div>
       ) : (
-        /* admin1: zones only */
-        <div style={{maxWidth:560}}>
+        /* admin1: zones + categories */
+        <div style={{maxWidth:560, display:'flex', flexDirection:'column', gap:16}}>
           <ZonesPanel profile={profile} toast={toast} />
+          <PaymentCategoriesPanel profile={profile} toast={toast} />
         </div>
       )}
+
+      {/* ── Flush password confirmation modal ── */}
+      {showFlushConfirm && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget && !flushing) setShowFlushConfirm(false) }}
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.65)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, padding:16 }}>
+          <div style={{ background:'var(--card-bg)', borderRadius:14, width:'100%', maxWidth:400, boxShadow:'0 24px 64px rgba(0,0,0,0.45)', overflow:'hidden' }}>
+            {/* header */}
+            <div style={{ background:'#dc2626', padding:'13px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 60%)', pointerEvents:'none' }}/>
+              <div style={{ display:'flex', alignItems:'center', gap:10, position:'relative' }}>
+                <div style={{ background:'rgba(255,255,255,0.2)', borderRadius:8, padding:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <AlertTriangle size={16} color="#fff"/>
+                </div>
+                <div>
+                  <h3 style={{ margin:0, fontSize:14, fontWeight:700, color:'#fff', fontFamily:'var(--font-ui)' }}>Confirm Flush</h3>
+                  <p style={{ margin:0, fontSize:11, color:'rgba(255,255,255,0.8)', fontFamily:'var(--font-ui)' }}>This action cannot be undone</p>
+                </div>
+              </div>
+              {!flushing && (
+                <button onClick={() => setShowFlushConfirm(false)} style={{ background:'rgba(255,255,255,0.2)', border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', color:'#fff', lineHeight:1, fontSize:16, fontWeight:700 }}>×</button>
+              )}
+            </div>
+            {/* body */}
+            <div style={{ padding:'20px' }}>
+              <p style={{ margin:'0 0 14px', fontSize:13, color:'var(--text-1)', lineHeight:1.55, fontFamily:'var(--font-ui)' }}>
+                This will permanently delete all church data including logos, zones, payment categories, and the church record.
+                Enter your password to confirm.
+              </p>
+              <input
+                ref={flushPwRef}
+                type="password"
+                value={flushPassword}
+                onChange={e => { setFlushPassword(e.target.value); setFlushPwErr(false) }}
+                onKeyDown={e => e.key === 'Enter' && doFlush()}
+                placeholder="Your account password"
+                style={{
+                  width:'100%', boxSizing:'border-box', padding:'9px 12px',
+                  borderRadius:8, border:`1.5px solid ${flushPwErr ? '#dc2626' : 'var(--border)'}`,
+                  background:'var(--input-bg)', color:'var(--text-1)', fontSize:13,
+                  fontFamily:'var(--font-ui)', outline:'none', marginBottom: flushPwErr ? 6 : 16
+                }}
+              />
+              {flushPwErr && (
+                <p style={{ margin:'0 0 12px', fontSize:12, color:'#dc2626', fontFamily:'var(--font-ui)' }}>Incorrect password. Please try again.</p>
+              )}
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <button
+                  onClick={() => setShowFlushConfirm(false)}
+                  disabled={flushing}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontFamily:'var(--font-ui)' }}>
+                  Cancel
+                </button>
+                <button
+                  onClick={doFlush}
+                  disabled={flushing || !flushPassword}
+                  style={{
+                    display:'flex', alignItems:'center', gap:6,
+                    padding:'7px 16px', borderRadius:8, border:'none', cursor: flushing || !flushPassword ? 'not-allowed' : 'pointer',
+                    background: flushing || !flushPassword ? '#f87171' : '#dc2626',
+                    color:'#fff', fontSize:13, fontWeight:600, fontFamily:'var(--font-ui)'
+                  }}>
+                  {flushing ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
+                  {flushing ? 'Flushing…' : 'Flush All Data'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -703,6 +796,195 @@ function ZonesPanel({ profile, toast }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════
+   PAYMENT CATEGORIES PANEL
+   ════════════════════════════════════════════════════════════ */
+function PaymentCategoriesPanel({ toast }) {
+  const [cats,       setCats]       = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [expanded,   setExpanded]   = useState(false)
+  const [editId,   setEditId]   = useState(null)
+  const [editName, setEditName] = useState('')
+  const [savingId, setSavingId] = useState(null)
+  const [togglingId, setTogglingId] = useState(null)
+  const editRef = useRef(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try { setCats(await getCategories()) } catch (err) { toast(err.message, 'error') }
+    finally { setLoading(false) }
+  }, [toast])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => { if (editRef.current) editRef.current.focus() }, [editId])
+
+  const startEdit = c => { setEditId(c.id); setEditName(c.name) }
+
+  const saveEdit = async (c) => {
+    const name = editName.trim()
+    if (!name) { setEditId(null); return }
+    if (name === c.name) { setEditId(null); return }
+    setSavingId(c.id)
+    try {
+      await updateCategory(c.id, name, c.sort_order)
+      setCats(prev => prev.map(x => x.id === c.id ? { ...x, name } : x))
+      toast('Category renamed', 'success')
+    } catch (err) {
+      toast(err.message.includes('unique') ? `"${name}" already exists` : err.message, 'error')
+    }
+    setSavingId(null)
+    setEditId(null)
+  }
+
+  const toggle = async (c) => {
+    setTogglingId(c.id)
+    try {
+      await toggleCategory(c.id, !c.is_active)
+      setCats(prev => prev.map(x => x.id === c.id ? { ...x, is_active: !c.is_active } : x))
+    } catch (err) { toast(err.message, 'error') }
+    setTogglingId(null)
+  }
+
+  const activeCount = cats.filter(c => c.is_active).length
+
+  return (
+    <div className="card p-6">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="form-section form-section-blue mb-0" style={{ color: 'var(--accent)', borderColor: 'var(--accent-ring)', marginBottom: 0 }}>
+            Payment Categories
+          </p>
+          {!loading && cats.length > 0 && (
+            <span className="text-xs text-slate-400 font-normal">
+              ({activeCount} of {cats.length} active)
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium transition-colors"
+          style={{
+            borderColor: expanded ? 'var(--accent-ring)' : 'var(--card-border)',
+            color:        expanded ? 'var(--accent)' : 'var(--text-3)',
+            background:   expanded ? 'var(--accent-subtle)' : 'var(--page-bg)',
+          }}
+        >
+          {expanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+          {expanded ? 'Collapse' : 'Manage'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 16 }}>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+            Toggle the switch to enable or disable a category. Click the pencil to rename it. Changes apply immediately to Receipt Entry and Declaration forms.
+          </p>
+
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-3)' }}>
+              <Loader2 size={14} className="animate-spin"/> Loading…
+            </div>
+          ) : cats.length === 0 ? (
+            <p className="text-xs italic" style={{ color: 'var(--text-3)' }}>
+              No categories found. Run the Finance module SQL in Supabase to seed the 14 default categories.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {cats.map((c) => (
+                <div key={c.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '9px 12px', borderRadius: 8,
+                    border: '1px solid',
+                    borderColor: c.is_active ? 'var(--card-border)' : 'transparent',
+                    background: c.is_active ? 'var(--card-bg)' : 'var(--page-bg)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {/* Toggle switch */}
+                  <button
+                    onClick={() => toggle(c)}
+                    disabled={togglingId === c.id}
+                    title={c.is_active ? 'Disable' : 'Enable'}
+                    style={{
+                      flexShrink: 0,
+                      width: 36, height: 20, borderRadius: 10,
+                      border: 'none', cursor: togglingId === c.id ? 'wait' : 'pointer',
+                      background: c.is_active ? 'var(--accent)' : 'var(--input-border)',
+                      position: 'relative', transition: 'background 0.2s',
+                      padding: 0,
+                    }}
+                  >
+                    {togglingId === c.id ? (
+                      <Loader2 size={10} className="animate-spin" style={{ color: '#fff', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }}/>
+                    ) : (
+                      <span style={{
+                        position: 'absolute', top: 2,
+                        left: c.is_active ? 18 : 2,
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: '#fff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        transition: 'left 0.2s',
+                        display: 'block',
+                      }}/>
+                    )}
+                  </button>
+
+                  {/* Name / inline edit */}
+                  {editId === c.id ? (
+                    <div style={{ display: 'flex', gap: 6, flex: 1, alignItems: 'center' }}>
+                      <input
+                        ref={editRef}
+                        className="field-input"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveEdit(c); if (e.key === 'Escape') setEditId(null) }}
+                        style={{ flex: 1, height: 30, fontSize: 13 }}
+                      />
+                      <button
+                        onClick={() => saveEdit(c)}
+                        disabled={savingId === c.id}
+                        style={{ flexShrink: 0, background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600 }}
+                      >
+                        {savingId === c.id ? <Loader2 size={12} className="animate-spin"/> : <Check size={12}/>}
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditId(null)}
+                        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '4px 6px' }}
+                      >
+                        <X size={13}/>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: c.is_active ? 'var(--text-1)' : 'var(--text-3)', transition: 'color 0.15s' }}>
+                          {c.name}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => startEdit(c)}
+                        title="Rename"
+                        style={{ flexShrink: 0, background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.color = 'var(--text-3)' }}
+                      >
+                        <Pencil size={11}/> Rename
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

@@ -4,7 +4,7 @@ import { supabase, photoUrl } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { getPerms, fmtDate, initials } from '../lib/auth'
 import { useToast } from '../lib/toast'
-import { Search, UserPlus, Printer, Users, Loader2, UserX, Save, RotateCcw, Trash2, Upload, FileDown, Archive } from 'lucide-react'
+import { Search, UserPlus, Printer, Users, Loader2, UserX, Save, RotateCcw, Trash2, Upload, FileSpreadsheet, Archive } from 'lucide-react'
 import { getZones } from '../lib/zones'
 import MemberPrintModal from './MemberPrintModal'
 import BulkPrintModal  from './BulkPrintModal'
@@ -481,7 +481,7 @@ export default function MembersPage() {
       {/* ── Page Header ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:24, paddingBottom:20, borderBottom:'1px solid var(--card-border)' }}>
         <div>
-          <h1 style={{ fontFamily:"'Outfit',sans-serif", fontSize:22, fontWeight:800, color:'var(--text-1)', letterSpacing:-0.3, margin:0 }}>
+          <h1 style={{ fontFamily:'var(--font-ui)', fontSize:22, fontWeight:800, color:'var(--sidebar-bg)', letterSpacing:-0.3, margin:0 }}>
             Member Entry
           </h1>
           <p style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>{total.toLocaleString()} members total</p>
@@ -493,7 +493,7 @@ export default function MembersPage() {
             </button>
           )}
           <button className="action-btn" onClick={exportExcel} disabled={exporting||members.length===0} style={{background:'#16a34a'}}>
-            {exporting ? <><Loader2 size={13} className="animate-spin"/>Exporting…</> : <><FileDown size={13}/>Export Excel</>}
+            {exporting ? <><Loader2 size={13} className="animate-spin"/>Exporting…</> : <><FileSpreadsheet size={13}/>Excel Export</>}
           </button>
           {perms.canPrint && (
             <button className="action-btn" onClick={() => setShowBulkPrintModal(true)} style={{background:'#334155'}}>
@@ -864,7 +864,7 @@ export default function MembersPage() {
       {showSaveDialog && (
         <div style={{ position:'fixed', inset:0, background:'var(--overlay)', backdropFilter:'blur(4px)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div className="card animate-slide-up" style={{ padding:24, width:'100%', maxWidth:420 }}>
-            <h3 style={{ fontFamily:"'Outfit',sans-serif", fontSize:15, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>
+            <h3 style={{ fontFamily:'var(--font-ui)', fontSize:15, fontWeight:700, color:'var(--text-1)', marginBottom:4 }}>
               {isEdit ? 'Save member changes' : 'Save new member'}
             </h3>
             <p style={{ fontSize:13, color:'var(--text-3)', marginBottom:16 }}>Select the appropriate option.</p>
@@ -900,7 +900,7 @@ export default function MembersPage() {
       {showDelDialog && (
         <div style={{ position:'fixed', inset:0, background:'var(--overlay)', backdropFilter:'blur(4px)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div className="card animate-slide-up" style={{ padding:24, width:'100%', maxWidth:360 }}>
-            <h3 style={{ fontFamily:"'Outfit',sans-serif", fontSize:15, fontWeight:700, color:'var(--text-1)', marginBottom:8 }}>Delete member?</h3>
+            <h3 style={{ fontFamily:'var(--font-ui)', fontSize:15, fontWeight:700, color:'var(--text-1)', marginBottom:8 }}>Delete member?</h3>
             <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:20 }}>
               Delete <strong>{selected?.member_name}</strong> ({selected?.member_id})? This cannot be undone.
             </p>

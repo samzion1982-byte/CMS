@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { getAnnouncementsLog } from '../lib/announcements'
 import { exportToExcel } from '../lib/exportExcel'
-import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList, FileDown } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
 const PAGE_SIZE   = 50
@@ -128,8 +128,8 @@ export default function AnnouncementsLogPage() {
           </span>
           <button onClick={exportExcel} disabled={exporting || !total}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 transition">
-            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
-            {exporting ? 'Exporting…' : 'Export Excel'}
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+            {exporting ? 'Exporting…' : 'Excel Export'}
           </button>
         </div>
       </div>

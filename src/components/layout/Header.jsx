@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../lib/AuthContext'
-import { useTheme, THEMES } from '../../lib/ThemeContext'
+import { useTheme, THEMES, FONTS } from '../../lib/ThemeContext'
 import { getChurch, LICENSE_CSV, VENDOR } from '../../lib/supabase'
 import { initials, ROLE_LABELS } from '../../lib/auth'
 import { ChevronDown, LogOut } from 'lucide-react'
@@ -77,14 +77,14 @@ function LiveClock({ g }) {
   const date = now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
   return (
     <div style={{ textAlign: 'right', lineHeight: 1.45, flexShrink: 0 }}>
-      <p style={{ fontSize: 15, fontWeight: 700, color: g.text1, margin: 0, fontVariantNumeric: 'tabular-nums', fontFamily: "'Outfit', sans-serif", letterSpacing: '0.02em' }}>{time}</p>
+      <p style={{ fontSize: 15, fontWeight: 700, color: g.text1, margin: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-ui)', letterSpacing: '0.02em' }}>{time}</p>
       <p style={{ fontSize: 11, color: g.text2, margin: '2px 0 0', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{date}</p>
     </div>
   )
 }
 
 /* ── User badge + dropdown ───────────────────────────────────── */
-function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onSignOut }) {
+function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, font, setFont, onSignOut }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -128,7 +128,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
           `,
           display: 'grid', placeItems: 'center',
           fontSize: 15, fontWeight: 800, color: '#111827',
-          flexShrink: 0, fontFamily: "'Outfit', sans-serif",
+          flexShrink: 0, fontFamily: 'var(--font-ui)',
           letterSpacing: '0.03em',
           textShadow: '0 1px 2px rgba(255,255,255,0.85)',
         }}>
@@ -136,7 +136,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
         </div>
         {/* Name + role */}
         <div style={{ textAlign: 'left', lineHeight: 1.4 }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: 0, fontFamily: "'Outfit', sans-serif" }}>{firstName}</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: 0, fontFamily: 'var(--font-ui)' }}>{firstName}</p>
           <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.60)', margin: '2px 0 0', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{roleLabel}</p>
         </div>
         <ChevronDown size={13} color="rgba(255,255,255,0.65)"
@@ -171,13 +171,13 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
                 boxShadow: '0 12px 28px rgba(15,23,42,0.12)',
                 display: 'grid', placeItems: 'center',
                 fontSize: 16, fontWeight: 800, color: '#111827', flexShrink: 0,
-                fontFamily: "'Outfit', sans-serif",
+                fontFamily: 'var(--font-ui)',
                 letterSpacing: '0.03em',
               }}>
                 {ini}
               </div>
               <div style={{ overflow: 'hidden' }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: g.drop.text, margin: 0, fontFamily: "'Outfit', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: g.drop.text, margin: 0, fontFamily: 'var(--font-ui)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {profile.full_name || 'User'}
                 </p>
                 <p style={{ fontSize: 11, color: g.drop.sub, margin: '2px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -191,7 +191,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
               color: g.drop.text, background: g.drop.hov,
               padding: '5px 12px', borderRadius: 6,
               border: `1px solid ${g.drop.border}`,
-              fontFamily: "'Outfit', sans-serif",
+              fontFamily: 'var(--font-ui)',
             }}>
               ★ {roleLabel}
             </span>
@@ -199,24 +199,57 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
 
           {/* Theme picker */}
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${g.drop.border}` }}>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 10px', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 10px', fontFamily: 'var(--font-ui)' }}>
               Appearance
             </p>
             <div style={{ display: 'flex', gap: 6 }}>
-              {Object.entries(THEMES).map(([key, t]) => (
-                <button key={key} onClick={() => setTheme(key)} style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                  padding: '8px 4px', borderRadius: 10,
-                  border: theme === key ? `2px solid ${g.accent}` : `2px solid ${g.drop.border}`,
-                  background: theme === key ? g.accentL : 'transparent',
-                  cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
-                }}>
-                  <span style={{ fontSize: 17 }}>{t.icon}</span>
-                  <span style={{ fontSize: 9, fontWeight: 600, color: theme === key ? g.accent : g.drop.sub, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                    {t.name}
-                  </span>
-                </button>
-              ))}
+              {Object.entries(THEMES).map(([key, t]) => {
+                const sel = theme === key
+                return (
+                  <button key={key} onClick={() => setTheme(key)} style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                    padding: '8px 4px', borderRadius: 10,
+                    border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
+                    background: sel ? g.drop.hov : 'transparent',
+                    boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
+                    transform: sel ? 'translateY(-1px)' : 'none',
+                    cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
+                  }}>
+                    <span style={{ fontSize: 17 }}>{t.icon}</span>
+                    <span style={{ fontSize: 9, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
+                      {t.name}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Font picker */}
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${g.drop.border}` }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 10px', fontFamily: 'var(--font-ui)' }}>
+              Typography
+            </p>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {Object.entries(FONTS).map(([key, f]) => {
+                const sel = font === key
+                return (
+                  <button key={key} onClick={() => setFont(key)} style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                    padding: '7px 3px', borderRadius: 8,
+                    border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
+                    background: sel ? g.drop.hov : 'transparent',
+                    boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
+                    transform: sel ? 'translateY(-1px)' : 'none',
+                    cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
+                  }}>
+                    <span style={{ fontSize: 14, fontFamily: f.family, fontWeight: 700, color: g.drop.text, lineHeight: 1 }}>{f.sample}</span>
+                    <span style={{ fontSize: 8, fontWeight: sel ? 700 : 500, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)', marginTop: 2 }}>
+                      {f.name}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -231,7 +264,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
               background: 'none', border: 'none',
               color: '#ef4444', cursor: 'pointer',
               fontSize: 13, fontWeight: 600,
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              fontFamily: 'var(--font-ui)',
               transition: 'background 0.15s',
             }}
           >
@@ -247,7 +280,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, onS
 /* ── Header ──────────────────────────────────────────────────── */
 export default function Header() {
   const { profile, signOut } = useAuth()
-  const { theme, setTheme }  = useTheme()
+  const { theme, setTheme, font, setFont } = useTheme()
   const [church, setChurch]  = useState(null)
   const [licenseStatus, setLicenseStatus] = useState(null)
   const [licenseInfo, setLicenseInfo] = useState(null)
@@ -425,7 +458,7 @@ export default function Header() {
               <p style={{
                 fontSize: 10.5, fontWeight: 600, color: g.text2,
                 margin: '0 0 4px', whiteSpace: 'nowrap',
-                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                fontFamily: 'var(--font-ui)',
                 letterSpacing: '0.07em', textTransform: 'uppercase', opacity: 0.75,
               }}>
                 {church.diocese}
@@ -433,7 +466,7 @@ export default function Header() {
             )}
             <h1 style={{
               fontSize: 22, fontWeight: 800, color: g.text1, margin: 0,
-              fontFamily: "'Outfit', sans-serif", lineHeight: 1.2,
+              fontFamily: 'var(--font-ui)', lineHeight: 1.2,
               letterSpacing: '0.3px', whiteSpace: 'nowrap',
             }}>
               {church?.church_name || 'Church CMS'}
@@ -442,7 +475,7 @@ export default function Header() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 <p style={{
                   fontSize: 12, color: g.text2, margin: 0,
-                  whiteSpace: 'nowrap', fontFamily: "'Plus Jakarta Sans', sans-serif",
+                  whiteSpace: 'nowrap', fontFamily: 'var(--font-ui)',
                   letterSpacing: '0.03em',
                 }}>
                   {[church?.address, church?.city].filter(Boolean).join(', ')}
@@ -463,7 +496,7 @@ export default function Header() {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
             <UserBadge
               profile={profile} ini={ini} firstName={firstName} roleLabel={roleLabel}
-              g={g} theme={theme} setTheme={setTheme} onSignOut={signOut}
+              g={g} theme={theme} setTheme={setTheme} font={font} setFont={setFont} onSignOut={signOut}
             />
 
             <div ref={licenseRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginBottom: 6 }}>

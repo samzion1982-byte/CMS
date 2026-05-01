@@ -302,7 +302,7 @@ export default function UsersPage() {
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 24, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h1 style={{ fontFamily: 'var(--font-ui)', fontSize: 24, fontWeight: 800, color: 'var(--sidebar-bg)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Users size={22} style={{ color: '#2563eb' }} /> User Management
         </h1>
         <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
@@ -347,7 +347,7 @@ export default function UsersPage() {
         {/* LEFT: Form */}
         <div ref={formRef} id="user-form" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, overflow: 'hidden', position: 'sticky', top: 24 }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: editing ? 'linear-gradient(135deg,#fffbeb,#fff)' : 'linear-gradient(135deg,#eff6ff,#fff)' }}>
-            <h2 style={{ fontFamily: "'Outfit', sans-serif", fontSize: 15, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 style={{ fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
               {editing ? <Edit2 size={15} style={{ color: '#d97706' }} /> : <UserPlus size={15} style={{ color: '#2563eb' }} />}
               {editing ? 'Edit user' : 'Add new user'}
             </h2>

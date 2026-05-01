@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const profileLoadingRef = useRef(false)
-  const { applyProfileTheme } = useTheme()
+  const { applyProfileTheme, applyProfileFont } = useTheme()
 
   // Function to load and validate profile with deduplication
   const loadProfile = useCallback(async (sessionUser) => {
@@ -55,6 +55,7 @@ export function AuthProvider({ children }) {
       console.log('✅ Profile loaded successfully:', data?.email)
       setProfile(data)
       if (data?.theme) applyProfileTheme(data.theme)
+      if (data?.font)  applyProfileFont(data.font)
       return data
     } catch (error) {
       console.error('❌ Error loading profile:', error.message)

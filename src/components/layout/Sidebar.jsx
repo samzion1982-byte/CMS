@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { Menu, ChevronLeft,
-  LayoutDashboard, Users, FileText, CreditCard, Receipt,
+  LayoutDashboard, Users, FileText, Receipt,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
+  BookOpen,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -12,11 +13,13 @@ const NAV = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Members',   path: '/members',   icon: Users },
   ]},
+  { group: 'FINANCE', items: [
+    { label: 'Declaration',      path: '/declaration',      icon: FileText  },
+    { label: 'Receipt Entry',    path: '/receipts',         icon: Receipt   },
+    { label: 'Member Statement', path: '/member-statement', icon: BookOpen  },
+    { label: 'Reports',          path: '/reports',          icon: BarChart3 },
+  ]},
   { group: 'MODULES', items: [
-    { label: 'Declaration',   path: '#', icon: FileText,   soon: true },
-    { label: 'Subscription',  path: '#', icon: CreditCard, soon: true },
-    { label: 'Receipts',      path: '#', icon: Receipt,    soon: true },
-    { label: 'Reports',       path: '#', icon: BarChart3,  soon: true },
     { label: 'Announcements', path: '/announcements', icon: Megaphone },
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
@@ -80,7 +83,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                   <span style={{
                     fontSize: 9, fontWeight: 800, letterSpacing: '0.14em',
                     textTransform: 'uppercase', color: 'var(--sidebar-group)',
-                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                    fontFamily: 'var(--font-ui)',
                   }}>
                     {group.group}
                   </span>
@@ -172,7 +175,7 @@ function NavItem({ item, isActive, collapsed, onClick }) {
           : item.soon ? 'rgba(255,255,255,0.16)'
           : hov ? '#ffffff'
           : 'var(--sidebar-text)',
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        fontFamily: 'var(--font-ui)',
         fontSize: 13, fontWeight: isActive ? 700 : 500,
         outline: 'none', textAlign: 'left',
         transition: 'all 0.15s ease',
@@ -202,7 +205,7 @@ function NavItem({ item, isActive, collapsed, onClick }) {
             <span style={{
               fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4,
               background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.18)',
-              letterSpacing: '.06em', fontFamily: "'Plus Jakarta Sans', sans-serif",
+              letterSpacing: '.06em', fontFamily: 'var(--font-ui)',
             }}>
               SOON
             </span>

@@ -11,9 +11,23 @@ export const THEMES = {
   midnight: { name: 'Midnight', icon: '🌙' },
 }
 
+export const FONTS = {
+  inter:    { name: 'Inter',        sample: 'Ag', family: "'Inter', sans-serif" },
+  poppins:  { name: 'Poppins',      sample: 'Ag', family: "'Poppins', sans-serif" },
+  raleway:  { name: 'Raleway',      sample: 'Ag', family: "'Raleway', sans-serif" },
+  merri:    { name: 'Merriweather', sample: 'Ag', family: "'Merriweather', serif" },
+  crimson:  { name: 'Crimson',      sample: 'Ag', family: "'Crimson Text', serif" },
+}
+
 function applyToDOM(t) {
   localStorage.setItem('cms_theme', t)
   document.documentElement.setAttribute('data-theme', t)
+}
+
+function applyFontToDOM(f) {
+  localStorage.setItem('cms_font', f)
+  const family = FONTS[f]?.family || FONTS.inter.family
+  document.documentElement.style.setProperty('--font-ui', family)
 }
 
 export function ThemeProvider({ children }) {
@@ -22,7 +36,11 @@ export function ThemeProvider({ children }) {
     return (saved && THEMES[saved]) ? saved : 'royal'
   })
 
-  // Called when user explicitly picks a theme — applies it and persists to profile
+  const [font, setFontState] = useState(() => {
+    const saved = localStorage.getItem('cms_font')
+    return (saved && FONTS[saved]) ? saved : 'inter'
+  })
+
   const setTheme = async (t) => {
     if (!THEMES[t]) return
     setThemeState(t)
@@ -37,19 +55,42 @@ export function ThemeProvider({ children }) {
     }
   }
 
-  // Called by AuthContext after profile loads — applies saved theme without re-writing to DB
+  const setFont = async (f) => {
+    if (!FONTS[f]) return
+    setFontState(f)
+    applyFontToDOM(f)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('profiles').update({ font: f }).eq('id', user.id)
+      }
+    } catch (err) {
+      console.warn('[ThemeContext] Could not save font to profile:', err.message)
+    }
+  }
+
   const applyProfileTheme = (t) => {
     if (!t || !THEMES[t]) return
     setThemeState(t)
     applyToDOM(t)
   }
 
+  const applyProfileFont = (f) => {
+    if (!f || !FONTS[f]) return
+    setFontState(f)
+    applyFontToDOM(f)
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    applyFontToDOM(font)
+  }, [])
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, applyProfileTheme, THEMES }}>
+    <ThemeContext.Provider value={{ theme, setTheme, applyProfileTheme, THEMES, font, setFont, applyProfileFont, FONTS }}>
       {children}
     </ThemeContext.Provider>
   )

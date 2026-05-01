@@ -592,7 +592,7 @@ export default function DashboardPage() {
         borderBottom: '1px solid var(--card-border)',
       }}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-1)', fontFamily: "'Outfit', sans-serif", margin: 0, lineHeight: 1.2 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--sidebar-bg)', fontFamily: 'var(--font-ui)', margin: 0, lineHeight: 1.2 }}>
             Dashboard
           </h2>
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '3px 0 0' }}>

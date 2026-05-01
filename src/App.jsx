@@ -15,6 +15,10 @@ import DeletedMembersPage from './pages/DeletedMembersPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
 import AnnouncementsLogPage from './pages/AnnouncementsLogPage'
 import LoginLogsPage from './pages/LoginLogsPage'
+import DeclarationPage from './pages/DeclarationPage'
+import ReceiptsPage from './pages/ReceiptsPage'
+import MemberStatementPage from './pages/MemberStatementPage'
+import ReportsPage from './pages/ReportsPage'
 
 console.log('📱 App component rendering')
 
@@ -282,6 +286,19 @@ function AppRoutes() {
             <AppLayout><ImportPage /></AppLayout>
           </PrivateRoute>
         }
+      />
+
+      <Route path="/declaration"
+        element={<PrivateRoute><AppLayout><DeclarationPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/receipts"
+        element={<PrivateRoute><AppLayout><ReceiptsPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/member-statement"
+        element={<PrivateRoute><AppLayout><MemberStatementPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/reports"
+        element={<PrivateRoute><AppLayout><ReportsPage /></AppLayout></PrivateRoute>}
       />
 
       <Route

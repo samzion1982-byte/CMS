@@ -8,7 +8,7 @@ import { getLoginLogs } from '../lib/loginLogs'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle, Clock, MapPin, Monitor, Shield, FileDown,
+  CheckCircle, Clock, MapPin, Monitor, Shield, FileSpreadsheet,
 } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -194,8 +194,8 @@ export default function LoginLogsPage() {
           </span>
           <button onClick={exportExcel} disabled={exporting || !total}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 disabled:opacity-50 transition">
-            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
-            {exporting ? 'Exporting…' : 'Export Excel'}
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+            {exporting ? 'Exporting…' : 'Excel Export'}
           </button>
         </div>
       </div>
