@@ -473,14 +473,22 @@ function ReportsTab({ church, profile, toast }) {
         />
       )}
 
-      {(bdays?.length > 0 || annivers?.length > 0) && (
-        <div className="flex gap-2 justify-end pt-1">
+      {(bdays !== null || annivers !== null) && (
+        <div className="flex gap-2 justify-end pt-1 items-center">
+          {!(bdays !== null && annivers !== null) && (
+            <span className="text-xs text-slate-400 italic mr-1">
+              Generate both reports to unlock Combined Weekly
+            </span>
+          )}
           <button onClick={downloadWeeklyPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-slate-400 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+            disabled={bdays === null || annivers === null}
+            title={bdays === null || annivers === null ? 'Generate both Birthday and Anniversary reports first' : ''}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-slate-400 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
             <FileDown size={13} /> Download Combined Weekly PDF
           </button>
           <button onClick={openWeeklySendModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500 transition">
+            disabled={bdays === null || annivers === null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed transition">
             <Send size={13} /> Send Combined Weekly Report
           </button>
         </div>
@@ -1647,7 +1655,7 @@ function buildReportPages(doc, type, data, church, startDate, endDate, { skipFin
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(6.5)
         doc.setTextColor(255, 255, 255)
-        doc.text(cell, cx + w / 2, y + 5.5, { align: 'center' })
+        doc.text(cell, cx + w / 2, y + ROW_H / 2 + 0.8, { align: 'center' })
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(8)
         doc.setTextColor(30, 32, 42)

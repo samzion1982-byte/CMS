@@ -691,14 +691,21 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
   const [nameQ,       setNameQ]       = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [suggesting,  setSuggesting]  = useState(false)
-  const nameTimer = useRef(null)
+  const nameTimer       = useRef(null)
+  const memberIdTimer   = useRef(null)
+
+  const [memberIdSuggestions, setMemberIdSuggestions] = useState([])
+  const [showMemberIdPopup,   setShowMemberIdPopup]   = useState(false)
 
   const [incomeRaw,     setIncomeRaw]     = useState('')
   const [incomeDisplay, setIncomeDisplay] = useState('')
+  const [subRaw,        setSubRaw]        = useState('')
+  const [subDisplay,    setSubDisplay]    = useState('')
   const [declNoInput,   setDeclNoInput]   = useState('')
 
   const [overrideEditId, setOverrideEditId] = useState(null)
   const [dupNotice,      setDupNotice]      = useState(null)
+  const [alertModal,     setAlertModal]     = useState(null)
 
   const effectiveEditId = editId || overrideEditId
 
@@ -754,16 +761,16 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
       const map = {}
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
+      const subItem = map[categories[0]?.id]
+      if (subItem) {
+        const val = String(Math.round(subItem.amount))
+        setSubRaw(val)
+        setSubDisplay(Number(val).toLocaleString('en-IN'))
+      }
     }).finally(() => setLoading(false))
   }, [editId, categories])
 
-  // auto-fill subscription item when sub changes
-  useEffect(() => {
-    if (!subCat) return
-    setItems(prev => prev.map(i =>
-      i.category_id === subCat.id ? { ...i, amount: sub > 0 ? String(sub) : '' } : i
-    ))
-  }, [sub, subCat?.id])
+  // (subscription auto-fill is handled directly in handleIncomeChange and selectPct)
 
   // autofocus Member ID after modal renders (or after edit load completes)
   useEffect(() => {
@@ -776,7 +783,7 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
   const checkAndLoadExisting = useCallback(async (mid, fy) => {
     if (editId) return false  // already editing a specific record, skip
     const { data } = await supabase.from('declarations').select('id,declaration_number')
-      .eq('member_id', mid).eq('financial_year', fy).limit(1)
+      .ilike('member_id', mid).eq('financial_year', fy).limit(1)
     if (!data?.length) { setDupNotice(null); setOverrideEditId(null); return false }
     const ex = data[0]
     setDupNotice({ declNo: ex.declaration_number, fy })
@@ -795,9 +802,32 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
       const map = {}
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
+      const subItem = map[categories[0]?.id]
+      if (subItem) {
+        const val = String(Math.round(subItem.amount))
+        setSubRaw(val)
+        setSubDisplay(Number(val).toLocaleString('en-IN'))
+      }
     }
     return true
   }, [editId, categories])
+
+  // member ID prefix suggestion (as-you-type)
+  const onMemberIdChange = (val) => {
+    setMemberId(val)
+    if (selMember) { setSelMember(null); setMemberName(''); setMemberMobile(''); setMemberWhatsapp('') }
+    clearTimeout(memberIdTimer.current)
+    if (!val.trim()) { setShowMemberIdPopup(false); setMemberIdSuggestions([]); return }
+    memberIdTimer.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from('members').select('member_id,member_name')
+        .ilike('member_id', `${val.trim()}%`).eq('is_active', true)
+        .order('member_id', { ascending: true }).limit(20)
+      const rows = data || []
+      setMemberIdSuggestions(rows)
+      setShowMemberIdPopup(rows.length > 0)
+    }, 250)
+  }
 
   // lookup member by ID (Tab key handler)
   const lookupById = async (id) => {
@@ -806,7 +836,7 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
     const { data } = await supabase
       .from('members')
       .select('member_id,member_name,mobile,whatsapp')
-      .eq('member_id', trimmed)
+      .ilike('member_id', trimmed)
       .limit(1)
     if (data?.length) {
       const m = data[0]
@@ -820,7 +850,7 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
       const found = await checkAndLoadExisting(m.member_id, decl.financial_year)
       if (!found) setTimeout(() => declNoRef.current?.focus(), 50)
     } else {
-      toast(`Member "${trimmed}" not found`, 'error')
+      setAlertModal({ icon: '🔍', title: 'Member Not Found', message: `No member with ID "${trimmed}" exists. Please check the Member ID and try again.` })
     }
   }
 
@@ -861,13 +891,33 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
     setIncomeRaw(raw)
     setIncomeDisplay(raw ? Number(raw).toLocaleString('en-IN') : '')
     setDecl(f => ({ ...f, declared_income: raw }))
+    const newIncome = Math.round(parseFloat(raw) || 0)
+    const newSub    = Math.round(newIncome * pctNum / 100)
+    const subVal    = newSub > 0 ? String(newSub) : ''
+    setSubRaw(subVal)
+    setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
+    if (subCat) setItems(prev => prev.map(i => i.category_id === subCat.id ? { ...i, amount: subVal } : i))
   }
   const handleIncomeBlur  = () => { if (incomeRaw) setIncomeDisplay(Number(incomeRaw).toLocaleString('en-IN')) }
   const handleIncomeFocus = () => { setIncomeDisplay(incomeRaw) }
 
+  const handleSubChange = e => {
+    const raw = e.target.value.replace(/[^0-9]/g, '')
+    setSubRaw(raw)
+    setSubDisplay(raw ? Number(raw).toLocaleString('en-IN') : '')
+    if (subCat) setItems(prev => prev.map(i => i.category_id === subCat.id ? { ...i, amount: raw } : i))
+  }
+  const handleSubBlur  = () => { if (subRaw) setSubDisplay(Number(subRaw).toLocaleString('en-IN')) }
+  const handleSubFocus = () => { setSubDisplay(subRaw) }
+
   // select % and jump to first contribution (Men's Fellowship)
   const selectPct = p => {
     sd('percentage')(String(p))
+    const newSub = Math.round(incomeNum * p / 100)
+    const subVal = newSub > 0 ? String(newSub) : ''
+    setSubRaw(subVal)
+    setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
+    if (subCat) setItems(prev => prev.map(i => i.category_id === subCat.id ? { ...i, amount: subVal } : i))
     setTimeout(() => firstContribRef.current?.focus(), 30)
   }
 
@@ -875,7 +925,9 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
   const clearForm = () => {
     setMemberId(''); setMemberName(''); setMemberMobile(''); setMemberWhatsapp(''); setSelMember(null)
     setNameQ(''); setSuggestions([])
+    setMemberIdSuggestions([]); setShowMemberIdPopup(false)
     setIncomeRaw(''); setIncomeDisplay('')
+    setSubRaw(''); setSubDisplay('')
     setDecl(f => ({ ...f, income_category: '', declared_income: '', percentage: '' }))
     setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: '' })))
     setDeclNoInput(declNo != null ? String(declNo).padStart(4, '0') : '')
@@ -889,6 +941,18 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
     if (!decl.financial_year)  { toast('Select financial year', 'error');  return }
     if (!incomeNum)            { toast('Enter declared income', 'error');   return }
     if (decl.percentage === '') { toast('Select subscription %', 'error'); return }
+    if (pctNum > 0) {
+      const minSub     = Math.round(incomeNum * pctNum / 100)
+      const enteredSub = parseInt(subRaw) || 0
+      if (enteredSub < minSub) {
+        setAlertModal({
+          icon: '⚠️',
+          title: 'Subscription Too Low',
+          message: `Declared Subscription cannot be less than ₹${minSub.toLocaleString('en-IN')}.\n(${pctNum}% of declared income ₹${incomeNum.toLocaleString('en-IN')})`,
+        })
+        return
+      }
+    }
 
     setSaving(true)
     try {
@@ -937,10 +1001,8 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
     setSaving(false)
   }
 
-  const handleBackdrop = e => { if (e.target === e.currentTarget) onClose() }
-
   return (
-    <div onClick={handleBackdrop}
+    <div
       style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 12 }}>
       <div style={{ background: 'var(--card-bg)', borderRadius: 12, width: '100%', maxWidth: 980, maxHeight: '96vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.4)' }}>
 
@@ -962,7 +1024,7 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
                   {availableFYs.map(fy => <option key={fy} value={fy} style={{ background: '#1e293b', color: '#fff' }}>{fy}</option>)}
                 </select>
               </div>
-              <button onClick={onClose}
+              <button onClick={onClose} tabIndex={-1}
                 style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.26)', borderRadius: 7, padding: '5px 9px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.75)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.9)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.26)' }}>
@@ -995,23 +1057,59 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
               {/* Row 1: Member ID | Member Name | WhatsApp — 3 columns */}
               <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.4fr 1fr', gap: 8 }}>
                 <Row label="Member ID">
-                  <input
-                    ref={memberIdRef}
-                    value={memberId}
-                    onChange={e => { setMemberId(e.target.value); if (selMember) { setSelMember(null); setMemberName(''); setMemberMobile(''); setMemberWhatsapp('') } }}
-                    onKeyDown={e => {
-                      if (e.key === 'Tab' || e.key === 'Enter') {
-                        if (!memberId.trim()) return
-                        e.preventDefault()
-                        if (selMember) { declNoRef.current?.focus() } else { lookupById(memberId) }
-                      }
-                    }}
-                    onBlur={() => { if (memberId.trim() && !selMember) lookupById(memberId) }}
-                    placeholder="ID + Tab"
-                    className="field-input"
-                    style={{ height: 32 }}
-                    tabIndex={0}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      ref={memberIdRef}
+                      value={memberId}
+                      onChange={e => onMemberIdChange(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Tab' || e.key === 'Enter') {
+                          if (!memberId.trim()) return
+                          e.preventDefault()
+                          setShowMemberIdPopup(false)
+                          if (selMember) { declNoRef.current?.focus() } else { lookupById(memberId) }
+                        }
+                        if (e.key === 'Escape') { setShowMemberIdPopup(false) }
+                      }}
+                      onFocus={() => memberIdSuggestions.length > 0 && setShowMemberIdPopup(true)}
+                      onBlur={() => setTimeout(() => {
+                        setShowMemberIdPopup(false)
+                        if (memberId.trim() && !selMember) lookupById(memberId)
+                      }, 200)}
+                      placeholder="ID + Tab"
+                      className="field-input"
+                      style={{ height: 32 }}
+                      tabIndex={0}
+                      autoComplete="off"
+                    />
+                    {showMemberIdPopup && memberIdSuggestions.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 300,
+                        minWidth: 280,
+                        background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+                        borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                        maxHeight: 200, overflowY: 'auto', marginTop: 3 }}>
+                        <div style={{ padding: '5px 10px', fontSize: 10, fontWeight: 700,
+                          color: 'var(--text-3)', borderBottom: '1px solid var(--card-border)',
+                          textTransform: 'uppercase', letterSpacing: '0.06em',
+                          background: 'var(--page-bg)', borderRadius: '8px 8px 0 0' }}>
+                          Matching Members
+                        </div>
+                        {memberIdSuggestions.map(m => (
+                          <button key={m.member_id}
+                            onMouseDown={e => { e.preventDefault(); lookupById(m.member_id); setShowMemberIdPopup(false) }}
+                            style={{ display: 'flex', width: '100%', padding: '6px 10px', gap: 10,
+                              alignItems: 'center', background: 'none', border: 'none',
+                              cursor: 'pointer', borderBottom: '1px solid var(--table-border)',
+                              textAlign: 'left' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--info)', minWidth: 70, fontSize: 12 }}>{m.member_id}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{m.member_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </Row>
                 <Row label="Member Name">
                   <div style={{ position: 'relative' }}>
@@ -1115,22 +1213,28 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
                   />
                 </Row>
                 <Row label="Declared Subscription (₹)">
-                  <div style={{ height: 36, borderRadius: 8, border: '1.5px solid var(--sidebar-bg)', background: 'rgba(13,34,68,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 12 }}>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--sidebar-bg)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.01em' }}>
-                      {sub > 0 ? sub.toLocaleString('en-IN') : '—'}
-                    </span>
-                  </div>
+                  <input
+                    type="text" inputMode="numeric"
+                    value={subDisplay}
+                    onChange={handleSubChange}
+                    onFocus={handleSubFocus}
+                    onBlur={handleSubBlur}
+                    className="field-input"
+                    style={{ height: 36, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 800, fontSize: 15, border: '1.5px solid var(--sidebar-bg)', color: 'var(--sidebar-bg)' }}
+                    placeholder="0"
+                    tabIndex={0}
+                  />
                 </Row>
               </div>
 
               {/* In-words labels */}
-              {(incomeNum > 0 || sub > 0) && (
+              {(incomeNum > 0 || (parseInt(subRaw) || 0) > 0) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: -3 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic', lineHeight: 1.4 }}>
                     {incomeNum > 0 ? toWords(incomeNum) : ''}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-2)', fontStyle: 'italic', fontWeight: 600, lineHeight: 1.4 }}>
-                    {sub > 0 ? toWords(sub) : ''}
+                    {(parseInt(subRaw) || 0) > 0 ? toWords(parseInt(subRaw)) : ''}
                   </div>
                 </div>
               )}
@@ -1221,6 +1325,24 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
         </div>
 
       </div>
+
+      {/* ── Alert popup (member not found / subscription minimum) ── */}
+      {alertModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(3px)' }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, padding: '28px 30px 22px', maxWidth: 360, width: '100%', margin: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.45)', textAlign: 'center', fontFamily: 'var(--font-ui)' }}>
+            <div style={{ fontSize: 38, marginBottom: 10, lineHeight: 1 }}>{alertModal.icon}</div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>{alertModal.title}</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 22px', lineHeight: 1.6, whiteSpace: 'pre-line' }}>{alertModal.message}</p>
+            <button
+              autoFocus
+              onClick={() => setAlertModal(null)}
+              style={{ padding: '8px 32px', borderRadius: 8, background: 'var(--sidebar-bg)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
