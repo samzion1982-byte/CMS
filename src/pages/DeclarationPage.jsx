@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { getActiveCategories } from '../lib/paymentCategories'
-import { Search, Loader2, Save, X, FileText, Plus, Edit2, Trash2, RotateCcw, FileSpreadsheet, Settings, ChevronDown } from 'lucide-react'
+import { Search, Loader2, Save, X, FileText, Plus, Edit2, Trash2, RotateCcw, FileSpreadsheet, Settings, ChevronDown, Lock, Unlock } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 
 // ── helpers ─────────────────────────────────────────────────────
@@ -105,6 +105,9 @@ export default function DeclarationPage() {
   const [fyStats,        setFyStats]        = useState({})
   const [manualFYs,      setManualFYs]      = useState([])
   const [showFYMgr,      setShowFYMgr]      = useState(false)
+  const [lockedFYs,      setLockedFYs]      = useState(new Set())
+  const [fyActivity,     setFyActivity]     = useState({})
+  const [fyLockedAlert,  setFyLockedAlert]  = useState(null)
   const exportMenuRef = useRef(null)
 
   // Union of data-bearing and manually added FYs — always ascending (fully manual, no auto range)
@@ -113,17 +116,54 @@ export default function DeclarationPage() {
     return [...all].sort()
   }, [fyStats, manualFYs])
 
-  const loadManualFYs = useCallback(async () => {
-    const { data } = await supabase.from('financial_years').select('fy').order('fy')
-    setManualFYs((data || []).map(r => r.fy))
+  const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000
+
+  const loadFYData = useCallback(async () => {
+    const { data } = await supabase.from('decl_financial_years')
+      .select('fy, is_locked, last_activity_at').order('fy')
+    const rows = data || []
+    setManualFYs(rows.map(r => r.fy))
+    setLockedFYs(new Set(rows.filter(r => r.is_locked).map(r => r.fy)))
+    setFyActivity(Object.fromEntries(rows.map(r => [r.fy, r.last_activity_at])))
   }, [])
 
-  useEffect(() => { loadManualFYs() }, [loadManualFYs])
+  useEffect(() => { loadFYData() }, [loadFYData])
+
+  const updateFYActivity = useCallback(async (fy) => {
+    if (!fy) return
+    const now = new Date().toISOString()
+    await supabase.from('decl_financial_years')
+      .upsert({ fy, is_locked: false, last_activity_at: now }, { onConflict: 'fy' })
+    setFyActivity(prev => ({ ...prev, [fy]: now }))
+    setManualFYs(prev => prev.includes(fy) ? prev : [...prev, fy].sort())
+    setLockedFYs(prev => {
+      if (!prev.has(fy)) return prev
+      const next = new Set(prev); next.delete(fy); return next
+    })
+  }, [])
+
+  // Auto-lock FYs with no activity in the last 10 days (only if they have declarations)
+  useEffect(() => {
+    if (!availableFYs.length) return
+    const now = Date.now()
+    const toAutoLock = availableFYs.filter(fy => {
+      if (lockedFYs.has(fy)) return false
+      if (!(fyStats[fy] > 0)) return false
+      const lastAct = fyActivity[fy] ? new Date(fyActivity[fy]).getTime() : null
+      return lastAct !== null && (now - lastAct) > TEN_DAYS_MS
+    })
+    if (!toAutoLock.length) return
+    Promise.all(toAutoLock.map(fy =>
+      supabase.from('decl_financial_years').update({ is_locked: true }).eq('fy', fy)
+    )).then(() =>
+      setLockedFYs(prev => { const next = new Set(prev); toAutoLock.forEach(f => next.add(f)); return next })
+    )
+  }, [availableFYs, fyStats, fyActivity, lockedFYs, TEN_DAYS_MS])
 
   const addFY = useCallback(async (fy) => {
     if (!isValidFY(fy))            return 'Format must be YYYY-YY (e.g. 2028-29)'
     if (manualFYs.includes(fy))    return 'Already in your list'
-    const { error } = await supabase.from('financial_years').insert({ fy })
+    const { error } = await supabase.from('decl_financial_years').insert({ fy })
     if (error) return error.message
     setManualFYs(prev => [...prev, fy].sort())
     return null
@@ -142,9 +182,11 @@ export default function DeclarationPage() {
       }
       setFyStats(prev => { const n = { ...prev }; delete n[fy]; return n })
     }
-    const { error } = await supabase.from('financial_years').delete().eq('fy', fy)
+    const { error } = await supabase.from('decl_financial_years').delete().eq('fy', fy)
     if (error) return error.message
     setManualFYs(prev => prev.filter(f => f !== fy))
+    setLockedFYs(prev => { const next = new Set(prev); next.delete(fy); return next })
+    setFyActivity(prev => { const next = { ...prev }; delete next[fy]; return next })
     return null
   }, [fyStats, profile])
 
@@ -185,8 +227,33 @@ export default function DeclarationPage() {
 
   useEffect(() => { loadFyStats() }, [loadFyStats])
 
-  const openNew  = useCallback(() => { setEditId(null);   setShowModal(true) }, [])
-  const openEdit = row => { setEditId(row.id); setShowModal(true) }
+  const isAutoLocked = useCallback((fy) => {
+    if (!lockedFYs.has(fy)) return false
+    const lastAct = fyActivity[fy] ? new Date(fyActivity[fy]).getTime() : null
+    return lastAct !== null && (Date.now() - lastAct) > TEN_DAYS_MS
+  }, [lockedFYs, fyActivity, TEN_DAYS_MS])
+
+  const toggleFYLock = useCallback(async (fy) => {
+    const willLock = !lockedFYs.has(fy)
+    const { error } = await supabase.from('decl_financial_years')
+      .update({ is_locked: willLock }).eq('fy', fy)
+    if (error) return
+    setLockedFYs(prev => {
+      const next = new Set(prev)
+      if (next.has(fy)) next.delete(fy); else next.add(fy)
+      return next
+    })
+  }, [lockedFYs])
+
+  const openNew = useCallback(() => {
+    if (lockedFYs.has(filterFY)) { setFyLockedAlert(filterFY); return }
+    setEditId(null); setShowModal(true)
+  }, [lockedFYs, filterFY])
+
+  const openEdit = row => {
+    if (lockedFYs.has(row.financial_year)) { setFyLockedAlert(row.financial_year); return }
+    setEditId(row.id); setShowModal(true)
+  }
 
   // "+" hotkey opens new declaration (ignored when typing in any field)
   useEffect(() => {
@@ -206,6 +273,7 @@ export default function DeclarationPage() {
     const { error } = await supabase.from('declarations').delete().eq('id', row.id)
     if (error) { toast(error.message, 'error'); return }
     toast('Declaration deleted', 'success')
+    updateFYActivity(row.financial_year)
     loadList(); loadFyStats()
   }
 
@@ -337,22 +405,42 @@ export default function DeclarationPage() {
         {availableFYs.length > 0 && (
           <div className="card" style={{ flex: '1 1 auto', padding: 0, display: 'flex', overflow: 'hidden' }}>
             {availableFYs.map((fy, i, arr) => {
-              const count  = fyStats[fy] || 0
-              const active = filterFY === fy
+              const count    = fyStats[fy] || 0
+              const active   = filterFY === fy
+              const isLocked = lockedFYs.has(fy)
+              const autoLock = isLocked && isAutoLocked(fy)
               return (
                 <div key={fy} onClick={() => setFilterFY(fy)}
                   style={{ flex: 1, minWidth: 0, padding: '14px 22px', cursor: 'pointer',
                     borderRight: i < arr.length - 1 ? '1px solid var(--card-border)' : 'none',
-                    background: active ? 'var(--sidebar-bg)' : 'transparent',
-                    transition: 'background 0.15s' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: active ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', marginBottom: 4 }}>
+                    background: active ? 'var(--sidebar-bg)' : isLocked ? 'rgba(251,191,36,0.08)' : 'transparent',
+                    transition: 'background 0.15s', position: 'relative' }}>
+                  {isLocked && (
+                    <div style={{ position: 'absolute', top: 7, right: 8, display: 'flex', alignItems: 'center', gap: 3,
+                      background: active ? 'rgba(0,0,0,0.25)' : 'rgba(251,191,36,0.2)',
+                      border: `1px solid ${active ? 'rgba(255,255,255,0.2)' : 'rgba(217,119,6,0.4)'}`,
+                      borderRadius: 4, padding: '1px 5px' }}>
+                      <Lock size={9} style={{ color: active ? '#fde68a' : '#d97706' }}/>
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+                        color: active ? '#fde68a' : '#d97706', textTransform: 'uppercase' }}>
+                        {autoLock ? 'Auto-Locked' : 'Locked'}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em',
+                    color: active ? 'rgba(255,255,255,0.6)' : isLocked ? '#d97706' : 'var(--text-3)',
+                    marginBottom: 4 }}>
                     FY {fy}
                   </div>
-                  <div style={{ fontSize: 36, fontWeight: 800, color: active ? '#fff' : 'var(--text-1)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                  <div style={{ fontSize: 36, fontWeight: 800,
+                    color: active ? '#fff' : isLocked ? '#92400e' : 'var(--text-1)',
+                    fontVariantNumeric: 'tabular-nums', lineHeight: 1.1,
+                    opacity: isLocked && !active ? 0.65 : 1 }}>
                     {count}
                   </div>
-                  <div style={{ fontSize: 11, color: active ? 'rgba(255,255,255,0.5)' : 'var(--text-3)', marginTop: 4 }}>
-                    {`declaration${count !== 1 ? 's' : ''}`}
+                  <div style={{ fontSize: 11, marginTop: 4,
+                    color: active ? 'rgba(255,255,255,0.55)' : isLocked ? '#d97706' : 'var(--text-3)' }}>
+                    {isLocked ? (autoLock ? 'auto-locked' : 'locked') : `declaration${count !== 1 ? 's' : ''}`}
                   </div>
                 </div>
               )
@@ -370,6 +458,8 @@ export default function DeclarationPage() {
             <FYManagerPopup
               availableFYs={availableFYs}
               fyStats={fyStats}
+              lockedFYs={lockedFYs}
+              onToggleFYLock={toggleFYLock}
               profile={profile}
               onAdd={addFY}
               onDelete={deleteFY}
@@ -472,14 +562,32 @@ export default function DeclarationPage() {
       {showModal && (
         <DeclarationModal
           editId={editId}
+          initialFY={filterFY}
           categories={categories}
           catsLoading={catsLoading}
-          availableFYs={availableFYs}
           profile={profile}
           toast={toast}
           onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); loadList(); loadFyStats() }}
+          onSaved={(fy) => { setShowModal(false); updateFYActivity(fy); loadList(); loadFyStats() }}
         />
+      )}
+
+      {/* ── FY locked alert ── */}
+      {fyLockedAlert && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(3px)' }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, padding: '28px 30px 22px', maxWidth: 390, width: '100%', margin: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.45)', textAlign: 'center', fontFamily: 'var(--font-ui)' }}>
+            <div style={{ fontSize: 38, marginBottom: 10, lineHeight: 1 }}>🔒</div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 10px' }}>FY {fyLockedAlert} is Locked</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 22px', lineHeight: 1.65 }}>
+              This financial year is locked — no declarations can be added or edited.<br/>
+              Open the <strong>FY Manager</strong> <span style={{ fontSize: 12, background: 'var(--page-bg)', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--card-border)' }}>⚙ gear icon</span> and unlock <strong>FY {fyLockedAlert}</strong> to make changes.
+            </p>
+            <button autoFocus onClick={() => setFyLockedAlert(null)}
+              style={{ padding: '8px 32px', borderRadius: 8, background: 'var(--sidebar-bg)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-ui)' }}>
+              OK
+            </button>
+          </div>
+        </div>
       )}
 
     </div>
@@ -490,7 +598,7 @@ export default function DeclarationPage() {
 //  FY MANAGER POPUP
 // ════════════════════════════════════════════════════════
 
-function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast, onClose }) {
+function FYManagerPopup({ availableFYs, fyStats, lockedFYs, onToggleFYLock, profile, onAdd, onDelete, toast, onClose }) {
   const [input,     setInput]     = useState('')
   const [err,       setErr]       = useState('')
   const [saving,    setSaving]    = useState(false)
@@ -498,8 +606,32 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
   const [confirmFY, setConfirmFY] = useState(null)
   const [password,  setPassword]  = useState('')
   const [pwErr,     setPwErr]     = useState(false)
-  const ref   = useRef(null)
-  const pwRef = useRef(null)
+  const [hoveredFY,      setHoveredFY]      = useState(null)
+  const [fyUnlockTarget, setFyUnlockTarget] = useState(null)
+  const [fyUnlockPw,     setFyUnlockPw]     = useState('')
+  const [fyUnlockPwErr,  setFyUnlockPwErr]  = useState(false)
+  const [fyUnlocking,    setFyUnlocking]    = useState(false)
+  const ref        = useRef(null)
+  const pwRef      = useRef(null)
+  const fyUnlockPwRef = useRef(null)
+
+  const requestFYUnlock = (fy) => {
+    setFyUnlockTarget(fy)
+    setFyUnlockPw('')
+    setFyUnlockPwErr(false)
+    setTimeout(() => fyUnlockPwRef.current?.focus(), 50)
+  }
+
+  const doFYUnlock = async () => {
+    if (!fyUnlockPw || fyUnlocking) return
+    setFyUnlocking(true)
+    const { error } = await supabase.auth.signInWithPassword({ email: profile.email, password: fyUnlockPw })
+    setFyUnlocking(false)
+    if (error) { setFyUnlockPwErr(true); setTimeout(() => fyUnlockPwRef.current?.focus(), 30); return }
+    await onToggleFYLock?.(fyUnlockTarget)
+    setFyUnlockTarget(null)
+    setFyUnlockPw('')
+  }
 
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) onClose() }
@@ -564,7 +696,7 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
           <Settings size={13} style={{ color: 'rgba(255,255,255,0.7)' }}/>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Financial Year Manager</span>
         </div>
-        <button onClick={onClose} style={{ position: 'relative', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.26)', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', color: '#fff', display: 'flex' }}>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.26)', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', color: '#fff', display: 'flex', position: 'relative' }}>
           <X size={12}/>
         </button>
       </div>
@@ -574,27 +706,46 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
         {availableFYs.length === 0 ? (
           <div style={{ padding: '20px 14px', fontSize: 13, color: 'var(--text-3)', textAlign: 'center' }}>No financial years yet. Add one below.</div>
         ) : availableFYs.map((fy, i, arr) => {
-          const count  = fyStats[fy] || 0
-          const isConf = confirmFY === fy
-          const isLast = i === arr.length - 1
+          const count      = fyStats[fy] || 0
+          const isConf     = confirmFY === fy
+          const isUnlocking = fyUnlockTarget === fy
+          const isLast     = i === arr.length - 1
+          const isFYLocked = lockedFYs?.has(fy)
+          const isHovered = hoveredFY === fy
           return (
             <div key={fy}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px',
+              <div
+                onMouseEnter={() => setHoveredFY(fy)}
+                onMouseLeave={() => setHoveredFY(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px',
                 borderBottom: '1px solid var(--card-border)',
-                background: isConf ? 'rgba(220,38,38,0.06)' : 'transparent',
+                background: isConf ? 'rgba(220,38,38,0.06)' : isUnlocking ? 'rgba(251,191,36,0.07)' : isHovered ? 'var(--table-row-hover)' : isFYLocked ? 'rgba(251,191,36,0.05)' : 'transparent',
                 transition: 'background 0.15s' }}>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>FY {fy}</span>
+                  {isFYLocked && <span style={{ fontSize: 10, fontWeight: 700, color: '#d97706', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.35)', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.04em' }}>LOCKED</span>}
                 </div>
                 <span style={{ fontSize: 11, color: count > 0 ? 'var(--text-2)' : 'var(--text-3)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                   {count > 0 ? `${count} record${count !== 1 ? 's' : ''}` : 'No data'}
                 </span>
+                {/* Per-FY lock toggle — lock directly, unlock requires password */}
+                <button
+                  onClick={() => isFYLocked ? requestFYUnlock(fy) : onToggleFYLock?.(fy)}
+                  title={isFYLocked ? `Unlock FY ${fy}` : `Lock FY ${fy}`}
+                  style={{ background: 'none', border: 'none', padding: '3px 4px', borderRadius: 4,
+                    display: 'flex', flexShrink: 0, cursor: 'pointer',
+                    color: isFYLocked ? '#d97706' : 'var(--text-3)',
+                    opacity: 1 }}>
+                  {isFYLocked ? <Lock size={13}/> : <Unlock size={13}/>}
+                </button>
                 <button
                   onClick={() => handleDeleteClick(fy)}
                   disabled={deleting === fy}
                   title={count > 0 ? 'Delete FY and all its declarations' : 'Remove this FY'}
-                  style={{ background: 'none', border: 'none', cursor: deleting === fy ? 'not-allowed' : 'pointer',
-                    color: '#dc2626', padding: '3px 4px', borderRadius: 4, display: 'flex', flexShrink: 0,
+                  style={{ background: 'none', border: 'none',
+                    cursor: deleting === fy ? 'not-allowed' : 'pointer',
+                    color: '#dc2626',
+                    padding: '3px 4px', borderRadius: 4, display: 'flex', flexShrink: 0,
                     opacity: deleting === fy ? 0.4 : 1 }}>
                   {deleting === fy ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
                 </button>
@@ -638,6 +789,46 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
                   </div>
                 </div>
               )}
+              {isUnlocking && (
+                <div style={{ padding: '12px 14px', background: 'rgba(251,191,36,0.08)',
+                  borderBottom: !isLast ? '1px solid var(--card-border)' : 'none' }}>
+                  <p style={{ fontSize: 11, color: '#92400e', fontWeight: 700, margin: '0 0 8px', lineHeight: 1.55, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Unlock size={11}/> Enter your password to unlock FY {fy}
+                  </p>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: fyUnlockPwErr ? 4 : 6 }}>
+                    <input
+                      ref={fyUnlockPwRef}
+                      type="password"
+                      value={fyUnlockPw}
+                      onChange={e => { setFyUnlockPw(e.target.value); setFyUnlockPwErr(false) }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') doFYUnlock()
+                        if (e.key === 'Escape') { setFyUnlockTarget(null); setFyUnlockPw('') }
+                      }}
+                      placeholder="Your password"
+                      className="field-input"
+                      style={{ flex: 1, height: 32, fontSize: 13,
+                        borderColor: fyUnlockPwErr ? '#dc2626' : undefined }}
+                    />
+                    <button onClick={() => { setFyUnlockTarget(null); setFyUnlockPw('') }}
+                      style={{ height: 32, padding: '0 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                        background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--card-border)',
+                        cursor: 'pointer', flexShrink: 0 }}>
+                      Cancel
+                    </button>
+                    <button onClick={doFYUnlock} disabled={!fyUnlockPw || fyUnlocking}
+                      style={{ height: 32, padding: '0 12px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+                        background: '#d97706', color: '#fff', border: 'none', flexShrink: 0,
+                        cursor: !fyUnlockPw || fyUnlocking ? 'not-allowed' : 'pointer',
+                        opacity: !fyUnlockPw || fyUnlocking ? 0.6 : 1,
+                        display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {fyUnlocking ? <Loader2 size={11} className="animate-spin"/> : <Unlock size={11}/>}
+                      Unlock
+                    </button>
+                  </div>
+                  {fyUnlockPwErr && <p style={{ fontSize: 11, color: '#dc2626', margin: '0', fontWeight: 600 }}>Incorrect password</p>}
+                </div>
+              )}
             </div>
           )
         })}
@@ -645,25 +836,27 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
 
       {/* Add new FY */}
       <div style={{ padding: '12px 14px', borderTop: '1px solid var(--card-border)', background: 'var(--card-header-bg)' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input
-            value={input}
-            onChange={e => { setInput(e.target.value); setErr('') }}
-            onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
-            placeholder="Add FY — e.g. 2028-29"
-            className="field-input"
-            style={{ flex: 1, height: 32, fontSize: 13 }}
-          />
-          <button onClick={handleAdd} disabled={saving || !input.trim()}
-            style={{ height: 32, padding: '0 14px', borderRadius: 7, fontSize: 13, fontWeight: 600,
-              background: 'var(--sidebar-bg)', color: '#fff', border: 'none',
-              cursor: saving || !input.trim() ? 'not-allowed' : 'pointer', flexShrink: 0,
-              opacity: saving || !input.trim() ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}>
-            {saving ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
-            Add
-          </button>
-        </div>
-        {err && <p style={{ fontSize: 11, color: 'var(--danger)', margin: '5px 0 0', fontWeight: 600 }}>{err}</p>}
+        <>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                value={input}
+                onChange={e => { setInput(e.target.value); setErr('') }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+                placeholder="Add FY — e.g. 2028-29"
+                className="field-input"
+                style={{ flex: 1, height: 32, fontSize: 13 }}
+              />
+              <button onClick={handleAdd} disabled={saving || !input.trim()}
+                style={{ height: 32, padding: '0 14px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+                  background: 'var(--sidebar-bg)', color: '#fff', border: 'none',
+                  cursor: saving || !input.trim() ? 'not-allowed' : 'pointer', flexShrink: 0,
+                  opacity: saving || !input.trim() ? 0.55 : 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {saving ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12}/>}
+                Add
+              </button>
+            </div>
+            {err && <p style={{ fontSize: 11, color: 'var(--danger)', margin: '5px 0 0', fontWeight: 600 }}>{err}</p>}
+          </>
       </div>
     </div>
   )
@@ -673,10 +866,10 @@ function FYManagerPopup({ availableFYs, fyStats, profile, onAdd, onDelete, toast
 //  MODAL
 // ════════════════════════════════════════════════════════
 
-function DeclarationModal({ editId, categories, catsLoading, availableFYs, profile, toast, onClose, onSaved }) {
+function DeclarationModal({ editId, initialFY, categories, catsLoading, profile, toast, onClose, onSaved }) {
   const today = new Date().toISOString().slice(0, 10)
 
-  const [decl,    setDecl]    = useState({ financial_year: editId ? getFY() : getStoredFY(), declaration_date: today, income_category: '', declared_income: '', percentage: '' })
+  const [decl,    setDecl]    = useState({ financial_year: initialFY || getStoredFY(), declaration_date: today, income_category: '', declared_income: '', percentage: '' })
   const [declNo,  setDeclNo]  = useState(null)
   const [items,   setItems]   = useState([])
   const [saving,  setSaving]  = useState(false)
@@ -728,11 +921,6 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
     if (!categories.length) return
     setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: '' })))
   }, [categories])
-
-  // persist FY selection to localStorage (new declarations only)
-  useEffect(() => {
-    if (!editId && decl.financial_year) saveStoredFY(decl.financial_year)
-  }, [editId, decl.financial_year])
 
   // auto-generate declaration number for new
   useEffect(() => {
@@ -996,7 +1184,7 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
       }
 
       toast(effectiveEditId ? 'Declaration updated' : 'Declaration saved', 'success')
-      onSaved()
+      onSaved(decl.financial_year)
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
@@ -1015,14 +1203,12 @@ function DeclarationModal({ editId, categories, catsLoading, availableFYs, profi
               {effectiveEditId ? 'Edit Declaration' : 'New Declaration'}
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* FY in header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FY</span>
-                <select value={decl.financial_year} onChange={e => sd('financial_year')(e.target.value)}
-                  style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 6, color: '#fff', padding: '4px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer', outline: 'none', appearance: 'none' }}
-                  tabIndex={-1}>
-                  {availableFYs.map(fy => <option key={fy} value={fy} style={{ background: '#1e293b', color: '#fff' }}>{fy}</option>)}
-                </select>
+              {/* FY badge — fixed to the selected FY, not changeable mid-form */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6,
+                background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.28)',
+                borderRadius: 6, padding: '4px 10px' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>FY</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{decl.financial_year}</span>
               </div>
               <button onClick={onClose} tabIndex={-1}
                 style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.26)', borderRadius: 7, padding: '5px 9px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
