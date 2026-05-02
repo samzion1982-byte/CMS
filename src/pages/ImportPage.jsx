@@ -802,11 +802,12 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
   const [sheetName, setSheetName] = useState('')
   const [headers, setHeaders] = useState([])
   const [rows, setRows] = useState([])
-  const [progress, setProgress] = useState(0)
-  const [result, setResult] = useState(null)
-  const [importing, setImporting] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
+  const [progress,    setProgress]    = useState(0)
+  const [result,      setResult]      = useState(null)
+  const [importing,   setImporting]   = useState(false)
+  const [dragOver,    setDragOver]    = useState(false)
   const [importError, setImportError] = useState(null)
+  const [overwriteFY, setOverwriteFY] = useState(false)
 
   async function handleFile(file) {
     if (!file) return
@@ -834,9 +835,9 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     setImportError(null)
     import('xlsx').then(XLSX => {
       const ws = workbook.Sheets[name]
-      // Read with cellDates:false to handle dates as strings/numbers manually
-      // This prevents Excel from pre-converting dates which can cause timezone issues
-      const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:false, cellDates:false })
+      // raw:true preserves JS Date objects (from cellDates:true in XLSX.read) and numeric values as-is.
+      // raw:false can produce unpredictable locale-formatted date strings that break parseDateDMY.
+      const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:true })
       if (raw.length < 2) return
       const headerRow = raw[0]
       const headerLen = headerRow.length
@@ -892,17 +893,43 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       if (amtIdx >= 0) catCols[cat.id] = { amtIdx, monIdx, totIdx }
     })
 
+    // Debug: log first row's raw date value to help diagnose format issues
+    if (rows.length > 0) {
+      const dateIdx0 = (() => {
+        const hdrMap0 = {}
+        headers.forEach((h, i) => { if (h) hdrMap0[normalizeCol(h)] = i })
+        const col0 = (fb, ...names) => { for (const n of names) { const v = hdrMap0[normalizeCol(n)]; if (v != null) return v } return fb }
+        return col0(3, 'receipt_date','receiptdate','receipt date','date','rcptdate')
+      })()
+      const sampleDate = rows[0][dateIdx0]
+      console.log('[ReceiptImport] sample date cell value:', sampleDate, '| type:', typeof sampleDate, '| isDate:', sampleDate instanceof Date)
+      console.log('[ReceiptImport] parseDateDMY result →', parseDateDMY(sampleDate))
+    }
+
+    setImporting(true); setStep(4); setProgress(0)
+
+    // Overwrite mode: delete all existing receipts for this FY first
+    if (overwriteFY) {
+      const { data: exIds } = await supabase.from('receipts').select('id').eq('financial_year', fy)
+      if (exIds?.length) {
+        const ids = exIds.map(r => r.id)
+        await supabase.from('receipt_items').delete().in('receipt_id', ids)
+        await supabase.from('receipts').delete().eq('financial_year', fy)
+      }
+    }
+
     // Pre-fetch existing receipt numbers for this FY (single query, no N+1)
     const { data: existing } = await supabase.from('receipts')
       .select('receipt_number').eq('financial_year', fy)
     const existingNums = new Set((existing || []).map(r => r.receipt_number))
 
-    setImporting(true); setStep(4)
     let imported = 0, skipped = 0, errors = 0
+    const total = rows.length
 
     try {
       // `rows` is already header-stripped by loadSheet; iterate all data rows
       for (let ri = 0; ri < rows.length; ri++) {
+        if (ri % 10 === 0) setProgress(Math.round((ri / total) * 100))
         const row = rows[ri]
         try {
           // Skip fully blank rows
@@ -916,10 +943,16 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
 
           const memberId    = String(row[memberIdIdx] ?? '').trim()
           const memberName  = String(row[memberNmIdx] ?? '').trim()
-          const dateRaw     = String(row[dateIdx] ?? '').trim()
+          const dateRaw     = row[dateIdx] ?? ''   // keep Date objects intact — don't stringify before parseDateDMY
           const receiptDate = parseDateDMY(dateRaw) || new Date().toISOString().slice(0, 10)
-          const payMode     = String(row[modeIdx] ?? '').trim() || 'Cash'
-          const monthPaid   = String(row[monthIdx] ?? '').trim() || null
+          const payMode   = String(row[modeIdx] ?? '').trim() || 'Cash'
+          let monthPaid   = String(row[monthIdx] ?? '').trim() || null
+          // Derive month from receipt date if not present in the spreadsheet
+          if (!monthPaid && receiptDate) {
+            const _MD = ['January','February','March','April','May','June','July','August','September','October','November','December']
+            const _d  = new Date(receiptDate + 'T00:00:00')
+            if (!isNaN(_d.getTime())) monthPaid = _MD[_d.getMonth()]
+          }
           const grandTotal  = totalIdx >= 0
             ? parseFloat(String(row[totalIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
             : 0
@@ -1132,7 +1165,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
 
   function reset() {
     setWb(null);setSheetName('');setHeaders([]);setRows([]);setProgress(0)
-    setResult(null);setStep(1);setImporting(false);setImportError(null)
+    setResult(null);setStep(1);setImporting(false);setImportError(null);setOverwriteFY(false)
   }
 
   // Preview uses DB column name derived by position
@@ -1292,10 +1325,42 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
                 <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'#92400e'}}>
                   {rows.length.toLocaleString()} receipt rows ready to import into FY {sheetName}
                 </p>
-                <p style={{margin:0,fontSize:12,color:'#78350f',lineHeight:1.6}}>
-                  Duplicate receipts (matched by receipt number) will be skipped automatically.<br/>
-                  Month names are derived from the <em>months paid</em> column if present; otherwise month count is stored.
+                {/* Sample date debug panel */}
+                {rows.length > 0 && (() => {
+                  const hdrMap0 = {}
+                  headers.forEach((h, i) => { if (h) hdrMap0[normalizeCol(h)] = i })
+                  const col0 = (fb, ...ns) => { for (const n of ns) { const v = hdrMap0[normalizeCol(n)]; if (v != null) return v } return fb }
+                  const dIdx = col0(3,'receipt_date','receiptdate','receipt date','date','rcptdate')
+                  const sample = rows[0]?.[dIdx]
+                  const parsed = parseDateDMY(sample)
+                  const isDate = sample instanceof Date
+                  const asString = String(sample ?? '')
+                  return (
+                    <div style={{margin:'4px 0 8px',padding:'8px 10px',background:'rgba(0,0,0,0.06)',borderRadius:6,fontFamily:'monospace',fontSize:11,lineHeight:1.7}}>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>type:</span> {isDate ? '📅 Date object' : typeof sample}</div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>raw value:</span> {isDate ? sample.toISOString() : asString || '(empty)'}</div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>String(raw):</span> <span style={{color:'#dc2626'}}>{asString.slice(0,60)}</span></div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>parseDateDMY:</span> <strong style={{color: parsed ? '#065f46' : '#dc2626'}}>{parsed || '⚠ FAILED — will store today\'s date'}</strong></div>
+                    </div>
+                  )
+                })()}
+                <p style={{margin:'0 0 8px',fontSize:12,color:'#78350f',lineHeight:1.6}}>
+                  Duplicate receipts (matched by receipt number) will be skipped automatically.
+                  Month is derived from receipt date when no month column is present.
                 </p>
+                {/* Overwrite toggle */}
+                <label style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',marginTop:4}}>
+                  <input type="checkbox" checked={overwriteFY} onChange={e=>setOverwriteFY(e.target.checked)}
+                    style={{width:14,height:14,accentColor:'#d97706',cursor:'pointer'}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:'#92400e'}}>
+                    Clear existing receipts for FY {sheetName} and re-import (overwrite mode)
+                  </span>
+                </label>
+                {overwriteFY && (
+                  <p style={{margin:'5px 0 0 21px',fontSize:11,color:'#dc2626',fontWeight:600}}>
+                    ⚠ All existing receipts for FY {sheetName} will be deleted before importing.
+                  </p>
+                )}
               </div>
             ) : (
               /* Normal member/deleted preview table */
@@ -1349,6 +1414,24 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
           </div>
         )
       })()}
+
+      {/* Step 4: Progress */}
+      {step>=4 && importing && !result && (
+        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+            <Loader2 size={16} style={{color:'#2563eb',animation:'spin 1s linear infinite',flexShrink:0}}/>
+            <div>
+              <p style={{margin:'0 0 1px',fontSize:13,fontWeight:600,color:'#0f172a'}}>Importing receipts…</p>
+              <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>"{sheetName}"</p>
+            </div>
+            <span style={{marginLeft:'auto',fontSize:13,fontWeight:700,color:'#2563eb'}}>{progress}%</span>
+          </div>
+          <div style={{height:8,borderRadius:4,background:'#e2e8f0',overflow:'hidden'}}>
+            <div style={{height:'100%',borderRadius:4,background:'#2563eb',transition:'width .3s',width:progress+'%'}}/>
+          </div>
+          <p style={{margin:'8px 0 0',fontSize:11,color:'#94a3b8'}}>Please wait — do not close this page.</p>
+        </div>
+      )}
 
       {/* Step 4: Result */}
       {step>=4 && result && (
@@ -1725,15 +1808,39 @@ function AutoFlushTab() {
 }
 
 // ── Receipt import helpers (used by ImportTab.doImportReceipts) ───────────────
+const _DMY_MONS = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}
 function parseDateDMY(s) {
-  if (!s) return ''
+  if (!s && s !== 0) return ''
+  // JS Date object (raw:true + cellDates:true in XLSX.read).
+  // SheetJS uses new Date(y, m, d) (local midnight), but floating-point serial math can
+  // produce a value a few seconds BEFORE midnight — e.g. 23:59:50 IST instead of 00:00:00.
+  // Adding 30 min clears that gap without ever crossing a real day boundary.
+  if (s instanceof Date) {
+    if (isNaN(s.getTime())) return ''
+    const adj = new Date(s.getTime() + 30 * 60 * 1000)
+    return `${adj.getFullYear()}-${String(adj.getMonth()+1).padStart(2,'0')}-${String(adj.getDate()).padStart(2,'0')}`
+  }
   const str = String(s).trim()
+  if (!str) return ''
+  // ISO date / datetime: "2026-04-01" or "2026-04-01T00:00:00…"
+  const m2 = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`
+  // DD-MM-YYYY or DD/MM/YYYY
   const m1 = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
   if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`
-  if (/^(\d{4})-(\d{2})-(\d{2})$/.test(str)) return str
+  // DD-MMM-YYYY or DD MMM YYYY  e.g. "01-Apr-2026" / "1 April 2026"
+  const m3 = str.match(/^(\d{1,2})[-/ ]([a-zA-Z]{3,9})[-/ ](\d{4})$/)
+  if (m3) {
+    const mo = _DMY_MONS[m3[2].toLowerCase().slice(0,3)]
+    if (mo) return `${m3[3]}-${String(mo).padStart(2,'0')}-${m3[1].padStart(2,'0')}`
+  }
+  // Excel serial number string
   if (/^\d+$/.test(str)) {
-    const d = new Date((parseInt(str) - 25569) * 86400 * 1000)
-    if (!isNaN(d)) return d.toISOString().slice(0, 10)
+    const n = parseInt(str, 10)
+    if (n > 1000) {
+      const d = new Date((n - 25569) * 86400 * 1000)
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    }
   }
   return ''
 }

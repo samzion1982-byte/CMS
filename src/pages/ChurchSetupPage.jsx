@@ -43,7 +43,9 @@ export default function ChurchSetupPage() {
     secretary_name: '', secretary_whatsapp: '',
     treasurer_name: '', treasurer_whatsapp: '',
     admin1_name:    '', admin1_whatsapp: '',
-    auth_code: ''
+    auth_code: '',
+    receipt_date_mode: 'today',
+    whatsapp_receipt_mode: 'instant',
   })
 
   useEffect(() => { loadChurch() }, [])
@@ -77,7 +79,9 @@ export default function ChurchSetupPage() {
         treasurer_whatsapp: data.treasurer_whatsapp || '',
         admin1_name:        data.admin1_name        || '',
         admin1_whatsapp:    data.admin1_whatsapp    || '',
-        auth_code:          data.auth_code          || ''
+        auth_code:          data.auth_code          || '',
+        receipt_date_mode:     data.receipt_date_mode     || 'today',
+        whatsapp_receipt_mode: data.whatsapp_receipt_mode || 'instant',
       })
       setAuthCode(data.auth_code || '')
       if (data.logo_url) setLogoPreview(data.logo_url)
@@ -218,6 +222,7 @@ export default function ChurchSetupPage() {
         treasurer_name:'', treasurer_whatsapp:'',
         admin1_name:'',    admin1_whatsapp:'',
         auth_code:'', logo_url: null, diocese_logo_url: null,
+        receipt_date_mode:'today', whatsapp_receipt_mode:'instant',
         updated_at: new Date().toISOString()
       }
       const { error } = await supabase.from('churches').update(blank).eq('id', church.id)
@@ -481,6 +486,57 @@ export default function ChurchSetupPage() {
             ))}
           </div>
         </div>
+
+            {/* PAYMENTS */}
+            <div className="card p-6">
+              <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Payments</p>
+              <div className="space-y-5">
+
+                {/* Receipt date mode */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Receipt date</p>
+                  <div style={{display:'flex',gap:8}}>
+                    {[['today',"Today's date"],['fixed','Last saved date']].map(([val,label])=>(
+                      <button key={val} onClick={()=>s('receipt_date_mode',val)}
+                        style={{flex:1,padding:'8px 0',borderRadius:8,border:'1.5px solid',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',
+                          borderColor: form.receipt_date_mode===val ? '#7c3aed' : '#e2e8f0',
+                          background:  form.receipt_date_mode===val ? '#f5f3ff' : '#f8fafc',
+                          color:       form.receipt_date_mode===val ? '#7c3aed' : '#64748b',
+                        }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {form.receipt_date_mode === 'fixed'
+                      ? 'New receipts pre-fill with the last saved receipt\'s date. The field flashes yellow until you change it.'
+                      : "New receipts always start with today's date."}</p>
+                </div>
+
+                {/* WhatsApp receipt mode */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">WhatsApp receipt</p>
+                  <div style={{display:'flex',gap:8}}>
+                    {[['instant','Instant on save'],['batch','Batch send later']].map(([val,label])=>(
+                      <button key={val} onClick={()=>s('whatsapp_receipt_mode',val)}
+                        style={{flex:1,padding:'8px 0',borderRadius:8,border:'1.5px solid',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',
+                          borderColor: form.whatsapp_receipt_mode===val ? '#15803d' : '#e2e8f0',
+                          background:  form.whatsapp_receipt_mode===val ? '#f0fdf4' : '#f8fafc',
+                          color:       form.whatsapp_receipt_mode===val ? '#15803d' : '#64748b',
+                        }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {form.whatsapp_receipt_mode === 'instant'
+                      ? 'WhatsApp receipt is sent immediately when a payment is confirmed.'
+                      : 'Receipts are queued — send them in bulk from the Receipts page.'}
+                  </p>
+                </div>
+
+              </div>
+            </div>
 
             {/* ZONAL AREAS */}
             <ZonesPanel profile={profile} toast={toast} />

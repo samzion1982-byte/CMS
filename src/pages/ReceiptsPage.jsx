@@ -60,9 +60,10 @@ export default function ReceiptsPage() {
   const [fyStats,       setFyStats]       = useState({})
   const [showModal,     setShowModal]     = useState(false)
   const [editId,        setEditId]        = useState(null)
-  const [fyLocks,       setFyLocks]       = useState({})
-  const [showFYMgr,     setShowFYMgr]     = useState(false)
-  const [lockedFYModal, setLockedFYModal] = useState(null)
+  const [fyLocks,         setFyLocks]         = useState({})
+  const [showFYMgr,       setShowFYMgr]       = useState(false)
+  const [lockedFYModal,   setLockedFYModal]   = useState(null)
+  const [receiptDateMode, setReceiptDateMode] = useState('today')
 
   // only show FYs that have actual data + the current FY
   const availableFYs = useMemo(() => {
@@ -106,6 +107,11 @@ export default function ReceiptsPage() {
     setListLoading(false)
   }, [filterFY, listSearch, toast])
   useEffect(() => { loadList() }, [loadList])
+
+  useEffect(() => {
+    supabase.from('churches').select('receipt_date_mode').limit(1).single()
+      .then(({ data }) => { if (data?.receipt_date_mode) setReceiptDateMode(data.receipt_date_mode) })
+  }, [])
 
   const loadFYLockData = useCallback(async () => {
     const { data, error } = await supabase.from('receipt_financial_years').select('*')
@@ -368,6 +374,7 @@ export default function ReceiptsPage() {
           categories={categories}
           profile={profile}
           toast={toast}
+          receiptDateMode={receiptDateMode}
           onClose={() => setShowModal(false)}
           onSaved={(fy) => {
             setShowModal(false); loadList(); loadFyStats()
@@ -541,8 +548,10 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
 //  RECEIPT MODAL
 // ════════════════════════════════════════════════════════
 
-function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, onSaved }) {
+function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, onSaved, receiptDateMode }) {
   const today = new Date().toISOString().slice(0, 10)
+
+  const [dateIsCarryForward, setDateIsCarryForward] = useState(false)
 
   const [form, setForm] = useState({
     receipt_number: '', receipt_date: today,
@@ -579,14 +588,47 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     return () => document.removeEventListener('mouseup', onUp)
   }, [])
 
+  // Carry-forward date: for new receipts in 'fixed' mode, pre-fill with last saved receipt date
+  useEffect(() => {
+    if (editId || receiptDateMode !== 'fixed') return
+    const fy = initialFY || getFY()
+    supabase.from('receipts').select('receipt_date')
+      .eq('financial_year', fy)
+      .order('receipt_number', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data?.[0]?.receipt_date) {
+          setForm(f => ({ ...f, receipt_date: data[0].receipt_date }))
+          setDateIsCarryForward(true)
+        }
+      })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadPaidMonths = useCallback(async (mId, fy, excludeId = null) => {
-    let q = supabase.from('receipts').select('month_paid')
-      .eq('member_id', mId).eq('financial_year', fy).not('month_paid', 'is', null)
+    // Select both month_paid and receipt_date — fall back to date-derived month when month_paid is null
+    let q = supabase.from('receipts').select('month_paid,receipt_date')
+      .eq('member_id', mId).eq('financial_year', fy)
     if (excludeId) q = q.neq('id', excludeId)
     const { data } = await q
+    const CAL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const paid = new Set()
     ;(data || []).forEach(r => {
-      r.month_paid?.split(',').forEach(m => { const t = m.trim(); if (t) paid.add(t) })
+      if (r.month_paid) {
+        r.month_paid.split(',').forEach(m => {
+          const t = m.trim(); if (!t) return
+          const fi = FY_MONTHS.findIndex(n => n.toLowerCase() === t.toLowerCase())
+          if (fi >= 0) { paid.add(FY_MONTHS[fi]); return }
+          const si = FY_MON_S.findIndex(n => n.toLowerCase() === t.toLowerCase())
+          if (si >= 0) { paid.add(FY_MONTHS[si]); return }
+          const num = parseInt(t, 10)
+          if (!isNaN(num) && num >= 1 && num <= 12) { paid.add(CAL_MONTHS[num - 1]); return }
+          paid.add(t)
+        })
+      } else if (r.receipt_date) {
+        // No explicit month stored (e.g. imported receipts) — derive from receipt date
+        const d = new Date(r.receipt_date + 'T00:00:00')
+        if (!isNaN(d.getTime())) paid.add(CAL_MONTHS[d.getMonth()])
+      }
     })
     setPaidMonths(paid)
   }, [])
@@ -959,8 +1001,9 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Receipt Date</div>
                     <input ref={dateRef} type="date" value={form.receipt_date}
-                      onChange={e => sf('receipt_date')(e.target.value)}
-                      className="field-input" style={{ height: 31, width: '100%' }}/>
+                      onChange={e => { sf('receipt_date')(e.target.value); setDateIsCarryForward(false) }}
+                      className={`field-input${dateIsCarryForward ? ' date-carry-forward' : ''}`}
+                      style={{ height: 31, width: '100%' }}/>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                     {selMonths.length > 0 && (
