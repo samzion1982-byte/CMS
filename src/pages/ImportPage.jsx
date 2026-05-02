@@ -854,25 +854,33 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     const fy = sheetName.trim()
     const cats = await getActiveCategories()
 
-    // Build column index map from the header row (stored in `headers` state)
+    // Build column index map from the `headers` state (already header-row content)
     const hdrMap = {}
     headers.forEach((h, i) => { if (h) hdrMap[normalizeCol(h)] = i })
 
-    const col = (...names) => {
+    // Log actual headers so column mapping is visible in devtools
+    console.log('[ReceiptImport] headers:', headers)
+    console.log('[ReceiptImport] hdrMap:', hdrMap)
+
+    // Return column index by header name; fall back to `fallbackPos` if not found
+    const col = (fallbackPos, ...names) => {
       for (const n of names) {
         const v = hdrMap[normalizeCol(n)]
         if (v != null) return v
       }
-      return -1
+      return fallbackPos  // use positional default when header not recognised
     }
 
-    const rcptNoIdx   = col('receipt_number','receiptno','receipt no','receiptnum','receipt#','no')
-    const memberIdIdx = col('member_id','memberid','member id','memid')
-    const memberNmIdx = col('member_name','membername','member name','name')
-    const dateIdx     = col('receipt_date','receiptdate','receipt date','date')
-    const modeIdx     = col('payment_mode','paymentmode','payment mode','mode','paymode')
-    const monthIdx    = col('month_paid','monthpaid','months paid','month paid','months')
-    const totalIdx    = col('grand_total','grandtotal','grand total','total','amount')
+    // Standard receipt fields — positional defaults match original VBA column order
+    const rcptNoIdx   = col(0,  'receipt_number','receiptno','receipt no','receiptnum','receipt#','rcptno','sno','sr no','srno')
+    const memberIdIdx = col(1,  'member_id','memberid','member id','memid','mem id')
+    const memberNmIdx = col(2,  'member_name','membername','member name','name','mem name')
+    const dateIdx     = col(3,  'receipt_date','receiptdate','receipt date','date','rcptdate')
+    const modeIdx     = col(4,  'payment_mode','paymentmode','payment mode','mode','paymode','pay mode')
+    const monthIdx    = col(5,  'month_paid','monthpaid','months paid','month paid','months','month')
+    const totalIdx    = col(-1, 'grand_total','grandtotal','grand total','total','amount','grandtotal')
+
+    console.log('[ReceiptImport] col indices:', { rcptNoIdx, memberIdIdx, memberNmIdx, dateIdx, modeIdx, monthIdx, totalIdx })
 
     // Category column detection — amt / months / total per category
     const catCols = {}
@@ -884,7 +892,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       if (amtIdx >= 0) catCols[cat.id] = { amtIdx, monIdx, totIdx }
     })
 
-    // Pre-fetch all existing receipt numbers for this FY (avoids N+1 duplicate checks)
+    // Pre-fetch existing receipt numbers for this FY (single query, no N+1)
     const { data: existing } = await supabase.from('receipts')
       .select('receipt_number').eq('financial_year', fy)
     const existingNums = new Set((existing || []).map(r => r.receipt_number))
@@ -893,20 +901,28 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     let imported = 0, skipped = 0, errors = 0
 
     try {
-      // `rows` is already header-stripped (loadSheet slices header row off)
-      for (const row of rows) {
+      // `rows` is already header-stripped by loadSheet; iterate all data rows
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri]
         try {
-          const receiptNo = rcptNoIdx >= 0 ? String(row[rcptNoIdx] || '').trim() : ''
-          if (!receiptNo) { skipped++; continue }
+          // Skip fully blank rows
+          if (!row.some(c => String(c || '').trim())) { skipped++; continue }
+
+          let receiptNo = String(row[rcptNoIdx] ?? '').trim()
+          // If receipt number is blank, auto-generate from FY + sequential index
+          if (!receiptNo) receiptNo = `${fy}_imp_${String(ri + 1).padStart(6, '0')}`
+
           if (existingNums.has(receiptNo)) { skipped++; continue }
 
-          const memberId    = memberIdIdx >= 0 ? String(row[memberIdIdx] || '').trim() : ''
-          const memberName  = memberNmIdx >= 0 ? String(row[memberNmIdx] || '').trim() : ''
-          const dateRaw     = dateIdx >= 0 ? String(row[dateIdx] || '').trim() : ''
+          const memberId    = String(row[memberIdIdx] ?? '').trim()
+          const memberName  = String(row[memberNmIdx] ?? '').trim()
+          const dateRaw     = String(row[dateIdx] ?? '').trim()
           const receiptDate = parseDateDMY(dateRaw) || new Date().toISOString().slice(0, 10)
-          const payMode     = modeIdx >= 0 ? String(row[modeIdx] || '').trim() || 'Cash' : 'Cash'
-          const monthPaid   = monthIdx >= 0 ? String(row[monthIdx] || '').trim() || null : null
-          const grandTotal  = totalIdx >= 0 ? parseFloat(String(row[totalIdx] || '0').replace(/[^0-9.]/g, '')) || 0 : 0
+          const payMode     = String(row[modeIdx] ?? '').trim() || 'Cash'
+          const monthPaid   = String(row[monthIdx] ?? '').trim() || null
+          const grandTotal  = totalIdx >= 0
+            ? parseFloat(String(row[totalIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
+            : 0
 
           const { data: ins, error: insErr } = await supabase.from('receipts').insert({
             receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
@@ -925,9 +941,9 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
           }
           if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
-          existingNums.add(receiptNo)  // prevent re-import if same number appears twice in sheet
+          existingNums.add(receiptNo)
           imported++
-        } catch { errors++ }
+        } catch (e) { console.warn('[ReceiptImport] row error:', e); errors++ }
       }
 
       setResult({ total: rows.length, inserted: imported, errors, dups: skipped })
