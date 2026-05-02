@@ -840,8 +840,83 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     })
   }
 
+  async function doImportReceipts() {
+    const fy = sheetName.trim()
+    const cats = await getActiveCategories()
+    const catCols = {}
+    if (rows.length > 0) {
+      const hdr = rows[0]
+      cats.forEach(cat => {
+        const nc = normalizeCol(cat.name)
+        const matches = []
+        hdr.forEach((h, i) => {
+          const nh = normalizeCol(h)
+          if (nh === nc || nh === nc + 'amt' || nh === nc + 'amount') matches.push(i)
+          else if (nh === nc + 'months') matches.push(i)
+          else if (nh === nc + 'total') matches.push(i)
+        })
+        if (matches.length >= 1) catCols[cat.id] = matches
+      })
+    }
+
+    setImporting(true); setStep(4); setProgress(0)
+    let imported = 0, skipped = 0, errors = 0
+
+    try {
+      const dataRows = rows.slice(1).filter(r => r.some(c => String(c || '').trim()))
+      for (const row of dataRows) {
+        try {
+          const receiptNo = String(row[0] || '').trim()
+          if (!receiptNo) { skipped++; continue }
+          const { data: ex } = await supabase.from('receipts').select('id').eq('receipt_number', receiptNo).limit(1)
+          if (ex?.length) { skipped++; continue }
+          const memberId   = String(row[1] || '').trim()
+          const memberName = String(row[2] || '').trim()
+          const dateRaw    = String(row[3] || '').trim()
+          const receiptDate = parseDateDMY(dateRaw) || new Date().toISOString().slice(0, 10)
+          const payMode    = String(row[4] || 'Cash').trim() || 'Cash'
+          const monthPaid  = String(row[5] || '').trim() || null
+          const grandTotal = parseFloat(String(row[6] || '0').replace(/[^0-9.]/g, '')) || 0
+          const { data: ins, error: insErr } = await supabase.from('receipts').insert({
+            receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
+            member_id: memberId, member_name: memberName,
+            payment_mode: payMode, month_paid: monthPaid, grand_total: grandTotal,
+          }).select('id').single()
+          if (insErr) { errors++; continue }
+          const itemRows = []
+          for (const cat of cats) {
+            const cols = catCols[cat.id]
+            if (!cols?.length) continue
+            const amt    = parseFloat(String(row[cols[0]] || '').replace(/[^0-9.]/g, '')) || 0
+            const months = cols[1] != null ? parseFloat(String(row[cols[1]] || '').replace(/[^0-9.]/g, '')) || 1 : 1
+            const total  = cols[2] != null ? parseFloat(String(row[cols[2]] || '').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
+            if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
+          }
+          if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
+          imported++
+        } catch { errors++ }
+      }
+      setResult({ total: dataRows.length, inserted: imported, errors, dups: skipped })
+      if (imported > 0) {
+        await logMigration('receipts', `${sheetName} (FY)`, 'success', imported + skipped, imported, errors)
+        onRefreshBoard?.()
+      }
+      toast(`Receipts FY ${fy}: ${imported} imported, ${skipped} skipped${errors ? `, ${errors} errors` : ''}`,
+        imported > 0 ? 'success' : 'error')
+    } catch (e) {
+      setImportError(e.message)
+      setStep(3)
+    }
+    setImporting(false)
+  }
+
   async function doImport() {
     setImportError(null)
+
+    // Route FY-named sheets (e.g. 2024-25) to receipt import
+    if (/^\d{4}-\d{2}$/.test(sheetName.trim())) {
+      return doImportReceipts()
+    }
 
     // Normalise: remove spaces so "DeletedMembers" and "Deleted Members" both match
     const sheetNorm = sheetName.toLowerCase().trim().replace(/\s+/g, '')
@@ -1064,22 +1139,25 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       {step>=2 && wb && (
         <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
           <p style={{margin:'0 0 4px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'#3b82f6'}}>Step 2 — Select worksheet</p>
-          <p style={{margin:'0 0 14px',fontSize:12,color:'#94a3b8'}}>Only <strong style={{color:'#3b82f6'}}>Members</strong>, <strong style={{color:'#d97706'}}>Deleted Members</strong> and <strong style={{color:'#059669'}}>Workings</strong> sheets can be imported.</p>
+          <p style={{margin:'0 0 14px',fontSize:12,color:'#94a3b8'}}>
+            Import <strong style={{color:'#3b82f6'}}>Members</strong>, <strong style={{color:'#d97706'}}>Deleted Members</strong>, <strong style={{color:'#059669'}}>Workings</strong>, or <strong style={{color:'#d97706'}}>FY Receipt sheets</strong> (e.g. <em>2024-25</em>, <em>2025-26</em>).
+          </p>
           <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
             {wb.SheetNames.map(name => {
-              const nl        = name.toLowerCase().trim().replace(/\s+/g, '')
+              const nl         = name.toLowerCase().trim().replace(/\s+/g, '')
               const isDeleted  = nl.includes('deletedmember')
               const isMember   = !isDeleted && nl.includes('member')
               const isWorkings = nl.includes('working')
-              const isKnown    = isDeleted || isMember || isWorkings
-              const badge      = isDeleted ? 'Deleted Members' : isMember ? 'Members' : isWorkings ? 'Zonal Areas' : null
-              const accentColor = isDeleted ? '#d97706' : isWorkings ? '#059669' : '#2563eb'
+              const isReceipts = /^\d{4}-\d{2}$/.test(name.trim())
+              const isKnown    = isDeleted || isMember || isWorkings || isReceipts
+              const badge      = isDeleted ? 'Deleted Members' : isMember ? 'Members' : isWorkings ? 'Zonal Areas' : isReceipts ? 'Receipts' : null
+              const accentColor = isDeleted ? '#d97706' : isWorkings ? '#059669' : isReceipts ? '#d97706' : '#2563eb'
               const isSelected  = sheetName === name
-              const selBorder   = isDeleted ? '#fcd34d' : isWorkings ? '#6ee7b7' : '#93c5fd'
-              const selBg       = isDeleted ? '#fffbeb' : isWorkings ? '#ecfdf5' : '#eff6ff'
-              const badgeBg     = isDeleted ? '#fef3c7' : isWorkings ? '#d1fae5' : '#dbeafe'
-              const badgeColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : '#1e40af'
-              const labelColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : '#1e40af'
+              const selBorder   = isDeleted ? '#fcd34d' : isWorkings ? '#6ee7b7' : isReceipts ? '#fcd34d' : '#93c5fd'
+              const selBg       = isDeleted ? '#fffbeb' : isWorkings ? '#ecfdf5' : isReceipts ? '#fffbeb' : '#eff6ff'
+              const badgeBg     = isDeleted ? '#fef3c7' : isWorkings ? '#d1fae5' : isReceipts ? '#fef3c7' : '#dbeafe'
+              const badgeColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : isReceipts ? '#92400e' : '#1e40af'
+              const labelColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : isReceipts ? '#92400e' : '#1e40af'
               return (
                 <label key={name} style={{
                   display:'flex',alignItems:'center',gap:8,padding:'8px 12px',borderRadius:9,
@@ -1118,24 +1196,27 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       {/* Step 3: Preview */}
       {step>=3 && rows.length>0 && (() => {
         const isWorkings = sheetName.toLowerCase().trim().replace(/\s+/g,'').includes('working')
-        const zoneNames  = isWorkings
-          ? rows.map(r => String(r[3] ?? '').trim()).filter(Boolean)
-          : []
+        const isReceipts = /^\d{4}-\d{2}$/.test(sheetName.trim())
+        const zoneNames  = isWorkings ? rows.map(r => String(r[3] ?? '').trim()).filter(Boolean) : []
+        const accentCol  = isWorkings ? '#059669' : isReceipts ? '#d97706' : '#3b82f6'
+        const btnBg      = isWorkings ? '#059669' : isReceipts ? '#d97706' : '#2563eb'
+        const btnShadow  = isWorkings ? 'rgba(5,150,105,0.25)' : isReceipts ? 'rgba(217,119,6,0.25)' : 'rgba(37,99,235,0.25)'
         return (
           <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
               <div>
-                <p style={{margin:'0 0 2px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color: isWorkings ? '#059669' : '#3b82f6'}}>Step 3 — Preview</p>
+                <p style={{margin:'0 0 2px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:accentCol}}>Step 3 — Preview</p>
                 <p style={{margin:0,fontSize:12,color:'#64748b'}}>
                   <strong style={{color:'#0f172a'}}>{isWorkings ? zoneNames.length : rows.length}</strong>
-                  {isWorkings ? ' zones' : ' rows'} from <strong style={{color:'#0f172a'}}>"{sheetName}"</strong>
+                  {isWorkings ? ' zones' : isReceipts ? ' receipt rows' : ' rows'} from <strong style={{color:'#0f172a'}}>"{sheetName}"</strong>
                   {isWorkings && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— reading column D only</span>}
+                  {isReceipts && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— FY {sheetName} receipts sheet</span>}
                 </p>
               </div>
             </div>
 
             {isWorkings ? (
-              /* Zone preview — simple numbered list */
+              /* Zone preview */
               <div style={{borderRadius:8,border:'1px solid #d1fae5',marginBottom:16,maxHeight:260,overflowY:'auto',background:'#f0fdf4'}}>
                 {zoneNames.map((name, i) => (
                   <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 12px',borderBottom:'1px solid #d1fae5',background:i%2===0?'#f0fdf4':'#fff'}}>
@@ -1146,6 +1227,17 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
                     )}
                   </div>
                 ))}
+              </div>
+            ) : isReceipts ? (
+              /* Receipt preview — amber info box */
+              <div style={{borderRadius:8,border:'1px solid #fde68a',marginBottom:16,padding:'14px 16px',background:'#fffbeb'}}>
+                <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'#92400e'}}>
+                  {rows.length.toLocaleString()} receipt rows ready to import into FY {sheetName}
+                </p>
+                <p style={{margin:0,fontSize:12,color:'#78350f',lineHeight:1.6}}>
+                  Duplicate receipts (matched by receipt number) will be skipped automatically.<br/>
+                  Month names are derived from the <em>months paid</em> column if present; otherwise month count is stored.
+                </p>
               </div>
             ) : (
               /* Normal member/deleted preview table */
@@ -1180,13 +1272,15 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             <div style={{display:'flex',gap:8}}>
               <button onClick={doImport} disabled={importing}
                 style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',fontSize:13,fontWeight:600,borderRadius:9,border:'none',
-                  background:importing?'#93c5fd': isWorkings?'#059669':'#2563eb',
+                  background:importing?'#93c5fd':btnBg,
                   color:'#fff',cursor:importing?'default':'pointer',
-                  boxShadow:`0 2px 8px ${isWorkings?'rgba(5,150,105,0.25)':'rgba(37,99,235,0.25)'}`}}>
+                  boxShadow:`0 2px 8px ${btnShadow}`}}>
                 {importing
                   ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing…</>
                   : isWorkings
                   ? <><CheckCircle size={13}/>Replace {zoneNames.length} zones</>
+                  : isReceipts
+                  ? <><CheckCircle size={13}/>Import {rows.length.toLocaleString()} receipts — FY {sheetName}</>
                   : <><CheckCircle size={13}/>Confirm &amp; import {rows.length.toLocaleString()} records</>}
               </button>
               <button onClick={reset}
@@ -1572,8 +1666,7 @@ function AutoFlushTab() {
   )
 }
 
-// ── MAIN PAGE ─────────────────────────────────────────────────────────────────
-// ── Receipt import helpers ────────────────────────────────────────
+// ── Receipt import helpers (used by ImportTab.doImportReceipts) ───────────────
 function parseDateDMY(s) {
   if (!s) return ''
   const str = String(s).trim()
@@ -1590,183 +1683,6 @@ function normalizeCol(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-// ── Receipts Import Tab ───────────────────────────────────────────
-function ReceiptsImportTab({ onRefreshBoard }) {
-  const { profile } = useAuth()
-  const toast       = useToast()
-  const fileRef     = useRef(null)
-  const [importing, setImporting] = useState(false)
-  const [dragOver,  setDragOver]  = useState(false)
-  const [progress,  setProgress]  = useState('')
-  const [result,    setResult]    = useState(null)
-
-  async function handleFile(file) {
-    if (!file) return
-    setImporting(true); setResult(null); setProgress('Reading file…')
-    try {
-      const XLSXmod = await import('xlsx')
-      const XLSX    = XLSXmod.default || XLSXmod
-      const buf     = await file.arrayBuffer()
-      const wb      = XLSX.read(buf, { type: 'array', cellDates: true })
-      const cats    = await getActiveCategories()
-
-      let imported = 0, skipped = 0, errors = 0
-
-      for (const sheetName of wb.SheetNames) {
-        if (!/^\d{4}-\d{2}$/.test(sheetName)) continue
-        setProgress(`Processing FY ${sheetName}…`)
-        const ws   = wb.Sheets[sheetName]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
-        if (!rows.length) continue
-
-        const headers = Object.keys(rows[0])
-        const catCols = {}
-        for (const cat of cats) {
-          const norm     = normalizeCol(cat.name)
-          const matching = headers.filter(h => normalizeCol(h).startsWith(norm) || normalizeCol(h).includes(norm))
-          if (matching.length >= 1) catCols[cat.id] = matching.slice(0, 3)
-        }
-        const col = (patterns) =>
-          headers.find(h => patterns.some(p => normalizeCol(h).includes(normalizeCol(p)))) || ''
-
-        const rcptNoCol   = col(['receipt_number','receiptno','r.no','rno','receiptnum'])
-        const dateCol     = col(['receipt_date','receiptdate','date'])
-        const modeCol     = col(['payment_mode','paymentmode','mode'])
-        const chequeCol   = col(['cheque_dd_no','chequeno','ddno','chequedd','chq'])
-        const txnDateCol  = col(['transaction_date','cheque_dd_date','txndate','chequedate'])
-        const narrCol     = col(['narration','remark','note'])
-        const memberIdCol = col(['member_id','memberid','member_no','memberno','membernum'])
-        const memberNmCol = col(['member_name','membername'])
-        const addrCol     = col(['address','addr'])
-        const addr1Col    = col(['address1','addr1','area1'])
-        const addr2Col    = col(['address2','addr2','area2'])
-        const cityCol     = col(['city'])
-        const mobileCol   = col(['mobile'])
-        const waCol       = col(['whatsapp','wa'])
-        const monthCol    = col(['cmbmonth','month_paid','monthpaid','month'])
-        const totCol      = col(['grandtotal','grand_total','total'])
-
-        for (const row of rows) {
-          const rcptNo = String(row[rcptNoCol] || '').trim()
-          if (!rcptNo) { skipped++; continue }
-          const { data: ex } = await supabase.from('receipts').select('id').eq('receipt_number', rcptNo).limit(1)
-          if (ex?.length) { skipped++; continue }
-
-          const grandTot = parseFloat(String(row[totCol] || '').replace(/[^0-9.]/g,'')) || 0
-          const recData  = {
-            receipt_number:   rcptNo,
-            receipt_date:     dateCol    ? parseDateDMY(row[dateCol])    || null : null,
-            financial_year:   sheetName,
-            payment_mode:     row[modeCol]   || 'Cash',
-            cheque_dd_no:     row[chequeCol] ? String(row[chequeCol]).trim()  : null,
-            transaction_date: txnDateCol     ? parseDateDMY(row[txnDateCol]) || null : null,
-            narration:        row[narrCol]   ? String(row[narrCol]).trim()    : null,
-            member_id:        memberIdCol    ? String(row[memberIdCol] || '').trim() : '',
-            member_name:      memberNmCol    ? String(row[memberNmCol] || '').trim() : '',
-            address:  addrCol  ? String(row[addrCol]  || '').trim() : null,
-            address1: addr1Col ? String(row[addr1Col] || '').trim() : null,
-            address2: addr2Col ? String(row[addr2Col] || '').trim() : null,
-            city:     cityCol  ? String(row[cityCol]  || '').trim() : null,
-            mobile:   mobileCol ? String(row[mobileCol] || '').trim() : null,
-            whatsapp: waCol     ? String(row[waCol]    || '').trim() : null,
-            month_paid: monthCol ? String(row[monthCol] || '').trim() : null,
-            grand_total: grandTot,
-            created_by: profile?.full_name || profile?.email || 'Import',
-          }
-          try {
-            const { data: ins, error: rErr } = await supabase.from('receipts').insert(recData).select('id').single()
-            if (rErr) throw rErr
-            const itemRows = []
-            for (const cat of cats) {
-              const cols = catCols[cat.id]
-              if (!cols?.length) continue
-              const amt    = parseFloat(String(row[cols[0]] || '').replace(/[^0-9.]/g,'')) || 0
-              const months = parseFloat(String(row[cols[1]] || '').replace(/[^0-9.]/g,'')) || 1
-              const total  = parseFloat(String(row[cols[2]] || '').replace(/[^0-9.]/g,'')) || (amt * months)
-              if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
-            }
-            if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
-            imported++
-          } catch { errors++ }
-        }
-      }
-
-      setResult({ imported, skipped, errors, file: file.name })
-      setProgress('')
-      if (imported > 0) {
-        await logMigration('receipts', file.name, 'success', imported + skipped, imported, errors)
-        onRefreshBoard?.()
-      }
-      toast(
-        `Receipt import: ${imported} imported, ${skipped} skipped${errors ? `, ${errors} errors` : ''}`,
-        imported > 0 ? 'success' : 'error'
-      )
-    } catch (e) {
-      toast(`Import failed: ${e.message}`, 'error')
-      setProgress('')
-    }
-    setImporting(false)
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Drop zone */}
-      <div
-        onClick={() => !importing && fileRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); if (!importing) handleFile(e.dataTransfer.files[0]) }}
-        style={{
-          borderRadius: 12, padding: 32, textAlign: 'center', cursor: importing ? 'default' : 'pointer',
-          border: `2px dashed ${dragOver ? '#3b82f6' : importing ? '#d1fae5' : '#e2e8f0'}`,
-          background: dragOver ? '#eff6ff' : importing ? '#f0fdf4' : '#f8fafc',
-          transition: 'all 0.15s',
-        }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, margin: '0 auto 12px',
-          background: importing ? '#dcfce7' : dragOver ? '#dbeafe' : '#f1f5f9',
-          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {importing
-            ? <Loader2 size={22} style={{ color: '#22c55e', animation: 'spin 1s linear infinite' }}/>
-            : <IndianRupee size={22} style={{ color: dragOver ? '#3b82f6' : '#94a3b8' }}/>
-          }
-        </div>
-        <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: '#334155' }}>
-          {importing ? 'Importing receipts…' : 'Click or drag receipts Excel file'}
-        </p>
-        <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>
-          {importing ? progress : 'Worksheets must be named by FY — e.g. 2024-25, 2025-26'}
-        </p>
-      </div>
-      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
-        onChange={e => { handleFile(e.target.files[0]); e.target.value = '' }}/>
-
-      {/* Result */}
-      {result && !importing && (
-        <div style={{ padding: '14px 16px', borderRadius: 10,
-          background: result.imported > 0 ? '#f0fdf4' : '#fef2f2',
-          border: `1px solid ${result.imported > 0 ? '#bbf7d0' : '#fecaca'}` }}>
-          <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600,
-            color: result.imported > 0 ? '#15803d' : '#dc2626' }}>
-            {result.imported > 0 ? 'Import complete' : 'Nothing imported'}
-          </p>
-          <p style={{ margin: 0, fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
-            <strong>{result.imported}</strong> receipts imported ·{' '}
-            <strong>{result.skipped}</strong> skipped (duplicates/empty)
-            {result.errors > 0 && <> · <strong style={{ color: '#dc2626' }}>{result.errors} errors</strong></>}
-          </p>
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: '#94a3b8' }}>{result.file}</p>
-        </div>
-      )}
-
-      {/* Note on month_paid */}
-      <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fefce8', border: '1px solid #fde68a' }}>
-        <p style={{ margin: 0, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
-          <strong>Note:</strong> The Excel format stores only the month <em>count</em> per category (e.g. 3 months), not which specific months were paid. Month names can be assigned when editing individual receipts after import.
-        </p>
-      </div>
-    </div>
-  )
-}
 
 export default function ImportPage() {
   const { profile } = useAuth()
@@ -1925,7 +1841,7 @@ export default function ImportPage() {
           <div>
             {/* Tab bar */}
             <div style={{display:'flex',gap:4,marginBottom:20,background:'#f1f5f9',padding:4,borderRadius:10,width:'fit-content'}}>
-              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['receipts','Receipts',IndianRupee],['autoflush','Auto Flush',Zap]].map(([id,label,Icon])=>(
+              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap]].map(([id,label,Icon])=>(
                 <button key={id} onClick={()=>setTab(id)} className="imp-tab-btn"
                   style={{display:'flex',alignItems:'center',gap:7,padding:'7px 16px',fontSize:13,fontWeight:500,borderRadius:7,border:'none',cursor:'pointer',
                     background: tab===id ? '#fff' : 'transparent',
@@ -1937,7 +1853,6 @@ export default function ImportPage() {
             </div>
             {tab === 'import'    && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
             {tab === 'photos'    && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
-            {tab === 'receipts'  && <ReceiptsImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
             {tab === 'autoflush' && <AutoFlushTab />}
           </div>
 
