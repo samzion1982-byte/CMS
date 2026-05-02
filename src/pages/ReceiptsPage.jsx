@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   ReceiptsPage.jsx — Receipt entry with modal form + Excel import
+   ReceiptsPage.jsx — Receipt entry list + modal form
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
@@ -9,9 +9,8 @@ import { useToast }             from '../lib/toast'
 import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
-  IndianRupee, Upload, CheckSquare, Square,
+  IndianRupee, CheckSquare, Square,
 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -25,11 +24,9 @@ function getFY(dateStr) {
 async function nextReceiptNumber(fy) {
   const prefix = fy + '_'
   const { data } = await supabase
-    .from('receipts')
-    .select('receipt_number')
+    .from('receipts').select('receipt_number')
     .like('receipt_number', `${prefix}%`)
-    .order('receipt_number', { ascending: false })
-    .limit(1)
+    .order('receipt_number', { ascending: false }).limit(1)
   if (!data?.length) return prefix + '000001'
   const seq = parseInt(data[0].receipt_number.replace(prefix, ''), 10) || 0
   return prefix + String(seq + 1).padStart(6, '0')
@@ -39,24 +36,6 @@ function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
   return `${d}/${m}/${y}`
-}
-
-function parseDateDMY(s) {
-  if (!s) return ''
-  const str = String(s).trim()
-  const m1 = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
-  if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`
-  const m2 = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (m2) return str
-  if (/^\d+$/.test(str)) {
-    const d = new Date((parseInt(str) - 25569) * 86400 * 1000)
-    if (!isNaN(d)) return d.toISOString().slice(0, 10)
-  }
-  return ''
-}
-
-function normalize(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 const MODES     = ['Cash', 'Cheque', 'DD', 'Net Banking', 'UPI']
@@ -82,17 +61,15 @@ export default function ReceiptsPage() {
   const { profile } = useAuth()
   const toast       = useToast()
 
-  const [categories,   setCategories]  = useState([])
-  const [catsLoading,  setCatsLoading] = useState(true)
-  const [receipts,     setReceipts]    = useState([])
-  const [listLoading,  setListLoading] = useState(false)
-  const [filterFY,     setFilterFY]    = useState(() => getFY())
-  const [listSearch,   setListSearch]  = useState('')
-  const [fyStats,      setFyStats]     = useState({})
-  const [showModal,    setShowModal]   = useState(false)
-  const [editId,       setEditId]      = useState(null)
-  const [importing,    setImporting]   = useState(false)
-  const importRef = useRef(null)
+  const [categories,  setCategories]  = useState([])
+  const [catsLoading, setCatsLoading] = useState(true)
+  const [receipts,    setReceipts]    = useState([])
+  const [listLoading, setListLoading] = useState(false)
+  const [filterFY,    setFilterFY]    = useState(() => getFY())
+  const [listSearch,  setListSearch]  = useState('')
+  const [fyStats,     setFyStats]     = useState({})
+  const [showModal,   setShowModal]   = useState(false)
+  const [editId,      setEditId]      = useState(null)
 
   const availableFYs = useMemo(() => {
     const all = new Set([...Object.keys(fyStats), ...fyOptions()])
@@ -152,110 +129,6 @@ export default function ReceiptsPage() {
     loadList(); loadFyStats()
   }
 
-  // ── Excel import ─────────────────────────────────────────────
-  const handleImport = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setImporting(true)
-    try {
-      const buf  = await file.arrayBuffer()
-      const wb   = XLSX.read(buf, { type: 'array', cellDates: true })
-      const cats = categories.length ? categories : await getActiveCategories()
-
-      let imported = 0, skipped = 0, errors = 0
-
-      for (const sheetName of wb.SheetNames) {
-        if (!/^\d{4}-\d{2}$/.test(sheetName)) continue
-        const ws   = wb.Sheets[sheetName]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
-        if (!rows.length) continue
-
-        const headers = Object.keys(rows[0])
-        const catCols = {}
-        for (const cat of cats) {
-          const norm = normalize(cat.name)
-          const matching = headers.filter(h => normalize(h).startsWith(norm) || normalize(h).includes(norm))
-          if (matching.length >= 1) catCols[cat.id] = matching.slice(0, 3)
-        }
-
-        const col = (patterns) => headers.find(h => patterns.some(p => normalize(h).includes(normalize(p)))) || ''
-
-        const rcptNoCol    = col(['receipt_number','receiptno','r.no','rno','receiptnum'])
-        const dateCol      = col(['receipt_date','receiptdate','date'])
-        const modeCol      = col(['payment_mode','paymentmode','mode'])
-        const chequeNoCol  = col(['cheque_dd_no','chequeno','ddno','chequedd','chq'])
-        const txnDateCol   = col(['transaction_date','cheque_dd_date','txndate','chequedate'])
-        const narrationCol = col(['narration','remark','note'])
-        const memberIdCol  = col(['member_id','memberid','member_no','memberno','membernum'])
-        const memberNmCol  = col(['member_name','membername'])
-        const addrCol      = col(['address','addr'])
-        const addr1Col     = col(['address1','addr1','area1'])
-        const addr2Col     = col(['address2','addr2','area2'])
-        const cityCol      = col(['city'])
-        const mobileCol    = col(['mobile'])
-        const waCol        = col(['whatsapp','wa'])
-        const monthCol     = col(['cmbmonth','month_paid','monthpaid','month'])
-        const grandTotCol  = col(['grandtotal','grand_total','total'])
-
-        for (const row of rows) {
-          const rcptNo = String(row[rcptNoCol] || '').trim()
-          if (!rcptNo) { skipped++; continue }
-          const fy = sheetName
-          const { data: ex } = await supabase.from('receipts').select('id').eq('receipt_number', rcptNo).limit(1)
-          if (ex?.length) { skipped++; continue }
-
-          const rcptDate = dateCol ? parseDateDMY(row[dateCol]) : ''
-          const grandTot = parseFloat(String(row[grandTotCol] || '').replace(/[^0-9.]/g,'')) || 0
-
-          const recData = {
-            receipt_number:   rcptNo,
-            receipt_date:     rcptDate || null,
-            financial_year:   fy,
-            payment_mode:     row[modeCol]    || 'Cash',
-            cheque_dd_no:     row[chequeNoCol] ? String(row[chequeNoCol]).trim() : null,
-            transaction_date: txnDateCol ? parseDateDMY(row[txnDateCol]) || null : null,
-            narration:        row[narrationCol] ? String(row[narrationCol]).trim() : null,
-            member_id:        memberIdCol ? String(row[memberIdCol] || '').trim() : '',
-            member_name:      memberNmCol ? String(row[memberNmCol] || '').trim() : '',
-            address:          addrCol  ? String(row[addrCol]  || '').trim() : null,
-            address1:         addr1Col ? String(row[addr1Col] || '').trim() : null,
-            address2:         addr2Col ? String(row[addr2Col] || '').trim() : null,
-            city:             cityCol  ? String(row[cityCol]  || '').trim() : null,
-            mobile:           mobileCol ? String(row[mobileCol] || '').trim() : null,
-            whatsapp:         waCol ? String(row[waCol] || '').trim() : null,
-            month_paid:       monthCol ? String(row[monthCol] || '').trim() : null,
-            grand_total:      grandTot,
-            created_by:       profile?.full_name || profile?.email || 'Import',
-          }
-
-          try {
-            const { data: ins, error: recErr } = await supabase.from('receipts').insert(recData).select('id').single()
-            if (recErr) throw recErr
-            const itemRows = []
-            for (const cat of cats) {
-              const cols = catCols[cat.id]
-              if (!cols?.length) continue
-              const amt    = parseFloat(String(row[cols[0]] || '').replace(/[^0-9.]/g,'')) || 0
-              const months = parseFloat(String(row[cols[1]] || '').replace(/[^0-9.]/g,'')) || 1
-              const total  = parseFloat(String(row[cols[2]] || '').replace(/[^0-9.]/g,'')) || (amt * months)
-              if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
-            }
-            if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
-            imported++
-          } catch { errors++ }
-        }
-      }
-
-      toast(`Import complete — ${imported} receipts imported, ${skipped} skipped, ${errors > 0 ? `${errors} errors` : 'no errors'}`, imported > 0 ? 'success' : 'error')
-      loadList(); loadFyStats()
-    } catch (e) {
-      toast(`Import failed: ${e.message}`, 'error')
-    }
-    setImporting(false)
-  }
-
-  // ── render ────────────────────────────────────────────────────
   return (
     <div className="page-container">
       <div className="page-header">
@@ -263,21 +136,14 @@ export default function ReceiptsPage() {
           <h1 className="page-title">Receipt Entry</h1>
           <p className="page-subtitle">Record member payments across all categories</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImport}/>
-          <button onClick={() => importRef.current?.click()} disabled={importing || catsLoading}
-            className="action-btn" style={{ background: '#0369a1', opacity: importing ? 0.6 : 1 }}>
-            {importing ? <Loader2 size={13} className="animate-spin"/> : <Upload size={13}/>}
-            {importing ? 'Importing…' : 'Import Excel'}
-          </button>
-          <button className="action-btn" onClick={openNew} disabled={catsLoading}
-            style={{ background: 'var(--sidebar-bg)' }} title="New receipt">
-            {catsLoading ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
-            New Receipt
-          </button>
-        </div>
+        <button className="action-btn" onClick={openNew} disabled={catsLoading}
+          style={{ background: 'var(--sidebar-bg)' }} title="New receipt">
+          {catsLoading ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
+          New Receipt
+        </button>
       </div>
 
+      {/* FY tiles */}
       {availableFYs.length > 0 && (
         <div className="card" style={{ padding: 0, display: 'flex', overflow: 'hidden', marginBottom: 16 }}>
           {availableFYs.map((fy, i, arr) => {
@@ -290,14 +156,9 @@ export default function ReceiptsPage() {
                   background: active ? 'var(--sidebar-bg)' : 'transparent',
                   transition: 'background 0.15s' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em',
-                  color: active ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', marginBottom: 4 }}>
-                  FY {fy}
-                </div>
-                <div style={{ fontSize: 36, fontWeight: 800,
-                  color: active ? '#fff' : 'var(--text-1)',
-                  fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                  {count}
-                </div>
+                  color: active ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', marginBottom: 4 }}>FY {fy}</div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: active ? '#fff' : 'var(--text-1)',
+                  fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{count}</div>
                 <div style={{ fontSize: 11, color: active ? 'rgba(255,255,255,0.5)' : 'var(--text-3)', marginTop: 4 }}>
                   receipt{count !== 1 ? 's' : ''}
                 </div>
@@ -307,6 +168,7 @@ export default function ReceiptsPage() {
         </div>
       )}
 
+      {/* Search bar */}
       <div className="card" style={{ padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }}/>
@@ -325,6 +187,7 @@ export default function ReceiptsPage() {
         </span>
       </div>
 
+      {/* Receipt table */}
       <div className="card" style={{ overflow: 'hidden' }}>
         {listLoading ? (
           <div style={{ padding: 48, textAlign: 'center' }}>
@@ -343,8 +206,7 @@ export default function ReceiptsPage() {
             <thead>
               <tr style={{ background: 'var(--table-header-bg)', borderBottom: '1px solid var(--table-border)' }}>
                 {['Receipt No','Date','Member','Month(s) Paid','Mode','Amount',''].map(h => (
-                  <th key={h} style={{ padding: '10px 14px',
-                    textAlign: h === 'Amount' ? 'right' : 'left',
+                  <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Amount' ? 'right' : 'left',
                     fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
                     textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -436,12 +298,21 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
   const memberIdRef   = useRef(null)
   const dateRef       = useRef(null)
 
+  // drag-select state (ref avoids re-renders during drag)
+  const dragRef = useRef({ active: false, action: null })
+
   const sf = k => v => setForm(f => ({ ...f, [k]: v }))
+
+  // ── mouseup anywhere ends drag ──────────────────────────────
+  useEffect(() => {
+    const onUp = () => { dragRef.current.active = false }
+    document.addEventListener('mouseup', onUp)
+    return () => document.removeEventListener('mouseup', onUp)
+  }, [])
 
   const loadPaidMonths = useCallback(async (mId, fy, excludeId = null) => {
     let q = supabase.from('receipts').select('month_paid')
-      .eq('member_id', mId).eq('financial_year', fy)
-      .not('month_paid', 'is', null)
+      .eq('member_id', mId).eq('financial_year', fy).not('month_paid', 'is', null)
     if (excludeId) q = q.neq('id', excludeId)
     const { data } = await q
     const paid = new Set()
@@ -451,24 +322,39 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     setPaidMonths(paid)
   }, [])
 
-  const toggleMonth = (month) => {
+  const onMonthMouseDown = useCallback((month) => {
     if (paidMonths.has(month)) return
-    setSelMonths(prev => prev.includes(month) ? prev.filter(m => m !== month) : [...prev, month])
-  }
+    const action = selMonths.includes(month) ? 'deselect' : 'select'
+    dragRef.current = { active: true, action }
+    setSelMonths(prev =>
+      action === 'select'
+        ? prev.includes(month) ? prev : [...prev, month]
+        : prev.filter(m => m !== month)
+    )
+  }, [paidMonths, selMonths])
 
-  // init items from categories
+  const onMonthDragEnter = useCallback((month) => {
+    if (!dragRef.current.active || paidMonths.has(month)) return
+    setSelMonths(prev => {
+      if (dragRef.current.action === 'select'   && !prev.includes(month)) return [...prev, month]
+      if (dragRef.current.action === 'deselect' &&  prev.includes(month)) return prev.filter(m => m !== month)
+      return prev
+    })
+  }, [paidMonths])
+
+  // init items
   useEffect(() => {
     if (!categories.length) return
     setItems(categories.map(c => ({ category_id: c.id, name: c.name, enabled: false, amt: '', months: '1', total: 0 })))
   }, [categories])
 
-  // auto receipt number for new
+  // auto receipt number
   useEffect(() => {
     if (editId || !form.financial_year) return
     nextReceiptNumber(form.financial_year).then(n => setForm(f => ({ ...f, receipt_number: n })))
   }, [editId, form.financial_year])
 
-  // sync selMonths → form.month_paid + category months count (new receipts only)
+  // selMonths → form.month_paid + auto-sync category months (new only)
   useEffect(() => {
     setForm(f => ({ ...f, month_paid: selMonths.join(', ') }))
     if (!editId && selMonths.length > 0) {
@@ -480,7 +366,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     }
   }, [selMonths]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // load existing receipt when editing
+  // load edit
   useEffect(() => {
     if (!editId) return
     setLoading(true)
@@ -490,22 +376,14 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     ]).then(async ([{ data: rec }, { data: recItems }]) => {
       if (!rec) return
       setForm({
-        receipt_number:   rec.receipt_number   || '',
-        receipt_date:     rec.receipt_date      || '',
-        financial_year:   rec.financial_year    || '',
-        month_paid:       rec.month_paid        || '',
-        payment_mode:     rec.payment_mode      || 'Cash',
-        cheque_dd_no:     rec.cheque_dd_no      || '',
-        transaction_date: rec.transaction_date  || '',
-        narration:        rec.narration         || '',
-        member_id:        rec.member_id         || '',
-        member_name:      rec.member_name       || '',
-        address:          rec.address           || '',
-        address1:         rec.address1          || '',
-        address2:         rec.address2          || '',
-        city:             rec.city              || '',
-        mobile:           rec.mobile            || '',
-        whatsapp:         rec.whatsapp          || '',
+        receipt_number: rec.receipt_number || '', receipt_date: rec.receipt_date || '',
+        financial_year: rec.financial_year || '', month_paid: rec.month_paid || '',
+        payment_mode: rec.payment_mode || 'Cash', cheque_dd_no: rec.cheque_dd_no || '',
+        transaction_date: rec.transaction_date || '', narration: rec.narration || '',
+        member_id: rec.member_id || '', member_name: rec.member_name || '',
+        address: rec.address || '', address1: rec.address1 || '',
+        address2: rec.address2 || '', city: rec.city || '',
+        mobile: rec.mobile || '', whatsapp: rec.whatsapp || '',
       })
       setMemberId(rec.member_id || '')
       setSelMember({ member_id: rec.member_id, member_name: rec.member_name })
@@ -518,19 +396,17 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
         return { category_id: c.id, name: c.name, enabled: true,
           amt: String(li.amt || ''), months: String(li.months || '1'), total: li.total || 0 }
       }))
-      if (rec.member_id && rec.financial_year) {
+      if (rec.member_id && rec.financial_year)
         await loadPaidMonths(rec.member_id, rec.financial_year, editId)
-      }
     }).finally(() => setLoading(false))
   }, [editId, categories, loadPaidMonths])
 
-  // autofocus member ID after load
   useEffect(() => {
     if (loading) return
     setTimeout(() => memberIdRef.current?.focus(), 80)
   }, [loading])
 
-  // recalc FY when receipt date changes
+  // FY from date
   useEffect(() => {
     if (!form.receipt_date) return
     const newFY = getFY(form.receipt_date)
@@ -540,7 +416,6 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     }
   }, [form.receipt_date]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // member ID prefix suggestions
   const onMemberIdChange = (val) => {
     setMemberId(val)
     if (selMember) setSelMember(null)
@@ -564,18 +439,13 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     setMemberIdSuggestions([])
     setForm(f => ({
       ...f,
-      member_id:   m.member_id,
-      member_name: m.member_name,
-      address:     m.address_street || '',
-      address1:    m.area_1         || '',
-      address2:    m.area_2         || '',
-      city:        m.city           || '',
-      mobile:      m.mobile         || '',
-      whatsapp:    m.whatsapp       || '',
+      member_id: m.member_id, member_name: m.member_name,
+      address: m.address_street || '', address1: m.area_1 || '',
+      address2: m.area_2 || '', city: m.city || '',
+      mobile: m.mobile || '', whatsapp: m.whatsapp || '',
     }))
     const fy = form.financial_year
     await loadPaidMonths(m.member_id, fy)
-    // pre-fill amounts from last receipt in same FY
     const { data: prev } = await supabase.from('receipts')
       .select('id').eq('member_id', m.member_id).eq('financial_year', fy)
       .order('receipt_number', { ascending: false }).limit(1)
@@ -587,8 +457,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
         setItems(curr => curr.map(item => {
           const li = map[item.category_id]
           if (!li) return item
-          const amt    = String(li.amt    || '')
-          const months = String(li.months || '1')
+          const amt = String(li.amt || ''), months = String(li.months || '1')
           return { ...item, enabled: true, amt, months, total: (parseFloat(amt)||0) * (parseFloat(months)||0) }
         }))
       }
@@ -620,7 +489,8 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     })
   }
 
-  const grandTotal = items.filter(i => i.enabled).reduce((s, i) => s + (i.total || 0), 0)
+  const grandTotal   = items.filter(i => i.enabled).reduce((s, i) => s + (i.total || 0), 0)
+  const enabledCount = items.filter(i => i.enabled).length
 
   const save = async () => {
     if (!selMember?.member_id && !form.member_id) { toast('Please select a member', 'error'); return }
@@ -631,24 +501,15 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     setSaving(true)
     try {
       const recData = {
-        receipt_number:   form.receipt_number,
-        receipt_date:     form.receipt_date,
-        financial_year:   form.financial_year,
-        month_paid:       form.month_paid       || null,
-        payment_mode:     form.payment_mode,
-        cheque_dd_no:     form.cheque_dd_no     || null,
-        transaction_date: form.transaction_date || null,
-        narration:        form.narration        || null,
-        member_id:        form.member_id,
-        member_name:      form.member_name,
-        address:          form.address          || null,
-        address1:         form.address1         || null,
-        address2:         form.address2         || null,
-        city:             form.city             || null,
-        mobile:           form.mobile           || null,
-        whatsapp:         form.whatsapp         || null,
-        grand_total:      grandTotal,
-        created_by:       profile?.full_name || profile?.email,
+        receipt_number: form.receipt_number, receipt_date: form.receipt_date,
+        financial_year: form.financial_year, month_paid: form.month_paid || null,
+        payment_mode: form.payment_mode, cheque_dd_no: form.cheque_dd_no || null,
+        transaction_date: form.transaction_date || null, narration: form.narration || null,
+        member_id: form.member_id, member_name: form.member_name,
+        address: form.address || null, address1: form.address1 || null,
+        address2: form.address2 || null, city: form.city || null,
+        mobile: form.mobile || null, whatsapp: form.whatsapp || null,
+        grand_total: grandTotal, created_by: profile?.full_name || profile?.email,
       }
       let receiptId = editId
       if (editId) {
@@ -661,11 +522,8 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
         receiptId = data.id
       }
       const itemRows = enabled.map(i => ({
-        receipt_id:  receiptId,
-        category_id: i.category_id,
-        amt:         parseFloat(i.amt)    || 0,
-        months:      parseFloat(i.months) || 0,
-        total:       i.total,
+        receipt_id: receiptId, category_id: i.category_id,
+        amt: parseFloat(i.amt) || 0, months: parseFloat(i.months) || 0, total: i.total,
       }))
       const { error: iErr } = await supabase.from('receipt_items').insert(itemRows)
       if (iErr) throw iErr
@@ -677,7 +535,6 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
 
   const showChequeFields = ['Cheque', 'DD'].includes(form.payment_mode)
   const showTxnDate      = ['Cheque', 'DD', 'Net Banking'].includes(form.payment_mode)
-  const enabledCount     = items.filter(i => i.enabled).length
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)',
@@ -685,93 +542,60 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
       zIndex: 9999, padding: 12 }}>
       <div style={{
         background: 'var(--card-bg)', borderRadius: 14, width: '100%',
-        maxWidth: 1280, maxHeight: '96vh', display: 'flex', flexDirection: 'column',
+        maxWidth: 1300, maxHeight: '97vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)',
       }}>
 
-        {/* ══ 3D Header ══ */}
+        {/* ══ Header — theme color with 3D layers ══ */}
         <div style={{
-          background: 'linear-gradient(145deg, #2a5298 0%, #1e3a5f 45%, #0d1f40 100%)',
-          borderRadius: '14px 14px 0 0', padding: '14px 22px', flexShrink: 0,
+          background: 'var(--sidebar-bg)',
+          borderRadius: '14px 14px 0 0', padding: '12px 20px', flexShrink: 0,
           position: 'relative', overflow: 'hidden',
-          boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.28), inset 0 -3px 0 rgba(0,0,0,0.35), 0 6px 24px rgba(0,0,0,0.4)',
+          boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.25), inset 0 -3px 0 rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.35)',
         }}>
-          {/* Diagonal gloss */}
           <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: '14px 14px 0 0',
-            background: 'linear-gradient(130deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.06) 38%, transparent 55%)' }}/>
-          {/* Left specular edge */}
+            background: 'linear-gradient(130deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 38%, rgba(0,0,0,0.08) 100%)' }}/>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, pointerEvents: 'none',
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.08) 100%)',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.06) 100%)',
             borderRadius: '14px 0 0 0' }}/>
-          {/* Top edge highlight */}
           <div style={{ position: 'absolute', left: 0, top: 0, right: 0, height: 1, pointerEvents: 'none',
-            background: 'rgba(255,255,255,0.32)', borderRadius: '14px 14px 0 0' }}/>
-          {/* Subtle dot grid texture */}
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.06,
-            backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
-            backgroundSize: '20px 20px' }}/>
+            background: 'rgba(255,255,255,0.3)', borderRadius: '14px 14px 0 0' }}/>
 
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-            {/* Left: icon + title */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: 11, flexShrink: 0,
-                background: 'linear-gradient(145deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 100%)',
-                border: '1px solid rgba(255,255,255,0.28)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25), 0 3px 10px rgba(0,0,0,0.25)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <IndianRupee size={20} style={{ color: '#fff', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }}/>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+                background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(0,0,0,0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <IndianRupee size={18} style={{ color: '#fff' }}/>
               </div>
               <div>
-                <h2 style={{ color: '#fff', fontSize: 17, fontWeight: 800, margin: 0,
-                  textShadow: '0 1px 6px rgba(0,0,0,0.5)', letterSpacing: '-0.01em' }}>
+                <h2 style={{ color: '#fff', fontSize: 16, fontWeight: 800, margin: 0,
+                  textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
                   {editId ? 'Edit Receipt' : 'New Receipt'}
                 </h2>
                 {form.receipt_number && (
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2,
-                    fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
                     {form.receipt_number}
                   </div>
                 )}
               </div>
             </div>
-
-            {/* Right: FY badge + close */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{
-                background: 'linear-gradient(145deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.07) 100%)',
-                border: '1px solid rgba(255,255,255,0.26)', borderRadius: 9, padding: '6px 14px',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.2)',
-              }}>
+              <div style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.24)',
+                borderRadius: 8, padding: '5px 12px',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)' }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.45)',
-                  textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 2 }}>
-                  Financial Year
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '0.04em',
-                  textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
-                  {form.financial_year}
-                </div>
+                  textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 1 }}>FY</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{form.financial_year}</div>
               </div>
               <button onClick={onClose} tabIndex={-1}
                 style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)',
-                  borderRadius: 9, padding: '8px 11px', cursor: 'pointer', color: '#fff',
-                  display: 'flex', alignItems: 'center',
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 6px rgba(0,0,0,0.2)',
-                  transition: 'all 0.15s' }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'rgba(239,68,68,0.8)'
-                  e.currentTarget.style.borderColor = 'rgba(220,38,38,0.7)'
-                  e.currentTarget.style.transform   = 'scale(1.06)'
-                  e.currentTarget.style.boxShadow   = '0 3px 10px rgba(239,68,68,0.4)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.12)'
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.22)'
-                  e.currentTarget.style.transform   = 'scale(1)'
-                  e.currentTarget.style.boxShadow   = 'inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 6px rgba(0,0,0,0.2)'
-                }}>
-                <X size={16}/>
+                  borderRadius: 8, padding: '7px 10px', cursor: 'pointer', color: '#fff',
+                  display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.8)'; e.currentTarget.style.transform = 'scale(1.06)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.transform = 'scale(1)' }}>
+                <X size={15}/>
               </button>
             </div>
           </div>
@@ -783,251 +607,224 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
             <Loader2 size={28} className="animate-spin" style={{ color: 'var(--text-3)', margin: '0 auto' }}/>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '400px 1fr', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
-            {/* ── Left panel ── */}
-            <div style={{ borderRight: '1px solid var(--card-border)', overflowY: 'auto',
-              padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* ── Left panel — compact, no scroll ── */}
+            <div style={{ borderRight: '1px solid var(--card-border)', overflow: 'hidden',
+              padding: '14px 18px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-              {/* ─ Member ─ */}
-              <div>
-                <SectionLabel>Member</SectionLabel>
-                <Row label="Member ID">
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      ref={memberIdRef}
-                      value={memberId}
-                      onChange={e => onMemberIdChange(e.target.value)}
-                      onKeyDown={e => {
-                        if ((e.key === 'Tab' || e.key === 'Enter') && memberId.trim()) {
-                          e.preventDefault()
-                          setShowMemberIdPopup(false)
-                          if (selMember) dateRef.current?.focus()
-                          else lookupById(memberId)
-                        }
-                        if (e.key === 'Escape') setShowMemberIdPopup(false)
-                      }}
-                      onFocus={() => memberIdSuggestions.length > 0 && setShowMemberIdPopup(true)}
-                      onBlur={() => setTimeout(() => {
-                        setShowMemberIdPopup(false)
-                        if (memberId.trim() && !selMember) lookupById(memberId)
-                      }, 200)}
-                      placeholder="Type ID + Tab to lookup"
-                      className="field-input"
-                      style={{ height: 34 }}
-                      autoComplete="off"
-                    />
-                    {showMemberIdPopup && memberIdSuggestions.length > 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 300,
-                        minWidth: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
-                        borderRadius: 9, boxShadow: '0 10px 32px rgba(0,0,0,0.18)',
-                        maxHeight: 220, overflowY: 'auto', marginTop: 4 }}>
-                        <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 700,
-                          color: 'var(--text-3)', borderBottom: '1px solid var(--card-border)',
-                          textTransform: 'uppercase', letterSpacing: '0.06em',
-                          background: 'var(--page-bg)', borderRadius: '9px 9px 0 0' }}>
-                          Matching Members
-                        </div>
-                        {memberIdSuggestions.map(m => (
-                          <button key={m.member_id}
-                            onMouseDown={e => { e.preventDefault(); loadMember(m) }}
-                            style={{ display: 'flex', width: '100%', padding: '7px 12px', gap: 10,
-                              alignItems: 'center', background: 'none', border: 'none',
-                              cursor: 'pointer', borderBottom: '1px solid var(--table-border)', textAlign: 'left' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                            <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--info)', minWidth: 72, fontSize: 12 }}>{m.member_id}</span>
-                            <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>{m.member_name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Row>
-
-                {selMember && (
-                  <div style={{ marginTop: 10, padding: '12px 14px', borderRadius: 9,
-                    background: 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(30,58,95,0.06) 100%)',
-                    border: '1px solid rgba(59,130,246,0.2)',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)' }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>{form.member_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2, fontFamily: 'monospace' }}>{form.member_id}</div>
-                    {(form.mobile || form.whatsapp) && (
-                      <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                        {form.mobile   && <span style={{ fontSize: 12, color: 'var(--text-2)' }}>📱 {form.mobile}</span>}
-                        {form.whatsapp && <span style={{ fontSize: 12, color: 'var(--text-2)' }}>💬 {form.whatsapp}</span>}
-                      </div>
-                    )}
-                    {(form.address || form.address1 || form.city) && (
-                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
-                        📍 {[form.address, form.address1, form.address2, form.city].filter(Boolean).join(', ')}
-                      </div>
-                    )}
+              {/* MEMBER */}
+              <FieldLabel>Member</FieldLabel>
+              <div style={{ position: 'relative', marginBottom: 6 }}>
+                <input
+                  ref={memberIdRef}
+                  value={memberId}
+                  onChange={e => onMemberIdChange(e.target.value)}
+                  onKeyDown={e => {
+                    if ((e.key === 'Tab' || e.key === 'Enter') && memberId.trim()) {
+                      e.preventDefault()
+                      setShowMemberIdPopup(false)
+                      if (selMember) dateRef.current?.focus()
+                      else lookupById(memberId)
+                    }
+                    if (e.key === 'Escape') setShowMemberIdPopup(false)
+                  }}
+                  onFocus={() => memberIdSuggestions.length > 0 && setShowMemberIdPopup(true)}
+                  onBlur={() => setTimeout(() => {
+                    setShowMemberIdPopup(false)
+                    if (memberId.trim() && !selMember) lookupById(memberId)
+                  }, 200)}
+                  placeholder="Member ID + Tab"
+                  className="field-input"
+                  style={{ height: 32, width: '100%' }}
+                  autoComplete="off"
+                />
+                {showMemberIdPopup && memberIdSuggestions.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 300,
+                    minWidth: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+                    borderRadius: 9, boxShadow: '0 10px 32px rgba(0,0,0,0.18)',
+                    maxHeight: 220, overflowY: 'auto', marginTop: 3 }}>
+                    <div style={{ padding: '5px 12px', fontSize: 10, fontWeight: 700,
+                      color: 'var(--text-3)', borderBottom: '1px solid var(--card-border)',
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                      background: 'var(--page-bg)', borderRadius: '9px 9px 0 0' }}>
+                      Matching Members
+                    </div>
+                    {memberIdSuggestions.map(m => (
+                      <button key={m.member_id}
+                        onMouseDown={e => { e.preventDefault(); loadMember(m) }}
+                        style={{ display: 'flex', width: '100%', padding: '6px 12px', gap: 10,
+                          alignItems: 'center', background: 'none', border: 'none',
+                          cursor: 'pointer', borderBottom: '1px solid var(--table-border)', textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                        <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--info)', minWidth: 70, fontSize: 12 }}>{m.member_id}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>{m.member_name}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
 
-              <Divider/>
+              {/* compact member strip */}
+              {selMember && (
+                <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 7,
+                  background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.18)',
+                  display: 'flex', alignItems: 'center', gap: 10, minHeight: 30 }}>
+                  <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--info)', flexShrink: 0 }}>{form.member_id}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.member_name}</span>
+                  {form.mobile && <span style={{ fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>📱 {form.mobile}</span>}
+                </div>
+              )}
 
-              {/* ─ Receipt Details ─ */}
-              <div>
-                <SectionLabel>Receipt Details</SectionLabel>
-                <Row label="Receipt Date">
+              <HDivider/>
+
+              {/* RECEIPT DETAILS */}
+              <FieldLabel>Receipt Details</FieldLabel>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Receipt Date</div>
                   <input ref={dateRef} type="date" value={form.receipt_date}
                     onChange={e => sf('receipt_date')(e.target.value)}
-                    className="field-input" style={{ height: 34, maxWidth: 200 }}/>
-                </Row>
-
-                {/* Month Palette */}
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>Months Paid</span>
-                    {selMonths.length > 0 && (
-                      <span style={{
-                        background: 'linear-gradient(135deg, #2563eb, var(--sidebar-bg))',
-                        color: '#fff', borderRadius: 10, padding: '2px 9px',
-                        fontSize: 10, fontWeight: 700,
-                        boxShadow: '0 1px 6px rgba(30,58,95,0.35)',
-                      }}>
-                        {selMonths.length} month{selMonths.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                    {selMonths.length > 0 && (
-                      <button onClick={() => setSelMonths([])}
-                        style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-3)',
-                          background: 'none', border: 'none', cursor: 'pointer', padding: '1px 6px',
-                          borderRadius: 4, transition: 'color 0.12s' }}
-                        onMouseEnter={e => e.currentTarget.style.color = '#dc2626'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 5 }}>
-                    {FY_MONTHS.map((month, i) => (
-                      <MonthTile
-                        key={month}
-                        label={FY_MON_S[i]}
-                        isPaid={paidMonths.has(month)}
-                        isSelected={selMonths.includes(month)}
-                        onClick={() => toggleMonth(month)}
-                      />
-                    ))}
-                  </div>
-
-                  {paidMonths.size > 0 && (
-                    <div style={{ marginTop: 7, display: 'flex', gap: 12, fontSize: 10, color: 'var(--text-3)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#16a34a', display: 'inline-block' }}/>
-                        Already paid
-                      </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 2, background: '#2563eb', display: 'inline-block' }}/>
-                        Selected
-                      </span>
+                    className="field-input" style={{ height: 31, width: '100%' }}/>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  {selMonths.length > 0 && (
+                    <div style={{ padding: '4px 10px', borderRadius: 6, textAlign: 'center',
+                      background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.2)',
+                      fontSize: 11, fontWeight: 700, color: '#1d4ed8' }}>
+                      {selMonths.length} month{selMonths.length !== 1 ? 's' : ''} selected
                     </div>
                   )}
                 </div>
               </div>
 
-              <Divider/>
-
-              {/* ─ Payment ─ */}
-              <div>
-                <SectionLabel>Payment</SectionLabel>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {MODES.map(m => (
-                    <button key={m} onClick={() => sf('payment_mode')(m)}
-                      style={{ padding: '5px 13px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                        border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
-                        background: form.payment_mode === m
-                          ? 'linear-gradient(135deg, #2563eb 0%, #0f2550 100%)'
-                          : 'transparent',
-                        borderColor: form.payment_mode === m ? '#2563eb' : 'var(--card-border)',
-                        color: form.payment_mode === m ? '#fff' : 'var(--text-2)',
-                        boxShadow: form.payment_mode === m
-                          ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(37,99,235,0.35)'
-                          : 'none',
-                      }}>
-                      {m}
+              {/* Month palette */}
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Months Paid
+                  </span>
+                  {paidMonths.size > 0 && (
+                    <span style={{ fontSize: 9, color: 'var(--text-3)' }}>— drag to select</span>
+                  )}
+                  {!paidMonths.size && (
+                    <span style={{ fontSize: 9, color: 'var(--text-3)' }}>— click or drag to select</span>
+                  )}
+                  {selMonths.length > 0 && (
+                    <button onClick={() => setSelMonths([])}
+                      style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-3)', background: 'none',
+                        border: 'none', cursor: 'pointer', padding: '0 4px', transition: 'color 0.1s' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#dc2626'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+                      Clear
                     </button>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 3, userSelect: 'none' }}>
+                  {FY_MONTHS.map((month, i) => (
+                    <MonthTile
+                      key={month}
+                      label={FY_MON_S[i]}
+                      isPaid={paidMonths.has(month)}
+                      isSelected={selMonths.includes(month)}
+                      onMouseDown={() => onMonthMouseDown(month)}
+                      onDragEnter={() => onMonthDragEnter(month)}
+                    />
                   ))}
                 </div>
-
-                {showChequeFields && (
-                  <Row label={form.payment_mode === 'DD' ? 'DD Number' : 'Cheque Number'} style={{ marginTop: 10 }}>
-                    <input value={form.cheque_dd_no} onChange={e => sf('cheque_dd_no')(e.target.value)}
-                      className="field-input" style={{ height: 34 }} placeholder="Enter number"/>
-                  </Row>
+                {paidMonths.size > 0 && (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 10, fontSize: 9, color: 'var(--text-3)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 1, background: '#16a34a', display: 'inline-block' }}/>
+                      Already paid
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 1, background: '#2563eb', display: 'inline-block' }}/>
+                      Selected
+                    </span>
+                  </div>
                 )}
-                {showTxnDate && (
-                  <Row label="Transaction Date" style={{ marginTop: 8 }}>
-                    <input type="date" value={form.transaction_date}
-                      onChange={e => sf('transaction_date')(e.target.value)}
-                      className="field-input" style={{ height: 34 }}/>
-                  </Row>
-                )}
-                <Row label="Narration" style={{ marginTop: 8 }}>
-                  <input value={form.narration} onChange={e => sf('narration')(e.target.value)}
-                    className="field-input" style={{ height: 34 }} placeholder="Optional note…"/>
-                </Row>
               </div>
 
-              {/* ─ Grand Total + Save ─ */}
-              <div style={{ marginTop: 'auto', paddingTop: 16 }}>
-                {/* Category summary */}
-                {items.filter(i => i.enabled && i.total > 0).length > 0 && (
-                  <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9,
-                    background: 'var(--page-bg)', border: '1px solid var(--card-border)',
-                    display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {items.filter(i => i.enabled && i.total > 0).map(item => (
-                      <div key={item.category_id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                        <span style={{ color: 'var(--text-2)' }}>{item.name}</span>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-1)' }}>
-                          ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <HDivider/>
 
-                {/* Grand total card */}
-                <div style={{
-                  borderRadius: 11, marginBottom: 12, overflow: 'hidden',
-                  background: 'linear-gradient(140deg, #2a5298 0%, #1e3a5f 55%, #0d1f40 100%)',
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 6px 20px rgba(30,58,95,0.4)',
-                  position: 'relative',
-                }}>
+              {/* PAYMENT */}
+              <FieldLabel>Payment</FieldLabel>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                {MODES.map(m => (
+                  <button key={m} onClick={() => sf('payment_mode')(m)}
+                    style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                      border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
+                      background: form.payment_mode === m
+                        ? 'var(--sidebar-bg)' : 'transparent',
+                      borderColor: form.payment_mode === m ? 'var(--sidebar-bg)' : 'var(--card-border)',
+                      color: form.payment_mode === m ? '#fff' : 'var(--text-2)',
+                      boxShadow: form.payment_mode === m
+                        ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 6px rgba(30,58,95,0.3)' : 'none',
+                    }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              {(showChequeFields || showTxnDate) && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+                  {showChequeFields && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>
+                        {form.payment_mode === 'DD' ? 'DD No.' : 'Cheque No.'}
+                      </div>
+                      <input value={form.cheque_dd_no} onChange={e => sf('cheque_dd_no')(e.target.value)}
+                        className="field-input" style={{ height: 31, width: '100%' }} placeholder="Number"/>
+                    </div>
+                  )}
+                  {showTxnDate && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Txn Date</div>
+                      <input type="date" value={form.transaction_date}
+                        onChange={e => sf('transaction_date')(e.target.value)}
+                        className="field-input" style={{ height: 31, width: '100%' }}/>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Narration</div>
+                <input value={form.narration} onChange={e => sf('narration')(e.target.value)}
+                  className="field-input" style={{ height: 31, width: '100%' }} placeholder="Optional note…"/>
+              </div>
+
+              {/* Grand Total + Save — pushed to bottom */}
+              <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--card-border)' }}>
+                <div style={{ borderRadius: 10, marginBottom: 10, overflow: 'hidden',
+                  background: 'var(--sidebar-bg)',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 16px rgba(30,58,95,0.3)',
+                  position: 'relative' }}>
                   <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
-                    background: 'linear-gradient(130deg, rgba(255,255,255,0.12) 0%, transparent 45%)',
-                    borderRadius: 11 }}/>
-                  <div style={{ position: 'relative', padding: '14px 18px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.45)',
-                      textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 4 }}>
-                      Grand Total
-                    </div>
-                    <div style={{ fontSize: 30, fontWeight: 900, fontFamily: 'monospace', color: '#fff',
-                      textShadow: '0 2px 8px rgba(0,0,0,0.35)', letterSpacing: '-0.01em' }}>
+                    background: 'linear-gradient(130deg, rgba(255,255,255,0.1) 0%, transparent 45%)' }}/>
+                  <div style={{ position: 'relative', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                      textTransform: 'uppercase', letterSpacing: '0.14em' }}>Grand Total</span>
+                    <span style={{ fontSize: 24, fontWeight: 900, fontFamily: 'monospace', color: '#fff',
+                      textShadow: '0 2px 6px rgba(0,0,0,0.3)' }}>
                       ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
+                    </span>
                   </div>
                 </div>
-
                 <button onClick={save} disabled={saving}
-                  style={{ width: '100%', padding: '11px 0', borderRadius: 9,
-                    background: saving
-                      ? 'var(--text-3)'
-                      : 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)',
-                    color: '#fff', border: 'none', fontWeight: 700, fontSize: 14,
+                  style={{ width: '100%', padding: '9px 0', borderRadius: 8,
+                    background: saving ? 'var(--text-3)' : 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)',
+                    color: '#fff', border: 'none', fontWeight: 700, fontSize: 13,
                     cursor: saving ? 'not-allowed' : 'pointer',
-                    boxShadow: saving ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.22), 0 4px 14px rgba(22,163,74,0.4)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    transition: 'all 0.15s', fontFamily: 'var(--font-ui)',
-                  }}
+                    boxShadow: saving ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 12px rgba(22,163,74,0.4)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    transition: 'filter 0.12s', fontFamily: 'var(--font-ui)' }}
                   onMouseEnter={e => { if (!saving) e.currentTarget.style.filter = 'brightness(1.08)' }}
                   onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}>
-                  {saving ? <Loader2 size={15} className="animate-spin"/> : <Save size={15}/>}
+                  {saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
                   {saving ? 'Saving…' : 'Save Receipt'}
                 </button>
               </div>
@@ -1035,20 +832,16 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
 
             {/* ── Right panel — categories ── */}
             <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--card-border)',
-                background: 'var(--table-header-bg)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+              <div style={{ padding: '10px 18px', borderBottom: '1px solid var(--card-border)',
+                background: 'var(--table-header-bg)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
-                  textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Payment Categories
-                </span>
+                  textTransform: 'uppercase', letterSpacing: '0.08em' }}>Payment Categories</span>
                 <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>
                   Click name or enter amount to include
                 </span>
                 {enabledCount > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700,
-                    background: 'linear-gradient(135deg, #2563eb, var(--sidebar-bg))',
-                    color: '#fff', borderRadius: 10, padding: '2px 9px',
-                    boxShadow: '0 1px 4px rgba(30,58,95,0.3)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--sidebar-bg)',
+                    color: '#fff', borderRadius: 10, padding: '2px 8px' }}>
                     {enabledCount} active
                   </span>
                 )}
@@ -1057,14 +850,14 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
               <table style={{ width: '100%', borderCollapse: 'collapse', flex: 1 }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                   <tr style={{ background: 'var(--table-header-bg)', borderBottom: '2px solid var(--table-border)' }}>
-                    <th style={{ width: 42, padding: '9px 10px' }}/>
-                    <th style={{ padding: '9px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700,
+                    <th style={{ width: 40, padding: '8px 10px' }}/>
+                    <th style={{ padding: '8px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700,
                       color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Category</th>
-                    <th style={{ width: 130, padding: '9px 12px', textAlign: 'right', fontSize: 11,
+                    <th style={{ width: 125, padding: '8px 10px', textAlign: 'right', fontSize: 11,
                       fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Rate / Month ₹</th>
-                    <th style={{ width: 85, padding: '9px 10px', textAlign: 'center', fontSize: 11,
+                    <th style={{ width: 78, padding: '8px 8px', textAlign: 'center', fontSize: 11,
                       fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Months</th>
-                    <th style={{ width: 140, padding: '9px 18px', textAlign: 'right', fontSize: 11,
+                    <th style={{ width: 130, padding: '8px 16px', textAlign: 'right', fontSize: 11,
                       fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Total ₹</th>
                   </tr>
                 </thead>
@@ -1076,8 +869,8 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
               </table>
 
               {grandTotal > 0 && (
-                <div style={{ padding: '13px 18px', borderTop: '2px solid var(--card-border)',
-                  display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 18,
+                <div style={{ padding: '11px 16px', borderTop: '2px solid var(--card-border)',
+                  display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16,
                   background: 'var(--table-header-bg)', flexShrink: 0 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
                     textTransform: 'uppercase', letterSpacing: '0.07em' }}>Grand Total</span>
@@ -1096,19 +889,18 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
 
 // ── Month Tile ────────────────────────────────────────────────────
 
-function MonthTile({ label, isPaid, isSelected, onClick }) {
+function MonthTile({ label, isPaid, isSelected, onMouseDown, onDragEnter }) {
   const [hov, setHov] = useState(false)
   return (
     <button
-      onClick={onClick}
-      disabled={isPaid}
-      onMouseEnter={() => setHov(true)}
+      onMouseDown={e => { e.preventDefault(); onMouseDown() }}
+      onMouseEnter={() => { setHov(true); onDragEnter() }}
       onMouseLeave={() => setHov(false)}
-      title={isPaid ? `${label} — already paid` : label}
+      disabled={isPaid}
       style={{
-        padding: '8px 2px 6px', borderRadius: 7, border: '1.5px solid', textAlign: 'center',
-        fontSize: 11, fontWeight: 700, cursor: isPaid ? 'default' : 'pointer',
-        transition: 'all 0.14s',
+        padding: '6px 1px 4px', borderRadius: 6, border: '1.5px solid', textAlign: 'center',
+        fontSize: 10, fontWeight: 700, lineHeight: 1.1, cursor: isPaid ? 'default' : 'pointer',
+        transition: 'all 0.12s',
         borderColor: isPaid ? '#15803d' : isSelected ? '#2563eb' : hov ? 'var(--input-focus-border)' : 'var(--card-border)',
         background: isPaid
           ? 'linear-gradient(160deg, #4ade80 0%, #16a34a 100%)'
@@ -1117,74 +909,68 @@ function MonthTile({ label, isPaid, isSelected, onClick }) {
             : hov ? 'var(--info-subtle)' : 'transparent',
         color: isPaid || isSelected ? '#fff' : hov ? 'var(--info)' : 'var(--text-2)',
         boxShadow: isPaid
-          ? 'inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 7px rgba(22,163,74,0.35)'
+          ? 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 5px rgba(22,163,74,0.3)'
           : isSelected
-            ? 'inset 0 1px 0 rgba(255,255,255,0.28), 0 2px 7px rgba(37,99,235,0.35)'
-            : hov ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-        transform: !isPaid && (isSelected || hov) ? 'translateY(-2px) scale(1.04)' : 'none',
+            ? 'inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 5px rgba(37,99,235,0.3)'
+            : 'none',
+        transform: !isPaid && (isSelected || hov) ? 'translateY(-1px) scale(1.05)' : 'none',
       }}
     >
       {label}
-      <div style={{ fontSize: 8, marginTop: 1, letterSpacing: 0, opacity: isPaid || isSelected ? 0.9 : 0 }}>
-        {isPaid ? '✓' : isSelected ? '●' : '·'}
+      <div style={{ fontSize: 7, marginTop: 1, opacity: isPaid || isSelected ? 0.9 : 0 }}>
+        {isPaid ? '✓' : '●'}
       </div>
     </button>
   )
 }
 
-// ── Category Row ────────────────────────────────────────────────
+// ── Category Row ──────────────────────────────────────────────────
 
 function CategoryRow({ item, idx, onChange }) {
   const [hov, setHov] = useState(false)
   return (
     <tr
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         borderBottom: '1px solid var(--table-border)',
         borderLeft: `3px solid ${item.enabled ? 'var(--sidebar-bg)' : 'transparent'}`,
         background: item.enabled ? 'rgba(30,58,95,0.05)' : hov ? 'var(--table-row-hover)' : 'transparent',
-        transition: 'background 0.12s, border-left-color 0.15s',
+        transition: 'background 0.1s, border-left-color 0.15s',
       }}
     >
-      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
         <button onClick={() => onChange(idx, 'enabled', !item.enabled)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2,
-            color: item.enabled ? '#16a34a' : 'var(--text-3)',
-            display: 'flex', alignItems: 'center',
-            transition: 'color 0.12s, transform 0.12s',
-            transform: item.enabled ? 'scale(1.15)' : 'scale(1)' }}>
-          {item.enabled ? <CheckSquare size={16}/> : <Square size={16}/>}
+            color: item.enabled ? '#16a34a' : 'var(--text-3)', display: 'flex', alignItems: 'center',
+            transition: 'transform 0.1s', transform: item.enabled ? 'scale(1.15)' : 'scale(1)' }}>
+          {item.enabled ? <CheckSquare size={15}/> : <Square size={15}/>}
         </button>
       </td>
-      <td style={{ padding: '8px 16px' }}>
-        <span
-          onClick={() => onChange(idx, 'enabled', !item.enabled)}
+      <td style={{ padding: '7px 14px' }}>
+        <span onClick={() => onChange(idx, 'enabled', !item.enabled)}
           style={{ fontSize: 13, fontWeight: item.enabled ? 600 : 400, cursor: 'pointer',
-            color: item.enabled ? 'var(--text-1)' : 'var(--text-2)', transition: 'all 0.12s' }}>
+            color: item.enabled ? 'var(--text-1)' : 'var(--text-2)', transition: 'all 0.1s' }}>
           {item.name}
         </span>
       </td>
-      <td style={{ padding: '6px 12px' }}>
-        <input type="number" min="0" step="0.01"
-          value={item.amt} disabled={!item.enabled}
+      <td style={{ padding: '5px 10px' }}>
+        <input type="number" min="0" step="0.01" value={item.amt} disabled={!item.enabled}
           onChange={e => onChange(idx, 'amt', e.target.value)}
           onFocus={() => !item.enabled && onChange(idx, 'enabled', true)}
           className="field-input"
-          style={{ textAlign: 'right', padding: '4px 8px', fontSize: 13,
-            width: '100%', height: 30, opacity: item.enabled ? 1 : 0.35, transition: 'opacity 0.12s' }}
+          style={{ textAlign: 'right', padding: '3px 7px', fontSize: 13,
+            width: '100%', height: 28, opacity: item.enabled ? 1 : 0.35, transition: 'opacity 0.1s' }}
           placeholder="0.00"/>
       </td>
-      <td style={{ padding: '6px 10px' }}>
-        <input type="number" min="1" max="12" step="1"
-          value={item.months} disabled={!item.enabled}
+      <td style={{ padding: '5px 8px' }}>
+        <input type="number" min="1" max="12" step="1" value={item.months} disabled={!item.enabled}
           onChange={e => onChange(idx, 'months', e.target.value)}
           className="field-input"
-          style={{ textAlign: 'center', padding: '4px 8px', fontSize: 13,
-            width: '100%', height: 30, opacity: item.enabled ? 1 : 0.35, transition: 'opacity 0.12s' }}
+          style={{ textAlign: 'center', padding: '3px 6px', fontSize: 13,
+            width: '100%', height: 28, opacity: item.enabled ? 1 : 0.35, transition: 'opacity 0.1s' }}
           placeholder="1"/>
       </td>
-      <td style={{ padding: '8px 18px', textAlign: 'right' }}>
+      <td style={{ padding: '7px 16px', textAlign: 'right' }}>
         {item.enabled && item.total > 0 ? (
           <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
             ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1199,24 +985,15 @@ function CategoryRow({ item, idx, onChange }) {
 
 // ── Layout helpers ────────────────────────────────────────────────
 
-function SectionLabel({ children }) {
+function FieldLabel({ children }) {
   return (
-    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase',
-      letterSpacing: '0.1em', marginBottom: 10 }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
+      textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
       {children}
     </div>
   )
 }
 
-function Divider() {
-  return <div style={{ borderTop: '1px solid var(--card-border)' }}/>
-}
-
-function Row({ label, children, style }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, ...style }}>
-      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>{label}</label>
-      {children}
-    </div>
-  )
+function HDivider() {
+  return <div style={{ borderTop: '1px solid var(--card-border)', margin: '8px 0' }}/>
 }
