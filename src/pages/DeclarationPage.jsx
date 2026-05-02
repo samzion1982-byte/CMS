@@ -452,7 +452,7 @@ export default function DeclarationPage() {
           <button onClick={() => setShowFYMgr(o => !o)} title="Manage financial years"
             className="card"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, padding: 0, cursor: 'pointer', border: showFYMgr ? '1.5px solid var(--input-focus-border)' : undefined, background: showFYMgr ? 'var(--info-subtle)' : undefined }}>
-            <Settings size={17} style={{ color: showFYMgr ? 'var(--info)' : 'var(--text-3)', transition: 'color 0.15s', transform: showFYMgr ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s' }}/>
+            <Settings size={17} style={{ color: showFYMgr ? 'var(--info)' : 'var(--text-3)', transform: showFYMgr ? 'rotate(45deg)' : 'none', transition: 'color 0.15s, transform 0.2s' }}/>
           </button>
           {showFYMgr && (
             <FYManagerPopup
