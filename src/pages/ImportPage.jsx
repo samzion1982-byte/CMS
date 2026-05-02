@@ -815,9 +815,19 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     const workbook = XLSX.read(data, { type:'array', cellDates:true })
     setWb(workbook)
     setImportError(null)
-    // Auto-select: prefer exact "Members" sheet first, then any sheet with "member"
-    // Never auto-select — let Super Admin always choose explicitly to avoid wrong table
-    setStep(2)
+
+    // Auto-select current FY sheet and jump straight to preview if present
+    const d = new Date(), m = d.getMonth() + 1, y = d.getFullYear()
+    const curFY = m >= 4 ? `${y}-${String(y+1).slice(2)}` : `${y-1}-${String(y).slice(2)}`
+    const fySheets = workbook.SheetNames.filter(n => /^\d{4}-\d{2}$/.test(n.trim()))
+      .sort((a, b) => a.localeCompare(b))
+    const autoSheet = fySheets.includes(curFY) ? curFY : (fySheets.length > 0 ? fySheets[fySheets.length - 1] : null)
+    if (autoSheet) {
+      setSheetName(autoSheet)
+      loadSheet(workbook, autoSheet)  // advances to step 3
+    } else {
+      setStep(2)
+    }
   }
 
   function loadSheet(workbook, name) {
@@ -843,66 +853,92 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
   async function doImportReceipts() {
     const fy = sheetName.trim()
     const cats = await getActiveCategories()
-    const catCols = {}
-    if (rows.length > 0) {
-      const hdr = rows[0]
-      cats.forEach(cat => {
-        const nc = normalizeCol(cat.name)
-        const matches = []
-        hdr.forEach((h, i) => {
-          const nh = normalizeCol(h)
-          if (nh === nc || nh === nc + 'amt' || nh === nc + 'amount') matches.push(i)
-          else if (nh === nc + 'months') matches.push(i)
-          else if (nh === nc + 'total') matches.push(i)
-        })
-        if (matches.length >= 1) catCols[cat.id] = matches
-      })
+
+    // Build column index map from the header row (stored in `headers` state)
+    const hdrMap = {}
+    headers.forEach((h, i) => { if (h) hdrMap[normalizeCol(h)] = i })
+
+    const col = (...names) => {
+      for (const n of names) {
+        const v = hdrMap[normalizeCol(n)]
+        if (v != null) return v
+      }
+      return -1
     }
 
-    setImporting(true); setStep(4); setProgress(0)
+    const rcptNoIdx   = col('receipt_number','receiptno','receipt no','receiptnum','receipt#','no')
+    const memberIdIdx = col('member_id','memberid','member id','memid')
+    const memberNmIdx = col('member_name','membername','member name','name')
+    const dateIdx     = col('receipt_date','receiptdate','receipt date','date')
+    const modeIdx     = col('payment_mode','paymentmode','payment mode','mode','paymode')
+    const monthIdx    = col('month_paid','monthpaid','months paid','month paid','months')
+    const totalIdx    = col('grand_total','grandtotal','grand total','total','amount')
+
+    // Category column detection — amt / months / total per category
+    const catCols = {}
+    cats.forEach(cat => {
+      const nc     = normalizeCol(cat.name)
+      const amtIdx = hdrMap[nc] ?? hdrMap[nc + 'amt'] ?? hdrMap[nc + 'amount'] ?? -1
+      const monIdx = hdrMap[nc + 'months'] ?? hdrMap[nc + 'month'] ?? -1
+      const totIdx = hdrMap[nc + 'total'] ?? -1
+      if (amtIdx >= 0) catCols[cat.id] = { amtIdx, monIdx, totIdx }
+    })
+
+    // Pre-fetch all existing receipt numbers for this FY (avoids N+1 duplicate checks)
+    const { data: existing } = await supabase.from('receipts')
+      .select('receipt_number').eq('financial_year', fy)
+    const existingNums = new Set((existing || []).map(r => r.receipt_number))
+
+    setImporting(true); setStep(4)
     let imported = 0, skipped = 0, errors = 0
 
     try {
-      const dataRows = rows.slice(1).filter(r => r.some(c => String(c || '').trim()))
-      for (const row of dataRows) {
+      // `rows` is already header-stripped (loadSheet slices header row off)
+      for (const row of rows) {
         try {
-          const receiptNo = String(row[0] || '').trim()
+          const receiptNo = rcptNoIdx >= 0 ? String(row[rcptNoIdx] || '').trim() : ''
           if (!receiptNo) { skipped++; continue }
-          const { data: ex } = await supabase.from('receipts').select('id').eq('receipt_number', receiptNo).limit(1)
-          if (ex?.length) { skipped++; continue }
-          const memberId   = String(row[1] || '').trim()
-          const memberName = String(row[2] || '').trim()
-          const dateRaw    = String(row[3] || '').trim()
+          if (existingNums.has(receiptNo)) { skipped++; continue }
+
+          const memberId    = memberIdIdx >= 0 ? String(row[memberIdIdx] || '').trim() : ''
+          const memberName  = memberNmIdx >= 0 ? String(row[memberNmIdx] || '').trim() : ''
+          const dateRaw     = dateIdx >= 0 ? String(row[dateIdx] || '').trim() : ''
           const receiptDate = parseDateDMY(dateRaw) || new Date().toISOString().slice(0, 10)
-          const payMode    = String(row[4] || 'Cash').trim() || 'Cash'
-          const monthPaid  = String(row[5] || '').trim() || null
-          const grandTotal = parseFloat(String(row[6] || '0').replace(/[^0-9.]/g, '')) || 0
+          const payMode     = modeIdx >= 0 ? String(row[modeIdx] || '').trim() || 'Cash' : 'Cash'
+          const monthPaid   = monthIdx >= 0 ? String(row[monthIdx] || '').trim() || null : null
+          const grandTotal  = totalIdx >= 0 ? parseFloat(String(row[totalIdx] || '0').replace(/[^0-9.]/g, '')) || 0 : 0
+
           const { data: ins, error: insErr } = await supabase.from('receipts').insert({
             receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
-            member_id: memberId, member_name: memberName,
+            member_id: memberId || null, member_name: memberName || null,
             payment_mode: payMode, month_paid: monthPaid, grand_total: grandTotal,
           }).select('id').single()
           if (insErr) { errors++; continue }
+
           const itemRows = []
           for (const cat of cats) {
-            const cols = catCols[cat.id]
-            if (!cols?.length) continue
-            const amt    = parseFloat(String(row[cols[0]] || '').replace(/[^0-9.]/g, '')) || 0
-            const months = cols[1] != null ? parseFloat(String(row[cols[1]] || '').replace(/[^0-9.]/g, '')) || 1 : 1
-            const total  = cols[2] != null ? parseFloat(String(row[cols[2]] || '').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
+            const cc = catCols[cat.id]
+            if (!cc) continue
+            const amt    = parseFloat(String(row[cc.amtIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
+            const months = cc.monIdx >= 0 ? parseFloat(String(row[cc.monIdx] ?? '1').replace(/[^0-9.]/g, '')) || 1 : 1
+            const total  = cc.totIdx >= 0 ? parseFloat(String(row[cc.totIdx] ?? '0').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
             if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
           }
           if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
+          existingNums.add(receiptNo)  // prevent re-import if same number appears twice in sheet
           imported++
         } catch { errors++ }
       }
-      setResult({ total: dataRows.length, inserted: imported, errors, dups: skipped })
+
+      setResult({ total: rows.length, inserted: imported, errors, dups: skipped })
       if (imported > 0) {
         await logMigration('receipts', `${sheetName} (FY)`, 'success', imported + skipped, imported, errors)
         onRefreshBoard?.()
       }
-      toast(`Receipts FY ${fy}: ${imported} imported, ${skipped} skipped${errors ? `, ${errors} errors` : ''}`,
-        imported > 0 ? 'success' : 'error')
+      toast(
+        `Receipts FY ${fy}: ${imported} imported, ${skipped} skipped${errors ? `, ${errors} errors` : ''}`,
+        imported > 0 ? 'success' : 'error'
+      )
     } catch (e) {
       setImportError(e.message)
       setStep(3)
@@ -1143,7 +1179,13 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             Import <strong style={{color:'#3b82f6'}}>Members</strong>, <strong style={{color:'#d97706'}}>Deleted Members</strong>, <strong style={{color:'#059669'}}>Workings</strong>, or <strong style={{color:'#d97706'}}>FY Receipt sheets</strong> (e.g. <em>2024-25</em>, <em>2025-26</em>).
           </p>
           <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-            {wb.SheetNames.map(name => {
+            {[...wb.SheetNames].sort((a, b) => {
+              const aFY = /^\d{4}-\d{2}$/.test(a.trim())
+              const bFY = /^\d{4}-\d{2}$/.test(b.trim())
+              if (aFY && bFY) return a.trim().localeCompare(b.trim())
+              if (aFY) return -1; if (bFY) return 1
+              return a.localeCompare(b)
+            }).map(name => {
               const nl         = name.toLowerCase().trim().replace(/\s+/g, '')
               const isDeleted  = nl.includes('deletedmember')
               const isMember   = !isDeleted && nl.includes('member')

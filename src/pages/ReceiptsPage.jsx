@@ -108,7 +108,8 @@ export default function ReceiptsPage() {
   useEffect(() => { loadList() }, [loadList])
 
   const loadFYLockData = useCallback(async () => {
-    const { data } = await supabase.from('receipt_financial_years').select('*')
+    const { data, error } = await supabase.from('receipt_financial_years').select('*')
+    if (error) return  // table may not exist yet; silently ignore until SQL is run
     const map = {}
     ;(data || []).forEach(r => { map[r.fy] = r })
     setFyLocks(map)
@@ -117,6 +118,7 @@ export default function ReceiptsPage() {
 
   // auto-lock FYs idle > 10 days
   useEffect(() => {
+    if (!Object.keys(fyLocks).length) return
     const toLock = Object.entries(fyLocks)
       .filter(([, r]) => !r.is_locked && r.last_activity_at && Date.now() - new Date(r.last_activity_at).getTime() > TEN_DAYS_MS)
       .map(([fy]) => fy)
@@ -127,9 +129,9 @@ export default function ReceiptsPage() {
   }, [fyLocks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateFYActivity = useCallback(async (fy) => {
-    await supabase.from('receipt_financial_years')
+    const { error } = await supabase.from('receipt_financial_years')
       .upsert({ fy, is_locked: false, last_activity_at: new Date().toISOString() }, { onConflict: 'fy' })
-    loadFYLockData()
+    if (!error) loadFYLockData()
   }, [loadFYLockData])
 
   const isAutoLocked = (fy) => {
