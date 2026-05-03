@@ -393,6 +393,21 @@ export default function ReceiptsPage() {
       {availableFYs.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div className="card" style={{ padding: 0, display: 'flex', overflow: 'hidden' }}>
+            {/* All FYs tile */}
+            <div onClick={() => setFilterFY('')}
+              style={{ flexShrink: 0, padding: '12px 16px', cursor: 'pointer',
+                borderRight: '1px solid var(--card-border)',
+                background: filterFY === '' ? 'var(--sidebar-bg)' : 'transparent',
+                transition: 'background 0.15s' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em',
+                color: filterFY === '' ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', marginBottom: 4 }}>All</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: filterFY === '' ? '#fff' : 'var(--text-1)',
+                fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                {Object.values(fyStats).reduce((s, c) => s + c, 0)}
+              </div>
+              <div style={{ fontSize: 11, marginTop: 4,
+                color: filterFY === '' ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>receipts</div>
+            </div>
             {availableFYs.map((fy, i, arr) => {
               const count    = fyStats[fy] || 0
               const active   = filterFY === fy
