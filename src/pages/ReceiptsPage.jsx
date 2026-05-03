@@ -789,7 +789,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
   // Carry-forward date: for new receipts in 'fixed' mode, pre-fill with last saved receipt date
   useEffect(() => {
     if (editId || receiptDateMode !== 'fixed') return
-    const fy = initialFY || getFY()
+    const fy = getFY()   // always today's FY — prevents carrying a past-FY date into a new FY
     supabase.from('receipts').select('receipt_date')
       .eq('financial_year', fy)
       .order('receipt_number', { ascending: false })
