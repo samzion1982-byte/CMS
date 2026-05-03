@@ -915,15 +915,13 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     setTimeout(() => memberIdRef.current?.focus(), 80)
   }, [loading])
 
-  // FY from date — update form FY but keep months palette fixed to initialFY
+  // FY from date — when date crosses FY boundary, update FY and reload paid months
   useEffect(() => {
     if (!form.receipt_date) return
     const newFY = getFY(form.receipt_date)
     if (newFY !== form.financial_year) {
       setForm(f => ({ ...f, financial_year: newFY }))
-      // Only refresh paid months when moving to the same FY as the tab (initialFY);
-      // never show a previous FY's paid months in the palette.
-      if (selMember?.member_id && newFY === initialFY)
+      if (selMember?.member_id)
         loadPaidMonths(selMember.member_id, newFY)
     }
   }, [form.receipt_date]) // eslint-disable-line react-hooks/exhaustive-deps
