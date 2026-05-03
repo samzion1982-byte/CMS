@@ -487,6 +487,9 @@ export default function ChurchSetupPage() {
           </div>
         </div>
 
+            {/* ZONAL AREAS */}
+            <ZonesPanel profile={profile} toast={toast} />
+
             {/* PAYMENTS */}
             <div className="card p-6">
               <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Payments</p>
@@ -537,9 +540,6 @@ export default function ChurchSetupPage() {
 
               </div>
             </div>
-
-            {/* ZONAL AREAS */}
-            <ZonesPanel profile={profile} toast={toast} />
 
             {/* PAYMENT CATEGORIES */}
             <PaymentCategoriesPanel profile={profile} toast={toast} />

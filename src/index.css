@@ -12,6 +12,7 @@
 [data-theme="royal"] {
   /* Sidebar — deep navy matching Royal header */
   --sidebar-bg:               #0d2244;
+  --sidebar-light:            #1e4a8a;
   --sidebar-bg-end:           #071428;
   --sidebar-border:           rgba(255,255,255,0.07);
   --sidebar-text:             rgba(212,185,100,0.72);
@@ -88,6 +89,7 @@
 [data-theme="ocean"] {
   /* Sidebar — dark charcoal slate matching Ocean header */
   --sidebar-bg:               #161d2e;
+  --sidebar-light:            #2a4a7a;
   --sidebar-bg-end:           #0e1117;
   --sidebar-border:           rgba(255,255,255,0.06);
   --sidebar-text:             rgba(255,255,255,0.52);
@@ -153,6 +155,7 @@
 [data-theme="midnight"] {
   /* Sidebar — near-black deep indigo, matching Midnight header */
   --sidebar-bg:               #090d20;
+  --sidebar-light:            #2d3a7a;
   --sidebar-bg-end:           #05070f;
   --sidebar-border:           rgba(148,163,184,0.08);
   --sidebar-text:             rgba(241,245,249,0.45);
@@ -216,6 +219,7 @@
 [data-theme="forest"] {
   /* Sidebar — deep emerald green matching Forest header */
   --sidebar-bg:               #0e2e1a;
+  --sidebar-light:            #1a6632;
   --sidebar-bg-end:           #071a0f;
   --sidebar-border:           rgba(255,255,255,0.07);
   --sidebar-text:             rgba(212,185,100,0.72);
@@ -281,6 +285,7 @@
 [data-theme="crimson"] {
   /* Sidebar — deep wine burgundy matching Crimson header */
   --sidebar-bg:               #2a0612;
+  --sidebar-light:            #6b1030;
   --sidebar-bg-end:           #140308;
   --sidebar-border:           rgba(255,255,255,0.07);
   --sidebar-text:             rgba(212,185,100,0.72);
@@ -668,6 +673,81 @@ html { zoom: 0.95; }
   .card     { break-inside: avoid; page-break-inside: avoid; }
   body      { background: white; padding: 0; margin: 0; color: #000; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RECEIPT MODAL — OFFICIAL THEME
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes input-focus-pulse {
+  0%   { box-shadow: 0 0 0 5px rgba(13,34,68,0.18); }
+  100% { box-shadow: 0 0 0 3px rgba(13,34,68,0.09); }
+}
+
+@keyframes receipt-no-flash {
+  0%   { background: var(--sidebar-light); }
+  30%  { background: var(--accent); }
+  60%  { background: var(--sidebar-light); }
+  100% { background: var(--sidebar-light); }
+}
+
+.receipt-no-badge {
+  display: inline-block;
+  background: var(--sidebar-light);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  animation: receipt-no-flash 3s ease-in-out infinite;
+}
+
+@keyframes btn-gold-glow {
+  0%   { box-shadow: 0 6px 18px rgba(22,163,74,0.4), 0 0 0 0   rgba(212,160,23,0.6); }
+  100% { box-shadow: 0 6px 18px rgba(22,163,74,0.4), 0 0 0 10px rgba(212,160,23,0); }
+}
+
+.receipt-modal-official .field-input:focus-visible { outline: none; }
+.receipt-modal-official .field-input:focus {
+  border-color: var(--sidebar-light);
+  border-width: 2.5px;
+  box-shadow: none;
+  animation: input-focus-pulse 0.4s ease-out forwards;
+}
+
+/* Payment mode buttons */
+.payment-mode-btn {
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.18s ease,
+              background 0.15s ease,
+              border-color 0.15s ease,
+              color 0.15s ease !important;
+}
+.payment-mode-btn:not(.payment-mode-btn--active):hover {
+  transform: translateY(-2px) scale(1.06);
+  background: rgba(30, 74, 138, 0.09) !important;
+  border-color: var(--sidebar-light) !important;
+  color: var(--sidebar-light) !important;
+  box-shadow: 0 4px 10px rgba(30, 74, 138, 0.18) !important;
+}
+.payment-mode-btn--active:hover {
+  transform: translateY(-2px) scale(1.06);
+  filter: brightness(1.14);
+  box-shadow: 0 4px 14px rgba(30, 74, 138, 0.4) !important;
+}
+.payment-mode-btn:active {
+  transform: translateY(0) scale(0.96) !important;
+  transition-duration: 0.07s !important;
+}
+
+.btn-confirm-payment { transition: filter 0.12s, transform 0.12s !important; }
+.btn-confirm-payment:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  animation: btn-gold-glow 0.7s ease-out forwards;
+}
+.btn-confirm-payment:active:not(:disabled) { transform: translateY(0); }
 
 /* ═══════════════════════════════════════════════════════════════
    ACCESSIBILITY

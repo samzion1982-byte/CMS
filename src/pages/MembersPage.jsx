@@ -321,56 +321,82 @@ export default function MembersPage() {
       })
 
       const cols = [
-        { key: 'member_id',             label: 'Member ID',             left: false },
-        { key: 'family_id',             label: 'Family ID',             left: false },
-        { key: 'title',                 label: 'Title',                 left: false },
-        { key: 'member_name',           label: 'Full Name',             left: true  },
-        { key: 'father_name',           label: "Father's Name",         left: true  },
-        { key: 'gender',                label: 'Gender',                left: false },
-        { key: 'aadhaar',               label: 'Aadhaar',               left: false },
-        { key: 'dob_actual',            label: 'DOB (Actual)',          left: false },
-        { key: 'dob_certificate',       label: 'DOB (Certificate)',     left: false },
-        { key: 'age',                   label: 'Age',                   left: false },
-        { key: 'marital_status',        label: 'Marital Status',        left: false },
-        { key: 'date_of_marriage',      label: 'Date of Marriage',      left: false },
-        { key: 'spouse_name',           label: 'Spouse Name',           left: true  },
-        { key: 'address_street',        label: 'Street',                left: true  },
-        { key: 'area_1',                label: 'Area 1',                left: true  },
-        { key: 'area_2',                label: 'Area 2',                left: true  },
-        { key: 'city',                  label: 'City',                  left: false },
-        { key: 'state',                 label: 'State',                 left: false },
-        { key: 'zonal_area',            label: 'Zone',                  left: false },
-        { key: 'mobile',                label: 'Mobile',                left: false },
-        { key: 'whatsapp',              label: 'WhatsApp',              left: false },
-        { key: 'email',                 label: 'Email',                 left: true  },
-        { key: 'qualification',         label: 'Qualification',         left: false },
-        { key: 'profession',            label: 'Profession',            left: false },
-        { key: 'working_sector',        label: 'Working Sector',        left: false },
-        { key: 'is_first_gen_christian',label: 'First Gen Christian?',  left: false },
-        { key: 'is_family_head',        label: 'Family Head?',          left: false },
-        { key: 'relationship_with_fh',  label: 'Relation to Family Head', left: false },
-        { key: 'membership_type',       label: 'Membership Type',       left: false },
-        { key: 'primary_church_name',   label: 'Primary Church',        left: true  },
-        { key: 'denomination',          label: 'Denomination',          left: false },
-        { key: 'membership_from_year',  label: 'Member Since',          left: false },
-        { key: 'baptism_type',          label: 'Baptism Type',          left: false },
-        { key: 'baptism_date',          label: 'Baptism Date',          left: false },
-        { key: 'confirmation_taken',    label: 'Confirmation?',         left: false },
-        { key: 'confirmation_date',     label: 'Confirmation Date',     left: false },
-        { key: 'is_fbrf_member',        label: 'FBRF Member?',          left: false },
-        ...ACTS.map(([k, l]) => ({ key: k, label: l, left: false })),
-        { key: 'last_modified_by',      label: 'Modified By',           left: true  },
-        { key: 'last_modified_at',      label: 'Modified At',           left: false },
-        { key: 'created_at',            label: 'Created At',            left: false },
-        { key: 'old_member_id',         label: 'Old Member ID',         left: false },
-        { key: 'change_reason',         label: 'Change Reason',         left: true  },
-        // ── Deletion & Reinstatement (sourced from deleted_members) ──
-        { key: '_dm_deleted_reason',    label: 'Deletion Reason',       left: true  },
-        { key: '_dm_deleted_by',        label: 'Deleted By',            left: true  },
-        { key: '_dm_deleted_at',        label: 'Deleted On',            left: false },
-        { key: '_dm_restore_reason',    label: 'Reinstatement Reason',  left: true  },
-        { key: '_dm_restored_by',       label: 'Reinstated By',         left: true  },
-        { key: '_dm_restored_at',       label: 'Reinstated On',         left: false },
+        // ── A–BM: mirrors import template POS_MAP exactly ────────────────────
+        { key: 'family_id',              label: 'FamilyID',               left: false }, // A  (0)
+        { key: 'member_id',              label: 'MemberID',               left: false }, // B  (1)
+        { key: 'title',                  label: 'Title',                  left: false }, // C  (2)
+        { key: 'member_name',            label: 'MemberName',             left: true  }, // D  (3)
+        { key: 'father_name',            label: 'FName',                  left: true  }, // E  (4)
+        { key: 'gender',                 label: 'Gender',                 left: false }, // F  (5)
+        { key: 'aadhaar',                label: 'Aadhar',                 left: false }, // G  (6)
+        { key: 'dob_actual',             label: 'DOB',                    left: false }, // H  (7)
+        { key: 'age',                    label: 'Age',                    left: false }, // I  (8)
+        { key: 'dob_certificate',        label: 'DOBC',                   left: false }, // J  (9)
+        { key: 'marital_status',         label: 'Is_Married',             left: false }, // K  (10)
+        { key: 'date_of_marriage',       label: 'DOM',                    left: false }, // L  (11)
+        { key: '_dum1',                  label: 'Dummy1',                 left: false }, // M  (12)
+        { key: '_dum2',                  label: 'Dummy2',                 left: false }, // N  (13)
+        { key: 'spouse_name',            label: 'Spouse',                 left: true  }, // O  (14)
+        { key: 'address_street',         label: 'Address',                left: true  }, // P  (15)
+        { key: 'area_1',                 label: 'Address1',               left: true  }, // Q  (16)
+        { key: 'area_2',                 label: 'Address2',               left: true  }, // R  (17)
+        { key: 'city',                   label: 'City',                   left: true  }, // S  (18)
+        { key: 'state',                  label: 'State',                  left: false }, // T  (19)
+        { key: '_dum3',                  label: 'Dummy3',                 left: false }, // U  (20)
+        { key: 'zonal_area',             label: 'Zonal Area',             left: false }, // V  (21)
+        { key: 'mobile',                 label: 'Mobile',                 left: false }, // W  (22)
+        { key: 'whatsapp',               label: 'Whatsapp',               left: false }, // X  (23)
+        { key: 'email',                  label: 'Email',                  left: true  }, // Y  (24)
+        { key: 'qualification',          label: 'Qualification',          left: false }, // Z  (25)
+        { key: 'profession',             label: 'Profession',             left: false }, // AA (26)
+        { key: 'working_sector',         label: 'Sector',                 left: false }, // AB (27)
+        { key: '_dum4',                  label: 'Dummy4',                 left: false }, // AC (28)
+        { key: '_dum5',                  label: 'Dummy5',                 left: false }, // AD (29)
+        { key: '_dum6',                  label: 'Dummy6',                 left: false }, // AE (30)
+        { key: 'is_first_gen_christian', label: 'Converted',              left: false }, // AF (31)
+        { key: 'is_family_head',         label: 'FHStatus',               left: false }, // AG (32)
+        { key: 'relationship_with_fh',   label: 'Relationship',           left: false }, // AH (33)
+        { key: 'membership_type',        label: 'MemStatus',              left: false }, // AI (34)
+        { key: 'primary_church_name',    label: 'Church',                 left: true  }, // AJ (35)
+        { key: 'denomination',           label: 'Denomination',           left: false }, // AK (36)
+        { key: 'membership_from_year',   label: 'Mem_Year',               left: false }, // AL (37)
+        { key: 'baptism_type',           label: 'Is_Baptised',            left: false }, // AM (38)
+        { key: 'baptism_date',           label: 'DOBapt',                 left: false }, // AN (39)
+        { key: 'confirmation_taken',     label: 'Is_Confirm',             left: false }, // AO (40)
+        { key: 'confirmation_date',      label: 'DOC',                    left: false }, // AP (41)
+        { key: '_dum7',                  label: 'Dummy7',                 left: false }, // AQ (42)
+        { key: '_dum8',                  label: 'Dummy8',                 left: false }, // AR (43)
+        { key: '_dum9',                  label: 'Dummy9',                 left: false }, // AS (44)
+        { key: '_dum10',                 label: 'Dummy10',                left: false }, // AT (45)
+        { key: 'is_fbrf_member',         label: 'Is_FBRF',                left: false }, // AU (46)
+        { key: '_photo',                 label: 'Photo',                  left: false }, // AV (47) — always empty
+        { key: 'act_mens_fellowship',    label: "Ch1-Men's Fellowship",   left: false }, // AW (48)
+        { key: 'act_womens_fellowship',  label: "Ch2-Women's Fellowship", left: false }, // AX (49)
+        { key: 'act_youth_association',  label: 'Ch3-Youth Association',  left: false }, // AY (50)
+        { key: 'act_sunday_school',      label: 'Ch4-Sunday School',      left: false }, // AZ (51)
+        { key: 'act_choir',              label: 'Ch5-Choir',              left: false }, // BA (52)
+        { key: 'act_pastorate_committee',label: 'Ch6-Pastorate Comm.',    left: false }, // BB (53)
+        { key: 'act_village_ministry',   label: 'Ch7-Village Ministry',   left: false }, // BC (54)
+        { key: 'act_dcc',                label: 'Ch8-DCC',                left: false }, // BD (55)
+        { key: 'act_dc',                 label: 'Ch9-DC',                 left: false }, // BE (56)
+        { key: 'act_volunteers',         label: 'Ch10-Volunteers',        left: false }, // BF (57)
+        { key: 'act_others',             label: 'Ch11-Others',            left: false }, // BG (58)
+        { key: '_dum11',                 label: 'Dummy11',                left: false }, // BH (59)
+        { key: '_dum12',                 label: 'Dummy12',                left: false }, // BI (60)
+        { key: '_dum13',                 label: 'Dummy13',                left: false }, // BJ (61)
+        { key: '_dum14',                 label: 'Dummy14',                left: false }, // BK (62)
+        { key: 'old_member_id',          label: 'Old Member ID',          left: false }, // BL (63)
+        { key: 'change_reason',          label: 'Reason',                 left: true  }, // BM (64)
+        // ── Additional columns beyond import template ─────────────────────────
+        { key: 'last_modified_by',       label: 'Modified By',            left: true  },
+        { key: 'last_modified_at',       label: 'Modified At',            left: false },
+        { key: 'created_at',             label: 'Created At',             left: false },
+        { key: '_dm_deleted_reason',     label: 'Deletion Reason',        left: true  },
+        { key: '_dm_deleted_by',         label: 'Deleted By',             left: true  },
+        { key: '_dm_deleted_at',         label: 'Deleted On',             left: false },
+        { key: '_dm_restore_reason',     label: 'Reinstatement Reason',   left: true  },
+        { key: '_dm_restored_by',        label: 'Reinstated By',          left: true  },
+        { key: '_dm_restored_at',        label: 'Reinstated On',          left: false },
       ]
 
       // ── ExcelJS workbook ──────────────────────────────────────────

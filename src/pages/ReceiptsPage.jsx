@@ -10,7 +10,9 @@ import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
   IndianRupee, CheckSquare, Square, Settings, Lock,
+  FileSpreadsheet, ChevronDown,
 } from 'lucide-react'
+import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -19,6 +21,11 @@ function getFY(dateStr) {
   const m = d.getMonth() + 1
   const y = d.getFullYear()
   return m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`
+}
+
+function prevFY(fy) {
+  const s = parseInt(fy.split('-')[0])
+  return `${s - 1}-${String(s).slice(-2)}`
 }
 
 async function nextReceiptNumber(fy) {
@@ -55,7 +62,7 @@ export default function ReceiptsPage() {
   const [catsLoading,   setCatsLoading]   = useState(true)
   const [receipts,      setReceipts]      = useState([])
   const [listLoading,   setListLoading]   = useState(false)
-  const [filterFY,      setFilterFY]      = useState(() => getFY())
+  const [filterFY,      setFilterFY]      = useState(getFY)
   const [listSearch,    setListSearch]    = useState('')
   const [fyStats,       setFyStats]       = useState({})
   const [showModal,     setShowModal]     = useState(false)
@@ -64,6 +71,9 @@ export default function ReceiptsPage() {
   const [showFYMgr,       setShowFYMgr]       = useState(false)
   const [lockedFYModal,   setLockedFYModal]   = useState(null)
   const [receiptDateMode, setReceiptDateMode] = useState('today')
+  const [showExportMenu,  setShowExportMenu]  = useState(false)
+  const [exporting,       setExporting]       = useState(false)
+  const exportMenuRef = useRef(null)
 
   // only show FYs that have actual data + the current FY
   const availableFYs = useMemo(() => {
@@ -80,10 +90,26 @@ export default function ReceiptsPage() {
   }, [])
   useEffect(() => { loadCategories() }, [loadCategories])
 
+  // always start on current FY when the page mounts (handles SPA navigation)
+  useEffect(() => { setFilterFY(getFY()) }, [])
+
   const loadFyStats = useCallback(async () => {
-    const { data } = await supabase.from('receipts').select('financial_year')
+    const cur = getFY()
+    const [startYear] = cur.split('-').map(Number)
+    const fysToCheck = Array.from({ length: 12 }, (_, i) => {
+      const s = startYear - i
+      return `${s}-${String(s + 1).slice(-2)}`
+    })
+    const results = await Promise.all(
+      fysToCheck.map(fy =>
+        supabase.from('receipts').select('*', { count: 'exact', head: true }).eq('financial_year', fy)
+      )
+    )
     const counts = {}
-    ;(data || []).forEach(r => { counts[r.financial_year] = (counts[r.financial_year] || 0) + 1 })
+    fysToCheck.forEach((fy, i) => {
+      const c = results[i].count
+      if (c != null && c > 0) counts[fy] = c
+    })
     setFyStats(counts)
   }, [])
   useEffect(() => { loadFyStats() }, [loadFyStats])
@@ -166,6 +192,114 @@ export default function ReceiptsPage() {
     loadList(); loadFyStats()
   }
 
+  // close export menu on outside click
+  useEffect(() => {
+    if (!showExportMenu) return
+    const h = e => { if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setShowExportMenu(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [showExportMenu])
+
+  // ── excel export (receipts list) ─────────────────────────────
+  const RECEIPT_EXPORT_COLS = [
+    { key: 'receipt_number',   header: 'Receipt No',        align: 'center' },
+    { key: 'receipt_date',     header: 'Date',              align: 'center' },
+    { key: 'financial_year',   header: 'Financial Year',    align: 'center' },
+    { key: 'member_id',        header: 'Member ID',         align: 'center' },
+    { key: 'member_name',      header: 'Member Name',       align: 'left'   },
+    { key: 'address',          header: 'Address',           align: 'left'   },
+    { key: 'address1',         header: 'Area 1',            align: 'left'   },
+    { key: 'address2',         header: 'Area 2',            align: 'left'   },
+    { key: 'city',             header: 'City',              align: 'left'   },
+    { key: 'mobile',           header: 'Mobile',            align: 'center' },
+    { key: 'whatsapp',         header: 'WhatsApp',          align: 'center' },
+    { key: 'month_paid',       header: 'Month(s) Paid',     align: 'center' },
+    { key: 'payment_mode',     header: 'Payment Mode',      align: 'center' },
+    { key: 'cheque_dd_no',     header: 'Cheque/DD No',      align: 'center' },
+    { key: 'transaction_date', header: 'Transaction Date',  align: 'center' },
+    { key: 'narration',        header: 'Narration',         align: 'left'   },
+    { key: 'grand_total',      header: 'Amount (₹)',        align: 'right'  },
+    { key: 'created_by',       header: 'Created By',        align: 'left'   },
+  ]
+  const toReceiptRow = r => ({
+    receipt_number:   r.receipt_number   || '',
+    receipt_date:     fmtDate(r.receipt_date),
+    financial_year:   r.financial_year   || '',
+    member_id:        r.member_id        || '',
+    member_name:      r.member_name      || '',
+    address:          r.address          || '',
+    address1:         r.address1         || '',
+    address2:         r.address2         || '',
+    city:             r.city             || '',
+    mobile:           r.mobile           || '',
+    whatsapp:         r.whatsapp         || '',
+    month_paid:       r.month_paid       || '',
+    payment_mode:     r.payment_mode     || '',
+    cheque_dd_no:     r.cheque_dd_no     || '',
+    transaction_date: fmtDate(r.transaction_date),
+    narration:        r.narration        || '',
+    grand_total:      Math.round(parseFloat(r.grand_total) || 0),
+    created_by:       r.created_by       || '',
+  })
+
+  const fetchAllReceipts = async (fy) => {
+    const PAGE = 1000
+    let all = [], offset = 0
+    while (true) {
+      let q = supabase
+        .from('receipts')
+        .select('receipt_number,receipt_date,financial_year,member_id,member_name,address,address1,address2,city,mobile,whatsapp,month_paid,payment_mode,cheque_dd_no,transaction_date,narration,grand_total,created_by,receipt_items(category_id,amt,months,total)')
+        .order('receipt_number', { ascending: true })
+        .range(offset, offset + PAGE - 1)
+      if (fy) q = q.eq('financial_year', fy)
+      const { data, error } = await q
+      if (error) throw error
+      all = all.concat(data || [])
+      if (!data?.length || data.length < PAGE) break
+      offset += PAGE
+    }
+    return all
+  }
+
+  const doExport = async (fy) => {
+    setExporting(true); setShowExportMenu(false)
+    try {
+      const [data, cats] = await Promise.all([fetchAllReceipts(fy), getActiveCategories()])
+      if (!data.length) { toast('No data to export', 'error'); setExporting(false); return }
+
+      // Build dynamic per-category columns (rate/month, months, total)
+      const catCols = cats.flatMap(cat => [
+        { key: `_camt_${cat.id}`,  header: cat.name,               align: 'right'  },
+        { key: `_cmon_${cat.id}`,  header: `${cat.name} Months`,   align: 'center' },
+        { key: `_ctot_${cat.id}`,  header: `${cat.name} Total`,    align: 'right'  },
+      ])
+      const cols = [...RECEIPT_EXPORT_COLS, ...catCols]
+
+      const buildRow = r => {
+        const row = toReceiptRow(r)
+        const itemMap = {}
+        ;(r.receipt_items || []).forEach(i => { itemMap[i.category_id] = i })
+        cats.forEach(cat => {
+          const item = itemMap[cat.id]
+          row[`_camt_${cat.id}`]  = item ? (Math.round(parseFloat(item.amt)   || 0) || '') : ''
+          row[`_cmon_${cat.id}`]  = item ? (item.months || '')                              : ''
+          row[`_ctot_${cat.id}`]  = item ? (Math.round(parseFloat(item.total) || 0) || '') : ''
+        })
+        return row
+      }
+
+      if (fy) {
+        await exportToExcel(cols, data.map(buildRow), `FY ${fy}`, `Receipts_${fy}.xlsx`)
+      } else {
+        const byFY = {}
+        data.forEach(r => { if (!byFY[r.financial_year]) byFY[r.financial_year] = []; byFY[r.financial_year].push(buildRow(r)) })
+        const sheets = Object.keys(byFY).sort().map(f => ({ name: `FY ${f}`, rows: byFY[f] }))
+        await exportToExcelMultiSheet(cols, sheets, 'Receipts_All.xlsx')
+      }
+    } catch (e) { toast(e.message, 'error') }
+    setExporting(false)
+  }
+
   // "+" hotkey → new receipt (skips when focus is inside an input)
   useEffect(() => {
     const onKey = (e) => {
@@ -185,11 +319,59 @@ export default function ReceiptsPage() {
           <h1 className="page-title">Receipt Entry</h1>
           <p className="page-subtitle">Record member payments across all categories</p>
         </div>
-        <button className="action-btn" onClick={openNew} disabled={catsLoading}
-          style={{ background: 'var(--sidebar-bg)' }} title="New receipt  (+)">
-          {catsLoading ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
-          New Receipt
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+
+          {/* Excel Export dropdown */}
+          <div ref={exportMenuRef} style={{ position: 'relative' }}>
+            <button onClick={() => setShowExportMenu(o => !o)} disabled={exporting}
+              className="action-btn"
+              style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1, gap: 5 }}>
+              {exporting ? <Loader2 size={13} className="animate-spin"/> : <FileSpreadsheet size={13}/>}
+              Excel Export
+              <ChevronDown size={11} style={{ marginLeft: 1, transition: 'transform 0.15s', transform: showExportMenu ? 'rotate(180deg)' : 'none' }}/>
+            </button>
+            {showExportMenu && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 5px)', right: 0, zIndex: 400,
+                background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10,
+                boxShadow: '0 12px 32px rgba(0,0,0,0.15)', width: 240, overflow: 'hidden',
+                animation: 'dropDown 0.15s ease both' }}>
+                <button onClick={() => doExport(null)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
+                    background: 'none', border: 'none', borderBottom: '1px solid var(--card-border)',
+                    cursor: 'pointer', textAlign: 'left' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                  <FileSpreadsheet size={14} style={{ color: '#16a34a', flexShrink: 0 }}/>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>All Financial Years</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>One worksheet per FY</div>
+                  </div>
+                </button>
+                {availableFYs.filter(fy => (fyStats[fy] || 0) > 0).map(fy => (
+                  <button key={fy} onClick={() => doExport(fy)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      width: '100%', padding: '9px 14px', background: 'none', border: 'none',
+                      borderBottom: '1px solid var(--card-border)', cursor: 'pointer', textAlign: 'left' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)' }}>FY {fy}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
+                      {fyStats[fy]} receipt{fyStats[fy] !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* New Receipt */}
+          <button className="action-btn" onClick={openNew} disabled={catsLoading}
+            style={{ background: 'var(--sidebar-bg)' }} title="New receipt  (+)">
+            {catsLoading ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
+            New Receipt
+          </button>
+
+        </div>
       </div>
 
       {/* FY tiles + gear */}
@@ -407,7 +589,8 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
   }, [unlockingFY])
 
   const lockFY = async (fy) => {
-    await supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
+    const { error } = await supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
+    if (error) { toast?.('Lock failed: ' + error.message, 'error'); return }
     onRefresh()
   }
 
@@ -432,7 +615,7 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
         boxShadow: '0 32px 80px rgba(0,0,0,0.4)' }}>
 
         {/* Header */}
-        <div style={{ background: 'var(--sidebar-bg)', borderRadius: '14px 14px 0 0',
+        <div style={{ background: 'var(--sidebar-bg)', borderRadius: '16px 16px 0 0',
           padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.25), inset 0 -3px 0 rgba(0,0,0,0.3)',
           position: 'relative', overflow: 'hidden' }}>
@@ -717,13 +900,16 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     setTimeout(() => memberIdRef.current?.focus(), 80)
   }, [loading])
 
-  // FY from date
+  // FY from date — update form FY but keep months palette fixed to initialFY
   useEffect(() => {
     if (!form.receipt_date) return
     const newFY = getFY(form.receipt_date)
     if (newFY !== form.financial_year) {
       setForm(f => ({ ...f, financial_year: newFY }))
-      if (selMember?.member_id) loadPaidMonths(selMember.member_id, newFY)
+      // Only refresh paid months when moving to the same FY as the tab (initialFY);
+      // never show a previous FY's paid months in the palette.
+      if (selMember?.member_id && newFY === initialFY)
+        loadPaidMonths(selMember.member_id, newFY)
     }
   }, [form.receipt_date]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -757,11 +943,21 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     }))
     const fy = form.financial_year
     await loadPaidMonths(m.member_id, fy)
-    const { data: prev } = await supabase.from('receipts')
+    // find last receipt in current FY; fall back to previous FY if none
+    let sourceReceipt = null
+    const { data: currFYRec } = await supabase.from('receipts')
       .select('id').eq('member_id', m.member_id).eq('financial_year', fy)
       .order('receipt_number', { ascending: false }).limit(1)
-    if (prev?.length) {
-      const { data: prevItems } = await supabase.from('receipt_items').select('*').eq('receipt_id', prev[0].id)
+    if (currFYRec?.length) {
+      sourceReceipt = currFYRec[0]
+    } else {
+      const { data: prevFYRec } = await supabase.from('receipts')
+        .select('id').eq('member_id', m.member_id).eq('financial_year', prevFY(fy))
+        .order('receipt_number', { ascending: false }).limit(1)
+      if (prevFYRec?.length) sourceReceipt = prevFYRec[0]
+    }
+    if (sourceReceipt) {
+      const { data: prevItems } = await supabase.from('receipt_items').select('*').eq('receipt_id', sourceReceipt.id)
       if (prevItems?.length) {
         const map = {}
         prevItems.forEach(i => { map[i.category_id] = i })
@@ -851,68 +1047,57 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 9999, padding: 12 }}>
-      <div style={{
-        background: 'var(--card-bg)', borderRadius: 14, width: '100%',
-        maxWidth: 1300, maxHeight: '97vh', display: 'flex', flexDirection: 'column',
-        boxShadow: '0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)',
+      <div className="receipt-modal-official" style={{
+        background: '#ffffff', borderRadius: 18, width: '100%',
+        maxWidth: 920, maxHeight: '97vh', display: 'flex', flexDirection: 'column',
+        boxShadow: '0 40px 80px rgba(0,0,0,0.22), 0 8px 30px rgba(0,0,0,0.10), 0 0 0 1px rgba(13,34,68,0.07)',
+        fontFamily: "'Poppins', var(--font-ui, Inter), sans-serif",
       }}>
 
-        {/* ══ Header — theme color with 3D layers ══ */}
+        {/* ══ Header ══ */}
         <div style={{
-          background: 'var(--sidebar-bg)',
-          borderRadius: '14px 14px 0 0', padding: '12px 20px', flexShrink: 0,
-          position: 'relative', overflow: 'hidden',
-          boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.25), inset 0 -3px 0 rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.35)',
+          background: 'var(--card-bg)',
+          borderRadius: '18px 18px 0 0', padding: '14px 18px', flexShrink: 0,
+          borderBottom: '1px solid var(--card-border)',
+          display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: '14px 14px 0 0',
-            background: 'linear-gradient(130deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 38%, rgba(0,0,0,0.08) 100%)' }}/>
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, pointerEvents: 'none',
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.06) 100%)',
-            borderRadius: '14px 0 0 0' }}/>
-          <div style={{ position: 'absolute', left: 0, top: 0, right: 0, height: 1, pointerEvents: 'none',
-            background: 'rgba(255,255,255,0.3)', borderRadius: '14px 14px 0 0' }}/>
-
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-            {/* Title + FY badge together on the left */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-                background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 8px rgba(0,0,0,0.2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <IndianRupee size={18} style={{ color: '#fff' }}/>
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <h2 style={{ color: '#fff', fontSize: 16, fontWeight: 800, margin: 0,
-                    textShadow: '0 1px 4px rgba(0,0,0,0.4)' }}>
-                    {editId ? 'Edit Receipt' : 'New Receipt'}
-                  </h2>
-                  {/* FY badge inline with title */}
-                  <div style={{ background: 'rgba(255,255,255,0.13)', border: '1px solid rgba(255,255,255,0.24)',
-                    borderRadius: 7, padding: '3px 10px',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)' }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', letterSpacing: '0.04em' }}>
-                      FY {form.financial_year}
-                    </span>
-                  </div>
-                </div>
-                {form.receipt_number && (
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace', letterSpacing: '0.05em', marginTop: 2 }}>
-                    {form.receipt_number}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Close button */}
-            <button onClick={onClose} tabIndex={-1}
-              style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)',
-                borderRadius: 8, padding: '7px 10px', cursor: 'pointer', color: '#fff',
-                display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.8)'; e.currentTarget.style.transform = 'scale(1.06)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.transform = 'scale(1)' }}>
-              <X size={15}/>
-            </button>
+          {/* Icon */}
+          <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: 'var(--sidebar-light)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(13,34,68,0.22)' }}>
+            <IndianRupee size={19} style={{ color: '#fff' }}/>
           </div>
+          {/* Title + receipt number */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--sidebar-light)', letterSpacing: '-0.01em', lineHeight: 1 }}>
+              {editId ? 'Edit Receipt' : 'New Receipt'}
+            </span>
+            {form.receipt_number && (
+              <span className="receipt-no-badge">
+                {form.receipt_number}
+              </span>
+            )}
+          </div>
+          {/* Spacer pushes FY badge to the right */}
+          <div style={{ flex: 1 }}/>
+          {/* FY badge — centred in remaining space */}
+          <span style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe',
+            color: '#3730a3', fontSize: 12, fontWeight: 700,
+            borderRadius: 8, padding: '4px 14px', letterSpacing: '0.03em',
+            boxShadow: '0 1px 4px rgba(55,48,163,0.12)' }}>
+            FY {form.financial_year}
+          </span>
+          {/* Close */}
+          <button onClick={onClose} tabIndex={-1}
+            style={{ background: '#991b1b', border: 'none', borderRadius: 8,
+              width: 32, height: 32, cursor: 'pointer', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s', flexShrink: 0 }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#7f1d1d'; e.currentTarget.style.transform = 'scale(1.08)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#991b1b'; e.currentTarget.style.transform = 'scale(1)' }}>
+            <X size={15}/>
+          </button>
         </div>
 
         {/* ══ Body ══ */}
@@ -922,10 +1107,11 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
           </div>
         ) : (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', overflow: 'hidden' }}>
 
-              {/* ── Left panel — compact, no scroll ── */}
-              <div style={{ borderRight: '1px solid var(--card-border)', overflow: 'hidden',
+              {/* ── Left panel ── */}
+              <div style={{ borderRight: '2px solid #e2e8f0', overflowY: 'auto',
+                maxHeight: 'calc(95vh - 140px)', background: '#ffffff',
                 padding: '14px 18px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
                 {/* MEMBER */}
@@ -999,7 +1185,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Receipt Date</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', marginBottom: 3 }}>Receipt Date</div>
                     <input ref={dateRef} type="date" value={form.receipt_date}
                       onChange={e => { sf('receipt_date')(e.target.value); setDateIsCarryForward(false) }}
                       className={`field-input${dateIsCarryForward ? ' date-carry-forward' : ''}`}
@@ -1068,13 +1254,14 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
                   {MODES.map(m => (
                     <button key={m} onClick={() => sf('payment_mode')(m)}
+                      className={`payment-mode-btn${form.payment_mode === m ? ' payment-mode-btn--active' : ''}`}
                       style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                        border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
-                        background: form.payment_mode === m ? 'var(--sidebar-bg)' : 'transparent',
-                        borderColor: form.payment_mode === m ? 'var(--sidebar-bg)' : 'var(--card-border)',
+                        border: '1px solid', cursor: 'pointer',
+                        background: form.payment_mode === m ? 'var(--sidebar-light)' : 'transparent',
+                        borderColor: form.payment_mode === m ? 'var(--sidebar-light)' : 'var(--card-border)',
                         color: form.payment_mode === m ? '#fff' : 'var(--text-2)',
                         boxShadow: form.payment_mode === m
-                          ? 'inset 0 1px 0 rgba(255,255,255,0.2), 0 2px 6px rgba(30,58,95,0.3)' : 'none',
+                          ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 6px rgba(13,34,68,0.3)' : 'none',
                       }}>
                       {m}
                     </button>
@@ -1085,7 +1272,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
                     {showChequeFields && (
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', marginBottom: 3 }}>
                           {form.payment_mode === 'DD' ? 'DD No.' : 'Cheque No.'}
                         </div>
                         <input value={form.cheque_dd_no} onChange={e => sf('cheque_dd_no')(e.target.value)}
@@ -1094,7 +1281,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
                     )}
                     {showTxnDate && (
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Txn Date</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', marginBottom: 3 }}>Txn Date</div>
                         <input type="date" value={form.transaction_date}
                           onChange={e => sf('transaction_date')(e.target.value)}
                           className="field-input" style={{ height: 31, width: '100%' }}/>
@@ -1104,40 +1291,41 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
                 )}
 
                 <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginBottom: 3 }}>Narration</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', marginBottom: 3 }}>Narration</div>
                   <input value={form.narration} onChange={e => sf('narration')(e.target.value)}
                     className="field-input" style={{ height: 31, width: '100%' }} placeholder="Optional note…"/>
                 </div>
               </div>
 
               {/* ── Right panel — categories ── */}
-              <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--card-border)',
-                  background: 'var(--table-header-bg)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
-                    textTransform: 'uppercase', letterSpacing: '0.08em' }}>Payment Categories</span>
-                  <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>
-                    Click name or enter amount to include
+              <div style={{ overflowY: 'auto', maxHeight: 'calc(95vh - 140px)', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+                <div style={{ padding: '9px 16px', borderBottom: '1px solid #e2e8f0',
+                  background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--sidebar-light)',
+                    textTransform: 'uppercase', letterSpacing: '0.1em' }}>Payment Categories</span>
+                  <span style={{ fontSize: 10, color: '#8896a8', marginLeft: 'auto' }}>
+                    Click name or enter amount
                   </span>
                   {enabledCount > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--sidebar-bg)',
-                      color: '#fff', borderRadius: 10, padding: '2px 8px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--sidebar-light)',
+                      color: '#fff', borderRadius: 10, padding: '2px 9px',
+                      boxShadow: '0 1px 4px rgba(13,34,68,0.25)' }}>
                       {enabledCount} active
                     </span>
                   )}
                 </div>
 
-                <table style={{ width: '100%', borderCollapse: 'collapse', flex: 1 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', flex: 1, tableLayout: 'fixed' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                    <tr style={{ background: 'var(--table-header-bg)', borderBottom: '2px solid var(--table-border)' }}>
+                    <tr style={{ background: '#edf2f7', borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ width: 36, padding: '6px 8px' }}/>
                       <th style={{ padding: '6px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700,
                         color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Category</th>
-                      <th style={{ width: 120, padding: '6px 8px', textAlign: 'right', fontSize: 10,
+                      <th style={{ width: 110, padding: '6px 8px', textAlign: 'right', fontSize: 10,
                         fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Rate / Month ₹</th>
-                      <th style={{ width: 72, padding: '6px 6px', textAlign: 'center', fontSize: 10,
+                      <th style={{ width: 64, padding: '6px 6px', textAlign: 'center', fontSize: 10,
                         fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Months</th>
-                      <th style={{ width: 120, padding: '6px 12px', textAlign: 'right', fontSize: 10,
+                      <th style={{ width: 90, padding: '6px 12px', textAlign: 'right', fontSize: 10,
                         fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Total ₹</th>
                     </tr>
                   </thead>
@@ -1150,48 +1338,43 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
               </div>
             </div>
 
-            {/* ══ Footer — Grand Total + Confirm Payment ══ */}
+            {/* ══ Footer ══ */}
             <div style={{
-              background: 'var(--sidebar-bg)',
-              borderRadius: '0 0 14px 14px', padding: '11px 20px', flexShrink: 0,
-              position: 'relative', overflow: 'hidden',
-              boxShadow: 'inset 0 2px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)',
+              background: 'var(--card-header-bg)',
+              borderRadius: '0 0 18px 18px', padding: '12px 20px', flexShrink: 0,
+              borderTop: '2px solid var(--card-border)',
+              display: 'flex', alignItems: 'center', gap: 24,
             }}>
-              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
-                background: 'linear-gradient(130deg, rgba(255,255,255,0.08) 0%, transparent 50%)' }}/>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 24 }}>
-                {/* Grand Total */}
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.45)',
-                    textTransform: 'uppercase', letterSpacing: '0.14em' }}>Grand Total</span>
-                  <span style={{ fontSize: 28, fontWeight: 900, fontFamily: 'monospace', color: '#fff',
-                    textShadow: '0 2px 6px rgba(0,0,0,0.3)', lineHeight: 1 }}>
-                    ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={onClose}
-                    style={{ padding: '7px 18px', borderRadius: 8, background: 'rgba(255,255,255,0.12)',
-                      border: '1px solid rgba(255,255,255,0.22)', color: '#fff', fontWeight: 600,
-                      fontSize: 13, cursor: 'pointer', transition: 'background 0.15s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}>
-                    Cancel
-                  </button>
-                  <button onClick={save} disabled={saving}
-                    style={{ padding: '7px 24px', borderRadius: 8,
-                      background: saving ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #22c55e 0%, #15803d 100%)',
-                      color: '#fff', border: 'none', fontWeight: 700, fontSize: 13,
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                      boxShadow: saving ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 12px rgba(22,163,74,0.4)',
-                      display: 'flex', alignItems: 'center', gap: 7, transition: 'filter 0.12s',
-                      fontFamily: 'var(--font-ui)' }}
-                    onMouseEnter={e => { if (!saving) e.currentTarget.style.filter = 'brightness(1.1)' }}
-                    onMouseLeave={e => { e.currentTarget.style.filter = 'none' }}>
-                    {saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
-                    {saving ? 'Saving…' : 'Confirm Payment'}
-                  </button>
-                </div>
+              {/* Grand Total */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
+                  textTransform: 'uppercase', letterSpacing: '0.14em' }}>Grand Total</span>
+                <span style={{ fontSize: 30, fontWeight: 900, fontFamily: 'monospace',
+                  color: 'var(--text-1)', lineHeight: 1 }}>
+                  ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                </span>
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button onClick={onClose}
+                  style={{ padding: '7px 18px', borderRadius: 8, background: 'transparent',
+                    border: '1.5px solid var(--card-border)', color: 'var(--text-2)', fontWeight: 600,
+                    fontSize: 13, cursor: 'pointer', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--page-bg)'; e.currentTarget.style.borderColor = 'var(--text-3)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--card-border)' }}>
+                  Cancel
+                </button>
+                <button onClick={save} disabled={saving}
+                  className="btn-confirm-payment"
+                  style={{ padding: '7px 24px', borderRadius: 8,
+                    background: saving ? '#bbf7d0' : 'linear-gradient(135deg, #15803d 0%, #166534 100%)',
+                    color: '#fff', border: 'none', fontWeight: 700, fontSize: 13,
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                    boxShadow: saving ? 'none' : '0 4px 14px rgba(22,163,74,0.35)',
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    fontFamily: "'Poppins', sans-serif" }}>
+                  {saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
+                  {saving ? 'Saving…' : 'Confirm Payment'}
+                </button>
               </div>
             </div>
           </>
@@ -1247,7 +1430,7 @@ function CategoryRow({ item, idx, onChange }) {
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         borderBottom: '1px solid var(--table-border)',
-        borderLeft: `3px solid ${item.enabled ? 'var(--sidebar-bg)' : 'transparent'}`,
+        borderLeft: `3px solid ${item.enabled ? 'var(--sidebar-light)' : 'transparent'}`,
         background: item.enabled ? 'rgba(30,58,95,0.05)' : hov ? 'var(--table-row-hover)' : 'transparent',
         transition: 'background 0.1s, border-left-color 0.15s',
       }}
@@ -1274,7 +1457,7 @@ function CategoryRow({ item, idx, onChange }) {
           className="field-input"
           style={{ textAlign: 'right', padding: '2px 6px', fontSize: 12,
             width: '100%', height: 24, opacity: item.enabled ? 1 : 0.35, transition: 'opacity 0.1s' }}
-          placeholder="0.00"/>
+          placeholder="0"/>
       </td>
       <td style={{ padding: '3px 6px' }}>
         <input type="number" min="1" max="12" step="1" value={item.months} disabled={!item.enabled}
@@ -1287,11 +1470,9 @@ function CategoryRow({ item, idx, onChange }) {
       <td style={{ padding: '4px 12px', textAlign: 'right' }}>
         {item.enabled && item.total > 0 ? (
           <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>
-            ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
           </span>
-        ) : (
-          <span style={{ color: 'var(--text-3)', fontSize: 11 }}>—</span>
-        )}
+        ) : null}
       </td>
     </tr>
   )
@@ -1301,13 +1482,18 @@ function CategoryRow({ item, idx, onChange }) {
 
 function FieldLabel({ children }) {
   return (
-    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
-      textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+    <div style={{ fontSize: 10, fontWeight: 700, color: '#fff',
+      background: 'var(--sidebar-light)', borderRadius: 4, padding: '3px 8px',
+      textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 7,
+      display: 'inline-block' }}>
       {children}
     </div>
   )
 }
 
 function HDivider() {
-  return <div style={{ borderTop: '1px solid var(--card-border)', margin: '8px 0' }}/>
+  return (
+    <div style={{ height: 1, margin: '10px 0',
+      background: 'linear-gradient(90deg, var(--sidebar-light) 0%, rgba(30,74,138,0.12) 60%, transparent 100%)' }}/>
+  )
 }
