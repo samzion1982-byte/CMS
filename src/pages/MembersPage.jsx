@@ -382,14 +382,12 @@ export default function MembersPage() {
         { key: 'act_volunteers',         label: 'Ch10-Volunteers',        left: false }, // BF (57)
         { key: 'act_others',             label: 'Ch11-Others',            left: false }, // BG (58)
         { key: '_dum11',                 label: 'Dummy11',                left: false }, // BH (59)
-        { key: '_dum12',                 label: 'Dummy12',                left: false }, // BI (60)
-        { key: '_dum13',                 label: 'Dummy13',                left: false }, // BJ (61)
+        { key: 'last_modified_at',       label: 'Modified on',            left: false }, // BI (60)
+        { key: 'last_modified_by',       label: 'Modified By',            left: true  }, // BJ (61)
         { key: '_dum14',                 label: 'Dummy14',                left: false }, // BK (62)
         { key: 'old_member_id',          label: 'Old Member ID',          left: false }, // BL (63)
         { key: 'change_reason',          label: 'Reason',                 left: true  }, // BM (64)
         // ── Additional columns beyond import template ─────────────────────────
-        { key: 'last_modified_by',       label: 'Modified By',            left: true  },
-        { key: 'last_modified_at',       label: 'Modified At',            left: false },
         { key: 'created_at',             label: 'Created At',             left: false },
         { key: '_dm_deleted_reason',     label: 'Deletion Reason',        left: true  },
         { key: '_dm_deleted_by',         label: 'Deleted By',             left: true  },

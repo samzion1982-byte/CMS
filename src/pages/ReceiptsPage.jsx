@@ -218,28 +218,43 @@ export default function ReceiptsPage() {
     { key: 'cheque_dd_no',     header: 'Cheque/DD No',      align: 'center' },
     { key: 'transaction_date', header: 'Transaction Date',  align: 'center' },
     { key: 'narration',        header: 'Narration',         align: 'left'   },
-    { key: 'grand_total',      header: 'Amount (₹)',        align: 'right'  },
-    { key: 'created_by',       header: 'Created By',        align: 'left'   },
+    { key: 'grand_total',        header: 'Amount (₹)',        align: 'right'  },
+    { key: 'created_by',         header: 'Created By',        align: 'left'   },
+    { key: 'last_modified_by',   header: 'Modified By',       align: 'left'   },
+    { key: 'last_modified_at',   header: 'Modified On',       align: 'center' },
   ]
+  const fmtDatetime = iso => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return iso
+    const dd   = String(d.getDate()).padStart(2,'0')
+    const mm   = String(d.getMonth()+1).padStart(2,'0')
+    const yyyy = d.getFullYear()
+    const hh   = String(d.getHours()).padStart(2,'0')
+    const min  = String(d.getMinutes()).padStart(2,'0')
+    return `${dd}-${mm}-${yyyy} ${hh}:${min}`
+  }
   const toReceiptRow = r => ({
-    receipt_number:   r.receipt_number   || '',
-    receipt_date:     fmtDate(r.receipt_date),
-    financial_year:   r.financial_year   || '',
-    member_id:        r.member_id        || '',
-    member_name:      r.member_name      || '',
-    address:          r.address          || '',
-    address1:         r.address1         || '',
-    address2:         r.address2         || '',
-    city:             r.city             || '',
-    mobile:           r.mobile           || '',
-    whatsapp:         r.whatsapp         || '',
-    month_paid:       r.month_paid       || '',
-    payment_mode:     r.payment_mode     || '',
-    cheque_dd_no:     r.cheque_dd_no     || '',
-    transaction_date: fmtDate(r.transaction_date),
-    narration:        r.narration        || '',
-    grand_total:      Math.round(parseFloat(r.grand_total) || 0),
-    created_by:       r.created_by       || '',
+    receipt_number:    r.receipt_number   || '',
+    receipt_date:      fmtDate(r.receipt_date),
+    financial_year:    r.financial_year   || '',
+    member_id:         r.member_id        || '',
+    member_name:       r.member_name      || '',
+    address:           r.address          || '',
+    address1:          r.address1         || '',
+    address2:          r.address2         || '',
+    city:              r.city             || '',
+    mobile:            r.mobile           || '',
+    whatsapp:          r.whatsapp         || '',
+    month_paid:        r.month_paid       || '',
+    payment_mode:      r.payment_mode     || '',
+    cheque_dd_no:      r.cheque_dd_no     || '',
+    transaction_date:  fmtDate(r.transaction_date),
+    narration:         r.narration        || '',
+    grand_total:       Math.round(parseFloat(r.grand_total) || 0),
+    created_by:        r.created_by       || '',
+    last_modified_by:  r.last_modified_by || '',
+    last_modified_at:  fmtDatetime(r.last_modified_at),
   })
 
   const fetchAllReceipts = async (fy) => {
@@ -248,7 +263,7 @@ export default function ReceiptsPage() {
     while (true) {
       let q = supabase
         .from('receipts')
-        .select('receipt_number,receipt_date,financial_year,member_id,member_name,address,address1,address2,city,mobile,whatsapp,month_paid,payment_mode,cheque_dd_no,transaction_date,narration,grand_total,created_by,receipt_items(category_id,amt,months,total)')
+        .select('receipt_number,receipt_date,financial_year,member_id,member_name,address,address1,address2,city,mobile,whatsapp,month_paid,payment_mode,cheque_dd_no,transaction_date,narration,grand_total,created_by,last_modified_by,last_modified_at,receipt_items(category_id,amt,months,total)')
         .order('receipt_number', { ascending: true })
         .range(offset, offset + PAGE - 1)
       if (fy) q = q.eq('financial_year', fy)
@@ -1017,6 +1032,8 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
         address2: form.address2 || null, city: form.city || null,
         mobile: form.mobile || null, whatsapp: form.whatsapp || null,
         grand_total: grandTotal, created_by: profile?.full_name || profile?.email,
+        last_modified_by: profile?.full_name || profile?.email,
+        last_modified_at: new Date().toISOString(),
       }
       let receiptId = editId
       if (editId) {
