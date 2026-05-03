@@ -75,11 +75,11 @@ export default function ReceiptsPage() {
   const [exporting,       setExporting]       = useState(false)
   const exportMenuRef = useRef(null)
 
-  // only show FYs that have actual data + the current FY
+  // show FYs with receipts + FYs with lock records + current FY
   const availableFYs = useMemo(() => {
-    const all = new Set([...Object.keys(fyStats), getFY()])
+    const all = new Set([...Object.keys(fyStats), ...Object.keys(fyLocks), getFY()])
     return [...all].sort()
-  }, [fyStats])
+  }, [fyStats, fyLocks])
 
   const loadCategories = useCallback(() => {
     setCatsLoading(true)
@@ -530,9 +530,11 @@ export default function ReceiptsPage() {
       {showFYMgr && (
         <ReceiptFYManagerPopup
           fyLocks={fyLocks}
+          fyStats={fyStats}
           availableFYs={availableFYs}
           onClose={() => setShowFYMgr(false)}
           onRefresh={loadFYLockData}
+          onDeleteRefresh={() => { loadFYLockData(); loadFyStats(); }}
           toast={toast}
         />
       )}
@@ -587,12 +589,17 @@ export default function ReceiptsPage() {
 //  FY LOCK MANAGER POPUP
 // ════════════════════════════════════════════════════════
 
-function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toast }) {
-  const [unlockingFY, setUnlockingFY] = useState(null)
-  const [unlockPw,    setUnlockPw]    = useState('')
-  const [unlockErr,   setUnlockErr]   = useState('')
-  const [unlocking,   setUnlocking]   = useState(false)
-  const pwRef = useRef(null)
+function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefresh, onDeleteRefresh, toast }) {
+  const [unlockingFY,  setUnlockingFY]  = useState(null)
+  const [unlockPw,     setUnlockPw]     = useState('')
+  const [unlockErr,    setUnlockErr]    = useState('')
+  const [unlocking,    setUnlocking]    = useState(false)
+  const [deletingFY,   setDeletingFY]   = useState(null)
+  const [deletePw,     setDeletePw]     = useState('')
+  const [deleteErr,    setDeleteErr]    = useState('')
+  const [deleting,     setDeleting]     = useState(false)
+  const pwRef     = useRef(null)
+  const deletePwRef = useRef(null)
 
   const allFYs = useMemo(() => {
     const all = new Set([...availableFYs, ...Object.keys(fyLocks)])
@@ -602,6 +609,10 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
   useEffect(() => {
     if (unlockingFY) setTimeout(() => pwRef.current?.focus(), 60)
   }, [unlockingFY])
+
+  useEffect(() => {
+    if (deletingFY) setTimeout(() => deletePwRef.current?.focus(), 60)
+  }, [deletingFY])
 
   const lockFY = async (fy) => {
     const { error } = await supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
@@ -622,10 +633,43 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
     toast(`FY ${fy} unlocked`, 'success')
   }
 
+  const doDelete = async (fy) => {
+    const count = fyStats?.[fy] || 0
+    setDeleting(true); setDeleteErr('')
+    try {
+      if (count > 0) {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { error: authErr } = await supabase.auth.signInWithPassword({ email: user?.email || '', password: deletePw })
+        if (authErr) { setDeleteErr('Incorrect password'); deletePwRef.current?.select(); setDeleting(false); return }
+        const { data: rcpts } = await supabase.from('receipts').select('id').eq('financial_year', fy)
+        if (rcpts?.length) {
+          await supabase.from('receipt_items').delete().in('receipt_id', rcpts.map(r => r.id))
+          await supabase.from('receipts').delete().eq('financial_year', fy)
+        }
+      }
+      await supabase.from('receipt_financial_years').delete().eq('fy', fy)
+      setDeletingFY(null); setDeletePw(''); setDeleteErr('')
+      onDeleteRefresh()
+      toast(`FY ${fy} deleted`, 'success')
+    } catch (e) { setDeleteErr(e.message) }
+    setDeleting(false)
+  }
+
+  const openUnlock = (fy) => {
+    setDeletingFY(null); setDeletePw(''); setDeleteErr('')
+    setUnlockingFY(prev => prev === fy ? null : fy)
+    setUnlockPw(''); setUnlockErr('')
+  }
+  const openDelete = (fy) => {
+    setUnlockingFY(null); setUnlockPw(''); setUnlockErr('')
+    setDeletingFY(prev => prev === fy ? null : fy)
+    setDeletePw(''); setDeleteErr('')
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: 460,
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: 480,
         maxHeight: '80vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 32px 80px rgba(0,0,0,0.4)' }}>
 
@@ -661,47 +705,58 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
             const row      = fyLocks[fy]
             const locked   = row?.is_locked === true
             const autoLk   = locked && !!row?.last_activity_at && Date.now() - new Date(row.last_activity_at).getTime() > TEN_DAYS_MS
-            const isExpanded = unlockingFY === fy
+            const count    = fyStats?.[fy] || 0
+            const isUnlocking = unlockingFY === fy
+            const isDeleting  = deletingFY  === fy
 
             return (
               <div key={fy} style={{
                 borderRadius: 10, overflow: 'hidden', transition: 'all 0.15s',
-                border: `1px solid ${locked ? '#fde68a' : 'var(--card-border)'}`,
-                background: locked ? 'rgba(253,246,224,0.5)' : 'transparent',
+                border: `1px solid ${isDeleting ? '#fca5a5' : locked ? '#fde68a' : 'var(--card-border)'}`,
+                background: isDeleting ? 'rgba(254,242,242,0.6)' : locked ? 'rgba(253,246,224,0.5)' : 'transparent',
               }}>
-                <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: locked ? '#d97706' : 'var(--text-1)' }}>
                       FY {fy}
                     </div>
-                    {locked && (
-                      <div style={{ fontSize: 11, color: '#d97706', marginTop: 2 }}>
-                        {autoLk ? 'Auto-locked (idle > 10 days)' : 'Manually locked'}
-                      </div>
-                    )}
+                    <div style={{ fontSize: 11, marginTop: 2, color: locked ? '#d97706' : 'var(--text-3)' }}>
+                      {locked
+                        ? (autoLk ? 'Auto-locked (idle > 10 days)' : 'Manually locked')
+                        : `${count} receipt${count !== 1 ? 's' : ''}`}
+                    </div>
                   </div>
+                  {/* Lock / Unlock button */}
                   <button
-                    onClick={() => {
-                      if (locked) {
-                        setUnlockingFY(isExpanded ? null : fy)
-                        setUnlockPw(''); setUnlockErr('')
-                      } else {
-                        lockFY(fy)
-                      }
-                    }}
-                    style={{ padding: '5px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                    onClick={() => locked ? openUnlock(fy) : lockFY(fy)}
+                    style={{ padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                       border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
                       background: locked ? '#fef3c7' : 'transparent',
                       borderColor: locked ? '#fde68a' : 'var(--card-border)',
                       color: locked ? '#d97706' : 'var(--text-2)',
-                      display: 'flex', alignItems: 'center', gap: 6 }}>
+                      display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Lock size={11}/>
-                    {locked ? (isExpanded ? 'Cancel' : 'Unlock…') : 'Lock'}
+                    {locked ? (isUnlocking ? 'Cancel' : 'Unlock…') : 'Lock'}
+                  </button>
+                  {/* Delete button */}
+                  <button
+                    onClick={() => openDelete(fy)}
+                    style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                      border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
+                      background: isDeleting ? '#fee2e2' : 'transparent',
+                      borderColor: isDeleting ? '#fca5a5' : 'var(--card-border)',
+                      color: isDeleting ? '#dc2626' : 'var(--text-3)',
+                      display: 'flex', alignItems: 'center', gap: 5 }}
+                    onMouseEnter={e => { if (!isDeleting) { e.currentTarget.style.borderColor = '#fca5a5'; e.currentTarget.style.color = '#dc2626' } }}
+                    onMouseLeave={e => { if (!isDeleting) { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.color = 'var(--text-3)' } }}>
+                    <Trash2 size={11}/>
+                    {isDeleting ? 'Cancel' : 'Delete'}
                   </button>
                 </div>
-                {isExpanded && locked && (
-                  <div style={{ borderTop: '1px solid #fde68a', padding: '10px 14px',
-                    background: 'rgba(254,243,199,0.7)' }}>
+
+                {/* Unlock panel */}
+                {isUnlocking && locked && (
+                  <div style={{ borderTop: '1px solid #fde68a', padding: '10px 14px', background: 'rgba(254,243,199,0.7)' }}>
                     <div style={{ fontSize: 11, color: '#92400e', marginBottom: 7 }}>
                       Enter your password to unlock FY {fy}:
                     </div>
@@ -709,8 +764,7 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
                       <input ref={pwRef} type="password" value={unlockPw}
                         onChange={e => { setUnlockPw(e.target.value); setUnlockErr('') }}
                         onKeyDown={e => { if (e.key === 'Enter') doUnlock(fy) }}
-                        placeholder="Password"
-                        className="field-input"
+                        placeholder="Password" className="field-input"
                         style={{ flex: 1, height: 32, fontSize: 13 }}/>
                       <button onClick={() => doUnlock(fy)} disabled={unlocking || !unlockPw}
                         style={{ padding: '0 16px', height: 32, borderRadius: 7, fontSize: 12,
@@ -721,11 +775,53 @@ function ReceiptFYManagerPopup({ fyLocks, availableFYs, onClose, onRefresh, toas
                         Unlock
                       </button>
                     </div>
-                    {unlockErr && (
-                      <div style={{ marginTop: 6, fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
-                        {unlockErr}
-                      </div>
+                    {unlockErr && <div style={{ marginTop: 6, fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{unlockErr}</div>}
+                  </div>
+                )}
+
+                {/* Delete panel */}
+                {isDeleting && (
+                  <div style={{ borderTop: '1px solid #fca5a5', padding: '10px 14px', background: 'rgba(254,242,242,0.8)' }}>
+                    {count > 0 ? (
+                      <>
+                        <div style={{ fontSize: 11, color: '#991b1b', marginBottom: 7, fontWeight: 600 }}>
+                          ⚠ This will permanently delete {count} receipt{count !== 1 ? 's' : ''} and all their data.
+                        </div>
+                        <div style={{ fontSize: 11, color: '#7f1d1d', marginBottom: 8 }}>
+                          Enter your password to confirm:
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <input ref={deletePwRef} type="password" value={deletePw}
+                            onChange={e => { setDeletePw(e.target.value); setDeleteErr('') }}
+                            onKeyDown={e => { if (e.key === 'Enter') doDelete(fy) }}
+                            placeholder="Password" className="field-input"
+                            style={{ flex: 1, height: 32, fontSize: 13 }}/>
+                          <button onClick={() => doDelete(fy)} disabled={deleting || !deletePw}
+                            style={{ padding: '0 16px', height: 32, borderRadius: 7, fontSize: 12,
+                              fontWeight: 700, border: 'none', cursor: deleting || !deletePw ? 'default' : 'pointer',
+                              background: '#dc2626', color: '#fff', opacity: !deletePw ? 0.5 : 1,
+                              display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s' }}>
+                            {deleting ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12}/>}
+                            Delete FY
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 11, color: '#7f1d1d', marginBottom: 8 }}>
+                          Delete FY {fy} record? No receipts will be affected.
+                        </div>
+                        <button onClick={() => doDelete(fy)} disabled={deleting}
+                          style={{ padding: '5px 16px', height: 32, borderRadius: 7, fontSize: 12,
+                            fontWeight: 700, border: 'none', cursor: deleting ? 'default' : 'pointer',
+                            background: '#dc2626', color: '#fff',
+                            display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {deleting ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12}/>}
+                          Confirm Delete
+                        </button>
+                      </>
                     )}
+                    {deleteErr && <div style={{ marginTop: 6, fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{deleteErr}</div>}
                   </div>
                 )}
               </div>
