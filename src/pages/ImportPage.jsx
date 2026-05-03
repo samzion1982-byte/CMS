@@ -957,10 +957,13 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             ? parseFloat(String(row[totalIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
             : 0
 
+          const importedBy = profile?.full_name || profile?.email || 'import'
+          const importedAt = new Date().toISOString()
           const { data: ins, error: insErr } = await supabase.from('receipts').insert({
             receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
             member_id: memberId || null, member_name: memberName || null,
             payment_mode: payMode, month_paid: monthPaid, grand_total: grandTotal,
+            created_by: importedBy, last_modified_by: importedBy, last_modified_at: importedAt,
           }).select('id').single()
           if (insErr) { errors++; continue }
 
