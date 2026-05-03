@@ -753,7 +753,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
 
   const [form, setForm] = useState({
     receipt_number: '', receipt_date: today,
-    financial_year: initialFY || getFY(),
+    financial_year: editId ? (initialFY || getFY()) : getFY(),
     month_paid: '', payment_mode: 'Cash',
     cheque_dd_no: '', transaction_date: '', narration: '',
     member_id: '', member_name: '',
