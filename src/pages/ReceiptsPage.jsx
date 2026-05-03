@@ -727,12 +727,12 @@ const lockFY = async (fy) => {
                     onClick={() => openDelete(fy)}
                     style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                       border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
-                      background: isDeleting ? '#fee2e2' : 'transparent',
-                      borderColor: isDeleting ? '#fca5a5' : 'var(--card-border)',
-                      color: isDeleting ? '#dc2626' : 'var(--text-3)',
+                      background: '#dc2626',
+                      borderColor: '#dc2626',
+                      color: '#fff',
                       display: 'flex', alignItems: 'center', gap: 5 }}
-                    onMouseEnter={e => { if (!isDeleting) { e.currentTarget.style.borderColor = '#fca5a5'; e.currentTarget.style.color = '#dc2626' } }}
-                    onMouseLeave={e => { if (!isDeleting) { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.color = 'var(--text-3)' } }}>
+                    onMouseEnter={e => { e.currentTarget.style.background = '#b91c1c'; e.currentTarget.style.borderColor = '#b91c1c' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.borderColor = '#dc2626' }}>
                     <Trash2 size={11}/>
                     {isDeleting ? 'Cancel' : 'Delete'}
                   </button>
