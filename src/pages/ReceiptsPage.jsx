@@ -534,7 +534,7 @@ export default function ReceiptsPage() {
           availableFYs={availableFYs}
           onClose={() => setShowFYMgr(false)}
           onRefresh={loadFYLockData}
-          onDeleteRefresh={() => { loadFYLockData(); loadFyStats(); }}
+          onDeleteRefresh={() => { loadFYLockData(); loadFyStats(); loadList(); }}
           toast={toast}
         />
       )}
@@ -643,8 +643,10 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
         if (authErr) { setDeleteErr('Incorrect password'); deletePwRef.current?.select(); setDeleting(false); return }
         const { data: rcpts } = await supabase.from('receipts').select('id').eq('financial_year', fy)
         if (rcpts?.length) {
-          await supabase.from('receipt_items').delete().in('receipt_id', rcpts.map(r => r.id))
-          await supabase.from('receipts').delete().eq('financial_year', fy)
+          const { error: e1 } = await supabase.from('receipt_items').delete().in('receipt_id', rcpts.map(r => r.id))
+          if (e1) throw new Error('Could not delete receipt items: ' + e1.message)
+          const { error: e2 } = await supabase.from('receipts').delete().eq('financial_year', fy)
+          if (e2) throw new Error('Could not delete receipts: ' + e2.message)
         }
       }
       await supabase.from('receipt_financial_years').delete().eq('fy', fy)
