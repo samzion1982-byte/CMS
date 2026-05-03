@@ -880,8 +880,10 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     const modeIdx     = col(4,  'payment_mode','paymentmode','payment mode','mode','paymode','pay mode')
     const monthIdx    = col(5,  'month_paid','monthpaid','months paid','month paid','months','month')
     const totalIdx    = col(-1, 'grand_total','grandtotal','grand total','total','amount','grandtotal')
+    const modByIdx    = col(-1, 'last_modified_by','modifiedby','modified by','modified_by')
+    const modAtIdx    = col(-1, 'last_modified_at','modifiedon','modified on','modified_at','modified on')
 
-    console.log('[ReceiptImport] col indices:', { rcptNoIdx, memberIdIdx, memberNmIdx, dateIdx, modeIdx, monthIdx, totalIdx })
+    console.log('[ReceiptImport] col indices:', { rcptNoIdx, memberIdIdx, memberNmIdx, dateIdx, modeIdx, monthIdx, totalIdx, modByIdx, modAtIdx })
 
     // Category column detection — amt / months / total per category
     const catCols = {}
@@ -957,13 +959,16 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             ? parseFloat(String(row[totalIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
             : 0
 
-          const importedBy = profile?.full_name || profile?.email || 'import'
-          const importedAt = new Date().toISOString()
+          const modBy = modByIdx >= 0 ? (String(row[modByIdx] ?? '').trim() || null) : null
+          const modAtRaw = modAtIdx >= 0 ? row[modAtIdx] : null
+          const modAt = modAtRaw instanceof Date
+            ? modAtRaw.toISOString()
+            : (modAtRaw ? parseDateDMY(String(modAtRaw).trim()) || null : null)
           const { data: ins, error: insErr } = await supabase.from('receipts').insert({
             receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
             member_id: memberId || null, member_name: memberName || null,
             payment_mode: payMode, month_paid: monthPaid, grand_total: grandTotal,
-            created_by: importedBy, last_modified_by: importedBy, last_modified_at: importedAt,
+            last_modified_by: modBy, last_modified_at: modAt,
           }).select('id').single()
           if (insErr) { errors++; continue }
 
