@@ -393,21 +393,6 @@ export default function ReceiptsPage() {
       {availableFYs.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div className="card" style={{ padding: 0, display: 'flex', overflow: 'hidden' }}>
-            {/* All FYs tile */}
-            <div onClick={() => setFilterFY('')}
-              style={{ flexShrink: 0, padding: '12px 16px', cursor: 'pointer',
-                borderRight: '1px solid var(--card-border)',
-                background: filterFY === '' ? 'var(--sidebar-bg)' : 'transparent',
-                transition: 'background 0.15s' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em',
-                color: filterFY === '' ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', marginBottom: 4 }}>All</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: filterFY === '' ? '#fff' : 'var(--text-1)',
-                fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                {Object.values(fyStats).reduce((s, c) => s + c, 0)}
-              </div>
-              <div style={{ fontSize: 11, marginTop: 4,
-                color: filterFY === '' ? 'rgba(255,255,255,0.5)' : 'var(--text-3)' }}>receipts</div>
-            </div>
             {availableFYs.map((fy, i, arr) => {
               const count    = fyStats[fy] || 0
               const active   = filterFY === fy
@@ -610,11 +595,9 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
   const [unlockErr,    setUnlockErr]    = useState('')
   const [unlocking,    setUnlocking]    = useState(false)
   const [deletingFY,   setDeletingFY]   = useState(null)
-  const [deletePw,     setDeletePw]     = useState('')
   const [deleteErr,    setDeleteErr]    = useState('')
   const [deleting,     setDeleting]     = useState(false)
-  const pwRef     = useRef(null)
-  const deletePwRef = useRef(null)
+  const pwRef = useRef(null)
 
   const allFYs = useMemo(() => {
     const all = new Set([...availableFYs, ...Object.keys(fyLocks)])
@@ -625,11 +608,7 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
     if (unlockingFY) setTimeout(() => pwRef.current?.focus(), 60)
   }, [unlockingFY])
 
-  useEffect(() => {
-    if (deletingFY) setTimeout(() => deletePwRef.current?.focus(), 60)
-  }, [deletingFY])
-
-  const lockFY = async (fy) => {
+const lockFY = async (fy) => {
     const { error } = await supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
     if (error) { toast?.('Lock failed: ' + error.message, 'error'); return }
     onRefresh()
@@ -649,23 +628,11 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
   }
 
   const doDelete = async (fy) => {
-    const count = fyStats?.[fy] || 0
     setDeleting(true); setDeleteErr('')
     try {
-      if (count > 0) {
-        const { data: { user } } = await supabase.auth.getUser()
-        const { error: authErr } = await supabase.auth.signInWithPassword({ email: user?.email || '', password: deletePw })
-        if (authErr) { setDeleteErr('Incorrect password'); deletePwRef.current?.select(); setDeleting(false); return }
-        const { data: rcpts } = await supabase.from('receipts').select('id').eq('financial_year', fy)
-        if (rcpts?.length) {
-          const { error: e1 } = await supabase.from('receipt_items').delete().in('receipt_id', rcpts.map(r => r.id))
-          if (e1) throw new Error('Could not delete receipt items: ' + e1.message)
-          const { error: e2 } = await supabase.from('receipts').delete().eq('financial_year', fy)
-          if (e2) throw new Error('Could not delete receipts: ' + e2.message)
-        }
-      }
-      await supabase.from('receipt_financial_years').delete().eq('fy', fy)
-      setDeletingFY(null); setDeletePw(''); setDeleteErr('')
+      const { error } = await supabase.from('receipt_financial_years').delete().eq('fy', fy)
+      if (error) throw new Error(error.message)
+      setDeletingFY(null); setDeleteErr('')
       onDeleteRefresh()
       toast(`FY ${fy} deleted`, 'success')
     } catch (e) { setDeleteErr(e.message) }
@@ -673,14 +640,14 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
   }
 
   const openUnlock = (fy) => {
-    setDeletingFY(null); setDeletePw(''); setDeleteErr('')
+    setDeletingFY(null); setDeleteErr('')
     setUnlockingFY(prev => prev === fy ? null : fy)
     setUnlockPw(''); setUnlockErr('')
   }
   const openDelete = (fy) => {
     setUnlockingFY(null); setUnlockPw(''); setUnlockErr('')
     setDeletingFY(prev => prev === fy ? null : fy)
-    setDeletePw(''); setDeleteErr('')
+    setDeleteErr('')
   }
 
   return (
@@ -800,33 +767,13 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
                 {isDeleting && (
                   <div style={{ borderTop: '1px solid #fca5a5', padding: '10px 14px', background: 'rgba(254,242,242,0.8)' }}>
                     {count > 0 ? (
-                      <>
-                        <div style={{ fontSize: 11, color: '#991b1b', marginBottom: 7, fontWeight: 600 }}>
-                          ⚠ This will permanently delete {count} receipt{count !== 1 ? 's' : ''} and all their data.
-                        </div>
-                        <div style={{ fontSize: 11, color: '#7f1d1d', marginBottom: 8 }}>
-                          Enter your password to confirm:
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <input ref={deletePwRef} type="password" value={deletePw}
-                            onChange={e => { setDeletePw(e.target.value); setDeleteErr('') }}
-                            onKeyDown={e => { if (e.key === 'Enter') doDelete(fy) }}
-                            placeholder="Password" className="field-input"
-                            style={{ flex: 1, height: 32, fontSize: 13 }}/>
-                          <button onClick={() => doDelete(fy)} disabled={deleting || !deletePw}
-                            style={{ padding: '0 16px', height: 32, borderRadius: 7, fontSize: 12,
-                              fontWeight: 700, border: 'none', cursor: deleting || !deletePw ? 'default' : 'pointer',
-                              background: '#dc2626', color: '#fff', opacity: !deletePw ? 0.5 : 1,
-                              display: 'flex', alignItems: 'center', gap: 6, transition: 'opacity 0.15s' }}>
-                            {deleting ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12}/>}
-                            Delete FY
-                          </button>
-                        </div>
-                      </>
+                      <div style={{ fontSize: 12, color: '#991b1b', fontWeight: 600, lineHeight: 1.5 }}>
+                        This FY has {count} receipt{count !== 1 ? 's' : ''}. Delete all receipts first, then delete the FY.
+                      </div>
                     ) : (
                       <>
                         <div style={{ fontSize: 11, color: '#7f1d1d', marginBottom: 8 }}>
-                          Delete FY {fy} record? No receipts will be affected.
+                          No receipts in this FY. Delete the FY record?
                         </div>
                         <button onClick={() => doDelete(fy)} disabled={deleting}
                           style={{ padding: '5px 16px', height: 32, borderRadius: 7, fontSize: 12,
