@@ -1,391 +1,477 @@
-import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { useState, useEffect, useMemo, Fragment } from 'react'
+import { supabase, getChurch } from '../lib/supabase'
 import { useToast } from '../lib/toast'
-import { Search, Loader2, BookOpen, IndianRupee } from 'lucide-react'
+import { Search, Loader2, ChevronLeft, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import { getActiveCategories } from '../lib/paymentCategories'
+import { exportStatementPDF } from '../lib/exportStatementPDF'
 
-// ── helpers ─────────────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────────────
 
 function getFY(dateStr) {
   const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
-  const m = d.getMonth() + 1
-  const y = d.getFullYear()
-  return m >= 4
-    ? `${y}-${String(y + 1).slice(2)}`
-    : `${y - 1}-${String(y).slice(2)}`
-}
-
-function fyOptions() {
-  const baseYear = new Date().getFullYear()
-  const options = []
-  for (let d = -2; d <= 1; d++) {
-    const y = baseYear + d
-    const m = new Date().getMonth() + 1
-    const fy = m >= 4 ? `${y}-${String(y + 1).slice(2)}` : `${y - 1}-${String(y).slice(2)}`
-    if (!options.includes(fy)) options.push(fy)
-  }
-  return [...new Set(options)].sort().reverse()
+  const m = d.getMonth() + 1; const y = d.getFullYear()
+  return m >= 4 ? `${y}-${String(y+1).slice(2)}` : `${y-1}-${String(y).slice(2)}`
 }
 
 function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
-  return `${d}/${m}/${y}`
+  return `${d}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]}-${y}`
 }
 
-function fmtAmt(n) {
-  if (!n && n !== 0) return '—'
-  return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function numFmt(n) {
+  if (n == null || n === '') return ''
+  const v = Math.round(parseFloat(n) || 0)
+  return v === 0 ? '' : v.toLocaleString('en-IN')
 }
 
-// ── main component ──────────────────────────────────────────────
+// Cell styles
+const YH = { // yellow header cell
+  padding: '4px 4px', fontSize: 9, fontWeight: 700, color: '#5a4a00',
+  textAlign: 'center', background: '#FFF59D', borderRight: '1px solid #E6D400',
+  lineHeight: 1.35, whiteSpace: 'normal', overflowWrap: 'break-word', wordBreak: 'normal', verticalAlign: 'bottom',
+}
+const YD = { // yellow data cell
+  padding: '4px 4px', fontSize: 11, fontFamily: 'monospace',
+  textAlign: 'right', background: '#FFFDE7', borderRight: '1px solid #E6D400', verticalAlign: 'middle',
+}
+const BH = { // blue header cell
+  padding: '5px 4px', fontSize: 9, fontWeight: 700, color: '#fff',
+  textAlign: 'center', background: '#1E3A5F', borderRight: '1px solid #2d5a8a',
+  lineHeight: 1.35, whiteSpace: 'normal', overflowWrap: 'break-word', wordBreak: 'normal', verticalAlign: 'bottom',
+}
+
+// ── main component ───────────────────────────────────────────────
 
 export default function MemberStatementPage() {
   const toast = useToast()
 
-  // Member search
-  const [memberQ, setMemberQ]         = useState('')
-  const [suggestions, setSuggestions] = useState([])
-  const [suggesting, setSuggesting]   = useState(false)
-  const memberTimer = useRef(null)
+  // ── list state ───────────────────────────────────────────────
+  const [members, setMembers]         = useState([])
+  const [listLoading, setListLoading] = useState(true)
+  const [listQ, setListQ]             = useState('')
 
-  // Selected member + FY
-  const [selMember, setSelMember] = useState(null)
-  const [selFY, setSelFY]         = useState(() => getFY())
+  // ── detail state ─────────────────────────────────────────────
+  const [selMember, setSelMember]         = useState(null)
+  const [church, setChurch]               = useState(null)
+  const [categories, setCategories]       = useState([])
+  const [pdfLoading, setPdfLoading]       = useState(false)
+  const [declFY, setDeclFY]               = useState(getFY)
+  const [declaration, setDeclaration]     = useState(null)
+  const [declItems, setDeclItems]         = useState([])
+  const [allReceipts, setAllReceipts]     = useState([])
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [loadingDecl, setLoadingDecl]     = useState(false)
+  const [collapsedFYs, setCollapsedFYs]   = useState(new Set())
 
-  // Data
-  const [declaration, setDeclaration] = useState(null)
-  const [declItems, setDeclItems]     = useState([])   // { category_id, name, pledged }
-  const [receipts, setReceipts]       = useState([])
-  const [receiptItems, setReceiptItems] = useState([]) // all items across receipts
-  const [loading, setLoading]         = useState(false)
-
-  const FYS = fyOptions()
-
-  // ── member autocomplete
+  // ── load all members + receipt stats on mount ────────────────
   useEffect(() => {
-    if (!memberQ.trim()) { setSuggestions([]); return }
-    clearTimeout(memberTimer.current)
-    memberTimer.current = setTimeout(async () => {
-      setSuggesting(true)
-      const s = memberQ.trim()
-      const { data } = await supabase
-        .from('members')
-        .select('member_id,member_name,address_street,city,mobile')
-        .or(`member_name.ilike.%${s}%,member_id.ilike.%${s}%`)
-        .limit(8)
-      setSuggestions(data || [])
-      setSuggesting(false)
-    }, 280)
-  }, [memberQ])
+    ;(async () => {
+      setListLoading(true)
+      try {
+        const { data: membersData, error: e1 } = await supabase
+          .from('members').select('member_id,member_name,mobile,city,address_street').order('member_id')
+        if (e1) throw e1
+        setMembers(membersData || [])
+      } catch (e) { toast(e.message, 'error') }
+      setListLoading(false)
+    })()
+    getActiveCategories().then(setCategories).catch(() => {})
+    getChurch().then(setChurch).catch(() => {})
+  }, []) // eslint-disable-line
 
-  const selectMember = (m) => {
-    setSuggestions([])
-    setMemberQ(m.member_name)
+  // ── open member detail ───────────────────────────────────────
+  const openMember = (m) => {
     setSelMember(m)
-  }
-
-  // ── load statement whenever member or FY changes
-  useEffect(() => {
-    if (!selMember?.member_id) return
-    loadStatement(selMember.member_id, selFY)
-  }, [selMember, selFY])
-
-  const loadStatement = async (memberId, fy) => {
-    setLoading(true)
+    setDeclFY(getFY())
+    setAllReceipts([])
     setDeclaration(null)
     setDeclItems([])
-    setReceipts([])
-    setReceiptItems([])
-    try {
-      // 1. Declaration for this member+FY
-      const { data: declData } = await supabase
-        .from('declarations')
-        .select('id,financial_year,declaration_date,income_category,declared_income,percentage')
-        .eq('member_id', memberId)
-        .eq('financial_year', fy)
-        .limit(1)
-      const decl = declData?.[0] || null
-      setDeclaration(decl)
-
-      // 2. Declaration items (if declaration exists)
-      if (decl) {
-        const { data: di } = await supabase
-          .from('declaration_items')
-          .select('category_id,amount,payment_categories(name)')
-          .eq('declaration_id', decl.id)
-        setDeclItems(
-          (di || []).map(i => ({
-            category_id: i.category_id,
-            name: i.payment_categories?.name || 'Unknown',
-            pledged: i.amount || 0,
-          }))
-        )
-      }
-
-      // 3. Receipts for this member+FY
-      const { data: recData } = await supabase
-        .from('receipts')
-        .select('id,receipt_number,receipt_date,payment_mode,grand_total,month_paid')
-        .eq('member_id', memberId)
-        .eq('financial_year', fy)
-        .order('receipt_number', { ascending: true })
-      setReceipts(recData || [])
-
-      // 4. All receipt items for those receipts
-      if (recData?.length) {
-        const ids = recData.map(r => r.id)
-        const { data: ri } = await supabase
-          .from('receipt_items')
-          .select('receipt_id,category_id,amt,months,total,payment_categories(name)')
-          .in('receipt_id', ids)
-        setReceiptItems(ri || [])
-      }
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-    setLoading(false)
+    loadMemberDetail(m.member_id)
   }
 
-  // ── build summary per category (pledged vs paid)
-  const allCategoryNames = {}
-  declItems.forEach(d => { allCategoryNames[d.category_id] = d.name })
-  receiptItems.forEach(r => { allCategoryNames[r.category_id] = r.payment_categories?.name || 'Unknown' })
+  const loadMemberDetail = async (memberId) => {
+    setDetailLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('receipts')
+        .select('id,receipt_number,receipt_date,financial_year,payment_mode,grand_total,month_paid,receipt_items(category_id,amt,months,total)')
+        .eq('member_id', memberId)
+        .order('receipt_date',   { ascending: true })
+        .order('receipt_number', { ascending: true })
+      if (error) throw error
+      const recs = data || []
+      setAllReceipts(recs)
+      const curFY = getFY()
+      setCollapsedFYs(new Set([...new Set(recs.map(r => r.financial_year))].filter(f => f !== curFY)))
+    } catch (e) { toast(e.message, 'error') }
+    setDetailLoading(false)
+  }
 
-  const categoryIds = Object.keys(allCategoryNames)
-  const categorySummary = categoryIds.map(catId => {
-    const pledged = declItems.find(d => d.category_id === catId)?.pledged || 0
-    const paid    = receiptItems.filter(r => r.category_id === catId).reduce((s, r) => s + (r.total || 0), 0)
-    return {
-      category_id: catId,
-      name:        allCategoryNames[catId],
-      pledged,
-      paid,
-      balance:     pledged - paid,
+  // ── load declaration when member or FY changes ───────────────
+  useEffect(() => {
+    if (!selMember?.member_id) return
+    ;(async () => {
+      setLoadingDecl(true)
+      setDeclaration(null); setDeclItems([])
+      try {
+        const { data: declData } = await supabase
+          .from('declarations')
+          .select('id,financial_year,declaration_date,income_category,declared_income,percentage')
+          .eq('member_id', selMember.member_id).eq('financial_year', declFY).limit(1)
+        const decl = declData?.[0] || null
+        setDeclaration(decl)
+        if (decl) {
+          const { data: di } = await supabase
+            .from('declaration_items')
+            .select('category_id,amount,payment_categories(name)')
+            .eq('declaration_id', decl.id)
+          setDeclItems((di || []).map(i => ({ category_id: i.category_id, name: i.payment_categories?.name || '', pledged: i.amount || 0 })))
+        }
+      } catch (e) { toast(e.message, 'error') }
+      setLoadingDecl(false)
+    })()
+  }, [selMember, declFY]) // eslint-disable-line
+
+  // ── memos ────────────────────────────────────────────────────
+  const availableDeclFYs = useMemo(() => {
+    const s = new Set([...allReceipts.map(r => r.financial_year), getFY()])
+    return [...s].sort().reverse()
+  }, [allReceipts])
+
+  const receiptsByFY = useMemo(() => {
+    const g = {}
+    for (const r of allReceipts) { if (!g[r.financial_year]) g[r.financial_year] = []; g[r.financial_year].push(r) }
+    return g
+  }, [allReceipts])
+
+  const fyList = useMemo(() => Object.keys(receiptsByFY).sort().reverse(), [receiptsByFY])
+
+  const fyTotals = useMemo(() => {
+    const t = {}
+    for (const [fy, recs] of Object.entries(receiptsByFY)) {
+      const cat = {}; let grand = 0
+      for (const r of recs) {
+        grand += parseFloat(r.grand_total) || 0
+        for (const it of (r.receipt_items || [])) cat[it.category_id] = (cat[it.category_id] || 0) + (parseFloat(it.total) || 0)
+      }
+      t[fy] = { cat, grand, count: recs.length }
     }
-  }).filter(r => r.pledged > 0 || r.paid > 0)
-    .sort((a, b) => a.name.localeCompare(b.name))
+    return t
+  }, [receiptsByFY])
 
-  const totalPledged = categorySummary.reduce((s, r) => s + r.pledged, 0)
-  const totalPaid    = receipts.reduce((s, r) => s + (r.grand_total || 0), 0)
-  const totalBalance = totalPledged - totalPaid
+  const overallTotals = useMemo(() => {
+    const cat = {}; let grand = 0
+    for (const r of allReceipts) {
+      grand += parseFloat(r.grand_total) || 0
+      for (const it of (r.receipt_items || [])) cat[it.category_id] = (cat[it.category_id] || 0) + (parseFloat(it.total) || 0)
+    }
+    return { cat, grand }
+  }, [allReceipts])
 
-  return (
-    <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Member Statement</h1>
-          <p className="page-subtitle">Declaration vs actual payments per member per financial year</p>
-        </div>
-      </div>
+  const toggleFY = (fy) => setCollapsedFYs(p => { const n = new Set(p); n.has(fy) ? n.delete(fy) : n.add(fy); return n })
 
-      {/* Member + FY selector */}
-      <div className="card" style={{ padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 280 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Member</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', zIndex: 1 }}/>
-            <input
-              value={memberQ}
-              onChange={e => { setMemberQ(e.target.value); if (!e.target.value) { setSelMember(null); setDeclaration(null); setReceipts([]); setReceiptItems([]) } }}
-              placeholder="Type member name or ID…"
-              className="field-input"
-              style={{ paddingLeft: 32 }}
-            />
-            {suggesting && <Loader2 size={13} className="animate-spin" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }}/>}
-            {suggestions.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: 'white', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', overflow: 'hidden', marginTop: 2 }}>
-                {suggestions.map(m => (
-                  <button key={m.member_id} onClick={() => selectMember(m)}
-                    style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '1px solid var(--table-border)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-1)' }}>{m.member_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{m.member_id}{m.city ? ` · ${m.city}` : ''}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+  const filteredMembers = useMemo(() => {
+    if (!listQ.trim()) return members
+    const q = listQ.trim().toLowerCase()
+    return members.filter(m => m.member_name?.toLowerCase().includes(q) || m.member_id?.toLowerCase().includes(q) || m.city?.toLowerCase().includes(q))
+  }, [members, listQ])
+
+  const declTotal = declItems.reduce((s, d) => s + (d.pledged || 0), 0)
+
+  // ════════════════════════════════════════════════════════════════
+  // DETAIL VIEW — full-screen when a member is selected
+  // ════════════════════════════════════════════════════════════════
+  if (selMember) {
+    const N = categories.length
+    // Fixed cols: Date(5.5%) RecNo(8%) Year(4%) Month(4%) Months(3%) Total(5%) = 29.5%
+    // Categories share: 70.5% / N
+    const catW = N > 0 ? `${(70.5 / N).toFixed(2)}%` : '4%'
+
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: '#f0f2f5', zIndex: 500, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* ── top bar ─────────────────────────────────────────── */}
+        <div style={{ background: '#1E3A5F', padding: '0 20px', minHeight: 56, display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+          <button onClick={() => setSelMember(null)}
+            style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 7, padding: '5px 14px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+            <ChevronLeft size={15}/> Back
+          </button>
+          <div style={{ flex: 1 }}>
+            <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{selMember.member_name}</span>
+            <span style={{ color: '#a8bdd8', fontSize: 12, marginLeft: 12 }}>
+              {selMember.member_id}
+              {selMember.mobile ? ` · ${selMember.mobile}` : ''}
+              {selMember.city   ? ` · ${selMember.city}`   : ''}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ textAlign: 'right', marginRight: 8 }}>
+              {detailLoading ? (
+                <Loader2 size={16} className="animate-spin" style={{ color: '#a8bdd8' }}/>
+              ) : (
+                <>
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 15, fontFamily: 'monospace' }}>
+                    ₹{Math.round(overallTotals.grand).toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ color: '#a8bdd8', fontSize: 11 }}>{allReceipts.length} receipt{allReceipts.length !== 1 ? 's' : ''}</div>
+                </>
+              )}
+            </div>
+            <button
+              disabled={pdfLoading || detailLoading}
+              onClick={async () => {
+                setPdfLoading(true)
+                try {
+                  await exportStatementPDF({
+                    member: selMember,
+                    church,
+                    categories,
+                    allReceipts,
+                    receiptsByFY,
+                    fyList,
+                    fyTotals,
+                    overallTotals,
+                    declaration,
+                    declItems,
+                    declFY,
+                  })
+                } catch (e) {
+                  toast(e.message, 'error')
+                }
+                setPdfLoading(false)
+              }}
+              style={{ background: pdfLoading ? '#b91c1c' : '#dc2626', border: 'none', borderRadius: 7, padding: '6px 16px', cursor: pdfLoading ? 'wait' : 'pointer', color: '#fff', display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', opacity: pdfLoading ? 0.8 : 1, boxShadow: '0 2px 8px rgba(220,38,38,0.4)' }}>
+              {pdfLoading
+                ? <><Loader2 size={14} className="animate-spin"/> Generating…</>
+                : <><FileText size={15}/> <span>PDF</span></>}
+            </button>
           </div>
         </div>
 
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Financial Year</label>
-          <select value={selFY} onChange={e => setSelFY(e.target.value)} className="field-input" style={{ width: 120, appearance: 'none' }}>
-            {FYS.map(fy => <option key={fy} value={fy}>{fy}</option>)}
-          </select>
-        </div>
+        {/* ── scrollable body ─────────────────────────────────── */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+          {detailLoading ? (
+            <div style={{ padding: 60, textAlign: 'center' }}>
+              <Loader2 size={36} className="animate-spin" style={{ color: '#1E3A5F', margin: '0 auto' }}/>
+            </div>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #dde3ec', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 11 }}>
+                <colgroup>
+                  <col style={{ width: '5.5%' }}  /> {/* Receipt Date */}
+                  <col style={{ width: '8%' }}    /> {/* Receipt No   */}
+                  <col style={{ width: '4%' }}    /> {/* Year         */}
+                  <col style={{ width: '4%' }}    /> {/* Month        */}
+                  <col style={{ width: '3.5%' }}  /> {/* No of Months */}
+                  {categories.map(c => <col key={c.id} style={{ width: catW }} />)}
+                  <col style={{ width: '5%' }}    /> {/* Total        */}
+                </colgroup>
 
-        {selMember && (
-          <div style={{ padding: '8px 14px', background: 'var(--info-subtle)', border: '1px solid var(--info-border)', borderRadius: 8, fontSize: 13 }}>
-            <span style={{ fontWeight: 700, color: 'var(--info)' }}>{selMember.member_name}</span>
-            <span style={{ color: 'var(--text-3)', marginLeft: 8 }}>{selMember.member_id}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Empty state */}
-      {!selMember && (
-        <div className="card" style={{ padding: 48, textAlign: 'center' }}>
-          <BookOpen size={40} style={{ color: 'var(--text-3)', margin: '0 auto 12px', display: 'block' }}/>
-          <p style={{ color: 'var(--text-2)', fontWeight: 500, margin: 0 }}>Select a member to view their statement</p>
-          <p style={{ color: 'var(--text-3)', fontSize: 13, marginTop: 4 }}>Choose member above, then select the financial year</p>
-        </div>
-      )}
-
-      {selMember && loading && (
-        <div className="card" style={{ padding: 48, textAlign: 'center' }}>
-          <Loader2 size={32} className="animate-spin" style={{ color: 'var(--text-3)', margin: '0 auto' }}/>
-        </div>
-      )}
-
-      {selMember && !loading && (
-        <>
-          {/* Declaration row */}
-          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
-            <h3 style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14 }}>Declaration — FY {selFY}</h3>
-            {!declaration ? (
-              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>No declaration found for FY {selFY}. Go to the Declaration page to add one.</p>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-                <Stat label="Date"          value={fmtDate(declaration.declaration_date)} />
-                <Stat label="Income Source" value={declaration.income_category || '—'} />
-                <Stat label="Annual Income" value={fmtAmt(declaration.declared_income)} highlight />
-                <Stat label="Tithe %"       value={declaration.percentage ? `${declaration.percentage}%` : '—'} />
-                <Stat label="Expected Tithe" value={fmtAmt((declaration.declared_income || 0) * (declaration.percentage || 0) / 100)} highlight />
-              </div>
-            )}
-          </div>
-
-          {/* Category summary table (pledged vs paid) */}
-          {categorySummary.length > 0 && (
-            <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--table-border)' }}>
-                <h3 style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>Pledged vs Paid — FY {selFY}</h3>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: 'var(--table-header-bg)' }}>
-                    {['Category', 'Pledged', 'Paid', 'Balance'].map(h => (
-                      <th key={h} style={{ padding: '9px 16px', textAlign: h === 'Category' ? 'left' : 'right', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                  {/* ── Declaration label row ─────────────────── */}
+                  <tr>
+                    <td colSpan={3} style={{ ...YH, textAlign: 'left', paddingLeft: 8, fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 700, color: '#5a4a00' }}>Declaration — FY</span>
+                        <select value={declFY} onChange={e => setDeclFY(e.target.value)}
+                          style={{ fontSize: 11, padding: '2px 4px', border: '1px solid #c8b800', borderRadius: 4, background: '#fffbe0', fontWeight: 700, color: '#333' }}>
+                          {availableDeclFYs.map(fy => <option key={fy} value={fy}>{fy}</option>)}
+                        </select>
+                        {loadingDecl && <Loader2 size={10} className="animate-spin" style={{ color: '#888' }}/>}
+                      </div>
+                    </td>
+                    <td style={{ ...YH }}>Declared<br/>Income</td>
+                    <td style={{ ...YH }}>Decl.<br/>%</td>
+                    {categories.map(c => <td key={c.id} style={{ ...YH }}>{c.name}</td>)}
+                    <td style={{ ...YH, borderRight: 'none' }}>Total</td>
+                  </tr>
+
+                  {/* ── Declaration values row ────────────────── */}
+                  <tr style={{ borderBottom: '2px solid #E6D400' }}>
+                    <td colSpan={3} style={{ ...YD, textAlign: 'left', paddingLeft: 8, fontSize: 11, color: declaration ? '#333' : '#aaa', fontStyle: declaration ? 'normal' : 'italic', fontFamily: 'inherit' }}>
+                      {declaration
+                        ? `${fmtDate(declaration.declaration_date)}  ·  ${declaration.income_category || ''}`
+                        : 'No declaration for this FY'}
+                    </td>
+                    <td style={{ ...YD, fontWeight: 700 }}>
+                      {declaration?.declared_income ? numFmt(declaration.declared_income) : ''}
+                    </td>
+                    <td style={{ ...YD, textAlign: 'center' }}>
+                      {declaration?.percentage ? `${declaration.percentage}%` : ''}
+                    </td>
+                    {categories.map(c => {
+                      const di = declItems.find(d => d.category_id === c.id)
+                      return <td key={c.id} style={{ ...YD }}>{di?.pledged ? numFmt(di.pledged) : ''}</td>
+                    })}
+                    <td style={{ ...YD, fontWeight: 700, borderRight: 'none' }}>
+                      {declTotal > 0 ? numFmt(declTotal) : ''}
+                    </td>
+                  </tr>
+
+                  {/* ── Column header row ─────────────────────── */}
+                  <tr>
+                    {['Receipt\nDate','Receipt No','Year','Month','No of\nMonths'].map(h => (
+                      <th key={h} style={{ ...BH, whiteSpace: 'pre-line' }}>{h}</th>
                     ))}
+                    {categories.map(c => <th key={c.id} style={{ ...BH }}>{c.name}</th>)}
+                    <th style={{ ...BH, borderRight: 'none' }}>Total</th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {categorySummary.map((r, i) => (
-                    <tr key={r.category_id} style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
-                      <td style={{ padding: '9px 16px', fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>{r.name}</td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: 'var(--text-2)' }}>
-                        {r.pledged > 0 ? fmtAmt(r.pledged) : '—'}
-                      </td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: r.paid > 0 ? '#15803d' : 'var(--text-3)' }}>
-                        {r.paid > 0 ? fmtAmt(r.paid) : '—'}
-                      </td>
-                      <td style={{ padding: '9px 16px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: r.balance > 0 ? '#dc2626' : r.balance < 0 ? '#15803d' : 'var(--text-3)' }}>
-                        {r.pledged > 0 ? fmtAmt(Math.abs(r.balance)) + (r.balance > 0 ? ' due' : r.balance < 0 ? ' extra' : '') : '—'}
+                  {allReceipts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6 + categories.length} style={{ padding: 32, textAlign: 'center', color: '#999', fontSize: 13 }}>
+                        No payment history found for this member.
                       </td>
                     </tr>
-                  ))}
+                  ) : fyList.map(fy => {
+                    const isCol = collapsedFYs.has(fy)
+                    const fyRecs = receiptsByFY[fy]
+                    const { cat: fyCat, grand, count } = fyTotals[fy]
+                    return (
+                      <Fragment key={fy}>
+                        {/* FY subtotal row */}
+                        <tr onClick={() => toggleFY(fy)} style={{ background: '#2c5282', cursor: 'pointer', userSelect: 'none' }}>
+                          <td colSpan={2} style={{ padding: '5px 8px', color: '#fff', fontWeight: 700, fontSize: 11, whiteSpace: 'nowrap' }}>
+                            {isCol
+                              ? <ChevronRight size={12} style={{ verticalAlign: 'middle', marginRight: 4 }}/>
+                              : <ChevronDown  size={12} style={{ verticalAlign: 'middle', marginRight: 4 }}/>}
+                            FY {fy} — {count} receipt{count !== 1 ? 's' : ''}
+                          </td>
+                          <td style={{ padding: '5px 5px', color: '#a8c8e8', fontSize: 10, textAlign: 'center' }}>{fy}</td>
+                          <td colSpan={2} />
+                          {categories.map(c => (
+                            <td key={c.id} style={{ padding: '5px 4px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, fontWeight: 600, color: fyCat[c.id] ? '#fff' : '#3a6090' }}>
+                              {numFmt(fyCat[c.id])}
+                            </td>
+                          ))}
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, fontWeight: 800, color: '#fff' }}>
+                            {numFmt(grand)}
+                          </td>
+                        </tr>
+
+                        {/* Receipt rows */}
+                        {!isCol && fyRecs.map((r, i) => {
+                          const imap = {}
+                          ;(r.receipt_items || []).forEach(it => { imap[it.category_id] = it })
+                          const mos = (r.receipt_items || []).find(it => (it.months || 0) > 0)?.months || ''
+                          return (
+                            <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f7f9ff', borderBottom: '1px solid #edf0f7' }}>
+                              <td style={{ padding: '4px 5px', fontSize: 11, color: '#333', textAlign: 'center', whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
+                              <td style={{ padding: '4px 5px', fontFamily: 'monospace', fontSize: 10, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.receipt_number}</td>
+                              <td style={{ padding: '4px 5px', fontSize: 10, color: '#666', textAlign: 'center' }}>{r.financial_year}</td>
+                              <td style={{ padding: '4px 5px', fontSize: 11, color: '#333', textAlign: 'center' }}>{r.month_paid || '—'}</td>
+                              <td style={{ padding: '4px 5px', fontSize: 11, color: '#555', textAlign: 'center', fontFamily: 'monospace' }}>{mos || '—'}</td>
+                              {categories.map(c => {
+                                const it = imap[c.id]
+                                return (
+                                  <td key={c.id} style={{ padding: '4px 4px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: it ? '#111' : '#e0e0e0' }}>
+                                    {it ? numFmt(it.total) : ''}
+                                  </td>
+                                )
+                              })}
+                              <td style={{ padding: '4px 5px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: '#111' }}>
+                                {numFmt(r.grand_total)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
+
+                {/* Grand total */}
                 <tfoot>
-                  <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
-                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Total</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
-                      {totalPledged > 0 ? fmtAmt(totalPledged) : '—'}
-                    </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 14, fontWeight: 800, color: '#15803d' }}>
-                      {fmtAmt(totalPaid)}
-                    </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: 14, fontWeight: 800, color: totalBalance > 0 ? '#dc2626' : totalBalance < 0 ? '#15803d' : 'var(--text-3)' }}>
-                      {totalPledged > 0
-                        ? fmtAmt(Math.abs(totalBalance)) + (totalBalance > 0 ? ' due' : totalBalance < 0 ? ' extra' : '')
-                        : '—'}
+                  <tr style={{ background: '#1E3A5F', borderTop: '2px solid #0f2440' }}>
+                    <td colSpan={5} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 12, color: '#fff' }}>Grand Total</td>
+                    {categories.map(c => (
+                      <td key={c.id} style={{ padding: '7px 4px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: overallTotals.cat[c.id] ? '#fff' : '#3a5a7a' }}>
+                        {numFmt(overallTotals.cat[c.id])}
+                      </td>
+                    ))}
+                    <td style={{ padding: '7px 6px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: '#6ee7a0' }}>
+                      ₹{Math.round(overallTotals.grand).toLocaleString('en-IN')}
                     </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           )}
+        </div>
+      </div>
+    )
+  }
 
-          {/* Receipts list */}
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-                Receipts — FY {selFY}
-              </h3>
-              <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{receipts.length} receipt{receipts.length !== 1 ? 's' : ''}</span>
-            </div>
-            {receipts.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center' }}>
-                <IndianRupee size={28} style={{ color: 'var(--text-3)', margin: '0 auto 8px', display: 'block' }}/>
-                <p style={{ color: 'var(--text-3)', fontSize: 13, margin: 0 }}>No receipts for FY {selFY}</p>
-              </div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'var(--table-header-bg)' }}>
-                    {['Receipt No', 'Date', 'Month', 'Mode', 'Amount'].map(h => (
-                      <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Amount' ? 'right' : 'left', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {receipts.map((r, i) => {
-                    const rItems = receiptItems.filter(ri => ri.receipt_id === r.id)
-                    return (
-                      <>
-                        <tr key={r.id} style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
-                          <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{r.receipt_number}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-2)' }}>{r.month_paid || '—'}</td>
-                          <td style={{ padding: '9px 14px' }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: r.payment_mode === 'Cash' ? '#f0fdf4' : '#eff6ff', color: r.payment_mode === 'Cash' ? '#15803d' : '#1d4ed8' }}>
-                              {r.payment_mode}
-                            </span>
-                          </td>
-                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text-1)', whiteSpace: 'nowrap' }}>
-                            {fmtAmt(r.grand_total)}
-                          </td>
-                        </tr>
-                        {rItems.length > 0 && (
-                          <tr key={r.id + '-items'} style={{ borderBottom: '1px solid var(--table-border)' }}>
-                            <td colSpan={5} style={{ padding: '4px 14px 10px 28px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
-                                {rItems.map(ri => (
-                                  <span key={ri.category_id} style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                                    {ri.payment_categories?.name || 'Unknown'}: <span style={{ fontWeight: 600, color: 'var(--text-2)', fontFamily: 'monospace' }}>₹{Number(ri.total).toLocaleString('en-IN')}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
-                    <td colSpan={4} style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Total Paid</td>
-                    <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 15, fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>
-                      {fmtAmt(totalPaid)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
+  // ════════════════════════════════════════════════════════════════
+  // LIST VIEW — all members alphabetically
+  // ════════════════════════════════════════════════════════════════
 
-// ── Stat tile ────────────────────────────────────────────────────
-function Stat({ label, value, highlight }) {
+  const TH = { padding: '9px 14px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }
+
   return (
-    <div style={{ padding: '12px 16px', background: highlight ? 'var(--accent-subtle)' : 'var(--table-header-bg)', borderRadius: 8, border: '1px solid var(--card-border)' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: highlight ? 'var(--accent)' : 'var(--text-1)', fontFamily: 'monospace' }}>{value}</div>
+    <div className="page-container">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Member Statement</h1>
+          <p className="page-subtitle">
+            {listLoading ? 'Loading…' : `${members.length} members`}
+          </p>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="card" style={{ padding: '14px 20px', marginBottom: 16 }}>
+        <div style={{ position: 'relative', maxWidth: 360 }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }}/>
+          <input value={listQ} onChange={e => setListQ(e.target.value)}
+            placeholder="Filter by name, ID or city…"
+            className="field-input" style={{ paddingLeft: 32 }}/>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card" style={{ overflow: 'hidden' }}>
+        {listLoading ? (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <Loader2 size={32} className="animate-spin" style={{ color: 'var(--text-3)', margin: '0 auto' }}/>
+          </div>
+        ) : filteredMembers.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <p style={{ color: 'var(--text-3)', margin: 0 }}>{listQ ? 'No members match your filter.' : 'No members found.'}</p>
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--table-header-bg)' }}>
+                <th style={{ ...TH, textAlign: 'left' }}>#</th>
+                <th style={{ ...TH, textAlign: 'left' }}>Member ID</th>
+                <th style={{ ...TH, textAlign: 'left' }}>Name</th>
+                <th style={{ ...TH, textAlign: 'left' }}>Mobile</th>
+                <th style={{ ...TH, textAlign: 'left' }}>City</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMembers.map((m, i) => (
+                  <tr key={m.member_id}
+                    onClick={() => openMember(m)}
+                    style={{ borderTop: '1px solid var(--table-border)', cursor: 'pointer', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'}>
+                    <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
+                    <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{m.member_id}</td>
+                    <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{m.member_name}</td>
+                    <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)' }}>{m.mobile || '—'}</td>
+                    <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-2)' }}>{m.city || '—'}</td>
+                  </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }
+
