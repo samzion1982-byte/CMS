@@ -3,7 +3,7 @@ import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
-         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle } from 'lucide-react'
+         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Settings } from 'lucide-react'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory } from '../lib/paymentCategories'
 
@@ -317,8 +317,11 @@ export default function ChurchSetupPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900 tracking-tight">Church setup</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Settings size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Church Setup
+            </h1>
+          <p className="page-subtitle">
             {isSuperAdmin ? 'Configure church details, logo, zones and license' : 'Manage zonal areas'}
           </p>
         </div>

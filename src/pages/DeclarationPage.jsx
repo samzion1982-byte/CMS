@@ -339,7 +339,10 @@ export default function DeclarationPage() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Declaration</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileText size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Declaration
+            </h1>
           <p className="page-subtitle">Annual income declaration per member</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

@@ -200,7 +200,7 @@ export default function MemberStatementPage() {
           <div style={{ flex: 1 }}>
             <span style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>{selMember.member_name}</span>
             <span style={{ color: '#a8bdd8', fontSize: 12, marginLeft: 12 }}>
-              {selMember.member_id}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: '0.04em', color: '#7dd3fc' }}>{selMember.member_id}</span>
               {selMember.mobile ? ` · ${selMember.mobile}` : ''}
               {selMember.city   ? ` · ${selMember.city}`   : ''}
             </span>
@@ -415,7 +415,10 @@ export default function MemberStatementPage() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Member Statement</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileText size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Member Statement
+            </h1>
           <p className="page-subtitle">
             {listLoading ? 'Loading…' : `${members.length} members`}
           </p>
@@ -462,7 +465,7 @@ export default function MemberStatementPage() {
                     onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'}>
                     <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
                     <td style={{ padding: '7px 14px' }}>
-                      <span style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.02em' }}>
+                      <span style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>
                         {m.member_id}
                       </span>
                     </td>

@@ -372,7 +372,10 @@ export default function ReceiptsPage() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Receipt Entry</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <IndianRupee size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Receipt Entry
+            </h1>
           <p className="page-subtitle">Record member payments across all categories</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

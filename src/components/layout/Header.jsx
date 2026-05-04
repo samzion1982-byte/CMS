@@ -245,7 +245,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
                     transform: sel ? 'translateY(-1px)' : 'none',
                     cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
                   }}>
-                    <span style={{ fontSize: 14, fontFamily: f.family, fontWeight: 700, color: g.drop.text, lineHeight: 1 }}>{f.sample}</span>
+                    <span style={{ fontSize: 18, fontFamily: f.family, fontWeight: 700, color: g.drop.text, lineHeight: 1 }}>{f.sample}</span>
                     <span style={{ fontSize: 8, fontWeight: sel ? 700 : 500, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)', marginTop: 2 }}>
                       {f.name}
                     </span>

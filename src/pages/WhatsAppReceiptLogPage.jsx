@@ -93,11 +93,11 @@ export default function WhatsAppReceiptLogPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <MessageSquare size={22} className="text-green-600"/>
-            WhatsApp Receipt Log
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">Track all receipt WhatsApp sends — {total} total entries</p>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MessageSquare size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              WhatsApp Receipt Log
+            </h1>
+          <p className="page-subtitle">Track all receipt WhatsApp sends — {total} total entries</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={handleExport} disabled={exporting || loading}

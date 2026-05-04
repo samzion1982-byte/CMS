@@ -12,11 +12,11 @@ export const THEMES = {
 }
 
 export const FONTS = {
-  inter:    { name: 'Inter',        sample: 'Ag', family: "'Inter', sans-serif" },
-  poppins:  { name: 'Poppins',      sample: 'Ag', family: "'Poppins', sans-serif" },
-  raleway:  { name: 'Raleway',      sample: 'Ag', family: "'Raleway', sans-serif" },
-  merri:    { name: 'Merriweather', sample: 'Ag', family: "'Merriweather', serif" },
-  crimson:  { name: 'Crimson',      sample: 'Ag', family: "'Crimson Text', serif" },
+  outfit:   { name: 'Outfit',         sample: 'Rg', family: "'Outfit', sans-serif" },
+  nunito:   { name: 'Nunito',        sample: 'Gg', family: "'Nunito', sans-serif" },
+  grotesk:  { name: 'Space Grotesk', sample: 'Gq', family: "'Space Grotesk', sans-serif" },
+  merri:    { name: 'Merriweather',  sample: 'Ag', family: "'Merriweather', serif" },
+  crimson:  { name: 'Crimson',       sample: 'Qg', family: "'Crimson Text', serif" },
 }
 
 function applyToDOM(t) {
@@ -26,7 +26,7 @@ function applyToDOM(t) {
 
 function applyFontToDOM(f) {
   localStorage.setItem('cms_font', f)
-  const family = FONTS[f]?.family || FONTS.inter.family
+  const family = FONTS[f]?.family || FONTS.outfit.family
   document.documentElement.style.setProperty('--font-ui', family)
 }
 
@@ -38,7 +38,7 @@ export function ThemeProvider({ children }) {
 
   const [font, setFontState] = useState(() => {
     const saved = localStorage.getItem('cms_font')
-    return (saved && FONTS[saved]) ? saved : 'inter'
+    return (saved && FONTS[saved]) ? saved : 'outfit'
   })
 
   const setTheme = async (t) => {

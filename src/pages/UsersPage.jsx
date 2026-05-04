@@ -302,9 +302,10 @@ export default function UsersPage() {
   return (
     <div className="animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'var(--font-ui)', fontSize: 24, fontWeight: 800, color: 'var(--sidebar-bg)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Users size={22} style={{ color: '#2563eb' }} /> User Management
-        </h1>
+        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Users size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            User Management
+          </h1>
         <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
           {slotsUsed} of {MAX_SLOTS} slots used
           {slotsUsed < MAX_SLOTS

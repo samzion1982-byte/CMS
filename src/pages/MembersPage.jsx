@@ -505,9 +505,10 @@ export default function MembersPage() {
       {/* ── Page Header ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:24, paddingBottom:20, borderBottom:'1px solid var(--card-border)' }}>
         <div>
-          <h1 style={{ fontFamily:'var(--font-ui)', fontSize:22, fontWeight:800, color:'var(--sidebar-bg)', letterSpacing:-0.3, margin:0 }}>
-            Member Entry
-          </h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+              <Users size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Member Entry
+            </h1>
           <p style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>{total.toLocaleString()} members total</p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>

@@ -161,9 +161,14 @@ export default function LoginLogsPage() {
   return (
     <div className="animate-fade-in p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Login Details</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">Audit log of all user login sessions — who logged in, when, from where, and for how long.</p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <LogIn size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Login Details
+            </h1>
+          <p className="page-subtitle">Audit log of all user login sessions — who logged in, when, from where, and for how long.</p>
+        </div>
       </div>
 
       {/* Filters */}

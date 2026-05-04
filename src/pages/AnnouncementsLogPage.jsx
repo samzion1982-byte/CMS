@@ -101,9 +101,14 @@ export default function AnnouncementsLogPage() {
 
   return (
     <div className="animate-fade-in p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Announcements Log</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">History of all WhatsApp messages sent via Announcements.</p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ClipboardList size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Announcements Log
+            </h1>
+          <p className="page-subtitle">History of all WhatsApp messages sent via Announcements.</p>
+        </div>
       </div>
 
       {/* Filters */}

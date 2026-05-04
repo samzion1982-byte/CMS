@@ -53,11 +53,14 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="animate-fade-in p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">Announcements</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm">
-          Birthday & anniversary wishes, weekly reports and automation settings
-        </p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Megaphone size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            Announcements
+          </h1>
+          <p className="page-subtitle">Birthday &amp; anniversary wishes, weekly reports and automation settings</p>
+        </div>
       </div>
 
       {/* Tabs */}

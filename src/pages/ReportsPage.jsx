@@ -146,7 +146,10 @@ export default function ReportsPage() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Reports</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <BarChart3 size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Reports
+            </h1>
           <p className="page-subtitle">Receipt breakup and summary by date range</p>
         </div>
       </div>

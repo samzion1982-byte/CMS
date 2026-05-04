@@ -7,7 +7,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { formatDate } from '../lib/date'
-import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileSpreadsheet, Trash2 } from 'lucide-react'
+import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileSpreadsheet, Trash2, Archive } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { fetchDeletedMembers, getDeletedMemberDetails, permanentDeleteMembers } from '../lib/memberDelete'
 import RestoreMemberModal from './RestoreMemberModal'
@@ -257,10 +257,13 @@ export default function DeletedMembersPage() {
   return (
     <div className="animate-fade-in p-6">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="page-header">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Deleted Members Archive</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage archived members and restore if needed</p>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Archive size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              Deleted Members Archive
+            </h1>
+          <p className="page-subtitle">Manage archived members and restore if needed</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (

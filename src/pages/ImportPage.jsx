@@ -1998,7 +1998,7 @@ export default function ImportPage() {
               <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#2563eb,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
                 <Database size={16} style={{color:'#fff'}}/>
               </div>
-              <h1 style={{margin:0,fontSize:22,fontWeight:700,color:'#0f172a',letterSpacing:'-0.3px'}}>Migration Dashboard</h1>
+              <h1 className="page-title" style={{margin:0}}>Migration Dashboard</h1>
             </div>
             <p style={{margin:0,fontSize:12,color:'#94a3b8',paddingLeft:42}}>Import worksheets &amp; photos · Monitor all activity on the board</p>
           </div>
