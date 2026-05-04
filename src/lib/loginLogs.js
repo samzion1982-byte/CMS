@@ -13,7 +13,7 @@ function readGeoCache() {
     const raw = localStorage.getItem(GEO_CACHE_KEY)
     if (!raw) return null
     const obj = JSON.parse(raw)
-    const ttl = obj.source === 'gps' ? GPS_TTL_MS : IP_TTL_MS
+    const ttl = (obj.source === 'gps' || obj.source === 'manual') ? GPS_TTL_MS : IP_TTL_MS
     if (Date.now() - obj.cachedAt > ttl) { localStorage.removeItem(GEO_CACHE_KEY); return null }
     return obj
   } catch { return null }
@@ -149,13 +149,16 @@ export async function stampLogout(userId) {
   try { localStorage.removeItem(LS_KEY(userId)) } catch { /* ignore */ }
 }
 
-/* Manually correct location for a log row */
+/* Manually correct location for a log row, and overwrite the local geo cache
+   so the next login on this device uses the corrected value. */
 export async function updateLoginLogLocation(id, { city, region, country }) {
   const { error } = await adminSupabase
     .from('login_logs')
     .update({ city: city || null, region: region || null, country: country || null })
     .eq('id', id)
   if (error) throw error
+  // Persist correction into geo cache so future logins on this device are accurate
+  writeGeoCache({ source: 'manual', ipAddress: null, city: city || null, region: region || null, country: country || null })
 }
 
 /* Admin read — paginated, filterable */
