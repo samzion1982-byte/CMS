@@ -5,7 +5,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { CheckCircle, XCircle, Loader2, ChevronLeft, ChevronRight, MessageSquare, RefreshCw } from 'lucide-react'
+import { exportToExcel } from '../lib/exportExcel'
+import { CheckCircle, XCircle, Loader2, ChevronLeft, ChevronRight, MessageSquare, RefreshCw, Download } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
@@ -25,6 +26,37 @@ export default function WhatsAppReceiptLogPage() {
   const [filterStatus, setFilterStatus] = useState('all')
 
   const isAdmin = ['super_admin', 'admin', 'admin1'].includes(profile?.role)
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      let q = supabase
+        .from('whatsapp_receipt_logs')
+        .select('*')
+        .order('sent_at', { ascending: false })
+      if (filterStatus !== 'all') q = q.eq('status', filterStatus)
+      const { data } = await q
+      const cols = [
+        { header: 'Date / Time',    key: 'sent_at',         align: 'left'  },
+        { header: 'Receipt No',     key: 'receipt_number',  align: 'left'  },
+        { header: 'Member Name',    key: 'member_name',     align: 'left'  },
+        { header: 'WhatsApp No',    key: 'whatsapp_number', align: 'left'  },
+        { header: 'API Type',       key: 'api_type',        align: 'center'},
+        { header: 'Status',         key: 'status',          align: 'center'},
+      ]
+      const rows = (data || []).map(r => ({
+        sent_at:         fmtDT(r.sent_at),
+        receipt_number:  r.receipt_number  || '',
+        member_name:     r.member_name     || '',
+        whatsapp_number: r.whatsapp_number || '',
+        api_type:        r.api_type === 'official' ? 'Official' : 'Soft7',
+        status:          r.status === 'sent' ? 'Sent' : 'Failed',
+      }))
+      await exportToExcel(cols, rows, 'WhatsApp Receipts', `WhatsApp_Receipts_${new Date().toISOString().slice(0,10)}.xlsx`)
+    } catch (e) { console.error(e) }
+    setExporting(false)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -67,10 +99,19 @@ export default function WhatsAppReceiptLogPage() {
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">Track all receipt WhatsApp sends — {total} total entries</p>
         </div>
-        <button onClick={load} disabled={loading} className="btn btn-secondary btn-sm">
-          {loading ? <Loader2 size={13} className="animate-spin"/> : <RefreshCw size={13}/>}
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleExport} disabled={exporting || loading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
+              border: '1.5px solid var(--accent)', background: 'var(--accent)', color: '#fff',
+              fontSize: 12, fontWeight: 600, cursor: exporting ? 'wait' : 'pointer', opacity: exporting ? 0.7 : 1 }}>
+            {exporting ? <Loader2 size={13} className="animate-spin"/> : <Download size={13}/>}
+            Export Excel
+          </button>
+          <button onClick={load} disabled={loading} className="btn btn-secondary btn-sm">
+            {loading ? <Loader2 size={13} className="animate-spin"/> : <RefreshCw size={13}/>}
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filter bar */}

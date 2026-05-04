@@ -3,16 +3,18 @@ import { adminSupabase } from './supabase'
 const LS_KEY = id => `login_log_id_${id}`
 
 /* Fetch approximate location from the browser's public IP.
-   Tries ipwho.is first (better regional accuracy), falls back to ipapi.co. */
+   Uses freeipapi.com (primary — good India coverage, no key needed),
+   falls back to ipinfo.io, then ipapi.co. */
 export async function fetchGeoLocation() {
   const tryFetch = async (url, map) => {
     const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 3500)
+    const t = setTimeout(() => controller.abort(), 4000)
     try {
       const res = await fetch(url, { signal: controller.signal })
       clearTimeout(t)
       if (!res.ok) return null
-      return map(await res.json())
+      const d = await res.json()
+      return map(d)
     } catch {
       clearTimeout(t)
       return null
@@ -20,16 +22,28 @@ export async function fetchGeoLocation() {
   }
 
   return (
-    await tryFetch('https://ipwho.is/', d => ({
-      ipAddress: d.ip          || null,
-      city:      d.city        || null,
-      region:    d.region      || null,
-      country:   d.country     || null,
-    })) ||
+    await tryFetch('https://freeipapi.com/api/json', d => {
+      if (!d.ipAddress) return null
+      return {
+        ipAddress: d.ipAddress    || null,
+        city:      d.cityName     || null,
+        region:    d.regionName   || null,
+        country:   d.countryName  || null,
+      }
+    }) ||
+    await tryFetch('https://ipinfo.io/json', d => {
+      if (!d.ip) return null
+      return {
+        ipAddress: d.ip      || null,
+        city:      d.city    || null,
+        region:    d.region  || null,
+        country:   d.country || null,
+      }
+    }) ||
     await tryFetch('https://ipapi.co/json/', d => ({
-      ipAddress: d.ip          || null,
-      city:      d.city        || null,
-      region:    d.region      || null,
+      ipAddress: d.ip           || null,
+      city:      d.city         || null,
+      region:    d.region       || null,
       country:   d.country_name || null,
     })) ||
     {}
