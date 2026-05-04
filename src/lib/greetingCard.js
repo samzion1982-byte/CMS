@@ -303,9 +303,52 @@ export async function generateGreetingCard({
   drawDivider(ctx, W, topDivY, GOLD, 'cross')
 
   // Greeting message — vertically centred between the two dividers
-  const greetingMsg = isBday
-    ? 'May the Almighty God bless you with good health, peace and prosperity!'
-    : 'May the Lord bless your union with abundant love, joy and togetherness!'
+  const bdayMsgs = [
+    'May the Almighty God bless you with good health, peace and prosperity!',
+    'May God shower you with His grace and fill your life with joy, love and endless blessings!',
+    'May the Lord guide your steps, guard your heart and grant you a year filled with His favour!',
+    'May this birthday mark the beginning of a year overflowing with God\'s goodness and mercy!',
+    'May the Lord\'s light shine upon you and lead you into a season of growth and abundance!',
+    'May God\'s unfailing love surround you today and every day of the year ahead!',
+    'May the Lord bless you with wisdom, strength and the joy of His presence this year!',
+    'May every dream you carry be touched by God\'s grace and brought to beautiful fruition!',
+    'May the Lord crown this new year of your life with His faithfulness and tender mercies!',
+    'May God fill your heart with gratitude and your days with purpose, love and peace!',
+    'May the Lord\'s blessings follow you wherever you go and His peace guard your heart always!',
+    'May this year be a testimony of God\'s grace as He opens new doors and fulfils His promises in your life!',
+    'May the Lord renew your strength, refresh your spirit and bless you with abundant joy!',
+    'May God\'s hand be upon you, guiding you into all the good things He has planned for you!',
+    'May the Lord bless the work of your hands and grant you success in all that you do!',
+    'May you be surrounded by love, strengthened by faith and blessed beyond measure this year!',
+    'May the Lord be your shield and portion, filling each day with His goodness and grace!',
+    'May God lead you into a year of new beginnings, answered prayers and overflowing joy!',
+    'May the Lord grant you peace that passes all understanding and a heart full of gratitude!',
+    'May God\'s mercy be new every morning for you and His blessings never cease!',
+  ]
+  const anniMsgs = [
+    'May the Lord bless your union with abundant love, joy and togetherness!',
+    'May God strengthen your bond and fill your home with His peace, laughter and enduring grace!',
+    'May the Lord who joined your hearts continue to bless your journey with love and faithfulness!',
+    'May your marriage be a beautiful reflection of God\'s love — patient, kind and everlasting!',
+    'May the Lord renew your love for each other and deepen your bond with every passing year!',
+    'May God bless your home with peace, your hearts with joy and your journey with His guidance!',
+    'May the Lord continue to weave His grace through every chapter of your story together!',
+    'May your union grow stronger with each year, rooted in faith and filled with His blessings!',
+    'May God grant you a love that deepens, a faith that holds firm and a home full of laughter!',
+    'May the Lord\'s favour rest upon your marriage and may His love be the foundation of your home!',
+    'May every year together bring you closer to each other and closer to God!',
+    'May the Lord bless your partnership with wisdom, patience and an unshakeable bond of love!',
+    'May your home be a sanctuary of peace, a place of warmth and a testimony of God\'s grace!',
+    'May God fill your hearts with fresh gratitude for each other and renew the joy of your union!',
+    'May the Lord walk with you hand in hand through every season of your married life!',
+    'May your love story continue to inspire all who know you as a testament to God\'s faithfulness!',
+    'May the Lord bless you with the gift of growing old together in His love and goodness!',
+    'May God\'s peace dwell in your home and His joy be the strength of your marriage!',
+    'May the Lord seal your hearts together and bless you with a lifetime of happiness and grace!',
+    'May your marriage be a living testimony that what God has joined together, He will also sustain!',
+  ]
+  const msgPool = isBday ? bdayMsgs : anniMsgs
+  const greetingMsg = msgPool[Math.floor(Math.random() * msgPool.length)]
   const greetFontSize = 32
   const greetLineH = 48
   ctx.font = `italic ${greetFontSize}px "Playfair Display", Georgia, serif`
