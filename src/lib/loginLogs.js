@@ -1,9 +1,12 @@
 import { adminSupabase } from './supabase'
 
 const LS_KEY         = id => `login_log_id_${id}`
-const GEO_CACHE_KEY  = 'church_cms_geo_cache'
+const GEO_CACHE_KEY  = 'church_cms_geo_v2'        // v2 clears old stale cache
 const GPS_TTL_MS     = 30 * 24 * 60 * 60 * 1000  // GPS result: 30 days
 const IP_TTL_MS      =      24 * 60 * 60 * 1000  // IP result:   1 day
+
+// Pre-fetch started on login page mount so result is ready before sign-in
+let _warmPromise = null
 
 function readGeoCache() {
   try {
@@ -72,16 +75,33 @@ async function fetchByIP() {
   return race
 }
 
-/* GPS and IP run in parallel — GPS wins if it succeeds (most accurate).
-   Result cached: 30 days for GPS, 1 day for IP. */
-export async function fetchGeoLocation() {
-  const cached = readGeoCache()
-  if (cached) return cached
+/* Call on login page mount — starts GPS + IP in parallel while the user
+   types credentials. Result is ready (or nearly so) by sign-in time. */
+export function warmGeoLocation() {
+  if (readGeoCache()) return           // already have fresh data
+  if (_warmPromise) return             // already running
+  _warmPromise = _resolveGeo().then(loc => { _warmPromise = null; return loc })
+}
 
+async function _resolveGeo() {
   const [gps, ip] = await Promise.all([fetchByGPS(), fetchByIP()])
   const loc = gps || ip || {}
   if (loc.city || loc.region || loc.country) writeGeoCache(loc)
   return loc
+}
+
+/* Returns cached location, or waits for the warm-up promise, or resolves fresh. */
+export async function fetchGeoLocation() {
+  const cached = readGeoCache()
+  if (cached) return cached
+
+  // If warmGeoLocation() was called on page mount, await that promise
+  if (_warmPromise) {
+    const loc = await Promise.race([_warmPromise, new Promise(r => setTimeout(() => r(null), 3000))])
+    if (loc?.city || loc?.region) return loc
+  }
+
+  return await _resolveGeo()
 }
 
 /* Insert a new login row and persist the id to localStorage */

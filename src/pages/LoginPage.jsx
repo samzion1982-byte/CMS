@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
+import { warmGeoLocation } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -18,6 +19,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (session) navigate('/dashboard')
     getChurch().then(setChurch)
+    warmGeoLocation()  // start GPS+IP lookup while user types credentials
   }, [session])
 
   const handleSubmit = async e => {
