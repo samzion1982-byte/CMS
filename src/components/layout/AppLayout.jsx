@@ -144,7 +144,7 @@ export default function AppLayout({ children }) {
             <div style={{ padding: '16px 22px' }}>
               {[
                 { label: 'YOUR NAME',    key: 'userName', required: true  },
-                { label: 'ORGANISATION', key: 'orgName',  required: false },
+                { label: 'ORGANISATION / ROLE', key: 'orgName',  required: false },
                 { label: 'AREA',         key: 'area',     required: false },
                 { label: 'CITY',         key: 'city',     required: true  },
               ].map(f => (
