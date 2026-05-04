@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
-import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, saveDevice, tagLoginWithDevice } from '../lib/loginLogs'
-import { Eye, EyeOff, Loader2, Monitor } from 'lucide-react'
+import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, tagLoginWithDevice } from '../lib/loginLogs'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const { session } = useAuth()
@@ -15,13 +15,6 @@ export default function LoginPage() {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [church,   setChurch]   = useState(null)
-
-  // Device registration state
-  const [showDeviceSetup, setShowDeviceSetup] = useState(false)
-  const [pendingUserId,   setPendingUserId]   = useState(null)
-  const [pendingDeviceId, setPendingDeviceId] = useState(null)
-  const [savingDevice,    setSavingDevice]    = useState(false)
-  const [deviceForm,      setDeviceForm]      = useState({ userName: '', orgName: '', location: '' })
 
   useEffect(() => {
     if (session) navigate('/dashboard')  // already logged in — redirect immediately
@@ -34,39 +27,47 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    const { error: err, data: authData } = await signIn(email.trim(), password)
-
-    if (err) {
-      setError(err.message)
-      setLoading(false)
-    } else {
-      const uid   = authData?.user?.id
-      const devId = getOrCreateDeviceId()
-      const known = await checkDeviceRegistered(devId)
-      if (known) {
-        // Known device — tag log in background and proceed
-        tagLoginWithDevice(uid, { deviceId: devId, userName: known.user_name, location: known.location, org: known.org_name })
-        navigate('/dashboard')
-      } else {
-        // New device — collect details before proceeding
-        setPendingUserId(uid)
-        setPendingDeviceId(devId)
-        setLoading(false)
-        setShowDeviceSetup(true)
-      }
-    }
-  }
-
-  const handleSaveDevice = async (skip = false) => {
-    setSavingDevice(true)
     try {
-      if (!skip && (deviceForm.userName || deviceForm.location)) {
-        await saveDevice({ deviceId: pendingDeviceId, userId: pendingUserId, orgName: deviceForm.orgName, userName: deviceForm.userName, location: deviceForm.location })
+      const devId = getOrCreateDeviceId()
+      const knownByDevice = await checkDeviceRegistered(devId)
+
+      // Write partial flag early — AppLayout may mount mid-signIn (during getProfile)
+      // and will poll until userId is filled in or the flag is removed.
+      if (!knownByDevice) {
+        sessionStorage.setItem('device_setup_pending', JSON.stringify({ deviceId: devId }))
       }
-      tagLoginWithDevice(pendingUserId, { deviceId: pendingDeviceId, userName: deviceForm.userName, location: deviceForm.location, org: deviceForm.orgName })
-      navigate('/dashboard')
-    } catch (e) { console.error(e); navigate('/dashboard') }
-    setSavingDevice(false)
+
+      const { error: err, data: authData } = await signIn(email.trim(), password)
+
+      if (err) {
+        sessionStorage.removeItem('device_setup_pending')
+        setError(err.message)
+        setLoading(false)
+      } else {
+        const uid = authData?.user?.id
+
+        if (knownByDevice) {
+          // Same device ID found — tag log and proceed
+          tagLoginWithDevice(uid, { deviceId: devId, userName: knownByDevice.user_name, location: knownByDevice.location, org: knownByDevice.org_name })
+        } else {
+          // Device ID not found (cleared cache/cookies) — check if user ever registered
+          const knownByUser = await checkDeviceRegisteredByUser(uid)
+          if (knownByUser) {
+            // Re-associate the new device ID silently — no popup
+            sessionStorage.removeItem('device_setup_pending')
+            saveDevice({ deviceId: devId, userId: uid, orgName: knownByUser.org_name, userName: knownByUser.user_name, location: knownByUser.location })
+            tagLoginWithDevice(uid, { deviceId: devId, userName: knownByUser.user_name, location: knownByUser.location, org: knownByUser.org_name })
+          } else {
+            // Truly new user/device — complete the flag so AppLayout shows the popup
+            sessionStorage.setItem('device_setup_pending', JSON.stringify({ deviceId: devId, userId: uid }))
+          }
+        }
+      }
+    } catch (ex) {
+      sessionStorage.removeItem('device_setup_pending')
+      setError('Login failed. Please try again.')
+      setLoading(false)
+    }
   }
 
   // Dynamic church info
@@ -444,67 +445,6 @@ export default function LoginPage() {
           .church-cms-label { font-size: 14px; letter-spacing: 1.5px; }
         }
       `}</style>
-
-      {/* ── Device Registration Popup ──────────────────────────────── */}
-      {showDeviceSetup && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,8,30,0.82)', backdropFilter: 'blur(6px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ width: '100%', maxWidth: 420, background: 'linear-gradient(180deg,rgba(15,20,56,0.98) 0%,rgba(10,14,42,0.99) 100%)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.7)' }}>
-
-            {/* Header */}
-            <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Monitor size={18} style={{ color: '#60a5fa' }}/>
-              </div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>New Device Detected</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>One-time setup — saved for all future logins</div>
-              </div>
-            </div>
-
-            {/* Device ID badge */}
-            <div style={{ padding: '14px 22px 0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
-                <span style={{ fontSize: 10, color: '#64748b', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Device ID</span>
-                <span style={{ fontSize: 11, color: '#60a5fa', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '0.05em' }}>{pendingDeviceId?.slice(0, 8).toUpperCase()}</span>
-                <span style={{ fontSize: 10, color: '#334155', marginLeft: 'auto' }}>auto-captured</span>
-              </div>
-            </div>
-
-            {/* Form */}
-            <div style={{ padding: '16px 22px' }}>
-              {[
-                { label: 'YOUR NAME', key: 'userName', placeholder: 'e.g. Samuel Kanagaraj', required: true },
-                { label: 'ORGANISATION', key: 'orgName', placeholder: 'e.g. CSI St. Paul\'s Church', required: false },
-                { label: 'YOUR LOCATION', key: 'location', placeholder: 'e.g. Pondicherry', required: true },
-              ].map(f => (
-                <div key={f.key} style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: '#60a5fa', marginBottom: 6 }}>
-                    {f.label}{f.required && <span style={{ color: '#f87171', marginLeft: 3 }}>*</span>}
-                  </label>
-                  <input
-                    className="f-input"
-                    value={deviceForm[f.key]}
-                    onChange={e => setDeviceForm(v => ({ ...v, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Buttons */}
-            <div style={{ padding: '0 22px 20px', display: 'flex', gap: 10 }}>
-              <button onClick={() => handleSaveDevice(true)} disabled={savingDevice}
-                style={{ flex: '0 0 auto', padding: '10px 18px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                Skip
-              </button>
-              <button onClick={() => handleSaveDevice(false)} disabled={savingDevice || !deviceForm.userName || !deviceForm.location}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 9, border: 'none', background: !deviceForm.userName || !deviceForm.location ? 'rgba(37,99,235,0.4)' : 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: !deviceForm.userName || !deviceForm.location ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                {savingDevice ? <><Loader2 size={14} className="spin"/>Saving…</> : 'Save & Continue →'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="login-page">
         <div className="animated-bg"/>

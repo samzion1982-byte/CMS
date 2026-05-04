@@ -3,7 +3,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { useTheme, THEMES, FONTS } from '../../lib/ThemeContext'
 import { getChurch, LICENSE_CSV, VENDOR } from '../../lib/supabase'
 import { initials, ROLE_LABELS } from '../../lib/auth'
-import { ChevronDown, LogOut } from 'lucide-react'
+import { ChevronDown, LogOut, Edit } from 'lucide-react'
 
 export const HEADER_H = 88
 
@@ -84,7 +84,9 @@ function LiveClock({ g }) {
 }
 
 /* ── User badge + dropdown ───────────────────────────────────── */
-function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, font, setFont, onSignOut }) {
+const DEVICE_EDIT_ROLES = ['super_admin', 'admin1']
+
+function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, font, setFont, onSignOut, onEditDevice }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -253,6 +255,28 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
             </div>
           </div>
 
+          {/* Edit Device Info — super_admin & admin1 only */}
+          {DEVICE_EDIT_ROLES.includes(profile?.role) && (
+            <button
+              onClick={() => { setOpen(false); onEditDevice?.() }}
+              onMouseEnter={e => e.currentTarget.style.background = g.drop.hov}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '13px 18px',
+                background: 'none', border: 'none',
+                borderBottom: `1px solid ${g.drop.border}`,
+                color: g.drop.text, cursor: 'pointer',
+                fontSize: 13, fontWeight: 600,
+                fontFamily: 'var(--font-ui)',
+                transition: 'background 0.15s',
+              }}
+            >
+              <Edit size={15} />
+              Edit Device Info
+            </button>
+          )}
+
           {/* Sign out */}
           <button
             onClick={() => { setOpen(false); onSignOut() }}
@@ -278,7 +302,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
 }
 
 /* ── Header ──────────────────────────────────────────────────── */
-export default function Header() {
+export default function Header({ onEditDevice }) {
   const { profile, signOut } = useAuth()
   const { theme, setTheme, font, setFont } = useTheme()
   const [church, setChurch]  = useState(null)
@@ -496,7 +520,8 @@ export default function Header() {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
             <UserBadge
               profile={profile} ini={ini} firstName={firstName} roleLabel={roleLabel}
-              g={g} theme={theme} setTheme={setTheme} font={font} setFont={setFont} onSignOut={signOut}
+              g={g} theme={theme} setTheme={setTheme} font={font} setFont={setFont}
+              onSignOut={signOut} onEditDevice={onEditDevice}
             />
 
             <div ref={licenseRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginBottom: 6 }}>

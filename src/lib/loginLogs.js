@@ -157,13 +157,31 @@ export async function stampLogout(userId) {
 
 // ── Device registration ───────────────────────────────────────────────────────
 
+function _setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString()
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Strict`
+}
+
+function _getCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return m ? m[1] : null
+}
+
+// Persists in both localStorage AND a 1-year cookie so the ID survives
+// cache clears (cookies are only wiped when the user explicitly clears
+// "Cookies and site data", not just "Cached images and files").
 export function getOrCreateDeviceId() {
-  const KEY = 'church_cms_device_id'
+  const LS_KEY  = 'church_cms_device_id'
+  const CK_NAME = 'cms_did'
   try {
-    let id = localStorage.getItem(KEY)
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem(KEY, id) }
+    let id = localStorage.getItem(LS_KEY) || _getCookie(CK_NAME)
+    if (!id) id = crypto.randomUUID()
+    localStorage.setItem(LS_KEY, id)
+    _setCookie(CK_NAME, id, 365)
     return id
-  } catch { return crypto.randomUUID() }
+  } catch {
+    return _getCookie(CK_NAME) || crypto.randomUUID()
+  }
 }
 
 export async function checkDeviceRegistered(deviceId) {
@@ -172,6 +190,21 @@ export async function checkDeviceRegistered(deviceId) {
     .from('user_devices')
     .select('org_name, user_name, location')
     .eq('device_id', deviceId)
+    .maybeSingle()
+  return data || null
+}
+
+// Fallback lookup by user_id — used when the device_id was lost (cache/cookie
+// cleared). If the user previously registered on any device, reuse that info
+// and silently re-associate the new device_id.
+export async function checkDeviceRegisteredByUser(userId) {
+  if (!userId) return null
+  const { data } = await adminSupabase
+    .from('user_devices')
+    .select('org_name, user_name, location')
+    .eq('user_id', userId)
+    .order('registered_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   return data || null
 }

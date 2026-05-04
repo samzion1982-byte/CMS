@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
-import { supabase } from './supabase'
+import { supabase, adminSupabase } from './supabase'
 import { getProfile, signIn as authSignIn } from './auth'
 import { useTheme } from './ThemeContext'
 import { stampLogout } from './loginLogs'
@@ -54,8 +54,28 @@ export function AuthProvider({ children }) {
       
       console.log('✅ Profile loaded successfully:', data?.email)
       setProfile(data)
-      if (data?.theme) applyProfileTheme(data.theme)
-      if (data?.font)  applyProfileFont(data.font)
+
+      // Theme: DB wins if set; otherwise push localStorage value up to DB so
+      // it survives future cache clears.
+      if (data?.theme) {
+        applyProfileTheme(data.theme)
+      } else {
+        const localTheme = localStorage.getItem('cms_theme')
+        if (localTheme) {
+          ;(async () => { try { await adminSupabase.from('profiles').update({ theme: localTheme }).eq('id', data.id) } catch {} })()
+        }
+      }
+
+      // Font: same logic
+      if (data?.font) {
+        applyProfileFont(data.font)
+      } else {
+        const localFont = localStorage.getItem('cms_font')
+        if (localFont) {
+          ;(async () => { try { await adminSupabase.from('profiles').update({ font: localFont }).eq('id', data.id) } catch {} })()
+        }
+      }
+
       return data
     } catch (error) {
       console.error('❌ Error loading profile:', error.message)

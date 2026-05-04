@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { supabase } from './supabase'
+import { supabase, adminSupabase } from './supabase'
 
 const ThemeContext = createContext()
 
@@ -48,7 +48,7 @@ export function ThemeProvider({ children }) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        await supabase.from('profiles').update({ theme: t }).eq('id', user.id)
+        await adminSupabase.from('profiles').update({ theme: t }).eq('id', user.id)
       }
     } catch (err) {
       console.warn('[ThemeContext] Could not save theme to profile:', err.message)
@@ -62,7 +62,7 @@ export function ThemeProvider({ children }) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        await supabase.from('profiles').update({ font: f }).eq('id', user.id)
+        await adminSupabase.from('profiles').update({ font: f }).eq('id', user.id)
       }
     } catch (err) {
       console.warn('[ThemeContext] Could not save font to profile:', err.message)

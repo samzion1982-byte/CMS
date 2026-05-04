@@ -8,7 +8,7 @@ import { getLoginLogs } from '../lib/loginLogs'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle, Clock, MapPin, Shield, FileSpreadsheet,
+  CheckCircle, Clock, MapPin, Shield, FileSpreadsheet, Monitor,
 } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -37,6 +37,16 @@ function fmtDuration(loginAt, logoutAt) {
   const h = Math.floor(mins / 60)
   const m = mins % 60
   return m ? `${h}h ${m}m` : `${h}h`
+}
+
+// Split "area, city" stored in location column; fall back to IP-based fields
+function splitLocation(r) {
+  if (r.location) {
+    const idx = r.location.lastIndexOf(', ')
+    if (idx !== -1) return { area: r.location.slice(0, idx), city: r.location.slice(idx + 2) }
+    return { area: '', city: r.location }
+  }
+  return { area: r.region || '', city: r.city || '' }
 }
 
 function parseBrowser(ua = '') {
@@ -111,31 +121,36 @@ export default function LoginLogsPage() {
     try {
       const { data: all } = await getLoginLogs({ limit: 10000, offset: 0, email: filterEmail, role: filterRole })
       const columns = [
-        { header: 'Login At',    key: 'login_at',   width: 20 },
-        { header: 'Name',        key: 'name',        width: 26 },
-        { header: 'Email',       key: 'email',       width: 30 },
-        { header: 'Role',        key: 'role',        width: 14 },
-        { header: 'User Name',   key: 'user_name',   width: 24 },
-        { header: 'Organisation',key: 'org',         width: 26 },
-        { header: 'Area & City', key: 'area_city',   width: 22 },
-        { header: 'Device ID',   key: 'device_id',   width: 16 },
-        { header: 'Browser/OS',  key: 'browser',     width: 20 },
-        { header: 'Logout At',   key: 'logout_at',   width: 20 },
-        { header: 'Duration',    key: 'duration',    width: 12 },
+        { header: 'Login At',    key: 'login_at',  width: 20 },
+        { header: 'Name',        key: 'name',       width: 26 },
+        { header: 'Email',       key: 'email',      width: 30 },
+        { header: 'Role',        key: 'role',       width: 14 },
+        { header: 'User Name',   key: 'user_name',  width: 24 },
+        { header: 'Organisation',key: 'org',        width: 26 },
+        { header: 'Area',        key: 'area',       width: 22 },
+        { header: 'City',        key: 'city',       width: 18 },
+        { header: 'Device ID',   key: 'device_id',  width: 16 },
+        { header: 'Browser/OS',  key: 'browser',    width: 20 },
+        { header: 'Logout At',   key: 'logout_at',  width: 20 },
+        { header: 'Duration',    key: 'duration',   width: 12 },
       ]
-      const rows = (all || []).map(r => ({
-        login_at:   fmtDT(r.login_at),
-        name:       r.full_name  || '—',
-        email:      r.email      || '—',
-        role:       ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
-        user_name:  r.user_name  || '—',
-        org:        r.org        || '—',
-        area_city:  r.location || [r.city, r.region].filter(Boolean).join(', ') || '—',
-        device_id:  r.device_id?.slice(0, 8).toUpperCase() || '—',
-        browser:    parseBrowser(r.user_agent),
-        logout_at:  fmtDT(r.logout_at),
-        duration:   fmtDuration(r.login_at, r.logout_at) || '—',
-      }))
+      const rows = (all || []).map(r => {
+        const loc = splitLocation(r)
+        return {
+          login_at:  fmtDT(r.login_at),
+          name:      r.full_name || '—',
+          email:     r.email     || '—',
+          role:      ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
+          user_name: r.user_name || '—',
+          org:       r.org       || '—',
+          area:      loc.area    || '—',
+          city:      loc.city    || '—',
+          device_id: r.device_id?.slice(0, 8).toUpperCase() || '—',
+          browser:   parseBrowser(r.user_agent),
+          logout_at: fmtDT(r.logout_at),
+          duration:  fmtDuration(r.login_at, r.logout_at) || '—',
+        }
+      })
       const date = new Date().toISOString().slice(0, 10)
       await exportToExcel(columns, rows, 'Login Details', `login-details-${date}.xlsx`)
     } finally {
@@ -216,7 +231,7 @@ export default function LoginLogsPage() {
             <table className="w-full" style={{ fontSize: 12 }}>
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                  {['Login At', 'User', 'Role', 'User Name', 'Area & City', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
+                  {['Login At', 'User', 'Role', 'User Name', 'Area', 'City', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
                     <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -225,7 +240,7 @@ export default function LoginLogsPage() {
                 {rows.map(r => {
                   const role     = ROLE_STYLES[r.user_role] || { label: r.user_role || '—', color: '#374151', bg: '#f9fafb' }
                   const duration = fmtDuration(r.login_at, r.logout_at)
-                  const areaCity = r.location || [r.city, r.region].filter(Boolean).join(', ') || '—'
+                  const loc      = splitLocation(r)
 
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40">
@@ -250,7 +265,7 @@ export default function LoginLogsPage() {
                         </span>
                       </td>
 
-                      {/* User Name (device registration) */}
+                      {/* User Name */}
                       <td className="px-3 py-2.5">
                         {r.user_name ? (
                           <div>
@@ -262,14 +277,23 @@ export default function LoginLogsPage() {
                         )}
                       </td>
 
-                      {/* Area & City (device registration, fallback to IP) */}
+                      {/* Area */}
+                      <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                        {loc.area || <span className="text-gray-300 dark:text-gray-600">—</span>}
+                      </td>
+
+                      {/* City */}
                       <td className="px-3 py-2.5">
-                        <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-                          <MapPin size={11} className="text-gray-400 shrink-0" />
-                          {areaCity}
-                        </span>
-                        {r.location && r.country && (
-                          <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: 15 }}>{r.country}</div>
+                        {loc.city ? (
+                          <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                            <MapPin size={11} className="text-gray-400 shrink-0" />
+                            {loc.city}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-gray-600">—</span>
+                        )}
+                        {r.country && (
+                          <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: loc.city ? 15 : 0 }}>{r.country}</div>
                         )}
                       </td>
 
