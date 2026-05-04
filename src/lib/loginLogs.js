@@ -155,6 +155,61 @@ export async function stampLogout(userId) {
   if (error) console.error('[loginLogs] logout stamp error:', error)
 }
 
+// ── Device registration ───────────────────────────────────────────────────────
+
+export function getOrCreateDeviceId() {
+  const KEY = 'church_cms_device_id'
+  try {
+    let id = localStorage.getItem(KEY)
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem(KEY, id) }
+    return id
+  } catch { return crypto.randomUUID() }
+}
+
+export async function checkDeviceRegistered(deviceId) {
+  if (!deviceId) return null
+  const { data } = await adminSupabase
+    .from('user_devices')
+    .select('org_name, user_name, location')
+    .eq('device_id', deviceId)
+    .maybeSingle()
+  return data || null
+}
+
+export async function saveDevice({ deviceId, userId, orgName, userName, location }) {
+  const { error } = await adminSupabase
+    .from('user_devices')
+    .upsert({ device_id: deviceId, user_id: userId, org_name: orgName, user_name: userName, location },
+             { onConflict: 'device_id' })
+  if (error) throw error
+}
+
+/* Tag the most recent untagged login log for this user with device details.
+   Retries up to 6×1 s to handle fire-and-forget insert timing. */
+export async function tagLoginWithDevice(userId, { deviceId, userName, location, org }) {
+  if (!userId) return
+  for (let i = 0; i < 6; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 1000))
+    const { data } = await adminSupabase
+      .from('login_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .is('device_id', null)
+      .order('login_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (data?.id) {
+      await adminSupabase
+        .from('login_logs')
+        .update({ device_id: deviceId, user_name: userName, location, org })
+        .eq('id', data.id)
+      return
+    }
+  }
+}
+
+// ── Location manual override ──────────────────────────────────────────────────
+
 /* Manually correct location for a log row, and overwrite the local geo cache
    so the next login on this device uses the corrected value. */
 export async function updateLoginLogLocation(id, { city, region, country }) {

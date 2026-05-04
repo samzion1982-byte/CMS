@@ -1646,6 +1646,10 @@ const CLEANUP_RULES = [
   { bucket: 'family-records',       label: 'Family Records',       maxAgeHours: 168, note: 'Files with "template" in the name are kept forever.' },
 ]
 
+const DB_CLEANUP_RULES = [
+  { table: 'login_logs', label: 'Login Logs', maxAgeDays: 15, dateColumn: 'login_at', note: 'Login sessions older than 15 days are automatically removed.' },
+]
+
 // A file is a template if it has no metadata (folder) or name contains "template"
 const isTemplateFile = f => !f.metadata || f.name.toLowerCase().includes('template')
 
@@ -1706,6 +1710,16 @@ function AutoFlushTab() {
       out.push({ label: rule.label, deleted: toDelete.length, kept, error: delErr?.message ?? null })
     }
 
+    // DB table cleanup
+    for (const rule of DB_CLEANUP_RULES) {
+      const cutoff = new Date(Date.now() - rule.maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
+      const { error: delErr, count } = await adminSupabase
+        .from(rule.table)
+        .delete({ count: 'exact' })
+        .lt(rule.dateColumn, cutoff)
+      out.push({ label: rule.label, deleted: count || 0, kept: 0, error: delErr?.message ?? null, isDb: true })
+    }
+
     const ts = new Date().toISOString()
     try { localStorage.setItem('storage_cleanup_last_run', ts) } catch { /* ignore */ }
     setLastRun(ts)
@@ -1713,7 +1727,7 @@ function AutoFlushTab() {
     setRunning(false)
 
     const total = out.reduce((s, r) => s + r.deleted, 0)
-    toast(total > 0 ? `Cleanup done — ${total} file${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing to remove.', 'success')
+    toast(total > 0 ? `Cleanup done — ${total} item${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing to remove.', 'success')
   }
 
   return (
@@ -1761,6 +1775,30 @@ function AutoFlushTab() {
                 </span>
                 <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f0fdf4', color: '#166534', fontWeight: 500 }}>
                   🛡 Templates safe
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {/* DB cleanup rules */}
+          {DB_CLEANUP_RULES.map(rule => (
+            <div key={rule.table} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc',
+            }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: '#fdf4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Database size={15} style={{ color: '#a855f7' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>{rule.table} · {rule.dateColumn}</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={10} /> {rule.maxAgeDays} days
+                </span>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fdf4ff', color: '#7e22ce', fontWeight: 500 }}>
+                  DB table
                 </span>
               </div>
             </div>

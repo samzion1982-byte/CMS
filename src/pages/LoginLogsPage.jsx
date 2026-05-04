@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { getLoginLogs, updateLoginLogLocation } from '../lib/loginLogs'
+import { getLoginLogs } from '../lib/loginLogs'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle, Clock, MapPin, Monitor, Shield, FileSpreadsheet, Pencil, X, Check,
+  CheckCircle, Clock, MapPin, Shield, FileSpreadsheet,
 } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -69,9 +69,6 @@ export default function LoginLogsPage() {
   const [filterEmail, setFilterEmail] = useState('')
   const [filterRole,  setFilterRole]  = useState('')
   const [emailInput,  setEmailInput]  = useState('')
-  const [editLocId,   setEditLocId]   = useState(null)
-  const [editLocVal,  setEditLocVal]  = useState({ city: '', region: '', country: '' })
-  const [savingLoc,   setSavingLoc]   = useState(false)
 
   if (!ADMIN_ROLES.includes(profile?.role)) {
     return (
@@ -109,47 +106,32 @@ export default function LoginLogsPage() {
     setFilterEmail(emailInput.trim())
   }
 
-  function startEditLoc(r) {
-    setEditLocId(r.id)
-    setEditLocVal({ city: r.city || '', region: r.region || '', country: r.country || '' })
-  }
-
-  async function saveEditLoc(id) {
-    setSavingLoc(true)
-    try {
-      await updateLoginLogLocation(id, editLocVal)
-      setRows(prev => prev.map(r => r.id === id ? { ...r, ...editLocVal } : r))
-      setEditLocId(null)
-    } catch (e) { console.error(e) }
-    setSavingLoc(false)
-  }
-
   async function exportExcel() {
     setExporting(true)
     try {
       const { data: all } = await getLoginLogs({ limit: 10000, offset: 0, email: filterEmail, role: filterRole })
       const columns = [
-        { header: 'Login At',   key: 'login_at',   width: 20 },
-        { header: 'Name',       key: 'name',        width: 26 },
-        { header: 'Email',      key: 'email',       width: 30 },
-        { header: 'Role',       key: 'role',        width: 14 },
-        { header: 'City',       key: 'city',        width: 18 },
-        { header: 'Region',     key: 'region',      width: 18 },
-        { header: 'Country',    key: 'country',     width: 14 },
-        { header: 'IP Address', key: 'ip_address',  width: 36 },
-        { header: 'Browser/OS', key: 'browser',     width: 20 },
-        { header: 'Logout At',  key: 'logout_at',   width: 20 },
-        { header: 'Duration',   key: 'duration',    width: 12 },
+        { header: 'Login At',    key: 'login_at',   width: 20 },
+        { header: 'Name',        key: 'name',        width: 26 },
+        { header: 'Email',       key: 'email',       width: 30 },
+        { header: 'Role',        key: 'role',        width: 14 },
+        { header: 'User Name',   key: 'user_name',   width: 24 },
+        { header: 'Organisation',key: 'org',         width: 26 },
+        { header: 'Area & City', key: 'area_city',   width: 22 },
+        { header: 'Device ID',   key: 'device_id',   width: 16 },
+        { header: 'Browser/OS',  key: 'browser',     width: 20 },
+        { header: 'Logout At',   key: 'logout_at',   width: 20 },
+        { header: 'Duration',    key: 'duration',    width: 12 },
       ]
       const rows = (all || []).map(r => ({
         login_at:   fmtDT(r.login_at),
         name:       r.full_name  || '—',
         email:      r.email      || '—',
         role:       ROLE_STYLES[r.user_role]?.label || r.user_role || '—',
-        city:       r.city       || '—',
-        region:     r.region     || '—',
-        country:    r.country    || '—',
-        ip_address: r.ip_address || '—',
+        user_name:  r.user_name  || '—',
+        org:        r.org        || '—',
+        area_city:  r.location || [r.city, r.region].filter(Boolean).join(', ') || '—',
+        device_id:  r.device_id?.slice(0, 8).toUpperCase() || '—',
         browser:    parseBrowser(r.user_agent),
         logout_at:  fmtDT(r.logout_at),
         duration:   fmtDuration(r.login_at, r.logout_at) || '—',
@@ -234,7 +216,7 @@ export default function LoginLogsPage() {
             <table className="w-full" style={{ fontSize: 12 }}>
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                  {['Login At', 'User', 'Role', 'Location', 'IP Address', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
+                  {['Login At', 'User', 'Role', 'User Name', 'Area & City', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
                     <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -243,7 +225,7 @@ export default function LoginLogsPage() {
                 {rows.map(r => {
                   const role     = ROLE_STYLES[r.user_role] || { label: r.user_role || '—', color: '#374151', bg: '#f9fafb' }
                   const duration = fmtDuration(r.login_at, r.logout_at)
-                  const location = [r.city, r.country].filter(Boolean).join(', ') || '—'
+                  const areaCity = r.location || [r.city, r.region].filter(Boolean).join(', ') || '—'
 
                   return (
                     <tr key={r.id} className="border-t border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/40">
@@ -268,56 +250,27 @@ export default function LoginLogsPage() {
                         </span>
                       </td>
 
-                      {/* Location — click pencil to correct */}
-                      <td className="px-3 py-2.5" style={{ minWidth: 160 }}>
-                        {editLocId === r.id ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <input value={editLocVal.city} onChange={e => setEditLocVal(v => ({ ...v, city: e.target.value }))}
-                              placeholder="City" autoFocus
-                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--accent)', borderRadius: 5, width: '100%', outline: 'none' }}/>
-                            <input value={editLocVal.region} onChange={e => setEditLocVal(v => ({ ...v, region: e.target.value }))}
-                              placeholder="State / Region"
-                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 5, width: '100%', outline: 'none' }}/>
-                            <input value={editLocVal.country} onChange={e => setEditLocVal(v => ({ ...v, country: e.target.value }))}
-                              placeholder="Country"
-                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 5, width: '100%', outline: 'none' }}/>
-                            <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-                              <button onClick={() => saveEditLoc(r.id)} disabled={savingLoc}
-                                style={{ flex: 1, padding: '3px 0', borderRadius: 5, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                                {savingLoc ? <Loader2 size={10} className="animate-spin"/> : <Check size={10}/>} Save
-                              </button>
-                              <button onClick={() => setEditLocId(null)}
-                                style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #d1d5db', background: '#f9fafb', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                                <X size={10}/>
-                              </button>
-                            </div>
+                      {/* User Name (device registration) */}
+                      <td className="px-3 py-2.5">
+                        {r.user_name ? (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>{r.user_name}</div>
+                            {r.org && <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{r.org}</div>}
                           </div>
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
-                            <div style={{ flex: 1 }}>
-                              <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-                                <MapPin size={11} className="text-gray-400 shrink-0" />
-                                {location}
-                              </span>
-                              {r.region && r.region !== r.city && (
-                                <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: 15 }}>{r.region}</div>
-                              )}
-                            </div>
-                            <button onClick={() => startEditLoc(r)} title="Edit location"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '1px 2px', borderRadius: 4, flexShrink: 0, marginTop: 1 }}
-                              onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
-                              onMouseLeave={e => e.currentTarget.style.color = '#9ca3af'}>
-                              <Pencil size={11}/>
-                            </button>
-                          </div>
+                          <span style={{ fontSize: 11, color: '#d1d5db' }}>—</span>
                         )}
                       </td>
 
-                      {/* IP */}
-                      <td className="px-3 py-2.5 text-gray-500 dark:text-gray-400 font-mono"
-                        style={{ fontSize: 11, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        title={r.ip_address || ''}>
-                        {r.ip_address || '—'}
+                      {/* Area & City (device registration, fallback to IP) */}
+                      <td className="px-3 py-2.5">
+                        <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                          <MapPin size={11} className="text-gray-400 shrink-0" />
+                          {areaCity}
+                        </span>
+                        {r.location && r.country && (
+                          <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: 15 }}>{r.country}</div>
+                        )}
                       </td>
 
                       {/* Browser */}
