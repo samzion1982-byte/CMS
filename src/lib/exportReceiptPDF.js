@@ -79,35 +79,32 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   let sealB64 = null
   if (church?.treasurer_seal_url) sealB64 = await toBase64(church.treasurer_seal_url)
 
-  // ── Page border — double line, navy, ~0.75" (19mm) white margin ──
-  // Outer rect
+  // ── Page border — double thin line, navy, ~0.5" (13mm) white margin
   doc.setDrawColor(...NAVY)
-  doc.setLineWidth(1.2)
-  doc.rect(19, 19, PW - 38, PH - 38, 'S')
-  // Inner rect (2 mm inside outer)
-  doc.setLineWidth(0.4)
-  doc.rect(21, 21, PW - 42, PH - 42, 'S')
+  doc.setLineWidth(0.5)
+  doc.rect(13, 13, PW - 26, PH - 26, 'S')   // outer thin
+  doc.setLineWidth(0.3)
+  doc.rect(15, 15, PW - 30, PH - 30, 'S')   // inner thin
 
   // Content margins (2 mm inside inner border)
-  const ML  = 23
-  const MR  = 23
-  const CW  = PW - ML - MR   // 102 mm
-  const BL  = 21             // inner border left x
-  const BR  = PW - 21        // inner border right x
+  const ML  = 17
+  const MR  = 17
+  const CW  = PW - ML - MR   // 114 mm
+  const BL  = 15              // inner border left x
+  const BR  = PW - 15         // inner border right x
 
-  let y = 23   // start just inside inner border
+  let y = 18   // start just inside inner border
 
-  // ── Bible verse ───────────────────────────────────────────────────
+  // ── Bible verse — fixed 2 lines, 6pt ─────────────────────────────
   doc.setFont('helvetica', 'italic')
-  doc.setFontSize(7)
+  doc.setFontSize(6)
   doc.setTextColor(...MAROON)
-  const verseFull = '"Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
-  const verseLines = doc.splitTextToSize(verseFull, CW - 2)
-  verseLines.forEach((line, i) => doc.text(line, PW / 2, y + i * 3.8, { align: 'center' }))
-  y += verseLines.length * 3.8 + 6   // extra gap before church name
+  doc.text('"Each one must give as he has decided in his heart,', PW / 2, y, { align: 'center' })
+  doc.text('not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7', PW / 2, y + 3.5, { align: 'center' })
+  y += 3.5 + 6   // 2 lines + gap before church name
 
-  // ── Church name ───────────────────────────────────────────────────
-  doc.setFont('helvetica', 'bold')
+  // ── Church name — bold serif (Times) for a thick, stylish look ───
+  doc.setFont('times', 'bold')
   doc.setFontSize(20)
   doc.setTextColor(...NAVY)
   doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
@@ -190,8 +187,8 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   y += IH + 2
 
   // ── Table ─────────────────────────────────────────────────────────
-  // Column widths: 7+44+18+18+15 = 102
-  const cSNo=7, cDsc=44, cAmt=18, cMos=18, cTot=15
+  // Column widths: 8+50+20+19+17 = 114
+  const cSNo=8, cDsc=50, cAmt=20, cMos=19, cTot=17
 
   // Header
   doc.setFillColor(...TBL_H)
