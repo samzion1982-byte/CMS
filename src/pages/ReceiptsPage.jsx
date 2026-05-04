@@ -203,12 +203,26 @@ export default function ReceiptsPage() {
       const { data: items } = await supabase
         .from('receipt_items').select('category_id,amt,months,total')
         .eq('receipt_id', row.id)
-      await exportReceiptPDF({
+
+      const blob = await exportReceiptPDF({
         receipt: row,
         receiptItems: items || [],
         categories,
         church,
       })
+
+      const fy       = row.financial_year || 'unknown'
+      const fileName = `${row.receipt_number || 'receipt'}.pdf`
+      const path     = `${fy}/${fileName}`
+
+      const { error: upErr } = await supabase.storage
+        .from('receipt-pdfs')
+        .upload(path, blob, { contentType: 'application/pdf', upsert: true })
+
+      if (upErr) throw new Error(upErr.message)
+
+      const { data: urlData } = supabase.storage.from('receipt-pdfs').getPublicUrl(path)
+      window.open(urlData.publicUrl, '_blank')
     } catch (e) {
       toast('PDF failed: ' + e.message, 'error')
     } finally {

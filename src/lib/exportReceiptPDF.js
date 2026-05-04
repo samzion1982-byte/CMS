@@ -277,5 +277,5 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
             + '  ' + now.toLocaleTimeString('en-IN', { hour12: false })
   doc.text(stamp, PW - MR, PH - 7, { align: 'right' })
 
-  doc.save(`Receipt_${receipt.receipt_number || 'PDF'}.pdf`)
+  return doc.output('blob')
 }
