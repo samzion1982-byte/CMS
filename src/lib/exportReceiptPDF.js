@@ -93,11 +93,10 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   doc.setFont('helvetica', 'italic')
   doc.setFontSize(5.5)
   doc.setTextColor(...RED)
-  const verse1 = '"Each one must give as he has decided in his heart,'
-  const verse2 = 'not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
-  doc.text(verse1, PW / 2, y,       { align: 'center' })
-  doc.text(verse2, PW / 2, y + 3.2, { align: 'center' })
-  y += 7
+  const verseFull = '"Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
+  const verseLines = doc.splitTextToSize(verseFull, CW - 4)
+  verseLines.forEach((line, i) => doc.text(line, PW / 2, y + i * 3.2, { align: 'center' }))
+  y += verseLines.length * 3.2 + 1
 
   // ── Church name ───────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
@@ -110,8 +109,8 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(...RED)
-  const loc = [church?.address, church?.city, church?.pincode ? '- ' + church.pincode : '']
-    .filter(Boolean).join(', ')
+  const locBase = [church?.address, church?.city].filter(Boolean).join(', ')
+  const loc = locBase + (church?.pincode ? ' - ' + church.pincode : '')
   doc.text(loc, PW / 2, y, { align: 'center' })
   y += 4
 
