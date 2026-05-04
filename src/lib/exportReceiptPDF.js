@@ -63,83 +63,90 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' })
 
-  // A5 dimensions
+  // A5: 148 × 210 mm
   const PW = 148, PH = 210
-  const ML = 8,   MR = 8
-  const CW = PW - ML - MR   // 132 mm
 
-  // ── Colour palette ───────────────────────────────────────────────
-  const NAVY    = [30,  58,  95]   // church name, values, S.No, border
-  const MAROON  = [128, 0,   0]    // verse, location, labels, total amount
-  const BANNER  = [31,  73,  125]  // Payment Receipt banner bg
-  const TBL_HDR = [0,   112, 192]  // table column header bg
-  const ROW_BG  = [217, 226, 243]  // alternating row tint
-  const WHITE   = [255, 255, 255]
-  const LIGHT   = [235, 241, 252]  // footer row bg
+  // ── Colour palette ────────────────────────────────────────────────
+  const NAVY   = [30,  58,  95]
+  const MAROON = [128, 0,   0]
+  const BANNER = [31,  73,  125]
+  const TBL_H  = [0,   112, 192]
+  const ROW_BG = [217, 226, 243]
+  const WHITE  = [255, 255, 255]
+  const LIGHT  = [235, 241, 252]
 
   // ── Load seal early ───────────────────────────────────────────────
   let sealB64 = null
   if (church?.treasurer_seal_url) sealB64 = await toBase64(church.treasurer_seal_url)
 
-  // ── Double outer border (navy blue) ──────────────────────────────
+  // ── Page border — double line, navy, ~0.75" (19mm) white margin ──
+  // Outer rect
   doc.setDrawColor(...NAVY)
   doc.setLineWidth(1.2)
-  doc.rect(3, 3, PW - 6, PH - 6, 'S')     // outer line
+  doc.rect(19, 19, PW - 38, PH - 38, 'S')
+  // Inner rect (2 mm inside outer)
   doc.setLineWidth(0.4)
-  doc.rect(5.5, 5.5, PW - 11, PH - 11, 'S') // inner line
+  doc.rect(21, 21, PW - 42, PH - 42, 'S')
 
-  let y = 9
+  // Content margins (2 mm inside inner border)
+  const ML  = 23
+  const MR  = 23
+  const CW  = PW - ML - MR   // 102 mm
+  const BL  = 21             // inner border left x
+  const BR  = PW - 21        // inner border right x
+
+  let y = 23   // start just inside inner border
 
   // ── Bible verse ───────────────────────────────────────────────────
   doc.setFont('helvetica', 'italic')
-  doc.setFontSize(5.5)
+  doc.setFontSize(7)
   doc.setTextColor(...MAROON)
   const verseFull = '"Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
-  const verseLines = doc.splitTextToSize(verseFull, CW - 4)
-  verseLines.forEach((line, i) => doc.text(line, PW / 2, y + i * 3.2, { align: 'center' }))
-  y += verseLines.length * 3.2 + 5  // extra spacing before church name
+  const verseLines = doc.splitTextToSize(verseFull, CW - 2)
+  verseLines.forEach((line, i) => doc.text(line, PW / 2, y + i * 3.8, { align: 'center' }))
+  y += verseLines.length * 3.8 + 6   // extra gap before church name
 
   // ── Church name ───────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
+  doc.setFontSize(20)
   doc.setTextColor(...NAVY)
   doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
-  y += 7.5
+  y += 9
 
   // ── Location ──────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.setFontSize(10)
   doc.setTextColor(...MAROON)
   const locBase = [church?.address, church?.city].filter(Boolean).join(', ')
   const loc = locBase + (church?.pincode ? ' - ' + church.pincode : '')
   doc.text(loc, PW / 2, y, { align: 'center' })
-  y += 4.5
+  y += 5
 
-  // Divider — extends to outer border edges
+  // ── Divider — from inner border left to inner border right ────────
   doc.setDrawColor(...NAVY)
   doc.setLineWidth(0.6)
-  doc.line(3, y, PW - 3, y)
+  doc.line(BL, y, BR, y)
   y += 3
 
   // ── "Payment Receipt" banner ──────────────────────────────────────
   doc.setFillColor(...BANNER)
-  doc.rect(ML, y, CW, 8, 'F')
+  doc.rect(ML, y, CW, 9, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
+  doc.setFontSize(12)
   doc.setTextColor(...WHITE)
-  doc.text('Payment Receipt', PW / 2, y + 5.5, { align: 'center' })
-  y += 10
+  doc.text('Payment Receipt', PW / 2, y + 6.2, { align: 'center' })
+  y += 12
 
   // ── Info row helpers ──────────────────────────────────────────────
-  const IH = 9   // info row height
+  const IH = 8   // info row height
 
   function lbl(txt, x, ry) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...MAROON)
-    doc.text(txt, x, ry + 5.8)
+    doc.text(txt, x, ry + 5.2)
   }
   function val(txt, x, ry) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...NAVY)
-    doc.text(String(txt || ''), x, ry + 5.8)
+    doc.text(String(txt || ''), x, ry + 5.2)
   }
   function rowBox(ry, h = IH) {
     doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.25)
@@ -153,10 +160,10 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   // Row 1: Member ID | Member Name
   rowBox(y)
   vl(ML + CW / 2, y)
-  lbl('Member ID  :',    ML + 2,            y)
-  val(receipt.member_id,  ML + 22,           y)
-  lbl('Member Name  :',  ML + CW / 2 + 2,   y)
-  val(receipt.member_name, ML + CW / 2 + 24, y)
+  lbl('Member ID  :',     ML + 2,           y)
+  val(receipt.member_id,  ML + 21,           y)
+  lbl('Member Name  :',   ML + CW / 2 + 2,  y)
+  val(receipt.member_name, ML + CW / 2 + 23, y)
   y += IH
 
   // Row 2: Receipt No | Date | Months Paid
@@ -164,79 +171,72 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   rowBox(y)
   vl(ML + c3, y); vl(ML + c3 * 2, y)
   lbl('Receipt No  :', ML + 2, y)
-  val(receipt.receipt_number, ML + 20, y)
+  val(receipt.receipt_number, ML + 19, y)
   const dp = (receipt.receipt_date || '').split('-')
   lbl('Date  :', ML + c3 + 2, y)
-  val(dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : '', ML + c3 + 13, y)
+  val(dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : '', ML + c3 + 12, y)
   lbl('Months Paid  :', ML + c3 * 2 + 2, y)
-  val(formatMonthsPaid(receipt.month_paid), ML + c3 * 2 + 22, y)
+  val(formatMonthsPaid(receipt.month_paid), ML + c3 * 2 + 21, y)
   y += IH
 
   // Row 3: Payment Type | Cheque/DD/Trans.No
   rowBox(y)
   vl(ML + CW / 2, y)
   lbl('Payment Type  :', ML + 2, y)
-  val(receipt.payment_mode, ML + 25, y)
+  val(receipt.payment_mode, ML + 24, y)
   lbl('Cheque / DD / Trans.No  :', ML + CW / 2 + 2, y)
-  val([receipt.cheque_dd_no, receipt.transaction_date].filter(Boolean).join(' / '), ML + CW / 2 + 38, y)
+  val([receipt.cheque_dd_no, receipt.transaction_date].filter(Boolean).join(' / '),
+      ML + CW / 2 + 37, y)
   y += IH + 2
 
   // ── Table ─────────────────────────────────────────────────────────
-  // Column widths: 9+60+22+20+21 = 132
-  const cSNo=9, cDsc=60, cAmt=22, cMos=20, cTot=21
+  // Column widths: 7+44+18+18+15 = 102
+  const cSNo=7, cDsc=44, cAmt=18, cMos=18, cTot=15
 
-  // Header row
-  doc.setFillColor(...TBL_HDR)
+  // Header
+  doc.setFillColor(...TBL_H)
   doc.rect(ML, y, CW, 7, 'F')
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...WHITE)
   let cx = ML
-  ;[
-    [cSNo, 'S.No'], [cDsc, 'Particulars'], [cAmt, 'Amount'], [cMos, 'Months'], [cTot, 'Total'],
-  ].forEach(([w, label]) => {
-    doc.text(label, cx + w / 2, y + 4.8, { align: 'center' })
-    cx += w
-  })
+  ;[[cSNo,'S.No'],[cDsc,'Particulars'],[cAmt,'Amount'],[cMos,'Months'],[cTot,'Total']]
+    .forEach(([w, label]) => {
+      doc.text(label, cx + w / 2, y + 4.8, { align: 'center' })
+      cx += w
+    })
   y += 7
 
   // Data rows
-  const RH = 5.5
+  const RH = 4.8
   const imap = {}
   ;(receiptItems || []).forEach(it => { imap[it.category_id] = it })
 
   ;(categories || []).forEach((cat, i) => {
-    const it      = imap[cat.id]
-    const amt     = it?.amt   ? Number(it.amt).toLocaleString('en-IN')   : ''
-    const mos     = it?.months ? (Number(it.months) === 1 ? '1 Month' : `${it.months} Months`) : ''
-    const tot     = it?.total ? Number(it.total).toLocaleString('en-IN') : ''
-    const tinted  = i % 2 === 0
+    const it  = imap[cat.id]
+    const amt = it?.amt   ? Number(it.amt).toLocaleString('en-IN')   : ''
+    const mos = it?.months ? (Number(it.months) === 1 ? '1 Month' : `${it.months} Months`) : ''
+    const tot = it?.total  ? Number(it.total).toLocaleString('en-IN') : ''
 
-    if (tinted) { doc.setFillColor(...ROW_BG); doc.rect(ML, y, CW, RH, 'F') }
+    if (i % 2 === 0) { doc.setFillColor(...ROW_BG); doc.rect(ML, y, CW, RH, 'F') }
     doc.setDrawColor(190, 190, 190); doc.setLineWidth(0.2)
     doc.rect(ML, y, CW, RH, 'S')
     let dx = ML
     ;[cSNo, cDsc, cAmt, cMos].forEach(w => { dx += w; doc.line(dx, y, dx, y + RH) })
 
-    const ty = y + 3.8
+    const ty = y + 3.3
 
-    // S.No — single colour (navy)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
-    doc.setTextColor(...NAVY)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...NAVY)
     doc.text(String(i + 1), ML + cSNo / 2, ty, { align: 'center' })
 
-    // Particulars
-    doc.setTextColor(...NAVY)
+    doc.setFontSize(7)
     doc.text(cat.name || '', ML + cSNo + 2, ty)
 
-    // Amount
-    doc.setFont('helvetica', amt ? 'bold' : 'normal')
+    doc.setFont('helvetica', amt ? 'bold' : 'normal'); doc.setFontSize(7.5)
     doc.text(amt, ML + cSNo + cDsc + cAmt - 1.5, ty, { align: 'right' })
 
-    // Months
-    doc.setFont('helvetica', 'normal')
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7)
     doc.text(mos, ML + cSNo + cDsc + cAmt + cMos / 2, ty, { align: 'center' })
 
-    // Total
-    doc.setFont('helvetica', tot ? 'bold' : 'normal')
+    doc.setFont('helvetica', tot ? 'bold' : 'normal'); doc.setFontSize(7.5)
     doc.text(tot, ML + CW - 1.5, ty, { align: 'right' })
 
     y += RH
@@ -252,24 +252,24 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   doc.line(divX, y, divX, y + FH)
 
   doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(50, 50, 50)
-  const wordsText = amountInWords(receipt.grand_total || 0)
-  doc.text(doc.splitTextToSize(wordsText, divX - ML - 3), ML + 2, y + 4.5)
+  doc.text(doc.splitTextToSize(amountInWords(receipt.grand_total || 0), divX - ML - 2), ML + 2, y + 4.5)
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...MAROON)
   doc.text(Number(receipt.grand_total || 0).toLocaleString('en-IN'), ML + CW - 1.5, y + 4.8, { align: 'right' })
-  y += FH + 5
+  y += FH + 4
 
-  // ── Treasurer seal (placed just after footer content) ────────────
+  // ── Treasurer seal ────────────────────────────────────────────────
   if (sealB64) {
-    doc.addImage(sealB64, ML + CW - 28, y, 28, 28)
+    doc.addImage(sealB64, ML + CW - 18, y, 18, 18)
+    y += 20
   }
 
   // ── Timestamp ─────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(160, 160, 160)
-  const now   = new Date()
+  const now = new Date()
   const stamp = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + '  ' + now.toLocaleTimeString('en-IN', { hour12: false })
-  doc.text(stamp, PW - MR, PH - 6, { align: 'right' })
+  doc.text(stamp, BR, PH - 5, { align: 'right' })
 
   return doc.output('blob')
 }
