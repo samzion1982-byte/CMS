@@ -1,7 +1,7 @@
 import { adminSupabase } from './supabase'
 
 const LS_KEY         = id => `login_log_id_${id}`
-const GEO_CACHE_KEY  = 'church_cms_geo_v2'        // v2 clears old stale cache
+const GEO_CACHE_KEY  = 'church_cms_geo_v3'        // v3 — ipinfo token
 const GPS_TTL_MS     = 30 * 24 * 60 * 60 * 1000  // GPS result: 30 days
 const IP_TTL_MS      =      24 * 60 * 60 * 1000  // IP result:   1 day
 
@@ -66,10 +66,13 @@ async function ipFetch(url, map) {
 
 /* Run all IP providers in parallel — take whichever resolves first with valid data */
 async function fetchByIP() {
+  const IPINFO_TOKEN = 'e2bd6cd58f0cd7'
   const race = Promise.any([
+    // ipinfo.io with auth token — primary, best database
+    ipFetch(`https://ipinfo.io/json?token=${IPINFO_TOKEN}`, d =>
+      d.ip ? { ipAddress: d.ip, city: d.city || null, region: d.region || null, country: d.country || null } : null),
     ipFetch('https://get.geojs.io/v1/ip/geo.json',   d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country || null })),
     ipFetch('https://freeipapi.com/api/json',          d => d.ipAddress ? { ipAddress: d.ipAddress, city: d.cityName || null, region: d.regionName || null, country: d.countryName || null } : null),
-    ipFetch('https://ipinfo.io/json',                  d => d.ip ? { ipAddress: d.ip, city: d.city || null, region: d.region || null, country: d.country || null } : null),
     ipFetch('https://ipapi.co/json/',                  d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country_name || null })),
   ]).catch(() => null)
   return race
