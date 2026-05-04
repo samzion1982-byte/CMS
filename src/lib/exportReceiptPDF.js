@@ -68,13 +68,12 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   const ML = 8,   MR = 8
   const CW = PW - ML - MR   // 132 mm
 
-  // ── Colour palette (matches screenshot) ──────────────────────────
-  const NAVY    = [30,  58,  95]   // church name, cell values, non-alt S.No
-  const RED     = [192, 0,   0]    // location, labels, total amount
+  // ── Colour palette ───────────────────────────────────────────────
+  const NAVY    = [30,  58,  95]   // church name, values, S.No, border
+  const MAROON  = [128, 0,   0]    // verse, location, labels, total amount
   const BANNER  = [31,  73,  125]  // Payment Receipt banner bg
   const TBL_HDR = [0,   112, 192]  // table column header bg
   const ROW_BG  = [217, 226, 243]  // alternating row tint
-  const ORANGE  = [226, 107, 10]   // S.No on tinted rows
   const WHITE   = [255, 255, 255]
   const LIGHT   = [235, 241, 252]  // footer row bg
 
@@ -82,42 +81,44 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   let sealB64 = null
   if (church?.treasurer_seal_url) sealB64 = await toBase64(church.treasurer_seal_url)
 
-  // ── Outer border ──────────────────────────────────────────────────
-  doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(0.6)
-  doc.rect(4, 4, PW - 8, PH - 8, 'S')
+  // ── Double outer border (navy blue) ──────────────────────────────
+  doc.setDrawColor(...NAVY)
+  doc.setLineWidth(1.2)
+  doc.rect(3, 3, PW - 6, PH - 6, 'S')     // outer line
+  doc.setLineWidth(0.4)
+  doc.rect(5.5, 5.5, PW - 11, PH - 11, 'S') // inner line
 
-  let y = 8
+  let y = 9
 
   // ── Bible verse ───────────────────────────────────────────────────
   doc.setFont('helvetica', 'italic')
   doc.setFontSize(5.5)
-  doc.setTextColor(...RED)
+  doc.setTextColor(...MAROON)
   const verseFull = '"Each one must give as he has decided in his heart, not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
   const verseLines = doc.splitTextToSize(verseFull, CW - 4)
   verseLines.forEach((line, i) => doc.text(line, PW / 2, y + i * 3.2, { align: 'center' }))
-  y += verseLines.length * 3.2 + 1
+  y += verseLines.length * 3.2 + 5  // extra spacing before church name
 
   // ── Church name ───────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(15)
+  doc.setFontSize(18)
   doc.setTextColor(...NAVY)
   doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
-  y += 6.5
+  y += 7.5
 
   // ── Location ──────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
-  doc.setTextColor(...RED)
+  doc.setTextColor(...MAROON)
   const locBase = [church?.address, church?.city].filter(Boolean).join(', ')
   const loc = locBase + (church?.pincode ? ' - ' + church.pincode : '')
   doc.text(loc, PW / 2, y, { align: 'center' })
-  y += 4
+  y += 4.5
 
-  // Divider
+  // Divider — extends to outer border edges
   doc.setDrawColor(...NAVY)
-  doc.setLineWidth(0.5)
-  doc.line(ML, y, PW - MR, y)
+  doc.setLineWidth(0.6)
+  doc.line(3, y, PW - 3, y)
   y += 3
 
   // ── "Payment Receipt" banner ──────────────────────────────────────
@@ -130,15 +131,15 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   y += 10
 
   // ── Info row helpers ──────────────────────────────────────────────
-  const IH = 7.5   // info row height
+  const IH = 9   // info row height
 
   function lbl(txt, x, ry) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...RED)
-    doc.text(txt, x, ry + 5)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...MAROON)
+    doc.text(txt, x, ry + 5.8)
   }
   function val(txt, x, ry) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...NAVY)
-    doc.text(String(txt || ''), x, ry + 5)
+    doc.text(String(txt || ''), x, ry + 5.8)
   }
   function rowBox(ry, h = IH) {
     doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.25)
@@ -217,9 +218,9 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
 
     const ty = y + 3.8
 
-    // S.No — orange on tinted rows, navy on white
+    // S.No — single colour (navy)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
-    doc.setTextColor(...(tinted ? ORANGE : NAVY))
+    doc.setTextColor(...NAVY)
     doc.text(String(i + 1), ML + cSNo / 2, ty, { align: 'center' })
 
     // Particulars
@@ -254,14 +255,13 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   const wordsText = amountInWords(receipt.grand_total || 0)
   doc.text(doc.splitTextToSize(wordsText, divX - ML - 3), ML + 2, y + 4.5)
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...RED)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...MAROON)
   doc.text(Number(receipt.grand_total || 0).toLocaleString('en-IN'), ML + CW - 1.5, y + 4.8, { align: 'right' })
   y += FH + 5
 
-  // ── Treasurer seal (fixed to bottom-right area) ───────────────────
-  const sealY = PH - 14 - 28   // always near bottom
+  // ── Treasurer seal (placed just after footer content) ────────────
   if (sealB64) {
-    doc.addImage(sealB64, ML + CW - 28, sealY, 28, 28)
+    doc.addImage(sealB64, ML + CW - 28, y, 28, 28)
   }
 
   // ── Timestamp ─────────────────────────────────────────────────────
