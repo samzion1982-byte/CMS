@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   exportReceiptPDF.js — Individual payment receipt PDF (A4 portrait)
+   exportReceiptPDF.js — Payment receipt PDF (A5 portrait)
    ═══════════════════════════════════════════════════════════════ */
 
 const FY_MONTHS = ['April','May','June','July','August','September','October','November','December','January','February','March']
@@ -25,257 +25,252 @@ export function formatMonthsPaid(monthPaid) {
   return indices.map(i => FY_MON_S[i]).join(', ')
 }
 
-// ── Amount in words (Indian numbering) ────────────────────────────
+// ── Amount in words (Indian) ──────────────────────────────────────
 const _ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
   'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen']
 const _tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety']
 
 function _inWords(n) {
-  if (n === 0) return ''
-  if (n < 20)  return _ones[n]
-  if (n < 100) return _tens[Math.floor(n / 10)] + (n % 10 ? ' ' + _ones[n % 10] : '')
-  if (n < 1000)    return _ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + _inWords(n % 100) : '')
-  if (n < 100000)  return _inWords(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + _inWords(n % 1000) : '')
-  if (n < 10000000)return _inWords(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + _inWords(n % 100000) : '')
+  if (n === 0)        return ''
+  if (n < 20)         return _ones[n]
+  if (n < 100)        return _tens[Math.floor(n / 10)] + (n % 10 ? ' ' + _ones[n % 10] : '')
+  if (n < 1000)       return _ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + _inWords(n % 100) : '')
+  if (n < 100000)     return _inWords(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + _inWords(n % 1000) : '')
+  if (n < 10000000)   return _inWords(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + _inWords(n % 100000) : '')
   return _inWords(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + _inWords(n % 10000000) : '')
 }
 
 function amountInWords(amount) {
   const n = Math.round(Number(amount) || 0)
-  if (n === 0) return '(Rupees Zero Only)'
-  return `(Rupees ${_inWords(n)} Only)`
+  return n === 0 ? '(Rupees Zero Only)' : `(Rupees ${_inWords(n)} Only)`
 }
 
-// ── Image → base64 ─────────────────────────────────────────────────
+// ── Image → base64 ────────────────────────────────────────────────
 async function toBase64(url) {
   try {
-    const res  = await fetch(url)
-    const blob = await res.blob()
-    return await new Promise((resolve, reject) => {
+    const blob = await fetch(url).then(r => r.blob())
+    return await new Promise((res, rej) => {
       const reader = new FileReader()
-      reader.onloadend = () => resolve(reader.result)
-      reader.onerror  = reject
+      reader.onloadend = () => res(reader.result)
+      reader.onerror  = rej
       reader.readAsDataURL(blob)
     })
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-// ── Main export ─────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────
 export async function exportReceiptPDF({ receipt, receiptItems, categories, church }) {
   const { jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' })
 
-  const PW = 210, PH = 297
-  const ML = 14, MR = 14
-  const CW = PW - ML - MR  // 182mm
+  // A5 dimensions
+  const PW = 148, PH = 210
+  const ML = 8,   MR = 8
+  const CW = PW - ML - MR   // 132 mm
 
-  let y = 12
+  // ── Colour palette (matches screenshot) ──────────────────────────
+  const NAVY    = [30,  58,  95]   // church name, cell values, non-alt S.No
+  const RED     = [192, 0,   0]    // location, labels, total amount
+  const BANNER  = [31,  73,  125]  // Payment Receipt banner bg
+  const TBL_HDR = [0,   112, 192]  // table column header bg
+  const ROW_BG  = [217, 226, 243]  // alternating row tint
+  const ORANGE  = [226, 107, 10]   // S.No on tinted rows
+  const WHITE   = [255, 255, 255]
+  const LIGHT   = [235, 241, 252]  // footer row bg
 
-  // ── Treasurer seal (load early so it's ready when we need it) ────
+  // ── Load seal early ───────────────────────────────────────────────
   let sealB64 = null
-  if (church?.treasurer_seal_url) {
-    sealB64 = await toBase64(church.treasurer_seal_url)
-  }
+  if (church?.treasurer_seal_url) sealB64 = await toBase64(church.treasurer_seal_url)
 
-  // ── Church header ────────────────────────────────────────────────
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
-  doc.setTextColor(30, 58, 95)
-  doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
-  y += 8
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(180, 50, 50)
-  const locParts = [church?.address, church?.city, church?.pincode ? '- ' + church.pincode : ''].filter(Boolean)
-  doc.text(locParts.join(', '), PW / 2, y, { align: 'center' })
-  y += 4
-
-  doc.setDrawColor(30, 58, 95)
+  // ── Outer border ──────────────────────────────────────────────────
+  doc.setDrawColor(0, 0, 0)
   doc.setLineWidth(0.6)
-  doc.line(ML, y, PW - MR, y)
+  doc.rect(4, 4, PW - 8, PH - 8, 'S')
+
+  let y = 8
+
+  // ── Bible verse ───────────────────────────────────────────────────
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(5.5)
+  doc.setTextColor(...RED)
+  const verse1 = '"Each one must give as he has decided in his heart,'
+  const verse2 = 'not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7'
+  doc.text(verse1, PW / 2, y,       { align: 'center' })
+  doc.text(verse2, PW / 2, y + 3.2, { align: 'center' })
+  y += 7
+
+  // ── Church name ───────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.setTextColor(...NAVY)
+  doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
+  y += 6.5
+
+  // ── Location ──────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(...RED)
+  const loc = [church?.address, church?.city, church?.pincode ? '- ' + church.pincode : '']
+    .filter(Boolean).join(', ')
+  doc.text(loc, PW / 2, y, { align: 'center' })
   y += 4
 
-  // ── "Payment Receipt" banner ─────────────────────────────────────
-  doc.setFillColor(0, 112, 192)
-  doc.rect(ML, y, CW, 9, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.setTextColor(255, 255, 255)
-  doc.text('Payment Receipt', PW / 2, y + 6.2, { align: 'center' })
-  y += 12
+  // Divider
+  doc.setDrawColor(...NAVY)
+  doc.setLineWidth(0.5)
+  doc.line(ML, y, PW - MR, y)
+  y += 3
 
-  // ── Helper: draw a bordered info row ────────────────────────────
-  const BOX_H = 9
-  function infoLabel(txt, x, rowY) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.setTextColor(0, 0, 128)
-    doc.text(txt, x, rowY + 5.8)
+  // ── "Payment Receipt" banner ──────────────────────────────────────
+  doc.setFillColor(...BANNER)
+  doc.rect(ML, y, CW, 8, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(...WHITE)
+  doc.text('Payment Receipt', PW / 2, y + 5.5, { align: 'center' })
+  y += 10
+
+  // ── Info row helpers ──────────────────────────────────────────────
+  const IH = 7.5   // info row height
+
+  function lbl(txt, x, ry) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...RED)
+    doc.text(txt, x, ry + 5)
   }
-  function infoValue(txt, x, rowY) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.setTextColor(20, 20, 20)
-    doc.text(String(txt || ''), x, rowY + 5.8)
+  function val(txt, x, ry) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...NAVY)
+    doc.text(String(txt || ''), x, ry + 5)
   }
-  function boxBorder(bX, bY, w, h) {
-    doc.setDrawColor(170, 170, 170)
-    doc.setLineWidth(0.3)
-    doc.rect(bX, bY, w, h, 'S')
+  function rowBox(ry, h = IH) {
+    doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.25)
+    doc.rect(ML, ry, CW, h, 'S')
   }
-  function vDiv(x, bY, h) {
-    doc.setDrawColor(170, 170, 170)
-    doc.setLineWidth(0.3)
-    doc.line(x, bY, x, bY + h)
+  function vl(x, ry, h = IH) {
+    doc.setDrawColor(160, 160, 160); doc.setLineWidth(0.25)
+    doc.line(x, ry, x, ry + h)
   }
 
   // Row 1: Member ID | Member Name
-  boxBorder(ML, y, CW, BOX_H)
-  vDiv(ML + CW / 2, y, BOX_H)
-  infoLabel('Member ID  :', ML + 3, y)
-  infoValue(receipt.member_id || '', ML + 27, y)
-  infoLabel('Member Name  :', ML + CW / 2 + 3, y)
-  infoValue(receipt.member_name || '', ML + CW / 2 + 33, y)
-  y += BOX_H + 1
+  rowBox(y)
+  vl(ML + CW / 2, y)
+  lbl('Member ID  :',    ML + 2,            y)
+  val(receipt.member_id,  ML + 22,           y)
+  lbl('Member Name  :',  ML + CW / 2 + 2,   y)
+  val(receipt.member_name, ML + CW / 2 + 24, y)
+  y += IH
 
   // Row 2: Receipt No | Date | Months Paid
-  const col3 = CW / 3
-  boxBorder(ML, y, CW, BOX_H)
-  vDiv(ML + col3, y, BOX_H)
-  vDiv(ML + col3 * 2, y, BOX_H)
-  infoLabel('Receipt No  :', ML + 3, y)
-  infoValue(receipt.receipt_number || '', ML + 27, y)
-  const dParts = (receipt.receipt_date || '').split('-')
-  const dateStr = dParts.length === 3 ? `${dParts[2]}-${dParts[1]}-${dParts[0]}` : ''
-  infoLabel('Date  :', ML + col3 + 3, y)
-  infoValue(dateStr, ML + col3 + 17, y)
-  infoLabel('Months Paid  :', ML + col3 * 2 + 3, y)
-  infoValue(formatMonthsPaid(receipt.month_paid), ML + col3 * 2 + 30, y)
-  y += BOX_H + 1
+  const c3 = CW / 3
+  rowBox(y)
+  vl(ML + c3, y); vl(ML + c3 * 2, y)
+  lbl('Receipt No  :', ML + 2, y)
+  val(receipt.receipt_number, ML + 20, y)
+  const dp = (receipt.receipt_date || '').split('-')
+  lbl('Date  :', ML + c3 + 2, y)
+  val(dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : '', ML + c3 + 13, y)
+  lbl('Months Paid  :', ML + c3 * 2 + 2, y)
+  val(formatMonthsPaid(receipt.month_paid), ML + c3 * 2 + 22, y)
+  y += IH
 
   // Row 3: Payment Type | Cheque/DD/Trans.No
-  boxBorder(ML, y, CW, BOX_H)
-  vDiv(ML + CW / 2, y, BOX_H)
-  infoLabel('Payment Type  :', ML + 3, y)
-  infoValue(receipt.payment_mode || '', ML + 33, y)
-  infoLabel('Cheque / DD / Trans.No  :', ML + CW / 2 + 3, y)
-  const txnVal = [receipt.cheque_dd_no, receipt.transaction_date].filter(Boolean).join('  /  ')
-  infoValue(txnVal, ML + CW / 2 + 53, y)
-  y += BOX_H + 3
+  rowBox(y)
+  vl(ML + CW / 2, y)
+  lbl('Payment Type  :', ML + 2, y)
+  val(receipt.payment_mode, ML + 25, y)
+  lbl('Cheque / DD / Trans.No  :', ML + CW / 2 + 2, y)
+  val([receipt.cheque_dd_no, receipt.transaction_date].filter(Boolean).join(' / '), ML + CW / 2 + 38, y)
+  y += IH + 2
 
-  // ── Table ────────────────────────────────────────────────────────
-  const cSNo = 12, cDesc = 85, cAmt = 28, cMos = 27, cTot = 30
-  // 12+85+28+27+30 = 182 ✓
+  // ── Table ─────────────────────────────────────────────────────────
+  // Column widths: 9+60+22+20+21 = 132
+  const cSNo=9, cDsc=60, cAmt=22, cMos=20, cTot=21
 
   // Header row
-  doc.setFillColor(0, 112, 192)
-  doc.rect(ML, y, CW, 8, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9)
-  doc.setTextColor(255, 255, 255)
-
-  const cols = [
-    { w: cSNo,  label: 'S.No',        align: 'center' },
-    { w: cDesc, label: 'Particulars', align: 'left'   },
-    { w: cAmt,  label: 'Amount',      align: 'right'  },
-    { w: cMos,  label: 'Months',      align: 'center' },
-    { w: cTot,  label: 'Total',       align: 'right'  },
-  ]
+  doc.setFillColor(...TBL_HDR)
+  doc.rect(ML, y, CW, 7, 'F')
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...WHITE)
   let cx = ML
-  cols.forEach(col => {
-    if (col.align === 'center') doc.text(col.label, cx + col.w / 2, y + 5.3, { align: 'center' })
-    else if (col.align === 'right') doc.text(col.label, cx + col.w - 3, y + 5.3, { align: 'right' })
-    else doc.text(col.label, cx + 3, y + 5.3)
-    cx += col.w
+  ;[
+    [cSNo, 'S.No'], [cDsc, 'Particulars'], [cAmt, 'Amount'], [cMos, 'Months'], [cTot, 'Total'],
+  ].forEach(([w, label]) => {
+    doc.text(label, cx + w / 2, y + 4.8, { align: 'center' })
+    cx += w
   })
-  y += 8
+  y += 7
 
   // Data rows
-  const ROW_H = 6.5
-  const itemMap = {}
-  ;(receiptItems || []).forEach(it => { itemMap[it.category_id] = it })
+  const RH = 5.5
+  const imap = {}
+  ;(receiptItems || []).forEach(it => { imap[it.category_id] = it })
 
   ;(categories || []).forEach((cat, i) => {
-    const it    = itemMap[cat.id]
-    const amt   = it?.amt   ? Number(it.amt).toLocaleString('en-IN')   : ''
-    const mosLabel = it?.months
-      ? (Number(it.months) === 1 ? '1 Month' : `${it.months} Months`)
-      : ''
-    const total = it?.total ? Number(it.total).toLocaleString('en-IN') : ''
+    const it      = imap[cat.id]
+    const amt     = it?.amt   ? Number(it.amt).toLocaleString('en-IN')   : ''
+    const mos     = it?.months ? (Number(it.months) === 1 ? '1 Month' : `${it.months} Months`) : ''
+    const tot     = it?.total ? Number(it.total).toLocaleString('en-IN') : ''
+    const tinted  = i % 2 === 0
 
-    if (i % 2 === 0) {
-      doc.setFillColor(240, 247, 255)
-      doc.rect(ML, y, CW, ROW_H, 'F')
-    }
-    doc.setDrawColor(200, 200, 200)
-    doc.setLineWidth(0.2)
-    doc.rect(ML, y, CW, ROW_H, 'S')
-
+    if (tinted) { doc.setFillColor(...ROW_BG); doc.rect(ML, y, CW, RH, 'F') }
+    doc.setDrawColor(190, 190, 190); doc.setLineWidth(0.2)
+    doc.rect(ML, y, CW, RH, 'S')
     let dx = ML
-    cols.forEach(col => { dx += col.w; doc.line(dx, y, dx, y + ROW_H) })
-    // remove last right line (already on box border)
+    ;[cSNo, cDsc, cAmt, cMos].forEach(w => { dx += w; doc.line(dx, y, dx, y + RH) })
 
+    const ty = y + 3.8
+
+    // S.No — orange on tinted rows, navy on white
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
+    doc.setTextColor(...(tinted ? ORANGE : NAVY))
+    doc.text(String(i + 1), ML + cSNo / 2, ty, { align: 'center' })
+
+    // Particulars
+    doc.setTextColor(...NAVY)
+    doc.text(cat.name || '', ML + cSNo + 2, ty)
+
+    // Amount
+    doc.setFont('helvetica', amt ? 'bold' : 'normal')
+    doc.text(amt, ML + cSNo + cDsc + cAmt - 1.5, ty, { align: 'right' })
+
+    // Months
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
-    doc.setTextColor(40, 40, 40)
+    doc.text(mos, ML + cSNo + cDsc + cAmt + cMos / 2, ty, { align: 'center' })
 
-    cx = ML
-    doc.text(String(i + 1), cx + cSNo / 2, y + 4.3, { align: 'center' }); cx += cSNo
-    doc.text(cat.name || '', cx + 3, y + 4.3); cx += cDesc
-    if (amt) { doc.setFont('helvetica', 'bold') } else { doc.setFont('helvetica', 'normal') }
-    doc.text(amt, cx + cAmt - 3, y + 4.3, { align: 'right' }); cx += cAmt
-    doc.setFont('helvetica', 'normal')
-    doc.text(mosLabel, cx + cMos / 2, y + 4.3, { align: 'center' }); cx += cMos
-    if (total) { doc.setFont('helvetica', 'bold') } else { doc.setFont('helvetica', 'normal') }
-    doc.text(total, cx + cTot - 3, y + 4.3, { align: 'right' })
+    // Total
+    doc.setFont('helvetica', tot ? 'bold' : 'normal')
+    doc.text(tot, ML + CW - 1.5, ty, { align: 'right' })
 
-    y += ROW_H
+    y += RH
   })
 
-  // ── Total footer row ─────────────────────────────────────────────
-  const FOOT_H = 8
-  doc.setFillColor(232, 240, 254)
-  doc.rect(ML, y, CW, FOOT_H, 'F')
-  doc.setDrawColor(150, 150, 150)
-  doc.setLineWidth(0.3)
-  doc.rect(ML, y, CW, FOOT_H, 'S')
-  const divX = ML + cSNo + cDesc + cAmt + cMos
-  doc.line(divX, y, divX, y + FOOT_H)
+  // ── Footer row ────────────────────────────────────────────────────
+  const FH = 7
+  doc.setFillColor(...LIGHT)
+  doc.rect(ML, y, CW, FH, 'F')
+  doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.25)
+  doc.rect(ML, y, CW, FH, 'S')
+  const divX = ML + cSNo + cDsc + cAmt + cMos
+  doc.line(divX, y, divX, y + FH)
 
-  const words = amountInWords(receipt.grand_total || 0)
-  doc.setFont('helvetica', 'italic')
-  doc.setFontSize(8.5)
-  doc.setTextColor(50, 50, 50)
-  const wrappedWords = doc.splitTextToSize(words, divX - ML - 4)
-  doc.text(wrappedWords, ML + 3, y + 5.2)
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(50, 50, 50)
+  const wordsText = amountInWords(receipt.grand_total || 0)
+  doc.text(doc.splitTextToSize(wordsText, divX - ML - 3), ML + 2, y + 4.5)
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(0, 0, 0)
-  doc.text(
-    Number(receipt.grand_total || 0).toLocaleString('en-IN'),
-    ML + CW - 3, y + 5.5, { align: 'right' }
-  )
-  y += FOOT_H + 10
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...RED)
+  doc.text(Number(receipt.grand_total || 0).toLocaleString('en-IN'), ML + CW - 1.5, y + 4.8, { align: 'right' })
+  y += FH + 5
 
-  // ── Treasurer seal ───────────────────────────────────────────────
+  // ── Treasurer seal (fixed to bottom-right area) ───────────────────
+  const sealY = PH - 14 - 28   // always near bottom
   if (sealB64) {
-    const SW = 36, SH = 36
-    doc.addImage(sealB64, ML + CW - SW, y, SW, SH)
-    y += SH + 4
+    doc.addImage(sealB64, ML + CW - 28, sealY, 28, 28)
   }
 
-  // ── Footer timestamp ─────────────────────────────────────────────
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7)
-  doc.setTextColor(160, 160, 160)
+  // ── Timestamp ─────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(160, 160, 160)
   const now   = new Date()
-  const stamp = now.toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })
-            + '  ' + now.toLocaleTimeString('en-IN', { hour12: false })
-  doc.text(stamp, PW - MR, PH - 7, { align: 'right' })
+  const stamp = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    + '  ' + now.toLocaleTimeString('en-IN', { hour12: false })
+  doc.text(stamp, PW - MR, PH - 6, { align: 'right' })
 
   return doc.output('blob')
 }
