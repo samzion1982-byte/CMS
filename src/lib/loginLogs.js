@@ -1,6 +1,5 @@
 import { adminSupabase } from './supabase'
 
-const LS_KEY         = id => `login_log_id_${id}`
 const GEO_CACHE_KEY  = 'church_cms_geo_v3'        // v3 — ipinfo token
 const GPS_TTL_MS     = 30 * 24 * 60 * 60 * 1000  // GPS result: 30 days
 const IP_TTL_MS      =      24 * 60 * 60 * 1000  // IP result:   1 day
@@ -107,7 +106,7 @@ export async function fetchGeoLocation() {
   return await _resolveGeo()
 }
 
-/* Insert a new login row and persist the id to localStorage */
+/* Insert a new login row */
 export async function insertLoginLog({ userId, email, fullName, role, ipAddress, city, region, country, userAgent }) {
   const { data, error } = await adminSupabase
     .from('login_logs')
@@ -129,27 +128,31 @@ export async function insertLoginLog({ userId, email, fullName, role, ipAddress,
     console.error('[loginLogs] insert error:', error)
     return null
   }
-
-  if (data?.id && userId) {
-    try { localStorage.setItem(LS_KEY(userId), data.id) } catch { /* ignore */ }
-  }
   return data?.id ?? null
 }
 
-/* Stamp logout_at on the stored log row then clear localStorage */
+/* Stamp logout_at on the most recent open session for this user.
+   No localStorage dependency — works even after browser data is cleared. */
 export async function stampLogout(userId) {
   if (!userId) return
-  let logId
-  try { logId = localStorage.getItem(LS_KEY(userId)) } catch { /* ignore */ }
-  if (!logId) return
+
+  const { data, error: fetchErr } = await adminSupabase
+    .from('login_logs')
+    .select('id')
+    .eq('user_id', userId)
+    .is('logout_at', null)
+    .order('login_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (fetchErr || !data?.id) return
 
   const { error } = await adminSupabase
     .from('login_logs')
     .update({ logout_at: new Date().toISOString() })
-    .eq('id', logId)
+    .eq('id', data.id)
 
   if (error) console.error('[loginLogs] logout stamp error:', error)
-  try { localStorage.removeItem(LS_KEY(userId)) } catch { /* ignore */ }
 }
 
 /* Manually correct location for a log row, and overwrite the local geo cache
