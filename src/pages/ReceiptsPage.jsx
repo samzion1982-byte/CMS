@@ -529,7 +529,7 @@ export default function ReceiptsPage() {
             <tbody>
               {receipts.map((r, i) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
-                  <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{r.receipt_number}</td>
+                  <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--text-1)', minWidth: 175, whiteSpace: 'nowrap' }}>{r.receipt_number}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtDate(r.receipt_date)}</td>
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{r.member_name}</div>
@@ -912,6 +912,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
   const [loading,    setLoading]    = useState(!!editId)
   const [paidMonths, setPaidMonths] = useState(new Set())
   const [selMonths,  setSelMonths]  = useState([])
+  const [alertMsg,   setAlertMsg]   = useState(null)
 
   const [memberId,            setMemberId]            = useState('')
   const [selMember,           setSelMember]           = useState(null)
@@ -1043,7 +1044,13 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
       })
       setMemberId(rec.member_id || '')
       setSelMember({ member_id: rec.member_id, member_name: rec.member_name })
-      setSelMonths(rec.month_paid ? rec.month_paid.split(',').map(s => s.trim()).filter(Boolean) : [])
+      const normMonth = s => {
+        const fi = FY_MONTHS.findIndex(n => n.toLowerCase() === s.toLowerCase())
+        if (fi >= 0) return FY_MONTHS[fi]
+        const si = FY_MON_S.findIndex(n => n.toLowerCase() === s.toLowerCase())
+        return si >= 0 ? FY_MONTHS[si] : s
+      }
+      setSelMonths(rec.month_paid ? rec.month_paid.split(',').map(s => normMonth(s.trim())).filter(Boolean) : [])
       const map = {}
       ;(recItems || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => {
@@ -1164,6 +1171,36 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
     if (!form.receipt_date)                         { toast('Enter receipt date', 'error');    return }
     const enabled = items.filter(i => i.enabled && (parseFloat(i.amt) || 0) > 0)
     if (!enabled.length) { toast('Enable at least one category with an amount', 'error'); return }
+
+    // Validate months against other receipts for this member + FY (single query)
+    if (form.member_id && form.financial_year) {
+      let q = supabase.from('receipts').select('month_paid')
+        .eq('member_id', form.member_id).eq('financial_year', form.financial_year)
+      if (editId) q = q.neq('id', editId)
+      const { data: others } = await q
+      const alreadyPaid = new Set()
+      ;(others || []).forEach(r => {
+        if (!r.month_paid) return
+        r.month_paid.split(',').forEach(m => {
+          const t = m.trim()
+          const fi = FY_MONTHS.findIndex(n => n.toLowerCase() === t.toLowerCase())
+          if (fi >= 0) { alreadyPaid.add(FY_MONTHS[fi]); return }
+          const si = FY_MON_S.findIndex(n => n.toLowerCase() === t.toLowerCase())
+          if (si >= 0) { alreadyPaid.add(FY_MONTHS[si]); return }
+        })
+      })
+      // If member already has monthly receipts this FY, months must be selected
+      if (alreadyPaid.size > 0 && selMonths.length === 0) {
+        setAlertMsg(`Please select the month(s) for this payment.\n\nThis member already has monthly payments recorded for this financial year.`)
+        return
+      }
+      // Block any month already covered by another receipt
+      const conflicts = selMonths.filter(m => alreadyPaid.has(m))
+      if (conflicts.length > 0) {
+        setAlertMsg(`Payment already recorded for: ${conflicts.join(', ')}.\n\nPlease select a different month.`)
+        return
+      }
+    }
 
     setSaving(true)
     try {
@@ -1597,6 +1634,35 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
           </>
         )}
       </div>
+
+      {/* ── Payment alert popup ── */}
+      {alertMsg && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(3px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10010, padding: 16 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 380,
+            overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.45)' }}>
+            <div style={{ background: '#b45309', padding: '13px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Payment Not Allowed</div>
+            </div>
+            <div style={{ padding: '18px 20px' }}>
+              {alertMsg.split('\n').map((line, i) => (
+                line ? <p key={i} style={{ margin: '0 0 6px', fontSize: 13, color: 'var(--text-1)', lineHeight: 1.5 }}>{line}</p>
+                     : <div key={i} style={{ height: 4 }}/>
+              ))}
+            </div>
+            <div style={{ padding: '0 20px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setAlertMsg(null)} autoFocus
+                style={{ padding: '8px 24px', borderRadius: 8, border: 'none', fontWeight: 700,
+                  fontSize: 13, background: '#b45309', color: '#fff', cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#92400e'}
+                onMouseLeave={e => e.currentTarget.style.background = '#b45309'}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -224,18 +224,35 @@ export async function generateGreetingCard({
 
   drawDivider(ctx, W, 380, GOLD, 'diamond')
 
-  // Event heading
+  // Event heading — flanking ✦ ornaments for polish
   const isBday = type === 'birthday'
+  ctx.save()
+  ctx.font = '38px serif'
+  ctx.fillStyle = GOLD
+  ctx.globalAlpha = 0.72
+  ctx.fillText('✦', W / 2 - 400, 496)
+  ctx.fillText('✦', W / 2 + 400, 496)
+  ctx.globalAlpha = 1
+  ctx.restore()
+
   ctx.font = 'italic bold 70px "Playfair Display", Georgia, serif'
   ctx.fillStyle = '#f0c040'
   ctx.fillText(isBday ? 'Happy Birthday!' : 'Happy Anniversary!', W / 2, 488)
 
-  // Names — right below heading
+  // Names — larger gap below heading (+60 px)
   ctx.font = 'bold 54px "Plus Jakarta Sans", sans-serif'
   ctx.fillStyle = WHITE
-  ctx.fillText(names, W / 2, 572)
+  ctx.fillText(names, W / 2, 638)
 
-  let curY = 618
+  // Thin decorative underline below name(s)
+  const nameW = Math.min(ctx.measureText(names).width / 2 + 40, 360)
+  ctx.save()
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.4
+  ctx.beginPath(); ctx.moveTo(W / 2 - nameW, 660); ctx.lineTo(W / 2 + nameW, 660); ctx.stroke()
+  ctx.globalAlpha = 1
+  ctx.restore()
+
+  let curY = 690
 
   // Years (anniversary only)
   if (!isBday && years > 0) {
@@ -280,12 +297,12 @@ export async function generateGreetingCard({
     curY += tamilH + 18
   }
 
-  // Top divider (cross style) right after verse, bottom divider fixed near footer
+  // Top divider after verse; footer divider raised to reduce gap below greeting
   const topDivY = curY + 12
-  const botDivY = H - 260
+  const botDivY = H - 360
   drawDivider(ctx, W, topDivY, GOLD, 'cross')
 
-  // Greeting message — center the visual midpoint of text in the zone between dividers
+  // Greeting message — vertically centred between the two dividers
   const greetingMsg = isBday
     ? 'May the Almighty God bless you with good health, peace and prosperity!'
     : 'May the Lord bless your union with abundant love, joy and togetherness!'
@@ -302,19 +319,25 @@ export async function generateGreetingCard({
     return line ? n + 1 : n
   })()
   const greetH = greetLines * greetLineH
-  // greetY is the baseline of the first line; add fontSize so visual top is centered
   const greetY = Math.round((topDivY + botDivY - greetH) / 2) + greetFontSize
   ctx.fillStyle = CREAM
   wrapText(ctx, greetingMsg, W / 2, greetY, 880, greetLineH)
 
   // Footer
   drawDivider(ctx, W, botDivY, GOLD, 'triple')
-  ctx.font = '24px Georgia, serif'
+
+  ctx.font = 'italic 26px "Playfair Display", Georgia, serif'
   ctx.fillStyle = LGOLD
-  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 52)
-  ctx.font = 'bold 28px "Playfair Display", Georgia, serif'
-  ctx.fillStyle = GOLD
-  ctx.fillText(`${churchName || 'Church'} Congregation`, W / 2, botDivY + 96)
+  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 56)
+
+  ctx.font = '23px Georgia, serif'
+  ctx.fillStyle = CREAM
+  ctx.fillText('The Presbyter, Secretary, Treasurer and', W / 2, botDivY + 98)
+
+  ctx.font = '23px Georgia, serif'
+  ctx.fillStyle = CREAM
+  const membersLine = `beloved members of the ${churchName || 'Church'} Congregation`
+  wrapText(ctx, membersLine, W / 2, botDivY + 134, 920, 34)
 
   return new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', 0.92))
 }
