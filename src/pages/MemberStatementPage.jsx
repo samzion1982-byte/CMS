@@ -462,7 +462,7 @@ export default function MemberStatementPage() {
                     onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'}>
                     <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
                     <td style={{ padding: '7px 14px' }}>
-                      <span style={{ display: 'inline-block', background: 'var(--sidebar-item-active-bg)', color: 'var(--accent)', border: '1px solid var(--sidebar-item-active-border)', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.02em' }}>
+                      <span style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.02em' }}>
                         {m.member_id}
                       </span>
                     </td>
