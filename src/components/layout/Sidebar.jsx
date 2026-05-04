@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { Menu, ChevronLeft,
-  LayoutDashboard, Users, FileText, Receipt,
+  LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
-  BookOpen,
+  BookOpen, MessageSquare,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -15,7 +15,7 @@ const NAV = [
   ]},
   { group: 'FINANCE', items: [
     { label: 'Declaration',      path: '/declaration',      icon: FileText  },
-    { label: 'Receipt Entry',    path: '/receipts',         icon: Receipt   },
+    { label: 'Receipt Entry',    path: '/receipts',         icon: IndianRupee },
     { label: 'Member Statement', path: '/member-statement', icon: BookOpen  },
     { label: 'Reports',          path: '/reports',          icon: BarChart3 },
   ]},
@@ -28,8 +28,9 @@ const NAV = [
     { label: 'Import Data',       path: '/import',          icon: Upload,         superOnly: true },
   ]},
   { group: 'LOGS', adminOnly: true, items: [
-    { label: 'Announcements Log', path: '/announcements-log', icon: ClipboardList },
-    { label: 'Login Details',     path: '/login-logs',        icon: LogIn },
+    { label: 'Announcements Log',   path: '/announcements-log',      icon: ClipboardList  },
+    { label: 'WhatsApp Receipts',   path: '/whatsapp-receipt-log',   icon: MessageSquare  },
+    { label: 'Login Details',       path: '/login-logs',             icon: LogIn          },
   ]},
 ]
 

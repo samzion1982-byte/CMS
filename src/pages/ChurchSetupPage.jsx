@@ -456,15 +456,9 @@ export default function ChurchSetupPage() {
         <div className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#15803d',borderColor:'#bbf7d0'}}>WhatsApp</p>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="field-group">
-                <label className="field-label">Church WhatsApp Number</label>
-                <input className="field-input" value={form.whatsapp_number} onChange={e=>s('whatsapp_number',e.target.value)} placeholder="+91XXXXXXXXXX"/>
-              </div>
-              <div className="field-group">
-                <label className="field-label">WhatsApp URL</label>
-                <input className="field-input" value={form.whatsapp_url} onChange={e=>s('whatsapp_url',e.target.value)} placeholder="https://chat.whatsapp.com/..."/>
-              </div>
+            <div className="field-group">
+              <label className="field-label">Church WhatsApp Number</label>
+              <input className="field-input" value={form.whatsapp_number} onChange={e=>s('whatsapp_number',e.target.value)} placeholder="+91XXXXXXXXXX"/>
             </div>
             <div className="field-group">
               <label className="field-label">API Type</label>
@@ -475,14 +469,21 @@ export default function ChurchSetupPage() {
               </select>
             </div>
             {form.whatsapp_api_type === 'soft7' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div className="field-group">
-                  <label className="field-label">Instance ID</label>
-                  <input className="field-input" value={form.instance_id} onChange={e=>s('instance_id',e.target.value)} placeholder="Instance ID"/>
+                  <label className="field-label">API Endpoint URL</label>
+                  <input className="field-input" value={form.whatsapp_url} onChange={e=>s('whatsapp_url',e.target.value)} placeholder="https://your-instance.soft7.in/api/send"/>
+                  <p className="text-xs text-slate-400 mt-1">Full URL provided by your Soft7 / WhatsApp API provider</p>
                 </div>
-                <div className="field-group">
-                  <label className="field-label">Access Token</label>
-                  <input className="field-input" value={form.access_token} onChange={e=>s('access_token',e.target.value)} placeholder="Access Token"/>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="field-group">
+                    <label className="field-label">Instance ID</label>
+                    <input className="field-input" value={form.instance_id} onChange={e=>s('instance_id',e.target.value)} placeholder="Instance ID"/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Access Token</label>
+                    <input className="field-input" value={form.access_token} onChange={e=>s('access_token',e.target.value)} placeholder="Access Token"/>
+                  </div>
                 </div>
               </div>
             )}

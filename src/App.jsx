@@ -19,6 +19,7 @@ import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
 import ReportsPage from './pages/ReportsPage'
+import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
 
 console.log('📱 App component rendering')
 
@@ -312,6 +313,10 @@ function AppRoutes() {
       <Route
         path="/login-logs"
         element={<PrivateRoute><AppLayout><LoginLogsPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/whatsapp-receipt-log"
+        element={<PrivateRoute><AppLayout><WhatsAppReceiptLogPage /></AppLayout></PrivateRoute>}
       />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

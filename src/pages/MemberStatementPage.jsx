@@ -461,7 +461,7 @@ export default function MemberStatementPage() {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'}>
                     <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
-                    <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{m.member_id}</td>
+                    <td style={{ padding: '9px 14px', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--sidebar-light)' }}>{m.member_id}</td>
                     <td style={{ padding: '9px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{m.member_name}</td>
                     <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)' }}>{m.mobile || '—'}</td>
                     <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-2)' }}>{m.city || '—'}</td>

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
+import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export default function ReceiptsPage() {
   const [exporting,       setExporting]       = useState(false)
   const [church,          setChurch]          = useState(null)
   const [printingId,      setPrintingId]      = useState(null)
+  const [pwGate,          setPwGate]          = useState(null)  // { label, onConfirmed }
   const exportMenuRef = useRef(null)
 
   // show FYs with receipts + FYs with lock records + current FY
@@ -184,17 +186,18 @@ export default function ReceiptsPage() {
 
   const openEdit = (row) => {
     if (fyLocks[row.financial_year]?.is_locked) { setLockedFYModal(row.financial_year); return }
-    setEditId(row.id); setShowModal(true)
+    setPwGate({ label: `Edit receipt ${row.receipt_number}`, onConfirmed: () => { setEditId(row.id); setShowModal(true) } })
   }
 
-  const del = async (row) => {
-    if (!window.confirm(`Delete receipt ${row.receipt_number}?`)) return
-    await supabase.from('receipt_items').delete().eq('receipt_id', row.id)
-    const { error } = await supabase.from('receipts').delete().eq('id', row.id)
-    if (error) { toast(error.message, 'error'); return }
-    toast('Receipt deleted', 'success')
-    updateFYActivity(row.financial_year)
-    loadList(); loadFyStats()
+  const del = (row) => {
+    setPwGate({ label: `Delete receipt ${row.receipt_number}`, onConfirmed: async () => {
+      await supabase.from('receipt_items').delete().eq('receipt_id', row.id)
+      const { error } = await supabase.from('receipts').delete().eq('id', row.id)
+      if (error) { toast(error.message, 'error'); return }
+      toast('Receipt deleted', 'success')
+      updateFYActivity(row.financial_year)
+      loadList(); loadFyStats()
+    }})
   }
 
   const printReceipt = async (row) => {
@@ -610,12 +613,21 @@ export default function ReceiptsPage() {
         </div>
       )}
 
+      {pwGate && (
+        <PasswordGate
+          label={pwGate.label}
+          onConfirmed={pwGate.onConfirmed}
+          onClose={() => setPwGate(null)}
+        />
+      )}
+
       {showModal && (
         <ReceiptModal
           editId={editId}
           initialFY={filterFY}
           categories={categories}
           profile={profile}
+          church={church}
           toast={toast}
           receiptDateMode={receiptDateMode}
           onClose={() => setShowModal(false)}
@@ -641,6 +653,8 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
   const [deletingFY,   setDeletingFY]   = useState(null)
   const [deleteErr,    setDeleteErr]    = useState('')
   const [deleting,     setDeleting]     = useState(false)
+  const [bulkDeleteFY, setBulkDeleteFY] = useState(null)
+  const [hoveredFY,    setHoveredFY]    = useState(null)
   const pwRef = useRef(null)
 
   const allFYs = useMemo(() => {
@@ -738,17 +752,24 @@ const lockFY = async (fy) => {
             const isDeleting  = deletingFY  === fy
 
             return (
-              <div key={fy} style={{
+              <div key={fy}
+                onMouseEnter={() => setHoveredFY(fy)}
+                onMouseLeave={() => setHoveredFY(null)}
+                style={{
                 borderRadius: 10, overflow: 'hidden', transition: 'all 0.15s',
-                border: `1px solid ${isDeleting ? '#fca5a5' : locked ? '#fde68a' : 'var(--card-border)'}`,
-                background: isDeleting ? 'rgba(254,242,242,0.6)' : locked ? 'rgba(253,246,224,0.5)' : 'transparent',
+                border: `1px solid ${isDeleting ? '#f87171' : locked ? '#fde68a' : hoveredFY === fy ? 'var(--accent)' : 'var(--card-border)'}`,
+                background: isDeleting ? 'rgba(239,68,68,0.08)' : locked ? 'rgba(253,246,224,0.5)' : hoveredFY === fy ? 'var(--accent-subtle)' : 'transparent',
               }}>
                 <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: locked ? '#d97706' : 'var(--text-1)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700,
+                      color: locked ? '#d97706' : hoveredFY === fy ? 'var(--accent)' : 'var(--text-1)',
+                      transition: 'color 0.15s' }}>
                       FY {fy}
                     </div>
-                    <div style={{ fontSize: 11, marginTop: 2, color: locked ? '#d97706' : 'var(--text-3)' }}>
+                    <div style={{ fontSize: 11, marginTop: 2,
+                      color: locked ? '#d97706' : hoveredFY === fy ? 'var(--accent)' : 'var(--text-3)',
+                      transition: 'color 0.15s' }}>
                       {locked
                         ? (autoLk ? 'Auto-locked (idle > 10 days)' : 'Manually locked')
                         : `${count} receipt${count !== 1 ? 's' : ''}`}
@@ -768,17 +789,20 @@ const lockFY = async (fy) => {
                   </button>
                   {/* Delete button */}
                   <button
-                    onClick={() => openDelete(fy)}
+                    onClick={() => !locked && openDelete(fy)}
+                    disabled={locked}
+                    title={locked ? 'Unlock this FY before deleting' : undefined}
                     style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                      border: '1px solid', cursor: 'pointer', transition: 'all 0.12s',
-                      background: '#dc2626',
-                      borderColor: '#dc2626',
-                      color: '#fff',
+                      border: '1px solid', transition: 'all 0.12s',
+                      cursor: locked ? 'not-allowed' : 'pointer',
+                      background: locked ? '#e2e8f0' : '#dc2626',
+                      borderColor: locked ? '#cbd5e1' : '#dc2626',
+                      color: locked ? '#94a3b8' : '#fff',
                       display: 'flex', alignItems: 'center', gap: 5 }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#b91c1c'; e.currentTarget.style.borderColor = '#b91c1c' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.borderColor = '#dc2626' }}>
+                    onMouseEnter={e => { if (!locked) { e.currentTarget.style.background = '#b91c1c'; e.currentTarget.style.borderColor = '#b91c1c' } }}
+                    onMouseLeave={e => { if (!locked) { e.currentTarget.style.background = '#dc2626'; e.currentTarget.style.borderColor = '#dc2626' } }}>
                     <Trash2 size={11}/>
-                    {isDeleting ? 'Cancel' : 'Delete'}
+                    {locked ? 'Locked' : isDeleting ? 'Cancel' : 'Delete'}
                   </button>
                 </div>
 
@@ -809,10 +833,20 @@ const lockFY = async (fy) => {
 
                 {/* Delete panel */}
                 {isDeleting && (
-                  <div style={{ borderTop: '1px solid #fca5a5', padding: '10px 14px', background: 'rgba(254,242,242,0.8)' }}>
+                  <div style={{ borderTop: '1px solid #f87171', padding: '10px 14px', background: 'rgba(239,68,68,0.07)' }}>
                     {count > 0 ? (
-                      <div style={{ fontSize: 12, color: '#991b1b', fontWeight: 600, lineHeight: 1.5 }}>
-                        This FY has {count} receipt{count !== 1 ? 's' : ''}. Delete all receipts first, then delete the FY.
+                      <div>
+                        <div style={{ fontSize: 12, color: '#991b1b', fontWeight: 600, marginBottom: 8 }}>
+                          This FY has {count} receipt{count !== 1 ? 's' : ''}. Select receipts to delete:
+                        </div>
+                        <button
+                          onClick={() => setBulkDeleteFY(fy)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
+                            borderRadius: 7, border: '1px solid #dc2626', background: '#fff5f5',
+                            color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                          <CheckSquare size={13}/>
+                          Select Receipts to Delete
+                        </button>
                       </div>
                     ) : (
                       <>
@@ -842,6 +876,15 @@ const lockFY = async (fy) => {
           )}
         </div>
       </div>
+
+      {bulkDeleteFY && (
+        <BulkDeleteModal
+          fy={bulkDeleteFY}
+          onClose={() => setBulkDeleteFY(null)}
+          onDeleted={() => { setBulkDeleteFY(null); onDeleteRefresh() }}
+          toast={toast}
+        />
+      )}
     </div>
   )
 }
@@ -850,7 +893,7 @@ const lockFY = async (fy) => {
 //  RECEIPT MODAL
 // ════════════════════════════════════════════════════════
 
-function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, onSaved, receiptDateMode }) {
+function ReceiptModal({ editId, initialFY, categories, profile, church, toast, onClose, onSaved, receiptDateMode }) {
   const today = new Date().toISOString().slice(0, 10)
 
   const [dateIsCarryForward, setDateIsCarryForward] = useState(false)
@@ -967,10 +1010,10 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
     nextReceiptNumber(form.financial_year).then(n => setForm(f => ({ ...f, receipt_number: n })))
   }, [editId, form.financial_year])
 
-  // selMonths → form.month_paid + auto-sync category months (new only)
+  // selMonths → form.month_paid + auto-sync category months
   useEffect(() => {
     setForm(f => ({ ...f, month_paid: selMonths.join(', ') }))
-    if (!editId && selMonths.length > 0) {
+    if (selMonths.length > 0) {
       setItems(prev => prev.map(item =>
         item.enabled
           ? { ...item, months: String(selMonths.length), total: (parseFloat(item.amt) || 0) * selMonths.length }
@@ -1155,6 +1198,61 @@ function ReceiptModal({ editId, initialFY, categories, profile, toast, onClose, 
       if (iErr) throw iErr
       toast(editId ? 'Receipt updated' : `Receipt ${form.receipt_number} saved`, 'success')
       onSaved(recData.financial_year)
+
+      // ── WhatsApp instant send ─────────────────────────────────────
+      const waMode  = church?.whatsapp_receipt_mode ?? 'instant'
+      const waPhone = recData.whatsapp || recData.mobile
+      const waLogBase = {
+        receipt_number:  recData.receipt_number,
+        member_name:     recData.member_name,
+        whatsapp_number: waPhone || null,
+        api_type:        church?.whatsapp_api_type || 'soft7',
+        created_by:      profile?.full_name || profile?.email,
+      }
+
+      if (church && waMode === 'instant' && waPhone) {
+        const dp  = (recData.receipt_date || '').split('-')
+        const dtF = dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : recData.receipt_date
+        const msg = [
+          `Dear ${recData.member_name},`,
+          '',
+          `Your payment to *${church.church_name}* has been received ✅`,
+          '',
+          `📋 Receipt No : ${recData.receipt_number}`,
+          `📅 Date          : ${dtF}`,
+          `💰 Amount       : ₹${Number(recData.grand_total).toLocaleString('en-IN')}`,
+          recData.month_paid ? `📆 Month(s)     : ${formatMonthsPaid(recData.month_paid)}` : null,
+          `💳 Mode          : ${recData.payment_mode}`,
+          '',
+          'Thank you for your faithful giving. God bless you! 🙏',
+        ].filter(l => l !== null).join('\n')
+
+        // fire-and-forget: generate PDF → upload → send WhatsApp
+        ;(async () => {
+          let pdfUrl = null
+          try {
+            const pdfBlob = await exportReceiptPDF({
+              receipt:      { ...recData, id: receiptId },
+              receiptItems: enabled.map(i => ({ category_id: i.category_id, amt: parseFloat(i.amt)||0, months: parseFloat(i.months)||0, total: i.total })),
+              categories,
+              church,
+            })
+            const pdfPath = `${recData.financial_year}/${recData.receipt_number}.pdf`
+            await supabase.storage.from('receipt-pdfs').upload(pdfPath, pdfBlob, { contentType: 'application/pdf', upsert: true })
+            const { data: urlData } = supabase.storage.from('receipt-pdfs').getPublicUrl(pdfPath)
+            pdfUrl = urlData?.publicUrl || null
+          } catch { /* PDF gen/upload failed — send text only */ }
+
+          try {
+            const apiResp = await sendWhatsAppMessage(church, { to: waPhone, message: msg, mediaUrl: pdfUrl })
+            await supabase.from('whatsapp_receipt_logs').insert({ ...waLogBase, message: msg, status: 'sent', api_response: apiResp })
+            toast('WhatsApp receipt sent', 'success')
+          } catch (err) {
+            await supabase.from('whatsapp_receipt_logs').insert({ ...waLogBase, message: msg, status: 'failed', error_text: err.message })
+            toast(`WhatsApp: ${err.message}`, 'error')
+          }
+        })()
+      }
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
@@ -1614,5 +1712,211 @@ function HDivider() {
   return (
     <div style={{ height: 1, margin: '10px 0',
       background: 'linear-gradient(90deg, var(--sidebar-light) 0%, rgba(30,74,138,0.12) 60%, transparent 100%)' }}/>
+  )
+}
+
+// ════════════════════════════════════════════════════════
+//  PASSWORD GATE
+// ════════════════════════════════════════════════════════
+function PasswordGate({ label, onConfirmed, onClose }) {
+  const [pw,       setPw]       = useState('')
+  const [err,      setErr]      = useState('')
+  const [checking, setChecking] = useState(false)
+  const inputRef = useRef(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 60) }, [])
+
+  const confirm = async () => {
+    if (!pw || checking) return
+    setChecking(true); setErr('')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await supabase.auth.signInWithPassword({ email: user?.email || '', password: pw })
+      if (error) { setErr('Incorrect password'); setPw(''); setTimeout(() => inputRef.current?.focus(), 30); setChecking(false); return }
+      onConfirmed()
+      onClose()
+    } catch (e) { setErr(e.message); setChecking(false) }
+  }
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget && !checking) onClose() }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(3px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001, padding: 16 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 360,
+        overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.45)' }}>
+        <div style={{ background: '#dc2626', padding: '13px 18px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Password Required</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{label}</div>
+        </div>
+        <div style={{ padding: '16px 18px' }}>
+          <input ref={inputRef} type="password" value={pw}
+            onChange={e => { setPw(e.target.value); setErr('') }}
+            onKeyDown={e => e.key === 'Enter' && confirm()}
+            placeholder="Enter your password"
+            className="field-input" style={{ width: '100%', boxSizing: 'border-box', marginBottom: err ? 6 : 14 }}/>
+          {err && <p style={{ margin: '0 0 12px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{err}</p>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={onClose} disabled={checking} className="btn btn-secondary btn-sm">Cancel</button>
+            <button onClick={confirm} disabled={!pw || checking}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8,
+                border: 'none', cursor: !pw || checking ? 'not-allowed' : 'pointer',
+                background: !pw || checking ? '#fca5a5' : '#dc2626', color: '#fff', fontSize: 13, fontWeight: 600 }}>
+              {checking && <Loader2 size={12} className="animate-spin"/>}
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════
+//  BULK DELETE MODAL
+// ════════════════════════════════════════════════════════
+function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
+  const [receipts,   setReceipts]   = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [selected,   setSelected]   = useState(new Set())
+  const [pw,         setPw]         = useState('')
+  const [pwErr,      setPwErr]      = useState('')
+  const [deleting,   setDeleting]   = useState(false)
+  const pwRef = useRef(null)
+
+  useEffect(() => {
+    supabase.from('receipts')
+      .select('id,receipt_number,receipt_date,member_name,grand_total')
+      .eq('financial_year', fy)
+      .order('receipt_number', { ascending: true })
+      .then(({ data }) => { setReceipts(data || []); setLoading(false) })
+  }, [fy])
+
+  const allSelected  = receipts.length > 0 && selected.size === receipts.length
+  const noneSelected = selected.size === 0
+
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(receipts.map(r => r.id)))
+  const toggle    = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const doDelete = async () => {
+    if (!pw || deleting || noneSelected) return
+    setDeleting(true); setPwErr('')
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email: user?.email || '', password: pw })
+    if (authErr) { setPwErr('Incorrect password'); setDeleting(false); setTimeout(() => pwRef.current?.select(), 30); return }
+
+    const ids = [...selected]
+    await supabase.from('receipt_items').delete().in('receipt_id', ids)
+    const { error } = await supabase.from('receipts').delete().in('id', ids)
+    setDeleting(false)
+    if (error) { toast('Delete failed: ' + error.message, 'error'); return }
+    toast(`${ids.length} receipt${ids.length !== 1 ? 's' : ''} deleted`, 'success')
+    onDeleted()
+  }
+
+  const fmtD = s => { if (!s) return ''; const [y,m,d] = s.split('-'); return `${d}/${m}/${y}` }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.72)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10002, padding: 16 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 560,
+        maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.5)' }}>
+
+        {/* Header */}
+        <div style={{ background: '#dc2626', borderRadius: '14px 14px 0 0', padding: '13px 18px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Delete Receipts — FY {fy}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 1 }}>
+              {loading ? 'Loading…' : `${receipts.length} receipts · ${selected.size} selected`}
+            </div>
+          </div>
+          <button onClick={onClose} disabled={deleting}
+            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, padding: '4px 8px',
+              cursor: 'pointer', color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Select all / deselect all toolbar */}
+        {!loading && receipts.length > 0 && (
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--card-border)',
+            display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <button onClick={toggleAll}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 6,
+                border: '1px solid var(--card-border)', background: allSelected ? '#fef2f2' : 'var(--page-bg)',
+                color: allSelected ? '#dc2626' : 'var(--text-2)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              {allSelected ? <Square size={12}/> : <CheckSquare size={12}/>}
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
+            {!noneSelected && (
+              <button onClick={() => setSelected(new Set())}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 6,
+                  border: '1px solid var(--card-border)', background: 'var(--page-bg)',
+                  color: 'var(--text-3)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <X size={12}/>Clear
+              </button>
+            )}
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-3)' }}>
+              {selected.size > 0 && `${selected.size} of ${receipts.length} selected`}
+            </span>
+          </div>
+        )}
+
+        {/* Receipt list */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120, gap: 8, color: 'var(--text-3)' }}>
+              <Loader2 size={16} className="animate-spin"/>Loading receipts…
+            </div>
+          ) : receipts.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No receipts found</div>
+          ) : (
+            receipts.map((r, i) => {
+              const chk = selected.has(r.id)
+              return (
+                <div key={r.id} onClick={() => toggle(r.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px',
+                    borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+                    background: chk ? '#fef2f2' : i % 2 === 0 ? 'var(--card-bg)' : 'var(--page-bg)',
+                    transition: 'background 0.1s' }}>
+                  <div style={{ color: chk ? '#dc2626' : 'var(--text-3)', flexShrink: 0 }}>
+                    {chk ? <CheckSquare size={15}/> : <Square size={15}/>}
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: chk ? '#dc2626' : 'var(--text-1)', width: 130, flexShrink: 0 }}>
+                    {r.receipt_number}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-2)', width: 80, flexShrink: 0 }}>{fmtD(r.receipt_date)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-1)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.member_name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: chk ? '#dc2626' : 'var(--text-2)', fontFamily: 'monospace', flexShrink: 0 }}>
+                    ₹{Number(r.grand_total || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+
+        {/* Password + Delete footer */}
+        {!loading && receipts.length > 0 && (
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--card-border)', flexShrink: 0, background: '#fef2f2' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <input ref={pwRef} type="password" value={pw}
+                  onChange={e => { setPw(e.target.value); setPwErr('') }}
+                  onKeyDown={e => e.key === 'Enter' && doDelete()}
+                  placeholder="Enter your password to confirm deletion"
+                  className="field-input" style={{ width: '100%', boxSizing: 'border-box' }}/>
+                {pwErr && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{pwErr}</p>}
+              </div>
+              <button onClick={doDelete} disabled={noneSelected || !pw || deleting}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8,
+                  border: 'none', fontWeight: 700, fontSize: 13, flexShrink: 0,
+                  cursor: noneSelected || !pw || deleting ? 'not-allowed' : 'pointer',
+                  background: noneSelected || !pw || deleting ? '#fca5a5' : '#dc2626', color: '#fff' }}>
+                {deleting ? <Loader2 size={13} className="animate-spin"/> : <Trash2 size={13}/>}
+                Delete {selected.size > 0 ? `${selected.size} Receipt${selected.size !== 1 ? 's' : ''}` : 'Selected'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

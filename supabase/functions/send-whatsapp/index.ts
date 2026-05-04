@@ -27,16 +27,23 @@ serve(async (req) => {
 
     let result: unknown
 
+    const isDoc = mediaUrl && mediaUrl.toLowerCase().includes('.pdf')
+
     if (apiType === 'official') {
       const phoneId = church.official_phone_number_id
       const token   = church.official_bearer_token
       if (!phoneId || !token) throw new Error('Official WhatsApp API credentials not configured')
 
-      const body = mediaUrl
-        ? { messaging_product: 'whatsapp', to: phone, type: 'image',
-            image: { link: mediaUrl, caption: message || '' } }
-        : { messaging_product: 'whatsapp', to: phone, type: 'text',
-            text: { body: message || '' } }
+      let body: unknown
+      if (!mediaUrl) {
+        body = { messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: message || '' } }
+      } else if (isDoc) {
+        body = { messaging_product: 'whatsapp', to: phone, type: 'document',
+                 document: { link: mediaUrl, filename: 'Receipt.pdf', caption: message || '' } }
+      } else {
+        body = { messaging_product: 'whatsapp', to: phone, type: 'image',
+                 image: { link: mediaUrl, caption: message || '' } }
+      }
 
       const resp = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
         method: 'POST',
@@ -50,27 +57,35 @@ serve(async (req) => {
       result = await resp.json().catch(() => ({ ok: true }))
 
     } else {
-      // Soft7
+      // Soft7 (or compatible unofficial API)
       if (!church.instance_id || !church.access_token) throw new Error('Soft7 instance_id / access_token not configured')
+
+      const apiUrl = ((church.whatsapp_url || '').trim().replace(/\/+$/, '')) || 'https://cloud.soft7.in/api/send'
 
       const payload = {
         number:       phone,
-        type:         mediaUrl ? 'media' : 'text',
+        type:         mediaUrl ? (isDoc ? 'document' : 'media') : 'text',
         message:      message || '',
         instance_id:  church.instance_id,
         access_token: church.access_token,
         ...(mediaUrl && { media_url: mediaUrl }),
+        ...(isDoc    && { filename: 'Receipt.pdf' }),
       }
-      const resp = await fetch(`https://cloud.soft7.in/api/send?number=${phone}`, {
+      const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!resp.ok) {
-        const text = await resp.text()
-        throw new Error(`Soft7 API error ${resp.status}: ${text}`)
+      const rawText = await resp.text()
+      let parsed: Record<string, unknown> = {}
+      try { parsed = JSON.parse(rawText) } catch { parsed = { raw: rawText } }
+
+      if (!resp.ok) throw new Error(`Soft7 API error ${resp.status}: ${rawText}`)
+
+      if (parsed.status === 'error' || parsed.error || parsed.success === false) {
+        throw new Error(`Soft7 error: ${parsed.message || parsed.error || parsed.reason || rawText}`)
       }
-      result = await resp.json().catch(() => ({ ok: true }))
+      result = parsed
     }
 
     return json(result)

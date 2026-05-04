@@ -69,7 +69,7 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   // ── Colour palette ────────────────────────────────────────────────
   const NAVY   = [30,  58,  95]
   const MAROON = [128, 0,   0]
-  const BANNER = [31,  73,  125]
+  const BANNER = [0,   112, 192]
   const TBL_H  = [0,   112, 192]
   const ROW_BG = [217, 226, 243]
   const WHITE  = [255, 255, 255]
@@ -79,19 +79,19 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   let sealB64 = null
   if (church?.treasurer_seal_url) sealB64 = await toBase64(church.treasurer_seal_url)
 
-  // ── Page border — double thin line, navy, ~0.5" (13mm) white margin
+  // ── Page border — outer medium + inner thin, both navy
   doc.setDrawColor(...NAVY)
-  doc.setLineWidth(0.5)
-  doc.rect(13, 13, PW - 26, PH - 26, 'S')   // outer thin
-  doc.setLineWidth(0.3)
-  doc.rect(15, 15, PW - 30, PH - 30, 'S')   // inner thin
+  doc.setLineWidth(0.9)
+  doc.rect(12, 12, PW - 24, PH - 24, 'S')
+  doc.setLineWidth(0.28)
+  doc.rect(13.5, 13.5, PW - 27, PH - 27, 'S')
 
-  // Content margins (2 mm inside inner border)
+  // Content margins
   const ML  = 17
   const MR  = 17
   const CW  = PW - ML - MR   // 114 mm
-  const BL  = 15              // inner border left x
-  const BR  = PW - 15         // inner border right x
+  const BL  = 13.5            // inner border left  x — divider meets inner rule
+  const BR  = PW - 13.5      // inner border right x
 
   let y = 18   // start just inside inner border
 
@@ -101,14 +101,14 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   doc.setTextColor(...MAROON)
   doc.text('"Each one must give as he has decided in his heart,', PW / 2, y, { align: 'center' })
   doc.text('not reluctantly or under compulsion, for God loves a cheerful giver."  2 Cor 9:-7', PW / 2, y + 3.5, { align: 'center' })
-  y += 3.5 + 6   // 2 lines + gap before church name
+  y += 3.5 + 9   // 2 lines + gap before church name
 
   // ── Church name — bold serif (Times) for a thick, stylish look ───
   doc.setFont('times', 'bold')
   doc.setFontSize(20)
   doc.setTextColor(...NAVY)
   doc.text(church?.church_name || 'Church', PW / 2, y, { align: 'center' })
-  y += 9
+  y += 6
 
   // ── Location ──────────────────────────────────────────────────────
   doc.setFont('helvetica', 'normal')
@@ -127,7 +127,7 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
 
   // ── "Payment Receipt" banner ──────────────────────────────────────
   doc.setFillColor(...BANNER)
-  doc.rect(ML, y, CW, 9, 'F')
+  doc.roundedRect(ML, y, CW, 9, 2.5, 2.5, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   doc.setTextColor(...WHITE)
@@ -154,26 +154,27 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
     doc.line(x, ry, x, ry + h)
   }
 
-  // Row 1: Member ID | Member Name
+  // Row 1: Member ID (narrow left) | Member Name (wider right)
+  const rMI = 36   // member ID column width; name gets CW-36 = 78 mm
   rowBox(y)
-  vl(ML + CW / 2, y)
-  lbl('Member ID  :',     ML + 2,           y)
-  val(receipt.member_id,  ML + 21,           y)
-  lbl('Member Name  :',   ML + CW / 2 + 2,  y)
-  val(receipt.member_name, ML + CW / 2 + 23, y)
+  vl(ML + rMI, y)
+  lbl('Member ID  :',      ML + 2,          y)
+  val(receipt.member_id,   ML + 21,          y)
+  lbl('Member Name  :',    ML + rMI + 2,    y)
+  val(receipt.member_name, ML + rMI + 25,   y)
   y += IH
 
-  // Row 2: Receipt No | Date | Months Paid
-  const c3 = CW / 3
+  // Row 2: Receipt No | Date | Months Paid  (unequal widths to avoid overflow)
+  const rC1 = 46, rC2 = 34, rC3 = 34   // sum = 114 = CW
   rowBox(y)
-  vl(ML + c3, y); vl(ML + c3 * 2, y)
+  vl(ML + rC1, y); vl(ML + rC1 + rC2, y)
   lbl('Receipt No  :', ML + 2, y)
   val(receipt.receipt_number, ML + 19, y)
   const dp = (receipt.receipt_date || '').split('-')
-  lbl('Date  :', ML + c3 + 2, y)
-  val(dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : '', ML + c3 + 12, y)
-  lbl('Months Paid  :', ML + c3 * 2 + 2, y)
-  val(formatMonthsPaid(receipt.month_paid), ML + c3 * 2 + 21, y)
+  lbl('Date  :', ML + rC1 + 2, y)
+  val(dp.length === 3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : '', ML + rC1 + 12, y)
+  lbl('Months Paid  :', ML + rC1 + rC2 + 2, y)
+  val(formatMonthsPaid(receipt.month_paid), ML + rC1 + rC2 + 21, y)
   y += IH
 
   // Row 3: Payment Type | Cheque/DD/Trans.No
@@ -203,7 +204,7 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   y += 7
 
   // Data rows
-  const RH = 4.8
+  const RH = 5.0
   const imap = {}
   ;(receiptItems || []).forEach(it => { imap[it.category_id] = it })
 
@@ -249,16 +250,20 @@ export async function exportReceiptPDF({ receipt, receiptItems, categories, chur
   doc.line(divX, y, divX, y + FH)
 
   doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(50, 50, 50)
-  doc.text(doc.splitTextToSize(amountInWords(receipt.grand_total || 0), divX - ML - 2), ML + 2, y + 4.5)
+  doc.text(
+    doc.splitTextToSize(amountInWords(receipt.grand_total || 0), divX - ML - 4),
+    (ML + divX) / 2, y + 4.5,
+    { align: 'center' }
+  )
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...MAROON)
   doc.text(Number(receipt.grand_total || 0).toLocaleString('en-IN'), ML + CW - 1.5, y + 4.8, { align: 'right' })
-  y += FH + 4
+  y += FH + 1
 
   // ── Treasurer seal ────────────────────────────────────────────────
   if (sealB64) {
-    doc.addImage(sealB64, ML + CW - 18, y, 18, 18)
-    y += 20
+    doc.addImage(sealB64, ML + CW - 26, y, 26, 26)
+    y += 28
   }
 
   // ── Timestamp ─────────────────────────────────────────────────────
