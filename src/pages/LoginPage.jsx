@@ -24,10 +24,10 @@ export default function LoginPage() {
   const [deviceForm,      setDeviceForm]      = useState({ userName: '', orgName: '', location: '' })
 
   useEffect(() => {
-    if (session) navigate('/dashboard')
+    if (session) navigate('/dashboard')  // already logged in — redirect immediately
     getChurch().then(setChurch)
-    warmGeoLocation()  // start GPS+IP lookup while user types credentials
-  }, [session])
+    warmGeoLocation()
+  }, []) // eslint-disable-line
 
   const handleSubmit = async e => {
     e.preventDefault()
