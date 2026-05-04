@@ -14,6 +14,7 @@ export default function ChurchSetupPage() {
   const toast = useToast()
   const logoRef = useRef(null)
   const dioceseLogoRef = useRef(null)
+  const sealRef = useRef(null)
 
   const [church, setChurch] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -27,6 +28,8 @@ export default function ChurchSetupPage() {
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
   const [dioceseLogoPreview, setDioceseLogoPreview] = useState(null)
+  const [sealFile, setSealFile] = useState(null)
+  const [sealPreview, setSealPreview] = useState(null)
 
   // License verification
   const [authCode, setAuthCode] = useState('')
@@ -86,6 +89,7 @@ export default function ChurchSetupPage() {
       setAuthCode(data.auth_code || '')
       if (data.logo_url) setLogoPreview(data.logo_url)
       if (data.diocese_logo_url) setDioceseLogoPreview(data.diocese_logo_url)
+      if (data.treasurer_seal_url) setSealPreview(data.treasurer_seal_url)
       if (data.auth_code) setLicenseStatus('valid')
     }
     setLoading(false)
@@ -101,6 +105,11 @@ export default function ChurchSetupPage() {
   function onDioceseLogo(e) {
     const f = e.target.files?.[0]; if (!f) return
     setDioceseLogoFile(f); setDioceseLogoPreview(URL.createObjectURL(f))
+  }
+
+  function onSeal(e) {
+    const f = e.target.files?.[0]; if (!f) return
+    setSealFile(f); setSealPreview(URL.createObjectURL(f))
   }
 
   async function verifyLicense() {
@@ -149,6 +158,7 @@ export default function ChurchSetupPage() {
     setSaving(true)
     let logo_url = church?.logo_url || null
     let diocese_logo_url = church?.diocese_logo_url || null
+    let treasurer_seal_url = church?.treasurer_seal_url || null
     if (logoFile) {
       const ext = logoFile.name.split('.').pop()
       const path = 'church-logo.' + ext.toLowerCase()
@@ -175,7 +185,19 @@ export default function ChurchSetupPage() {
       const { data:pd } = supabase.storage.from('church-logos').getPublicUrl(path)
       diocese_logo_url = pd?.publicUrl || null
     }
-    const payload = { ...form, logo_url, diocese_logo_url, updated_at: new Date().toISOString() }
+    if (sealFile) {
+      const ext  = sealFile.name.split('.').pop()
+      const path = 'treasurer-seal.' + ext.toLowerCase()
+      const { error: use } = await supabase.storage.from('church-logos').upload(path, sealFile, { upsert: true })
+      if (use) {
+        setSaving(false)
+        toast('Treasurer seal upload failed: ' + use.message, 'error')
+        return
+      }
+      const { data: pd } = supabase.storage.from('church-logos').getPublicUrl(path)
+      treasurer_seal_url = pd?.publicUrl || null
+    }
+    const payload = { ...form, logo_url, diocese_logo_url, treasurer_seal_url, updated_at: new Date().toISOString() }
     let err
     if (church) {
       const r = await supabase.from('churches').update(payload).eq('id', church.id)
@@ -221,7 +243,7 @@ export default function ChurchSetupPage() {
         secretary_name:'', secretary_whatsapp:'',
         treasurer_name:'', treasurer_whatsapp:'',
         admin1_name:'',    admin1_whatsapp:'',
-        auth_code:'', logo_url: null, diocese_logo_url: null,
+        auth_code:'', logo_url: null, diocese_logo_url: null, treasurer_seal_url: null,
         receipt_date_mode:'today', whatsapp_receipt_mode:'instant',
         updated_at: new Date().toISOString()
       }
@@ -234,6 +256,7 @@ export default function ChurchSetupPage() {
       // Reset local state
       setLogoFile(null); setLogoPreview(null)
       setDioceseLogoFile(null); setDioceseLogoPreview(null)
+      setSealFile(null); setSealPreview(null)
       setAuthCode(''); setLicenseStatus(null); setLicenseInfo(null)
       setShowFlushConfirm(false)
       toast('Church details flushed successfully.', 'success')
@@ -379,6 +402,24 @@ export default function ChurchSetupPage() {
               </div>
               <input ref={dioceseLogoRef} type="file" accept="image/*" className="hidden" onChange={onDioceseLogo}/>
               <button className="btn btn-ghost btn-sm" onClick={()=>dioceseLogoRef.current?.click()}>
+                <Upload size={11}/>Upload
+              </button>
+            </div>
+            <div className="flex flex-col items-center gap-2 flex-shrink-0">
+              <div onClick={()=>sealRef.current?.click()}
+                className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-blue-400 transition-colors flex items-center justify-center bg-slate-50">
+                {sealPreview
+                  ? <img src={sealPreview} className="w-full h-full object-contain p-2" alt="Treasurer Seal"/>
+                  : <div className="text-center p-2">
+                      <div className="w-8 h-8 mx-auto mb-1 opacity-20">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Treasurer<br/>Seal</p>
+                    </div>
+                }
+              </div>
+              <input ref={sealRef} type="file" accept="image/*" className="hidden" onChange={onSeal}/>
+              <button className="btn btn-ghost btn-sm" onClick={()=>sealRef.current?.click()}>
                 <Upload size={11}/>Upload
               </button>
             </div>

@@ -3,16 +3,17 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { supabase }             from '../lib/supabase'
+import { supabase, getChurch }  from '../lib/supabase'
 import { useAuth }              from '../lib/AuthContext'
 import { useToast }             from '../lib/toast'
 import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
   IndianRupee, CheckSquare, Square, Settings, Lock,
-  FileSpreadsheet, ChevronDown,
+  FileSpreadsheet, ChevronDown, Printer,
 } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
+import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -73,6 +74,8 @@ export default function ReceiptsPage() {
   const [receiptDateMode, setReceiptDateMode] = useState('today')
   const [showExportMenu,  setShowExportMenu]  = useState(false)
   const [exporting,       setExporting]       = useState(false)
+  const [church,          setChurch]          = useState(null)
+  const [printingId,      setPrintingId]      = useState(null)
   const exportMenuRef = useRef(null)
 
   // show FYs with receipts + FYs with lock records + current FY
@@ -92,6 +95,8 @@ export default function ReceiptsPage() {
 
   // always start on current FY when the page mounts (handles SPA navigation)
   useEffect(() => { setFilterFY(getFY()) }, [])
+
+  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
 
   const loadFyStats = useCallback(async () => {
     const cur = getFY()
@@ -190,6 +195,25 @@ export default function ReceiptsPage() {
     toast('Receipt deleted', 'success')
     updateFYActivity(row.financial_year)
     loadList(); loadFyStats()
+  }
+
+  const printReceipt = async (row) => {
+    setPrintingId(row.id)
+    try {
+      const { data: items } = await supabase
+        .from('receipt_items').select('category_id,amt,months,total')
+        .eq('receipt_id', row.id)
+      await exportReceiptPDF({
+        receipt: row,
+        receiptItems: items || [],
+        categories,
+        church,
+      })
+    } catch (e) {
+      toast('PDF failed: ' + e.message, 'error')
+    } finally {
+      setPrintingId(null)
+    }
   }
 
   // close export menu on outside click
@@ -494,7 +518,7 @@ export default function ReceiptsPage() {
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{r.member_name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{r.member_id}</div>
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)' }}>{r.month_paid || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)' }}>{formatMonthsPaid(r.month_paid) || '—'}</td>
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
                       background: r.payment_mode === 'Cash' ? '#f0fdf4' : '#eff6ff',
@@ -506,6 +530,12 @@ export default function ReceiptsPage() {
                     ₹{Number(r.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => printReceipt(r)} title="Print PDF" disabled={printingId === r.id}
+                      style={{ background: 'none', border: 'none', cursor: printingId === r.id ? 'wait' : 'pointer', color: 'var(--text-3)', padding: '4px 6px', borderRadius: 4 }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#dc2626'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+                      {printingId === r.id ? <Loader2 size={14} className="animate-spin"/> : <Printer size={14}/>}
+                    </button>
                     <button onClick={() => openEdit(r)} title="Edit"
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '4px 6px', borderRadius: 4 }}
                       onMouseEnter={e => e.currentTarget.style.color = '#2563eb'}
