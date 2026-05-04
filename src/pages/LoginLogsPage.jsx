@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../lib/AuthContext'
-import { getLoginLogs } from '../lib/loginLogs'
+import { getLoginLogs, updateLoginLogLocation } from '../lib/loginLogs'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
-  CheckCircle, Clock, MapPin, Monitor, Shield, FileSpreadsheet,
+  CheckCircle, Clock, MapPin, Monitor, Shield, FileSpreadsheet, Pencil, X, Check,
 } from 'lucide-react'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
@@ -69,6 +69,9 @@ export default function LoginLogsPage() {
   const [filterEmail, setFilterEmail] = useState('')
   const [filterRole,  setFilterRole]  = useState('')
   const [emailInput,  setEmailInput]  = useState('')
+  const [editLocId,   setEditLocId]   = useState(null)
+  const [editLocVal,  setEditLocVal]  = useState({ city: '', region: '', country: '' })
+  const [savingLoc,   setSavingLoc]   = useState(false)
 
   if (!ADMIN_ROLES.includes(profile?.role)) {
     return (
@@ -104,6 +107,21 @@ export default function LoginLogsPage() {
   function handleEmailSearch(e) {
     e.preventDefault()
     setFilterEmail(emailInput.trim())
+  }
+
+  function startEditLoc(r) {
+    setEditLocId(r.id)
+    setEditLocVal({ city: r.city || '', region: r.region || '', country: r.country || '' })
+  }
+
+  async function saveEditLoc(id) {
+    setSavingLoc(true)
+    try {
+      await updateLoginLogLocation(id, editLocVal)
+      setRows(prev => prev.map(r => r.id === id ? { ...r, ...editLocVal } : r))
+      setEditLocId(null)
+    } catch (e) { console.error(e) }
+    setSavingLoc(false)
   }
 
   async function exportExcel() {
@@ -250,14 +268,48 @@ export default function LoginLogsPage() {
                         </span>
                       </td>
 
-                      {/* Location */}
-                      <td className="px-3 py-2.5">
-                        <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
-                          <MapPin size={11} className="text-gray-400 shrink-0" />
-                          {location}
-                        </span>
-                        {r.region && r.region !== r.city && (
-                          <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: 15 }}>{r.region}</div>
+                      {/* Location — click pencil to correct */}
+                      <td className="px-3 py-2.5" style={{ minWidth: 160 }}>
+                        {editLocId === r.id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <input value={editLocVal.city} onChange={e => setEditLocVal(v => ({ ...v, city: e.target.value }))}
+                              placeholder="City" autoFocus
+                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid var(--accent)', borderRadius: 5, width: '100%', outline: 'none' }}/>
+                            <input value={editLocVal.region} onChange={e => setEditLocVal(v => ({ ...v, region: e.target.value }))}
+                              placeholder="State / Region"
+                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 5, width: '100%', outline: 'none' }}/>
+                            <input value={editLocVal.country} onChange={e => setEditLocVal(v => ({ ...v, country: e.target.value }))}
+                              placeholder="Country"
+                              style={{ fontSize: 11, padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 5, width: '100%', outline: 'none' }}/>
+                            <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+                              <button onClick={() => saveEditLoc(r.id)} disabled={savingLoc}
+                                style={{ flex: 1, padding: '3px 0', borderRadius: 5, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                                {savingLoc ? <Loader2 size={10} className="animate-spin"/> : <Check size={10}/>} Save
+                              </button>
+                              <button onClick={() => setEditLocId(null)}
+                                style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #d1d5db', background: '#f9fafb', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                <X size={10}/>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                            <div style={{ flex: 1 }}>
+                              <span className="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                                <MapPin size={11} className="text-gray-400 shrink-0" />
+                                {location}
+                              </span>
+                              {r.region && r.region !== r.city && (
+                                <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: 15 }}>{r.region}</div>
+                              )}
+                            </div>
+                            <button onClick={() => startEditLoc(r)} title="Edit location"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '1px 2px', borderRadius: 4, flexShrink: 0, marginTop: 1 }}
+                              onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+                              onMouseLeave={e => e.currentTarget.style.color = '#9ca3af'}>
+                              <Pencil size={11}/>
+                            </button>
+                          </div>
                         )}
                       </td>
 

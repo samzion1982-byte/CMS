@@ -149,6 +149,15 @@ export async function stampLogout(userId) {
   try { localStorage.removeItem(LS_KEY(userId)) } catch { /* ignore */ }
 }
 
+/* Manually correct location for a log row */
+export async function updateLoginLogLocation(id, { city, region, country }) {
+  const { error } = await adminSupabase
+    .from('login_logs')
+    .update({ city: city || null, region: region || null, country: country || null })
+    .eq('id', id)
+  if (error) throw error
+}
+
 /* Admin read — paginated, filterable */
 export async function getLoginLogs({ limit = 50, offset = 0, email = '', role = '' } = {}) {
   let q = adminSupabase
