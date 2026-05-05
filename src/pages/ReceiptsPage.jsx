@@ -15,7 +15,6 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
-import { generateAndUploadPaymentPdf }             from '../lib/generatePaymentPdf'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2131,10 +2130,6 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
     const batchId = Date.now().toString()
     let done = 0
 
-    // Fetch category names once for PDF labels
-    const { data: catRows } = await supabase.from('payment_categories').select('id, name')
-    const catMap = Object.fromEntries((catRows || []).map(c => [c.id, c.name]))
-
     for (const m of toSend) {
       try {
         // Create payment_request record
@@ -2153,20 +2148,17 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('id').single()
         if (rErr) throw rErr
 
-        // Build WhatsApp message (caption shown with PDF)
-        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the PDF → Scan QR with GPay to pay.\n\nThank you.`
+        // Build payment URL
+        const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
+        const payUrl  = `${baseUrl}/pay/${req.id}`
+
+        // Build WhatsApp message
+        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the link below, then tap *Share Payment File to WhatsApp* to get a one-tap GPay button.\n\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            // Generate PDF payment slip with embedded QR code
-            const pdfUrl = await generateAndUploadPaymentPdf({
-              req: { ...req, member_name: m.member_name, months: m.billingMonths, slot: m.slot, amounts: m.amounts, grand_total: m.totalAmt },
-              church,
-              catMap,
-            })
-
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, mediaUrl: pdfUrl })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,
