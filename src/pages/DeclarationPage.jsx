@@ -211,10 +211,23 @@ export default function DeclarationPage() {
       if (listSearch.trim()) q = q.or(`member_name.ilike.%${listSearch}%,member_id.ilike.%${listSearch}%`)
       const { data, error } = await q
       if (error) throw error
-      setDeclarations(data || [])
+      let rows = data || []
+      const subCatId = categories[0]?.id
+      if (subCatId && rows.length) {
+        const ids = rows.map(d => d.id)
+        const { data: subItems, error: subItemsErr } = await supabase.from('declaration_items')
+          .select('declaration_id,category_id,amount')
+          .in('declaration_id', ids)
+          .eq('category_id', subCatId)
+        if (!subItemsErr && subItems?.length) {
+          const subMap = Object.fromEntries(subItems.map(i => [i.declaration_id, i.amount]))
+          rows = rows.map(r => ({ ...r, declared_sub_amount: subMap[r.id] != null ? parseInt(subMap[r.id]) : null }))
+        }
+      }
+      setDeclarations(rows)
     } catch (e) { toast(e.message, 'error') }
     setListLoading(false)
-  }, [filterFY, listSearch, toast])
+  }, [filterFY, listSearch, toast, categories])
 
   useEffect(() => { loadList() }, [loadList])
 
@@ -297,17 +310,23 @@ export default function DeclarationPage() {
     { key: 'sub_pct',      header: 'Sub %',               align: 'center' },
     { key: 'declared_sub', header: 'Declared Sub (₹)',    align: 'center' },
   ]
-  const toExcelRow = d => ({
-    decl_no:      d.declaration_number != null ? String(d.declaration_number).padStart(4, '0') : '',
-    member_id:    d.member_id,
-    member_name:  d.member_name,
-    fy:           d.financial_year,
-    date:         fmtDate(d.declaration_date),
-    income_cat:   d.income_category || '',
-    declared_inc: Math.round(parseFloat(d.declared_income) || 0),
-    sub_pct:      parseFloat(d.percentage) || 0,
-    declared_sub: Math.round((parseFloat(d.declared_income) || 0) * (parseFloat(d.percentage) || 0) / 100),
-  })
+  const toExcelRow = d => {
+    const declaredIncome = Math.round(parseFloat(d.declared_income) || 0)
+    const declaredSub = d.declared_sub_amount != null
+      ? parseInt(d.declared_sub_amount)
+      : Math.round(declaredIncome * (parseFloat(d.percentage) || 0) / 100)
+    return {
+      decl_no:      d.declaration_number != null ? String(d.declaration_number).padStart(4, '0') : '',
+      member_id:    d.member_id,
+      member_name:  d.member_name,
+      fy:           d.financial_year,
+      date:         fmtDate(d.declaration_date),
+      income_cat:   d.income_category || '',
+      declared_inc: declaredIncome,
+      sub_pct:      parseFloat(d.percentage) || 0,
+      declared_sub: declaredSub,
+    }
+  }
 
   const doExport = async (fy) => {
     setExporting(true)
@@ -516,7 +535,9 @@ export default function DeclarationPage() {
             </thead>
             <tbody>
               {declarations.map((d, i) => {
-                const sub = Math.round((parseFloat(d.declared_income) || 0) * (parseFloat(d.percentage) || 0) / 100)
+                const sub = d.declared_sub_amount != null
+                  ? parseInt(d.declared_sub_amount)
+                  : Math.round((parseFloat(d.declared_income) || 0) * (parseFloat(d.percentage) || 0) / 100)
                 return (
                   <tr key={d.id} style={{ borderBottom: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
@@ -571,7 +592,12 @@ export default function DeclarationPage() {
           profile={profile}
           toast={toast}
           onClose={() => setShowModal(false)}
-          onSaved={(fy) => { setShowModal(false); updateFYActivity(fy); loadList(); loadFyStats() }}
+          onSaved={async (fy) => {
+            setShowModal(false)
+            await updateFYActivity(fy)
+            await loadList()
+            await loadFyStats()
+          }}
         />
       )}
 
@@ -925,15 +951,6 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
     setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: '' })))
   }, [categories])
 
-  // sync subscription amount with calculated value (income * percentage)
-  useEffect(() => {
-    if (!subCat || !incomeNum || !pctNum) return
-    const calculatedSub = String(sub)
-    setSubRaw(calculatedSub)
-    setSubDisplay(calculatedSub ? Number(calculatedSub).toLocaleString('en-IN') : '')
-    setItems(prev => prev.map(i => i.category_id === subCat.id ? { ...i, amount: calculatedSub } : i))
-  }, [sub, subCat, incomeNum, pctNum])
-
   // auto-generate declaration number for new
   useEffect(() => {
     if (editId || !decl.financial_year) return
@@ -962,17 +979,11 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
       
-      // Ensure subscription amount is consistent with income * percentage
-      const calculatedSub = Math.round((d.declared_income || 0) * (d.percentage || 0) / 100)
+      // Use the stored subscription amount from declaration_items
       const subItem = map[categories[0]?.id]
       const storedSub = subItem ? Math.round(subItem.amount) : 0
       
-      if (calculatedSub !== storedSub && categories[0]) {
-        // Update the items array with the correct calculated subscription
-        setItems(prev => prev.map(i => i.category_id === categories[0].id ? { ...i, amount: String(calculatedSub) } : i))
-      }
-      
-      const subVal = String(calculatedSub)
+      const subVal = String(storedSub)
       setSubRaw(subVal)
       setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
     }).finally(() => setLoading(false))
@@ -1011,17 +1022,11 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
       
-      // Ensure subscription amount is consistent with income * percentage
-      const calculatedSub = Math.round((d.declared_income || 0) * (d.percentage || 0) / 100)
+      // Use the stored subscription amount from declaration_items
       const subItem = map[categories[0]?.id]
       const storedSub = subItem ? Math.round(subItem.amount) : 0
       
-      if (calculatedSub !== storedSub && categories[0]) {
-        // Update the items array with the correct calculated subscription
-        setItems(prev => prev.map(i => i.category_id === categories[0].id ? { ...i, amount: String(calculatedSub) } : i))
-      }
-      
-      const subVal = String(calculatedSub)
+      const subVal = String(storedSub)
       setSubRaw(subVal)
       setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
     }
@@ -1212,7 +1217,7 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       }
 
       toast(effectiveEditId ? 'Declaration updated' : 'Declaration saved', 'success')
-      onSaved(decl.financial_year)
+      await onSaved(decl.financial_year)
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
