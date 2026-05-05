@@ -97,10 +97,11 @@ export default function PaymentPage({ requestId: propId }) {
   async function sharePaymentFile() {
     if (!qrDataUrl || !church?.upi_id) return
     const upiId  = church.upi_id.trim()
-    const pn     = encodeURIComponent(church.church_name || 'Church')
-    // Do NOT encodeURIComponent the UPI ID — GPay expects raw @ in pa=
-    const gpay   = `gpay://upi/pay?pa=${upiId}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
-    const upi    = `upi://pay?pa=${upiId}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
+    // Minimal URL — no pn/tn to avoid encoding issues with church name apostrophes
+    // @ encoded as %40 to prevent Android URI parser treating it as user-info separator
+    const pa     = upiId.replace('@', '%40')
+    const gpay   = `gpay://upi/pay?pa=${pa}&am=${total}&cu=INR`
+    const upi    = `upi://pay?pa=${pa}&am=${total}&cu=INR`
     const catRows = Object.entries(req.amounts || {}).map(([cid, rate]) => ({
       name: catMap[cid] || 'Category',
       amount: (parseFloat(rate) || 0) * (req.slot || 1),
