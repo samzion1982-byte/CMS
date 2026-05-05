@@ -338,9 +338,22 @@ export default function DeclarationPage() {
         .order('declaration_number', { ascending: true })
       if (fy) q = q.eq('financial_year', fy)
       else    q = q.order('financial_year', { ascending: true })
-      const { data, error } = await q
-      if (error) throw error
+      let data = (await q).data
       if (!data?.length) { toast('No data to export', 'error'); setExporting(false); return }
+
+      // Load stored subscription amounts
+      const subCatId = categories[0]?.id
+      if (subCatId) {
+        const ids = data.map(d => d.id)
+        const { data: subItems } = await supabase.from('declaration_items')
+          .select('declaration_id,category_id,amount')
+          .in('declaration_id', ids)
+          .eq('category_id', subCatId)
+        if (subItems?.length) {
+          const subMap = Object.fromEntries(subItems.map(i => [i.declaration_id, i.amount]))
+          data = data.map(r => ({ ...r, declared_sub_amount: subMap[r.id] != null ? parseInt(subMap[r.id]) : null }))
+        }
+      }
 
       if (fy) {
         await exportToExcel(EXPORT_COLS, data.map(toExcelRow), `FY ${fy}`, `Declarations_${fy}.xlsx`)
