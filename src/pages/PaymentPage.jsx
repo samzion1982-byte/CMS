@@ -75,10 +75,10 @@ export default function PaymentPage({ requestId: propId }) {
     if (total <= 0) { alert('Please enter a valid amount.'); return }
     if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
     setPaying(true)
-    const pa   = encodeURIComponent(church.upi_id)
+    const pa   = church.upi_id.trim()        // UPI ID must NOT be encoded — @ must stay as @
     const pn   = encodeURIComponent((church.church_name || 'Church').slice(0, 50))
-    const am   = total.toFixed(2)           // UPI spec requires exactly 2 decimal places
-    const tn   = encodeURIComponent(`Offering ${req.member_id}`)   // simple note, no special chars
+    const am   = total.toFixed(2)           // UPI spec: exactly 2 decimal places
+    const tn   = encodeURIComponent('Church Offering')
     const upi  = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
     window.location.href = upi
     setTimeout(() => setPaying(false), 3000)
