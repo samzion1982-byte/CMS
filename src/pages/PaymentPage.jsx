@@ -282,13 +282,16 @@ export default function PaymentPage({ requestId: propId }) {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginBottom: '0.9rem' }}>
-                <div style={{ background: '#fff', padding: 14, border: '1.5px solid #DDE6F7', borderRadius: 12 }}>
+                <a
+                  href={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`}
+                  style={{ display: 'block', background: '#fff', padding: 14, border: '1.5px solid #DDE6F7', borderRadius: 12, cursor: 'pointer' }}
+                >
                   <QRCode
-                    value={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent((church.church_name || 'Church').replace(/[^\x00-\x7F]/g,'').trim().slice(0,20)||'Church')}&am=${String(total)}&cu=INR&tn=ChurchOffering`}
+                    value={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`}
                     size={160}
                     fgColor="#0B1F4B"
                   />
-                </div>
+                </a>
                 {/* same-phone tip */}
                 <div style={{ background: '#FFF9EC', border: '1px solid #FDE68A', borderRadius: 10, padding: '0.7rem 0.9rem', width: '100%' }}>
                   <div style={{ fontSize: 11.5, fontWeight: 600, color: '#92400E', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
