@@ -240,7 +240,7 @@ export default function PaymentPage({ requestId: propId }) {
 
               {/* Steps */}
               <div style={{ display: 'flex', gap: 6, marginBottom: '1rem' }}>
-                {[['1','Open GPay\nor PhonePe'],['2','Tap\nScan QR'],['3','Point camera\nat code below']].map(([n,t])=>(
+                {[['1','Save QR\nto phone'],['2','Open GPay\n→ Scan icon'],['3','Gallery →\nselect QR']].map(([n,t])=>(
                   <div key={n} style={{ flex:1, textAlign:'center' }}>
                     <div style={{ width:24, height:24, borderRadius:'50%', background:'#0B1F4B', color:'#fff', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 4px' }}>{n}</div>
                     <div style={{ fontSize:10.5, color:'#64748b', lineHeight:1.4, whiteSpace:'pre-line', fontFamily:"'DM Sans',sans-serif" }}>{t}</div>
@@ -248,8 +248,8 @@ export default function PaymentPage({ requestId: propId }) {
                 ))}
               </div>
 
-              {/* QR code — rendered as <img> so long-press shows Google Lens */}
-              <div style={{ display:'flex', justifyContent:'center', marginBottom:'0.9rem' }}>
+              {/* QR code + Save button */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:'0.9rem' }}>
                 {qrDataUrl
                   ? <img src={qrDataUrl} alt="UPI Payment QR Code"
                       style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block' }}
@@ -258,17 +258,29 @@ export default function PaymentPage({ requestId: propId }) {
                       <div style={{ width:32, height:32, border:'3px solid #DDE6F7', borderTopColor:'#2B5CE6', borderRadius:'50%', animation:'hspin .7s linear infinite' }}/>
                     </div>
                 }
+                {qrDataUrl && (
+                  <a href={qrDataUrl} download="upi-payment-qr.png" style={{
+                    display:'flex', alignItems:'center', gap:6,
+                    padding:'8px 20px', borderRadius:8, background:'#0B1F4B', color:'#fff',
+                    fontSize:13, fontWeight:500, textDecoration:'none', fontFamily:"'DM Sans',sans-serif",
+                  }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Save QR to phone
+                  </a>
+                )}
               </div>
 
               {/* Same-phone tip */}
-              <div style={{ background:'#FFF9EC', border:'1px solid #FDE68A', borderRadius:10, padding:'0.65rem 0.9rem', marginBottom:'0.9rem' }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'#92400E', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>
-                  Paying from this phone? 3 taps:
+              <div style={{ background:'#EBF1FD', border:'1px solid #C7D9F8', borderRadius:10, padding:'0.65rem 0.9rem', marginBottom:'0.9rem' }}>
+                <div style={{ fontSize:12, fontWeight:600, color:'#1e3a6e', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>
+                  Paying from this phone?
                 </div>
-                <div style={{ fontSize:12, color:'#78350F', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
-                  1. Long-press QR above<br/>
-                  2. Tap <strong>"Search image with Google Lens"</strong><br/>
-                  3. Lens opens → tap the GPay / UPI icon
+                <div style={{ fontSize:12, color:'#1e3a6e', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
+                  1. Tap <strong>Save QR to phone</strong> above<br/>
+                  2. Open <strong>GPay</strong> → tap the <strong>Scan</strong> icon<br/>
+                  3. Tap the <strong>Gallery</strong> icon → select saved QR
                 </div>
               </div>
 
