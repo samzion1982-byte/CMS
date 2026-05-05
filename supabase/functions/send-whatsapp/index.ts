@@ -63,14 +63,16 @@ serve(async (req) => {
 
       const apiUrl = ((church.whatsapp_url || '').trim().replace(/\/+$/, '')) || 'https://cloud.soft7.in/api/send'
 
+      const isHtml = (mediaUrl || '').toLowerCase().includes('.html')
       const payload = {
         number:       phone,
-        type:         mediaUrl ? (isDoc ? 'document' : 'media') : 'text',
+        type:         mediaUrl ? (isDoc ? (isHtml ? 'file' : 'document') : 'media') : 'text',
         message:      message || '',
         instance_id:  church.instance_id,
         access_token: church.access_token,
-        ...(mediaUrl && { media_url: mediaUrl }),
-        ...(isDoc    && { filename: docFilename }),
+        ...(mediaUrl  && { media_url: mediaUrl }),
+        ...(isDoc     && { filename: docFilename }),
+        ...(isHtml    && { mime_type: 'text/html' }),
       }
       const resp = await fetch(apiUrl, {
         method: 'POST',
