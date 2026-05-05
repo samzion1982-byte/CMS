@@ -10,7 +10,7 @@ import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
   IndianRupee, CheckSquare, Square, Settings, Lock,
-  FileSpreadsheet, ChevronDown, Printer,
+  FileSpreadsheet, ChevronDown, Printer, Send, Bell,
 } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
@@ -78,6 +78,9 @@ export default function ReceiptsPage() {
   const [church,          setChurch]          = useState(null)
   const [printingId,      setPrintingId]      = useState(null)
   const [pwGate,          setPwGate]          = useState(null)  // { label, onConfirmed }
+  const [showPushModal,   setShowPushModal]   = useState(false)
+  const [showPending,     setShowPending]     = useState(false)
+  const [pendingCount,    setPendingCount]    = useState(0)
   const exportMenuRef = useRef(null)
 
   // show FYs with receipts + FYs with lock records + current FY
@@ -166,6 +169,15 @@ export default function ReceiptsPage() {
       supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
     )).then(loadFYLockData)
   }, [fyLocks]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadPendingCount = useCallback(async () => {
+    const { count } = await supabase
+      .from('payment_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'paid_by_member')
+    setPendingCount(count || 0)
+  }, [])
+  useEffect(() => { loadPendingCount() }, [loadPendingCount])
 
   const updateFYActivity = useCallback(async (fy) => {
     const { error } = await supabase.from('receipt_financial_years')
@@ -423,6 +435,30 @@ export default function ReceiptsPage() {
             )}
           </div>
 
+          {/* Push Payment Request */}
+          <button className="action-btn" onClick={() => setShowPushModal(true)}
+            style={{ background: '#7c3aed', position: 'relative' }}
+            title="Send payment requests to eligible members">
+            <Send size={13}/>Push Payment
+          </button>
+
+          {/* Pending Payments */}
+          <button className="action-btn" onClick={() => setShowPending(true)}
+            style={{
+              position: 'relative',
+              background: pendingCount > 0 ? '#d97706' : 'var(--page-bg)',
+              color: pendingCount > 0 ? '#fff' : 'var(--text-2)',
+              border: `1px solid ${pendingCount > 0 ? '#d97706' : 'var(--card-border)'}`,
+            }}
+            title="View pending payment confirmations">
+            {pendingCount > 0 && (
+              <span style={{ position: 'absolute', top: -5, right: -5, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 17, height: 17, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, border: '2px solid var(--page-bg)' }}>
+                {pendingCount > 99 ? '99+' : pendingCount}
+              </span>
+            )}
+            <Bell size={13}/>{pendingCount > 0 ? `Pending (${pendingCount})` : 'Pending'}
+          </button>
+
           {/* New Receipt */}
           <button className="action-btn" onClick={openNew} disabled={catsLoading}
             style={{ background: 'var(--sidebar-bg)' }} title="New receipt  (+)">
@@ -638,6 +674,27 @@ export default function ReceiptsPage() {
             setShowModal(false); loadList(); loadFyStats()
             if (fy) updateFYActivity(fy)
           }}
+        />
+      )}
+
+      {showPushModal && (
+        <PushPaymentRequestModal
+          church={church}
+          categories={categories}
+          profile={profile}
+          toast={toast}
+          onClose={() => setShowPushModal(false)}
+          onSent={() => { setShowPushModal(false); loadPendingCount() }}
+        />
+      )}
+
+      {showPending && (
+        <PendingPaymentsModal
+          categories={categories}
+          profile={profile}
+          toast={toast}
+          onClose={() => setShowPending(false)}
+          onConfirmed={() => { loadPendingCount(); setShowPending(false); openNew() }}
         />
       )}
     </div>
@@ -1985,6 +2042,418 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════
+//  PUSH PAYMENT REQUEST MODAL
+// ════════════════════════════════════════════════════════
+
+const FY_MONTHS_PR  = ['April','May','June','July','August','September','October','November','December','January','February','March']
+const SLOT_DUE_IDX  = { 1:[0,1,2,3,4,5,6,7,8,9,10,11], 2:[0,2,4,6,8,10], 3:[0,3,6,9], 4:[0,4,8], 6:[0,6], 12:[0] }
+const SLOT_LBL_PR   = { 1:'Monthly', 2:'Every 2 mo', 3:'Quarterly', 4:'Every 4 mo', 6:'Half-Yearly', 12:'Annual' }
+
+function curFY() {
+  const m = new Date().getMonth() + 1, y = new Date().getFullYear()
+  return m >= 4 ? `${y}-${String(y+1).slice(-2)}` : `${y-1}-${String(y).slice(-2)}`
+}
+function fyMonthIdx(monthName) { return FY_MONTHS_PR.indexOf(monthName) }
+function billingMonths(slot, startIdx) {
+  return Array.from({ length: slot }, (_, i) => FY_MONTHS_PR[(startIdx + i) % 12]).join(', ')
+}
+
+function PushPaymentRequestModal({ church, categories, profile, toast, onClose, onSent }) {
+  const fy = curFY()
+  const today = new Date()
+  const calMonth = today.getMonth() + 1  // 1-12
+  const defaultMonth = FY_MONTHS_PR[calMonth >= 4 ? calMonth - 4 : calMonth + 8]
+
+  const [selMonth,    setSelMonth]    = useState(defaultMonth)
+  const [eligible,    setEligible]    = useState(null)   // null=not yet loaded
+  const [finding,     setFinding]     = useState(false)
+  const [selected,    setSelected]    = useState(new Set())
+  const [sending,     setSending]     = useState(false)
+  const [progress,    setProgress]    = useState(null)   // { done, total }
+  const [prSearch,    setPrSearch]    = useState('')
+
+  const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]))
+
+  async function findEligible() {
+    setFinding(true); setEligible(null); setPrSearch('')
+    try {
+      const { data: schedules, error } = await supabase
+        .from('member_payment_schedules')
+        .select('*')
+        .eq('excluded_from_online', false)
+      if (error) throw error
+
+      const idx = fyMonthIdx(selMonth)
+      const due = (schedules || []).filter(s => (SLOT_DUE_IDX[s.slot] || []).includes(idx))
+
+      // Fetch WhatsApp numbers from members table for any schedule missing it
+      const missingWA = due.filter(s => !s.whatsapp).map(s => s.member_id)
+      let waMap = {}
+      if (missingWA.length) {
+        const { data: mems } = await supabase
+          .from('members')
+          .select('member_id, whatsapp, mobile')
+          .in('member_id', missingWA)
+        ;(mems || []).forEach(m => { waMap[m.member_id] = m.whatsapp || m.mobile || '' })
+      }
+
+      const result = due.map(s => {
+        const months  = billingMonths(s.slot, idx)
+        const totalAmt = Object.values(s.amounts || {}).reduce((a, b) => a + (parseFloat(b) || 0) * s.slot, 0)
+        const whatsapp = s.whatsapp || waMap[s.member_id] || ''
+        return { ...s, whatsapp, billingMonths: months, totalAmt }
+      }).sort((a, b) => (a.member_id || '').localeCompare(b.member_id || '', undefined, { numeric: true }))
+
+      setEligible(result)
+      setSelected(new Set(result.map(r => r.member_id)))
+    } catch (e) { toast('Error: ' + e.message, 'error') }
+    setFinding(false)
+  }
+
+  function toggleAll() {
+    if (selected.size === eligible.length) setSelected(new Set())
+    else setSelected(new Set(eligible.map(r => r.member_id)))
+  }
+
+  async function sendRequests() {
+    if (!church?.upi_id) { toast('Please set UPI ID in Church Setup first.', 'error'); return }
+    const toSend = (eligible || []).filter(r => selected.has(r.member_id))
+    if (!toSend.length) { toast('No members selected', 'info'); return }
+
+    setSending(true); setProgress({ done: 0, total: toSend.length })
+    const batchId = Date.now().toString()
+    let done = 0
+
+    for (const m of toSend) {
+      try {
+        // Create payment_request record
+        const { data: req, error: rErr } = await supabase.from('payment_requests').insert({
+          member_id:   m.member_id,
+          member_name: m.member_name,
+          whatsapp:    m.whatsapp,
+          fy,
+          months:      m.billingMonths,
+          slot:        m.slot,
+          amounts:     m.amounts || {},
+          grand_total: m.totalAmt,
+          status:      'pending',
+          push_batch_id: batchId,
+          created_by:  profile?.email || '',
+        }).select('id').single()
+        if (rErr) throw rErr
+
+        // Build payment URL
+        const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
+        const payUrl = `${baseUrl}/pay/${req.id}`
+
+        // Build WhatsApp message
+        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
+
+        // Send WhatsApp (best-effort)
+        if (m.whatsapp) {
+          try {
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
+            await supabase.from('payment_request_logs').insert({
+              payment_request_id: req.id, member_id: m.member_id,
+              member_name: m.member_name, whatsapp_number: m.whatsapp,
+              message: msg, status: 'sent',
+              error_text: JSON.stringify(apiResp),   // store full API response for debugging
+              api_type: church.whatsapp_api_type || 'soft7',
+              sent_by: profile?.email || '',
+            })
+          } catch (waErr) {
+            await supabase.from('payment_request_logs').insert({
+              payment_request_id: req.id, member_id: m.member_id,
+              member_name: m.member_name, whatsapp_number: m.whatsapp,
+              message: msg, status: 'failed', error_text: waErr.message,
+              api_type: church.whatsapp_api_type || 'soft7',
+              sent_by: profile?.email || '',
+            })
+          }
+        }
+      } catch (e) {
+        console.error('Failed for', m.member_id, e.message)
+      }
+      done++
+      setProgress({ done, total: toSend.length })
+    }
+
+    toast(`${done} payment request${done !== 1 ? 's' : ''} sent`, 'success')
+    setSending(false)
+    onSent()
+  }
+
+  const allSelected = eligible?.length > 0 && selected.size === eligible.length
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget && !sending) onClose() }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ background: '#7c3aed', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 60%)', pointerEvents: 'none' }}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
+            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Send size={16} color="#fff"/>
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-ui)' }}>Push Payment Request</h3>
+              <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.75)', fontFamily: 'var(--font-ui)' }}>FY {fy}</p>
+            </div>
+          </div>
+          {!sending && (
+            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+
+          {/* Month selector + Find button */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 20 }}>
+            <div className="field-group" style={{ flex: '0 0 180px' }}>
+              <label className="field-label">Payment Month</label>
+              <select className="field-input" value={selMonth} onChange={e => { setSelMonth(e.target.value); setEligible(null) }}
+                style={{ appearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
+                {FY_MONTHS_PR.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <button onClick={findEligible} disabled={finding} className="btn btn-primary" style={{ background: '#7c3aed', borderColor: '#7c3aed' }}>
+              {finding ? <><Loader2 size={14} className="animate-spin"/>Finding…</> : <><Search size={14}/>Find Eligible</>}
+            </button>
+          </div>
+
+          {eligible === null && !finding && (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-3)', fontSize: 13 }}>
+              Select a month and click "Find Eligible" to see which members are due.
+            </div>
+          )}
+
+          {eligible !== null && eligible.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-3)', fontSize: 13 }}>
+              No members are due for <strong>{selMonth}</strong>. Check Payment Schedule or run Auto-Scan first.
+            </div>
+          )}
+
+          {eligible !== null && eligible.length > 0 && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+                  {eligible.length} member{eligible.length !== 1 ? 's' : ''} eligible · {selected.size} selected
+                </div>
+                <button onClick={toggleAll} className="btn btn-ghost btn-sm">
+                  {allSelected ? <Square size={13}/> : <CheckSquare size={13}/>}
+                  {allSelected ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+
+              {/* Search */}
+              <div style={{ position: 'relative', marginBottom: 10 }}>
+                <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }}/>
+                <input
+                  className="field-input"
+                  style={{ paddingLeft: 28, fontSize: 12 }}
+                  placeholder="Search by name or member ID…"
+                  value={prSearch}
+                  onChange={e => setPrSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--page-bg)' }}>
+                      <th style={{ padding: '8px 12px', width: 30 }}/>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Member</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Period</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Slot</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eligible.filter(m => {
+                      const q = prSearch.trim().toLowerCase()
+                      return !q || m.member_name?.toLowerCase().includes(q) || m.member_id?.toLowerCase().includes(q)
+                    }).map((m, i) => {
+                      const chk = selected.has(m.member_id)
+                      return (
+                        <tr key={m.member_id} onClick={() => setSelected(prev => { const n = new Set(prev); if (n.has(m.member_id)) n.delete(m.member_id); else n.add(m.member_id); return n })}
+                          style={{ borderBottom: '1px solid var(--card-border)', cursor: 'pointer', background: chk ? 'rgba(124,58,237,0.05)' : i % 2 === 0 ? 'transparent' : 'var(--page-bg)' }}>
+                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                            {chk ? <CheckSquare size={14} style={{ color: '#7c3aed' }}/> : <Square size={14} style={{ color: 'var(--text-3)' }}/>}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-1)' }}>{m.member_name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{m.member_id} · {m.whatsapp || 'No WhatsApp'}</div>
+                          </td>
+                          <td style={{ padding: '8px 12px', color: 'var(--text-2)', fontSize: 12 }}>{m.billingMonths}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#f5f3ff', color: '#7c3aed' }}>{SLOT_LBL_PR[m.slot]}</span>
+                          </td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-1)' }}>₹{m.totalAmt.toLocaleString('en-IN')}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Progress bar while sending */}
+              {sending && progress && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
+                    <span>Sending requests…</span>
+                    <span>{progress.done} / {progress.total}</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--card-border)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: '#7c3aed', borderRadius: 3, width: `${(progress.done / progress.total) * 100}%`, transition: 'width 0.3s ease' }}/>
+                  </div>
+                </div>
+              )}
+
+              <button onClick={sendRequests} disabled={sending || selected.size === 0}
+                style={{ width: '100%', padding: '11px 0', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: sending || selected.size === 0 ? 'not-allowed' : 'pointer', opacity: sending || selected.size === 0 ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                {sending ? <Loader2 size={15} className="animate-spin"/> : <Send size={15}/>}
+                {sending ? 'Sending…' : `Send to ${selected.size} Member${selected.size !== 1 ? 's' : ''} via WhatsApp`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════
+//  PENDING PAYMENTS MODAL
+// ════════════════════════════════════════════════════════
+
+function PendingPaymentsModal({ categories, profile, toast, onClose, onConfirmed }) {
+  const [requests, setRequests] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [confirmingId, setConfirmingId] = useState(null)
+
+  const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]))
+
+  useEffect(() => {
+    supabase.from('payment_requests').select('*')
+      .eq('status', 'paid_by_member')
+      .order('paid_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error) setRequests(data || [])
+        setLoading(false)
+      })
+  }, [])
+
+  async function confirm(r) {
+    setConfirmingId(r.id)
+    const { error } = await supabase.from('payment_requests').update({
+      status:       'confirmed',
+      confirmed_by: profile?.email || profile?.full_name || '',
+      confirmed_at: new Date().toISOString(),
+      updated_at:   new Date().toISOString(),
+    }).eq('id', r.id)
+    if (error) { toast(error.message, 'error'); setConfirmingId(null); return }
+    toast(`Confirmed payment for ${r.member_name}`, 'success')
+    setRequests(prev => prev.filter(x => x.id !== r.id))
+    setConfirmingId(null)
+    onConfirmed()
+  }
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget && !confirmingId) onClose() }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ background: '#d97706', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 60%)', pointerEvents: 'none' }}/>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
+            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bell size={16} color="#fff"/>
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-ui)' }}>Pending Payment Confirmations</h3>
+              <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.75)', fontFamily: 'var(--font-ui)' }}>Members who have notified payment — verify and confirm</p>
+            </div>
+          </div>
+          {!confirmingId && (
+            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <Loader2 size={22} className="animate-spin" style={{ color: 'var(--text-3)', margin: '0 auto' }}/>
+            </div>
+          ) : requests.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)', fontSize: 13 }}>
+              No pending confirmations. All payments are up to date.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {requests.map(r => (
+                <div key={r.id} style={{ border: '1px solid var(--card-border)', borderRadius: 12, padding: '14px 16px', background: 'var(--card-bg)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-1)' }}>{r.member_name}</span>
+                        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-3)' }}>{r.member_id}</span>
+                        {r.member_edited_amounts && (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#d97706' }}>Amounts edited by member</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4 }}>
+                        <strong>{r.months}</strong> · {r.fy} · {r.whatsapp || 'No WhatsApp'}
+                      </div>
+                      {r.upi_ref && (
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                          UPI Ref: <strong>{r.upi_ref}</strong>
+                        </div>
+                      )}
+                      {r.paid_at && (
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                          Notified: {new Date(r.paid_at).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                        </div>
+                      )}
+                      {/* Show edited amounts if any */}
+                      {r.member_edited_amounts && (
+                        <div style={{ marginTop: 8, padding: '8px 10px', background: '#fef9ec', borderRadius: 8, border: '1px solid #fde68a' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#d97706', marginBottom: 4 }}>Member-edited amounts:</div>
+                          {Object.entries(r.member_edited_amounts).map(([cid, amt]) => (
+                            <div key={cid} style={{ fontSize: 11, color: '#92400e', display: 'flex', justifyContent: 'space-between', maxWidth: 220 }}>
+                              <span>{catMap[cid] || cid}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>₹{Number(amt).toLocaleString('en-IN')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 800, color: 'var(--text-1)', marginBottom: 8 }}>
+                        ₹{(r.grand_total || 0).toLocaleString('en-IN')}
+                      </div>
+                      <button onClick={() => confirm(r)} disabled={confirmingId === r.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: confirmingId === r.id ? 'not-allowed' : 'pointer', opacity: confirmingId === r.id ? 0.65 : 1 }}>
+                        {confirmingId === r.id ? <Loader2 size={12} className="animate-spin"/> : <IndianRupee size={12}/>}
+                        Confirm & Create Receipt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

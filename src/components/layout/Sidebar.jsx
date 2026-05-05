@@ -4,7 +4,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { Menu, ChevronLeft,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
-  BookOpen, MessageSquare,
+  BookOpen, MessageSquare, CreditCard, Send,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -14,10 +14,11 @@ const NAV = [
     { label: 'Members',   path: '/members',   icon: Users },
   ]},
   { group: 'FINANCE', items: [
-    { label: 'Declaration',      path: '/declaration',      icon: FileText  },
-    { label: 'Receipt Entry',    path: '/receipts',         icon: IndianRupee },
-    { label: 'Member Statement', path: '/member-statement', icon: BookOpen  },
-    { label: 'Reports',          path: '/reports',          icon: BarChart3 },
+    { label: 'Declaration',       path: '/declaration',       icon: FileText    },
+    { label: 'Receipt Entry',     path: '/receipts',          icon: IndianRupee },
+    { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
+    { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
+    { label: 'Reports',           path: '/reports',           icon: BarChart3   },
   ]},
   { group: 'MODULES', items: [
     { label: 'Announcements', path: '/announcements', icon: Megaphone },
@@ -30,6 +31,7 @@ const NAV = [
   { group: 'LOGS', adminOnly: true, items: [
     { label: 'Announcements Log',   path: '/announcements-log',      icon: ClipboardList  },
     { label: 'WhatsApp Receipts',   path: '/whatsapp-receipt-log',   icon: MessageSquare  },
+    { label: 'Payment Req. Log',    path: '/payment-request-log',    icon: Send           },
     { label: 'Login Details',       path: '/login-logs',             icon: LogIn          },
   ]},
 ]

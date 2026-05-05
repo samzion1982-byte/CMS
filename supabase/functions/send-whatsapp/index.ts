@@ -85,6 +85,13 @@ serve(async (req) => {
       if (parsed.status === 'error' || parsed.error || parsed.success === false) {
         throw new Error(`Soft7 error: ${parsed.message || parsed.error || parsed.reason || rawText}`)
       }
+
+      // Soft7 sometimes returns status:"success" but message indicates the instance isn't ready
+      const softMsg = String(parsed.message || '').toLowerCase()
+      if (softMsg.includes('not ready') || softMsg.includes('connection') || softMsg.includes('stabilize')) {
+        throw new Error(`WhatsApp not connected: ${parsed.message}`)
+      }
+
       result = parsed
     }
 

@@ -20,6 +20,9 @@ import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
 import ReportsPage from './pages/ReportsPage'
 import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
+import PaymentSchedulePage    from './pages/PaymentSchedulePage'
+import PaymentPage            from './pages/PaymentPage'
+import PaymentRequestLogPage  from './pages/PaymentRequestLogPage'
 
 console.log('📱 App component rendering')
 
@@ -318,6 +321,14 @@ function AppRoutes() {
         path="/whatsapp-receipt-log"
         element={<PrivateRoute><AppLayout><WhatsAppReceiptLogPage /></AppLayout></PrivateRoute>}
       />
+      <Route
+        path="/payment-schedule"
+        element={<PrivateRoute><AppLayout><PaymentSchedulePage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/payment-request-log"
+        element={<PrivateRoute><AppLayout><PaymentRequestLogPage /></AppLayout></PrivateRoute>}
+      />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
@@ -327,6 +338,13 @@ function AppRoutes() {
 // 🎯 Main App Component
 function App() {
   console.log('🎯 App mounting')
+
+  // Intercept /pay/:requestId before any Router/Auth setup.
+  // PaymentPage is a public page — members must never see a login form.
+  const payMatch = window.location.pathname.match(/^\/pay\/([^/]+)/)
+  if (payMatch) {
+    return <PaymentPage requestId={payMatch[1]} />
+  }
 
   return (
     <AuthProvider>

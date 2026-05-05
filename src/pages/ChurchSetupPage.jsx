@@ -49,6 +49,8 @@ export default function ChurchSetupPage() {
     auth_code: '',
     receipt_date_mode: 'today',
     whatsapp_receipt_mode: 'instant',
+    upi_id: '',
+    site_url: '',
   })
 
   useEffect(() => { loadChurch() }, [])
@@ -85,6 +87,8 @@ export default function ChurchSetupPage() {
         auth_code:          data.auth_code          || '',
         receipt_date_mode:     data.receipt_date_mode     || 'today',
         whatsapp_receipt_mode: data.whatsapp_receipt_mode || 'instant',
+        upi_id:                data.upi_id                || '',
+        site_url:              data.site_url              || '',
       })
       setAuthCode(data.auth_code || '')
       if (data.logo_url) setLogoPreview(data.logo_url)
@@ -244,7 +248,7 @@ export default function ChurchSetupPage() {
         treasurer_name:'', treasurer_whatsapp:'',
         admin1_name:'',    admin1_whatsapp:'',
         auth_code:'', logo_url: null, diocese_logo_url: null, treasurer_seal_url: null,
-        receipt_date_mode:'today', whatsapp_receipt_mode:'instant',
+        receipt_date_mode:'today', whatsapp_receipt_mode:'instant', upi_id:'', site_url:'',
         updated_at: new Date().toISOString()
       }
       const { error } = await supabase.from('churches').update(blank).eq('id', church.id)
@@ -559,6 +563,32 @@ export default function ChurchSetupPage() {
                     {form.receipt_date_mode === 'fixed'
                       ? 'New receipts pre-fill with the last saved receipt\'s date. The field flashes yellow until you change it.'
                       : "New receipts always start with today's date."}</p>
+                </div>
+
+                {/* Site URL */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">App / Site URL</p>
+                  <div className="field-group">
+                    <input className="field-input" value={form.site_url} onChange={e => s('site_url', e.target.value)}
+                      placeholder="https://yourchurch.app"
+                      style={{ fontFamily: 'monospace', letterSpacing: '0.02em' }}/>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Public URL of this app. Used in WhatsApp payment links so members can open the payment page. Leave blank to auto-detect.
+                    </p>
+                  </div>
+                </div>
+
+                {/* UPI ID */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">UPI ID</p>
+                  <div className="field-group">
+                    <input className="field-input" value={form.upi_id} onChange={e => s('upi_id', e.target.value)}
+                      placeholder="e.g. allindiachristiansevasangam@sbi"
+                      style={{ fontFamily: 'monospace', letterSpacing: '0.02em' }}/>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Used on the online payment page for GPay / UPI deep-link. Members pay directly to this ID.
+                    </p>
+                  </div>
                 </div>
 
                 {/* WhatsApp receipt mode */}
