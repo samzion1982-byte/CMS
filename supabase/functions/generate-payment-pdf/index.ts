@@ -75,7 +75,7 @@ serve(async (req) => {
 
     catRows.forEach(({ name, amount }) => {
       page.drawText(name + ':', { x: 15, y, size: 10 })
-      page.drawText('₹' + amount.toLocaleString('en-IN'), {
+      page.drawText('Rs. ' + amount.toLocaleString('en-IN'), {
         x: 500, y, size: 10, alignment: 'right',
       })
       y -= 8
@@ -83,7 +83,7 @@ serve(async (req) => {
 
     // Total
     y -= 5
-    page.drawText('Total Amount: ₹' + total.toLocaleString('en-IN'), {
+    page.drawText('Total Amount: Rs. ' + total.toLocaleString('en-IN'), {
       x: 15, y, size: 12, color: rgb(11/255, 31/255, 75/255),
     })
 
@@ -95,7 +95,7 @@ serve(async (req) => {
       color: rgb(11/255, 31/255, 75/255),
     })
 
-    page.drawText('Tap here to Pay ₹' + total.toLocaleString('en-IN') + ' with GPay', {
+    page.drawText('Tap here to Pay Rs. ' + total.toLocaleString('en-IN') + ' with GPay', {
       x: W / 2, y: y - btnH + 4, size: 13, color: rgb(1, 1, 1),
       alignment: 'center',
     })
