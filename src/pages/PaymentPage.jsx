@@ -78,28 +78,26 @@ export default function PaymentPage({ requestId: propId }) {
     if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
     setPaying(true)
 
-    const pa     = church.upi_id.trim()
-    const pn     = encodeURIComponent((church.church_name || 'Church').replace(/[^\x00-\x7F]/g, '').trim().slice(0, 50) || 'Church')
-    const am     = String(total)
-    const tn     = encodeURIComponent('ChurchOffering')
-    const params = `pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
+    const upiId  = church.upi_id.trim()
+    const name   = encodeURIComponent(church.church_name || 'Church')
+    const am     = total
+    const note   = encodeURIComponent('ChurchOffering')
 
-    const isAndroid = /Android/i.test(navigator.userAgent)
+    const gpayUrl = `gpay://upi/pay?pa=${upiId}&pn=${name}&am=${am}&cu=INR&tn=${note}`
+    const upiUrl  = `upi://pay?pa=${upiId}&pn=${name}&am=${am}&cu=INR&tn=${note}`
 
-    if (isAndroid) {
-      // Android Chrome: use intent:// URL — Chrome hands this directly to the Android
-      // Intent system, which is a different code path from URL scheme navigation
-      // and may bypass the browser-initiated UPI security check in GPay/banks.
-      // S.browser_fallback_url sends user to Play Store if GPay not installed.
-      const fallback = encodeURIComponent('https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.paisa.user')
-      window.location.href =
-        `intent://pay?${params}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;S.browser_fallback_url=${fallback};end`
-    } else {
-      // iOS / desktop
-      window.location.href = `upi://pay?${params}`
-    }
+    // Exact technique from working reference HTML:
+    // 1. load gpay:// in hidden iframe
+    // 2. after 600ms navigate page to upi://
+    const iframe = document.createElement('iframe')
+    iframe.style.display = 'none'
+    iframe.src = gpayUrl
+    document.body.appendChild(iframe)
 
-    setTimeout(() => setPaying(false), 3000)
+    setTimeout(() => {
+      window.location.href = upiUrl
+      setTimeout(() => setPaying(false), 2500)
+    }, 600)
   }
 
   function copyUpiId() {
@@ -321,11 +319,6 @@ export default function PaymentPage({ requestId: propId }) {
               </div>
             </div>
           </>) : (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '0.9rem 1.1rem', marginBottom: '1rem', fontSize: 13, color: '#dc2626' }}>
-              UPI ID not configured. Please contact the church office.
-            </div>
-          )}
-          ) : (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '0.9rem 1.1rem', marginBottom: '1rem', fontSize: 13, color: '#dc2626' }}>
               UPI ID not configured. Please contact the church office.
             </div>
