@@ -75,16 +75,13 @@ export default function PaymentPage({ requestId: propId }) {
     if (total <= 0) { alert('Please enter a valid amount.'); return }
     if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
     setPaying(true)
-    const name = encodeURIComponent(church.church_name || 'Church')
-    const note = encodeURIComponent(`${req.member_id}|${req.months}|${req.fy}`)
-    const gpay = `gpay://upi/pay?pa=${church.upi_id}&pn=${name}&am=${total}&cu=INR&tn=${note}`
-    const upi  = `upi://pay?pa=${church.upi_id}&pn=${name}&am=${total}&cu=INR&tn=${note}`
-    const f = document.createElement('iframe')
-    f.style.display = 'none'; f.src = gpay; document.body.appendChild(f)
-    setTimeout(() => {
-      window.location.href = upi
-      setTimeout(() => setPaying(false), 3000)
-    }, 600)
+    const pa   = encodeURIComponent(church.upi_id)
+    const pn   = encodeURIComponent((church.church_name || 'Church').slice(0, 50))
+    const am   = total.toFixed(2)           // UPI spec requires exactly 2 decimal places
+    const tn   = encodeURIComponent(`Offering ${req.member_id}`)   // simple note, no special chars
+    const upi  = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
+    window.location.href = upi
+    setTimeout(() => setPaying(false), 3000)
   }
 
   async function markPaid() {
