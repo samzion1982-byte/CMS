@@ -340,6 +340,8 @@ function Bg({ children }) {
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=DM+Sans:wght@400;500;600&display=swap');
         @keyframes rise   { from { opacity:0; transform:translateY(30px) scale(.97); } to { opacity:1; transform:none; } }
         @keyframes hspin  { to   { transform:rotate(360deg); } }
+        * { -webkit-user-select:none; user-select:none; }
+        input, textarea { -webkit-user-select:text; user-select:text; }
       `}</style>
       <div style={{
         fontFamily: "'DM Sans',sans-serif", minHeight: '100vh', background: '#0B1F4B',
