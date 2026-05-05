@@ -2111,7 +2111,7 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
       }).sort((a, b) => (a.member_id || '').localeCompare(b.member_id || '', undefined, { numeric: true }))
 
       setEligible(result)
-      setSelected(new Set(result.map(r => r.member_id)))
+      setSelected(new Set())
     } catch (e) { toast('Error: ' + e.message, 'error') }
     setFinding(false)
   }
