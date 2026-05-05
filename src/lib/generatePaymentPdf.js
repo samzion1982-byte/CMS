@@ -1,110 +1,119 @@
 import { jsPDF } from 'jspdf'
 import QRCodeLib from 'qrcode'
-import { adminSupabase, SUPABASE_URL } from './supabase'
+import { adminSupabase } from './supabase'
 
 export async function generateAndUploadPaymentPdf({ req, church, catMap }) {
   const total      = req.grand_total
   const upiId      = (church.upi_id || '').trim()
   const churchName = church.church_name || 'Church'
-  const pa         = upiId.replace('@', '%40')
 
-  // UPI QR content (standard upi:// deep link)
-  const upiContent = `upi://pay?pa=${pa}&am=${total}&cu=INR`
+  // Raw @ — PDF link annotations pass the URL directly to Android Intent (no HTML parsing)
+  const gpayUrl = `gpay://upi/pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${total}&cu=INR&tn=ChurchOffering`
+  const upiUrl  = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${total}&cu=INR&tn=ChurchOffering`
 
-  // Generate QR as data URL
-  const qrDataUrl = await QRCodeLib.toDataURL(upiContent, {
-    width: 200, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' },
+  // QR as backup (same URL as upiUrl)
+  const qrDataUrl = await QRCodeLib.toDataURL(upiUrl, {
+    width: 280, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' },
   })
 
-  // Build PDF (A4)
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W = 210
 
-  // Header bar
-  doc.setFillColor(11, 31, 75)   // dark navy
-  doc.rect(0, 0, W, 28, 'F')
-
+  // ── Header ──────────────────────────────────────────────────────
+  doc.setFillColor(11, 31, 75)
+  doc.rect(0, 0, W, 30, 'F')
   doc.setTextColor(255, 255, 255)
-  doc.setFontSize(16)
+  doc.setFontSize(17)
   doc.setFont('helvetica', 'bold')
-  doc.text(churchName, W / 2, 12, { align: 'center' })
-
+  doc.text(churchName, W / 2, 13, { align: 'center' })
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
-  doc.text('Payment Request', W / 2, 21, { align: 'center' })
+  doc.text('Payment Request', W / 2, 22, { align: 'center' })
 
-  // Member & amount section
+  // ── Member & period ─────────────────────────────────────────────
   doc.setTextColor(30, 30, 30)
-  doc.setFontSize(11)
+  doc.setFontSize(12)
   doc.setFont('helvetica', 'bold')
-  doc.text('Dear ' + (req.member_name || 'Member'), 15, 40)
-
+  doc.text('Dear ' + (req.member_name || 'Member'), 15, 42)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  doc.text('Period: ' + (req.months || ''), 15, 50)
+  doc.text('Period: ' + (req.months || ''), 15, 51)
 
-  // Category breakdown
+  // ── Category breakdown ──────────────────────────────────────────
   const catRows = Object.entries(req.amounts || {}).map(([cid, rate]) => ({
     name:   catMap[cid] || 'Category',
     amount: (parseFloat(rate) || 0) * (req.slot || 1),
   }))
 
-  let y = 58
+  let y = 60
   catRows.forEach(({ name, amount }) => {
+    doc.setFont('helvetica', 'normal')
     doc.text(name + ':', 15, y)
-    doc.text('₹' + amount.toLocaleString('en-IN'), 120, y, { align: 'right' })
-    y += 7
+    doc.text('₹' + amount.toLocaleString('en-IN'), 130, y, { align: 'right' })
+    y += 8
   })
 
-  // Divider
   doc.setDrawColor(200, 200, 200)
-  doc.line(15, y, 120, y)
-  y += 6
+  doc.line(15, y, 130, y)
+  y += 7
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   doc.text('Total Amount:', 15, y)
   doc.setTextColor(11, 31, 75)
-  doc.text('₹' + total.toLocaleString('en-IN'), 120, y, { align: 'right' })
-  doc.setTextColor(30, 30, 30)
+  doc.text('₹' + total.toLocaleString('en-IN'), 130, y, { align: 'right' })
+  y += 14
 
-  y += 12
-
-  // QR code section
-  doc.setFillColor(245, 247, 255)
-  doc.roundedRect(55, y, 100, 115, 4, 4, 'F')
-
+  // ── Pay with GPay button (PDF link annotation) ──────────────────
+  const btnX = 20, btnW = W - 40, btnH = 16
+  doc.setFillColor(11, 31, 75)
+  doc.roundedRect(btnX, y, btnW, btnH, 4, 4, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(13)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(11, 31, 75)
-  doc.text('Scan to Pay with UPI', W / 2, y + 10, { align: 'center' })
+  doc.text('Tap here to Pay ₹' + total.toLocaleString('en-IN') + ' with GPay', W / 2, y + 10, { align: 'center' })
+  // PDF link — fires gpay:// intent directly in the PDF viewer
+  doc.link(btnX, y, btnW, btnH, { url: gpayUrl })
+  y += btnH + 5
 
-  doc.addImage(qrDataUrl, 'PNG', 80, y + 14, 50, 50)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(80, 80, 80)
-  doc.text('UPI ID: ' + upiId, W / 2, y + 72, { align: 'center' })
-
-  doc.setFont('helvetica', 'bold')
+  // ── PhonePe / other UPI link ─────────────────────────────────────
+  doc.setFillColor(240, 244, 255)
+  doc.roundedRect(btnX, y, btnW, 12, 3, 3, 'F')
+  doc.setTextColor(43, 92, 230)
   doc.setFontSize(10)
-  doc.setTextColor(30, 30, 30)
-  doc.text('Open GPay / PhonePe → Scan QR → Pay', W / 2, y + 82, { align: 'center' })
+  doc.setFont('helvetica', 'normal')
+  doc.text('PhonePe / other UPI app', W / 2, y + 8, { align: 'center' })
+  doc.link(btnX, y, btnW, 12, { url: upiUrl })
+  y += 20
 
+  // ── UPI ID ──────────────────────────────────────────────────────
+  doc.setTextColor(80, 80, 80)
+  doc.setFontSize(9)
+  doc.text('UPI ID: ' + upiId, W / 2, y, { align: 'center' })
+  y += 10
+
+  // ── QR code (backup) ────────────────────────────────────────────
+  doc.setFillColor(245, 247, 255)
+  doc.roundedRect(70, y, 70, 78, 4, 4, 'F')
+  doc.setTextColor(11, 31, 75)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Or scan QR in GPay / PhonePe', W / 2, y + 8, { align: 'center' })
+  doc.addImage(qrDataUrl, 'PNG', 85, y + 11, 40, 40)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(120, 120, 120)
-  doc.text('Amount will be pre-filled automatically', W / 2, y + 90, { align: 'center' })
+  doc.text('Amount pre-filled automatically', W / 2, y + 57, { align: 'center' })
+  doc.setFontSize(7)
+  doc.text('(Use a second device to scan)', W / 2, y + 63, { align: 'center' })
 
-  // Footer
+  // ── Footer ──────────────────────────────────────────────────────
   doc.setFontSize(8)
   doc.setTextColor(150, 150, 150)
   doc.text('Thank you for your contribution.', W / 2, 285, { align: 'center' })
 
-  // Export as Uint8Array
+  // ── Upload ──────────────────────────────────────────────────────
   const pdfBytes = doc.output('arraybuffer')
-
-  // Upload to Supabase Storage
   const filename = `payment-${req.id}.pdf`
   const { error: upErr } = await adminSupabase.storage.from('payment-pages').upload(filename, pdfBytes, {
     contentType:  'application/pdf',

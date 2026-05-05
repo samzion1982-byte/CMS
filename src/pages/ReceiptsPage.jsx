@@ -15,7 +15,7 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
-import { generateAndUploadPaymentHtml }            from '../lib/generatePaymentHtml'
+import { generateAndUploadPaymentPdf }             from '../lib/generatePaymentPdf'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2154,14 +2154,14 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         if (rErr) throw rErr
 
         // Build WhatsApp message
-        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached file and tap *Pay with GPay* to pay instantly.\n\nThank you.`
+        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached PDF and tap *Tap here to Pay with GPay* to pay instantly.\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            // Generate and upload HTML payment slip, send as document
-            const htmlUrl = await generateAndUploadPaymentHtml({ req, church, catMap })
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, mediaUrl: htmlUrl })
+            // Generate and upload PDF payment slip with tappable GPay link
+            const pdfUrl = await generateAndUploadPaymentPdf({ req, church, catMap })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, mediaUrl: pdfUrl })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,

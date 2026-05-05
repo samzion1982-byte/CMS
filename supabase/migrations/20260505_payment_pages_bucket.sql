@@ -10,7 +10,7 @@ VALUES (
   'payment-pages',
   true,
   2097152,   -- 2 MB limit
-  ARRAY['text/html']
+  ARRAY['text/html', 'application/pdf']
 )
 ON CONFLICT (id) DO NOTHING;
 
