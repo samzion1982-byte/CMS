@@ -15,6 +15,7 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
+import { generateAndUploadPaymentHtml }            from '../lib/generatePaymentHtml'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2148,17 +2149,40 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('id').single()
         if (rErr) throw rErr
 
-        // Build payment URL
+        // Build payment URL (fallback if HTML upload fails)
         const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
         const payUrl = `${baseUrl}/pay/${req.id}`
 
+        // Generate self-contained HTML payment file and upload to storage
+        const reqFull = {
+          id:          req.id,
+          member_name: m.member_name,
+          months:      m.billingMonths,
+          fy,
+          slot:        m.slot,
+          amounts:     m.amounts || {},
+          grand_total: m.totalAmt,
+        }
+        let htmlUrl = null
+        try {
+          htmlUrl = await generateAndUploadPaymentHtml({ req: reqFull, church, catMap })
+        } catch (htmlErr) {
+          console.error('HTML generation failed:', htmlErr.message)
+          toast(`Payment HTML error: ${htmlErr.message}`, 'error')
+        }
+
         // Build WhatsApp message
-        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
+        const msg = htmlUrl
+          ? `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached file and tap "Pay with GPay" to complete payment.\n\nThank you.`
+          : `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
+            const apiResp = await sendWhatsAppMessage(church, {
+              to: m.whatsapp, message: msg,
+              ...(htmlUrl && { mediaUrl: htmlUrl }),
+            })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,

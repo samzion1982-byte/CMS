@@ -27,7 +27,8 @@ serve(async (req) => {
 
     let result: unknown
 
-    const isDoc = mediaUrl && mediaUrl.toLowerCase().includes('.pdf')
+    const isDoc = mediaUrl && (mediaUrl.toLowerCase().includes('.pdf') || mediaUrl.toLowerCase().includes('.html'))
+    const docFilename = (mediaUrl || '').toLowerCase().includes('.html') ? 'payment.html' : 'Receipt.pdf'
 
     if (apiType === 'official') {
       const phoneId = church.official_phone_number_id
@@ -39,7 +40,7 @@ serve(async (req) => {
         body = { messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: message || '' } }
       } else if (isDoc) {
         body = { messaging_product: 'whatsapp', to: phone, type: 'document',
-                 document: { link: mediaUrl, filename: 'Receipt.pdf', caption: message || '' } }
+                 document: { link: mediaUrl, filename: docFilename, caption: message || '' } }
       } else {
         body = { messaging_product: 'whatsapp', to: phone, type: 'image',
                  image: { link: mediaUrl, caption: message || '' } }
@@ -69,7 +70,7 @@ serve(async (req) => {
         instance_id:  church.instance_id,
         access_token: church.access_token,
         ...(mediaUrl && { media_url: mediaUrl }),
-        ...(isDoc    && { filename: 'Receipt.pdf' }),
+        ...(isDoc    && { filename: docFilename }),
       }
       const resp = await fetch(apiUrl, {
         method: 'POST',
