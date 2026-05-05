@@ -151,8 +151,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0B1F4B;min-height:100vh
 <div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;background:#0B1F4B;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">2</div><div style="font-size:10px;color:#64748b;line-height:1.4">GPay opens<br>automatically</div></div>
 <div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;background:#0B1F4B;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">3</div><div style="font-size:10px;color:#64748b;line-height:1.4">Confirm<br>payment</div></div>
 </div>
-<a class="btn bg" href="gpay://upi/pay?pa=${esc(upiId)}&amp;am=${total}&amp;cu=INR" style="text-decoration:none">Pay &#8377;${total.toLocaleString('en-IN')} with GPay</a>
-<a href="upi://pay?pa=${esc(upiId)}&amp;am=${total}&amp;cu=INR" style="display:block;text-align:center;font-size:12px;color:#64748b;margin-bottom:6px;text-decoration:none">PhonePe / other UPI app</a>
+<a class="btn bg" href="gpay://upi/pay?pa=${esc(upiId)}&amp;pn=${encodeURIComponent(church.church_name||'Church')}&amp;am=${total}&amp;cu=INR&amp;tn=ChurchOffering" style="text-decoration:none">Pay &#8377;${total.toLocaleString('en-IN')} with GPay</a>
+<a href="upi://pay?pa=${esc(upiId)}&amp;pn=${encodeURIComponent(church.church_name||'Church')}&amp;am=${total}&amp;cu=INR&amp;tn=ChurchOffering" style="display:block;text-align:center;font-size:12px;color:#64748b;margin-bottom:6px;text-decoration:none">PhonePe / other UPI app</a>
 <div class="qw"><img src="${qrDataUrl}" alt="UPI QR" width="220" height="220">
 <div style="font-size:11px;color:#64748b;margin-top:6px">Or scan QR in GPay &middot; PhonePe &middot; any UPI app</div></div>
 <div class="or"><hr><span>or pay by UPI ID</span><hr></div>
