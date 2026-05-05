@@ -925,6 +925,15 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
     setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: '' })))
   }, [categories])
 
+  // sync subscription amount with calculated value (income * percentage)
+  useEffect(() => {
+    if (!subCat || !incomeNum || !pctNum) return
+    const calculatedSub = String(sub)
+    setSubRaw(calculatedSub)
+    setSubDisplay(calculatedSub ? Number(calculatedSub).toLocaleString('en-IN') : '')
+    setItems(prev => prev.map(i => i.category_id === subCat.id ? { ...i, amount: calculatedSub } : i))
+  }, [sub, subCat, incomeNum, pctNum])
+
   // auto-generate declaration number for new
   useEffect(() => {
     if (editId || !decl.financial_year) return
@@ -952,12 +961,20 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       const map = {}
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
+      
+      // Ensure subscription amount is consistent with income * percentage
+      const calculatedSub = Math.round((d.declared_income || 0) * (d.percentage || 0) / 100)
       const subItem = map[categories[0]?.id]
-      if (subItem) {
-        const val = String(Math.round(subItem.amount))
-        setSubRaw(val)
-        setSubDisplay(Number(val).toLocaleString('en-IN'))
+      const storedSub = subItem ? Math.round(subItem.amount) : 0
+      
+      if (calculatedSub !== storedSub && categories[0]) {
+        // Update the items array with the correct calculated subscription
+        setItems(prev => prev.map(i => i.category_id === categories[0].id ? { ...i, amount: String(calculatedSub) } : i))
       }
+      
+      const subVal = String(calculatedSub)
+      setSubRaw(subVal)
+      setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
     }).finally(() => setLoading(false))
   }, [editId, categories])
 
@@ -993,12 +1010,20 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       const map = {}
       ;(di || []).forEach(i => { map[i.category_id] = i })
       setItems(categories.map(c => ({ category_id: c.id, name: c.name, amount: map[c.id] ? String(Math.round(map[c.id].amount)) : '' })))
+      
+      // Ensure subscription amount is consistent with income * percentage
+      const calculatedSub = Math.round((d.declared_income || 0) * (d.percentage || 0) / 100)
       const subItem = map[categories[0]?.id]
-      if (subItem) {
-        const val = String(Math.round(subItem.amount))
-        setSubRaw(val)
-        setSubDisplay(Number(val).toLocaleString('en-IN'))
+      const storedSub = subItem ? Math.round(subItem.amount) : 0
+      
+      if (calculatedSub !== storedSub && categories[0]) {
+        // Update the items array with the correct calculated subscription
+        setItems(prev => prev.map(i => i.category_id === categories[0].id ? { ...i, amount: String(calculatedSub) } : i))
       }
+      
+      const subVal = String(calculatedSub)
+      setSubRaw(subVal)
+      setSubDisplay(subVal ? Number(subVal).toLocaleString('en-IN') : '')
     }
     return true
   }, [editId, categories])
