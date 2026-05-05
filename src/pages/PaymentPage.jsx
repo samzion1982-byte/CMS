@@ -78,23 +78,20 @@ export default function PaymentPage({ requestId: propId }) {
     if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
     setPaying(true)
 
-    const pa   = church.upi_id.trim()
-    const pn   = encodeURIComponent((church.church_name || 'Church').replace(/[^\x00-\x7F]/g, '').trim().slice(0, 50) || 'Church')
-    const am   = String(total)   // plain number — NOT toFixed(2)
-    const tn   = encodeURIComponent('ChurchOffering')
+    const pa     = church.upi_id.trim()
+    const pn     = encodeURIComponent((church.church_name || 'Church').replace(/[^\x00-\x7F]/g, '').trim().slice(0, 50) || 'Church')
+    const am     = String(total)   // plain number
+    const tn     = encodeURIComponent('ChurchOffering')
     const params = `pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
 
-    // Step 1: try gpay:// via hidden iframe (GPay-specific scheme)
-    const iframe = document.createElement('iframe')
-    iframe.style.display = 'none'
-    iframe.src = `gpay://upi/pay?${params}`
-    document.body.appendChild(iframe)
-
-    // Step 2: after 600ms fallback to generic upi:// intent
+    // gpay:// is Google Pay's own registered scheme — bypasses the browser UPI security check
+    // that causes "exceeded bank limit" when upi:// is triggered from an HTTPS page.
+    // If GPay is not installed, fall back to generic upi:// after 800ms.
+    window.location.href = `gpay://upi/pay?${params}`
     setTimeout(() => {
       window.location.href = `upi://pay?${params}`
       setTimeout(() => setPaying(false), 2500)
-    }, 600)
+    }, 800)
   }
 
   function copyUpiId() {
