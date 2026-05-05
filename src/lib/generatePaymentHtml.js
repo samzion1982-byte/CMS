@@ -190,13 +190,11 @@ ${catRowsHtml}
 var SB='${jsStr(SUPABASE_URL)}',KEY='${jsStr(SUPABASE_ANON_KEY)}',RID='${jsStr(req.id)}';
 
 function openGPay(){
-  var gp='${jsStr(gpayUrl)}',up='${jsStr(upiContent)}';
-  var f=document.createElement('iframe');
-  f.style.cssText='display:none;width:0;height:0;border:none;position:fixed;left:-999px;top:-999px;';
-  f.src=gp;
-  document.body.appendChild(f);
-  setTimeout(function(){try{document.body.removeChild(f);}catch(e){}},2000);
-  setTimeout(function(){window.location.href=up;},1600);
+  var id='${jsStr(upiId)}',pn=encodeURIComponent('${jsStr(churchName)}'),tn=encodeURIComponent('ChurchOffering'),amt='${total}';
+  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
+  var up='upi://pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
+  var f=document.createElement('iframe');f.style.display='none';f.src=gp;document.body.appendChild(f);
+  setTimeout(function(){window.location.href=up;},600);
 }
 
 function copyUpi(){

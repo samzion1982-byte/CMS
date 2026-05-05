@@ -15,6 +15,7 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
+import { generateAndUploadPaymentHtml }            from '../lib/generatePaymentHtml'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2130,6 +2131,10 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
     const batchId = Date.now().toString()
     let done = 0
 
+    // Fetch category names once for HTML generation
+    const { data: catData } = await supabase.from('payment_categories').select('id, name')
+    const catMap = Object.fromEntries((catData || []).map(c => [c.id, c.name]))
+
     for (const m of toSend) {
       try {
         // Create payment_request record
@@ -2148,17 +2153,15 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('id').single()
         if (rErr) throw rErr
 
-        // Build payment URL
-        const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
-        const payUrl  = `${baseUrl}/pay/${req.id}`
-
         // Build WhatsApp message
-        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the link below, then tap *Share Payment File to WhatsApp* to get a one-tap GPay button.\n\n${payUrl}\n\nThank you.`
+        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached file and tap *Pay with GPay* to pay instantly.\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
+            // Generate and upload HTML payment slip, send as document
+            const htmlUrl = await generateAndUploadPaymentHtml({ req, church, catMap })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, mediaUrl: htmlUrl })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,
