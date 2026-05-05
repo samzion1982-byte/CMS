@@ -151,8 +151,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0B1F4B;min-height:100vh
 <div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;background:#0B1F4B;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">2</div><div style="font-size:10px;color:#64748b;line-height:1.4">GPay opens<br>automatically</div></div>
 <div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;background:#0B1F4B;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 4px">3</div><div style="font-size:10px;color:#64748b;line-height:1.4">Confirm<br>payment</div></div>
 </div>
-<a class="btn bg" href="gpay://upi/pay?pa=${esc(upiId)}&amp;pn=${encodeURIComponent(church.church_name||'Church')}&amp;am=${total}&amp;cu=INR&amp;tn=ChurchOffering" style="text-decoration:none">Pay &#8377;${total.toLocaleString('en-IN')} with GPay</a>
-<a href="upi://pay?pa=${esc(upiId)}&amp;pn=${encodeURIComponent(church.church_name||'Church')}&amp;am=${total}&amp;cu=INR&amp;tn=ChurchOffering" style="display:block;text-align:center;font-size:12px;color:#64748b;margin-bottom:6px;text-decoration:none">PhonePe / other UPI app</a>
+<button class="btn bg" onclick="openGPay()">Pay &#8377;${total.toLocaleString('en-IN')} with GPay</button>
 <div class="qw"><img src="${qrDataUrl}" alt="UPI QR" width="220" height="220">
 <div style="font-size:11px;color:#64748b;margin-top:6px">Or scan QR in GPay &middot; PhonePe &middot; any UPI app</div></div>
 <div class="or"><hr><span>or pay by UPI ID</span><hr></div>
@@ -174,6 +173,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0B1F4B;min-height:100vh
 </div>
 <script>
 var SB='${js(SUPABASE_URL)}',KEY='${js(SUPABASE_ANON_KEY)}',RID='${js(req.id || requestId)}';
+function openGPay(){
+  var id='${js(upiId)}',pn=encodeURIComponent('${js(church.church_name||'Church')}'),tn=encodeURIComponent('ChurchOffering'),amt='${total}';
+  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
+  var up='upi://pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
+  var f=document.createElement('iframe');f.style.display='none';f.src=gp;document.body.appendChild(f);
+  setTimeout(function(){window.location.href=up;},600);
+}
 function copyUpi(){var id='${js(upiId)}',b=document.getElementById('cb');function done(){b.textContent='Copied!';b.style.background='#16a34a';setTimeout(function(){b.textContent='Copy';b.style.background='#2B5CE6';},2500);}if(navigator.clipboard){navigator.clipboard.writeText(id).then(done).catch(fb);}else{fb();}function fb(){var t=document.createElement('textarea');t.value=id;t.style.cssText='position:fixed;opacity:0;';document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);done();}}
 function togglePaid(){var d=document.getElementById('pf');d.style.display=(d.style.display==='block')?'none':'block';}
 function markPaid(){var ref=document.getElementById('ur').value.trim(),b=document.getElementById('cb2');b.textContent='Saving…';b.disabled=true;fetch(SB+'/rest/v1/payment_requests?id=eq.'+RID,{method:'PATCH',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({status:'paid_by_member',paid_at:new Date().toISOString(),upi_ref:ref||null,grand_total:${total},updated_at:new Date().toISOString()})}).then(function(r){if(r.ok||r.status===204){document.getElementById('ps').style.display='none';document.getElementById('dc').style.display='block';}else{r.text().then(function(t){alert('Error: '+t);b.textContent='Confirm';b.disabled=false;});}}).catch(function(e){alert('Error: '+e.message);b.textContent='Confirm';b.disabled=false;});}
