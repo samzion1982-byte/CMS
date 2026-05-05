@@ -2159,14 +2159,11 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         // Try to generate PDF via Edge Function; fall back to plain URL if it fails
         let pdfUrl = null
         try {
-          const edgeResp = await fetch(`${window.location.origin}/functions/v1/generate-payment-pdf`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ req, church, catMap }),
+          const { data, error } = await supabase.functions.invoke('generate-payment-pdf', {
+            body: { req, church, catMap },
           })
-          if (!edgeResp.ok) throw new Error(await edgeResp.text())
-          const { publicUrl } = await edgeResp.json()
-          pdfUrl = publicUrl
+          if (error) throw error
+          pdfUrl = data?.publicUrl
         } catch (pdfErr) {
           console.warn('PDF generation failed, falling back to URL:', pdfErr.message)
         }
