@@ -94,12 +94,13 @@ export default function PaymentPage({ requestId: propId }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  function downloadPaymentFile() {
+  async function sharePaymentFile() {
     if (!qrDataUrl || !church?.upi_id) return
     const upiId  = church.upi_id.trim()
     const pn     = encodeURIComponent(church.church_name || 'Church')
-    const gpay   = `gpay://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
-    const upi    = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
+    // Do NOT encodeURIComponent the UPI ID — GPay expects raw @ in pa=
+    const gpay   = `gpay://upi/pay?pa=${upiId}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
+    const upi    = `upi://pay?pa=${upiId}&pn=${pn}&am=${total}&cu=INR&tn=ChurchOffering`
     const catRows = Object.entries(req.amounts || {}).map(([cid, rate]) => ({
       name: catMap[cid] || 'Category',
       amount: (parseFloat(rate) || 0) * (req.slot || 1),
@@ -182,8 +183,23 @@ function togglePaid(){var d=document.getElementById('pf');d.style.display=(d.sty
 function markPaid(){var ref=document.getElementById('ur').value.trim(),b=document.getElementById('cb2');b.textContent='Saving…';b.disabled=true;fetch(SB+'/rest/v1/payment_requests?id=eq.'+RID,{method:'PATCH',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY,'Prefer':'return=minimal'},body:JSON.stringify({status:'paid_by_member',paid_at:new Date().toISOString(),upi_ref:ref||null,grand_total:${total},updated_at:new Date().toISOString()})}).then(function(r){if(r.ok||r.status===204){document.getElementById('ps').style.display='none';document.getElementById('dc').style.display='block';}else{r.text().then(function(t){alert('Error: '+t);b.textContent='Confirm';b.disabled=false;});}}).catch(function(e){alert('Error: '+e.message);b.textContent='Confirm';b.disabled=false;});}
 </script></body></html>`
     const blob = new Blob([html], { type: 'text/html' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
+    const file = new File([blob], 'payment.html', { type: 'text/html' })
+
+    // Web Share API — shares the HTML file directly into WhatsApp.
+    // When the member opens it from WhatsApp it opens as content:// URI
+    // which allows gpay:// iframe to create a PAY (not COLLECT) transaction.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: `Payment — ${church?.church_name || ''}` })
+        return
+      } catch (e) {
+        if (e.name === 'AbortError') return  // user cancelled share sheet
+        // fall through to download
+      }
+    }
+    // Fallback: plain download (works on desktop / iOS)
+    const url = URL.createObjectURL(blob)
+    const a   = document.createElement('a')
     a.href = url; a.download = 'payment.html'
     document.body.appendChild(a); a.click()
     document.body.removeChild(a); URL.revokeObjectURL(url)
@@ -333,25 +349,27 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
           {church?.upi_id ? (
             <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.3rem', marginBottom: '1rem' }}>
 
-              {/* Download & Pay button */}
+              {/* Share payment file button */}
               {qrDataUrl && (
-                <button onClick={downloadPaymentFile} style={{
-                  width:'100%', padding:'13px', border:'none', borderRadius:12, marginBottom:'1rem',
+                <button onClick={sharePaymentFile} style={{
+                  width:'100%', padding:'13px', border:'none', borderRadius:12, marginBottom:'0.7rem',
                   background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
                   fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center',
                   justifyContent:'center', gap:8, fontFamily:"'DM Sans',sans-serif",
                 }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
                   </svg>
-                  Download &amp; Pay with GPay
+                  Share Payment File to WhatsApp
                 </button>
               )}
               <div style={{ background:'#EBF1FD', border:'1px solid #C7D9F8', borderRadius:10, padding:'0.6rem 0.9rem', marginBottom:'0.9rem' }}>
                 <div style={{ fontSize:11.5, color:'#1e3a6e', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
-                  1. Tap <strong>Download &amp; Pay with GPay</strong> above<br/>
-                  2. Tap <strong>Open</strong> on the download notification<br/>
-                  3. Tap <strong>Pay ₹{total.toLocaleString('en-IN')} with GPay</strong>
+                  1. Tap <strong>Share Payment File to WhatsApp</strong> above<br/>
+                  2. Share it to <strong>yourself</strong> (Saved Messages / your own chat)<br/>
+                  3. Open WhatsApp → tap the file you just received<br/>
+                  4. Tap <strong>Pay ₹{total.toLocaleString('en-IN')} with GPay</strong>
                 </div>
               </div>
 
