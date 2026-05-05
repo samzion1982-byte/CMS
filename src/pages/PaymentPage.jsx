@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import QRCode from 'react-qr-code'
+import QRCodeLib from 'qrcode'
 
 // Isolated Supabase client — no auth session, no redirects, no persistence
 const SUPABASE_URL      = 'https://wjasjrthijpxlarreics.supabase.co'
@@ -29,6 +29,7 @@ export default function PaymentPage({ requestId: propId }) {
   const [err,      setErr]      = useState(null)
   const [amounts,  setAmounts]  = useState({})
   const [copied,   setCopied]   = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState('')
   const [paidForm, setPaidForm] = useState(false)
   const [upiRef,   setUpiRef]   = useState('')
   const [saving,   setSaving]   = useState(false)
@@ -71,6 +72,13 @@ export default function PaymentPage({ requestId: propId }) {
     () => Object.values(amounts).reduce((s, v) => s + (parseFloat(v) || 0), 0),
     [amounts]
   )
+
+  useEffect(() => {
+    if (!church?.upi_id || total <= 0) return
+    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`
+    QRCodeLib.toDataURL(upiContent, { width: 220, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' } })
+      .then(url => setQrDataUrl(url))
+  }, [church, total])
 
   function copyUpiId() {
     if (!church?.upi_id) return
@@ -240,15 +248,16 @@ export default function PaymentPage({ requestId: propId }) {
                 ))}
               </div>
 
-              {/* QR code */}
+              {/* QR code — rendered as <img> so long-press shows Google Lens */}
               <div style={{ display:'flex', justifyContent:'center', marginBottom:'0.9rem' }}>
-                <div style={{ background:'#fff', padding:14, border:'2px solid #0B1F4B', borderRadius:14 }}>
-                  <QRCode
-                    value={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`}
-                    size={180}
-                    fgColor="#0B1F4B"
-                  />
-                </div>
+                {qrDataUrl
+                  ? <img src={qrDataUrl} alt="UPI Payment QR Code"
+                      style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block' }}
+                    />
+                  : <div style={{ width:220, height:220, borderRadius:12, border:'2px solid #DDE6F7', background:'#F4F7FE', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <div style={{ width:32, height:32, border:'3px solid #DDE6F7', borderTopColor:'#2B5CE6', borderRadius:'50%', animation:'hspin .7s linear infinite' }}/>
+                    </div>
+                }
               </div>
 
               {/* Same-phone tip */}
