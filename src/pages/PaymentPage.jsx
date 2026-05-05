@@ -28,7 +28,6 @@ export default function PaymentPage({ requestId: propId }) {
   const [loading,  setLoading]  = useState(true)
   const [err,      setErr]      = useState(null)
   const [amounts,  setAmounts]  = useState({})
-  const [paying,   setPaying]   = useState(false)
   const [copied,   setCopied]   = useState(false)
   const [paidForm, setPaidForm] = useState(false)
   const [upiRef,   setUpiRef]   = useState('')
@@ -72,33 +71,6 @@ export default function PaymentPage({ requestId: propId }) {
     () => Object.values(amounts).reduce((s, v) => s + (parseFloat(v) || 0), 0),
     [amounts]
   )
-
-  function payNow() {
-    if (total <= 0) { alert('Please enter a valid amount.'); return }
-    if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
-    setPaying(true)
-
-    const upiId  = church.upi_id.trim()
-    const name   = encodeURIComponent(church.church_name || 'Church')
-    const am     = total
-    const note   = encodeURIComponent('ChurchOffering')
-
-    const gpayUrl = `gpay://upi/pay?pa=${upiId}&pn=${name}&am=${am}&cu=INR&tn=${note}`
-    const upiUrl  = `upi://pay?pa=${upiId}&pn=${name}&am=${am}&cu=INR&tn=${note}`
-
-    // Exact technique from working reference HTML:
-    // 1. load gpay:// in hidden iframe
-    // 2. after 600ms navigate page to upi://
-    const iframe = document.createElement('iframe')
-    iframe.style.display = 'none'
-    iframe.src = gpayUrl
-    document.body.appendChild(iframe)
-
-    setTimeout(() => {
-      window.location.href = upiUrl
-      setTimeout(() => setPaying(false), 2500)
-    }, 600)
-  }
 
   function copyUpiId() {
     if (!church?.upi_id) return
@@ -254,74 +226,54 @@ export default function PaymentPage({ requestId: propId }) {
             <div style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'rgba(255,255,255,.6)' }}>INR</div>
           </div>
 
-          {/* ── Pay Button ── */}
-          {church?.upi_id ? (<>
-            <button onClick={payNow} disabled={paying || total <= 0} style={{
-              width: '100%', padding: 14,
-              background: 'linear-gradient(135deg,#1A73E8 0%,#1050C0 100%)',
-              color: '#fff', border: 'none', borderRadius: 12,
-              fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 500,
-              cursor: paying || total <= 0 ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              boxShadow: '0 6px 20px rgba(26,115,232,.4)', marginBottom: '.9rem',
-              opacity: paying ? .65 : 1,
-            }}>
-              <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-                <path d="M43.6 20.5H42V20H24V28H35.3C33.7 32.7 29.2 36 24 36C17.4 36 12 30.6 12 24C12 17.4 17.4 12 24 12C27.1 12 29.9 13.2 32 15.2L37.7 9.5C34.2 6.2 29.3 4 24 4C12.9 4 4 12.9 4 24C4 35.1 12.9 44 24 44C35.1 44 44 35.1 44 24C44 22.8 43.9 21.7 43.6 20.5Z" fill="#FFC107"/>
-                <path d="M6.3 14.7L12.9 19.6C14.7 15.1 19 12 24 12C27.1 12 29.9 13.2 32 15.2L37.7 9.5C34.2 6.2 29.3 4 24 4C16.3 4 9.7 8.4 6.3 14.7Z" fill="#FF3D00"/>
-                <path d="M24 44C29.2 44 34 42 37.4 38.7L31.2 33.4C29.2 34.9 26.7 35.9 24 35.9C18.8 35.9 14.4 32.6 12.7 28L6.2 33.1C9.5 39.5 16.2 44 24 44Z" fill="#4CAF50"/>
-                <path d="M43.6 20.5H42V20H24V28H35.3C34.5 30.2 33.1 32.1 31.2 33.4L37.4 38.7C37 39.1 44 34 44 24C44 22.8 43.9 21.7 43.6 20.5Z" fill="#1976D2"/>
-              </svg>
-              {paying ? 'Opening payment…' : 'Pay via GPay / UPI'}
-            </button>
+          {/* ── UPI Payment ── */}
+          {church?.upi_id ? (
+            <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.3rem', marginBottom: '1rem' }}>
 
-            {/* ── QR fallback ── */}
-            <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.2rem', marginBottom: '1rem' }}>
-              <div style={{ fontSize: 10, letterSpacing: '.15em', textTransform: 'uppercase', color: '#A8BAD8', marginBottom: '0.9rem' }}>
-                Or scan QR with any UPI app
+              {/* Steps */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: '1rem' }}>
+                {[['1','Open GPay\nor PhonePe'],['2','Tap\nScan QR'],['3','Point camera\nat code below']].map(([n,t])=>(
+                  <div key={n} style={{ flex:1, textAlign:'center' }}>
+                    <div style={{ width:24, height:24, borderRadius:'50%', background:'#0B1F4B', color:'#fff', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 4px' }}>{n}</div>
+                    <div style={{ fontSize:10.5, color:'#64748b', lineHeight:1.4, whiteSpace:'pre-line', fontFamily:"'DM Sans',sans-serif" }}>{t}</div>
+                  </div>
+                ))}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginBottom: '0.9rem' }}>
-                <a
-                  href={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`}
-                  style={{ display: 'block', background: '#fff', padding: 14, border: '1.5px solid #DDE6F7', borderRadius: 12, cursor: 'pointer' }}
-                >
+              {/* QR code */}
+              <div style={{ display:'flex', justifyContent:'center', marginBottom:'0.9rem' }}>
+                <div style={{ background:'#fff', padding:14, border:'2px solid #0B1F4B', borderRadius:14 }}>
                   <QRCode
                     value={`upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`}
-                    size={160}
+                    size={180}
                     fgColor="#0B1F4B"
                   />
-                </a>
-                {/* same-phone tip */}
-                <div style={{ background: '#FFF9EC', border: '1px solid #FDE68A', borderRadius: 10, padding: '0.7rem 0.9rem', width: '100%' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 600, color: '#92400E', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
-                    📱 Paying from this phone?
-                  </div>
-                  <div style={{ fontSize: 11.5, color: '#78350F', lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                    <strong>Long-press</strong> the QR above → tap <strong>"Search with Google Lens"</strong> → tap the GPay / UPI icon that appears.
-                  </div>
                 </div>
-                <p style={{ fontSize: 11.5, color: '#94a3b8', textAlign: 'center', margin: 0, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                  Or open GPay / PhonePe on another device → tap <strong>Scan QR</strong>
-                </p>
+              </div>
+
+              {/* Same-phone tip */}
+              <div style={{ background:'#FFF9EC', border:'1px solid #FDE68A', borderRadius:10, padding:'0.65rem 0.9rem', marginBottom:'0.9rem' }}>
+                <div style={{ fontSize:11.5, color:'#92400E', lineHeight:1.6, fontFamily:"'DM Sans',sans-serif" }}>
+                  <strong>On this phone:</strong> long-press the QR → <strong>"Search with Google Lens"</strong> → tap the GPay / UPI icon
+                </div>
               </div>
 
               {/* UPI ID + Copy */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0.6rem 0 0.7rem' }}>
-                <div style={{ flex: 1, height: 1, background: '#EEF3FB' }}/>
-                <span style={{ fontSize: 11, color: '#A8BAD8', whiteSpace: 'nowrap' }}>or enter UPI ID manually</span>
-                <div style={{ flex: 1, height: 1, background: '#EEF3FB' }}/>
+              <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 0.6rem' }}>
+                <div style={{ flex:1, height:1, background:'#EEF3FB' }}/>
+                <span style={{ fontSize:11, color:'#A8BAD8', whiteSpace:'nowrap' }}>or pay by UPI ID</span>
+                <div style={{ flex:1, height:1, background:'#EEF3FB' }}/>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#EBF1FD', borderRadius: 10, padding: '0.65rem 0.9rem' }}>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: '#0B1F4B', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, background:'#EBF1FD', borderRadius:10, padding:'0.65rem 0.9rem' }}>
+                <div style={{ flex:1, minWidth:0, fontSize:14, fontWeight:600, color:'#0B1F4B', wordBreak:'break-all', fontFamily:'monospace' }}>
                   {church.upi_id}
                 </div>
                 <button onClick={copyUpiId} style={{
-                  flexShrink: 0, padding: '6px 13px', borderRadius: 8, border: 'none',
-                  background: copied ? '#16a34a' : '#2B5CE6', color: '#fff',
-                  fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
-                  transition: 'background .2s',
+                  flexShrink:0, padding:'6px 13px', borderRadius:8, border:'none',
+                  background: copied ? '#16a34a' : '#2B5CE6', color:'#fff',
+                  fontSize:12, fontWeight:500, cursor:'pointer',
+                  display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap',
+                  transition:'background .2s',
                 }}>
                   {copied
                     ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>
@@ -330,8 +282,8 @@ export default function PaymentPage({ requestId: propId }) {
                 </button>
               </div>
             </div>
-          </>) : (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '0.9rem 1.1rem', marginBottom: '1rem', fontSize: 13, color: '#dc2626' }}>
+          ) : (
+            <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12, padding:'0.9rem 1.1rem', marginBottom:'1rem', fontSize:13, color:'#dc2626' }}>
               UPI ID not configured. Please contact the church office.
             </div>
           )}
@@ -372,7 +324,7 @@ export default function PaymentPage({ requestId: propId }) {
         {/* ── Footer ── */}
         <div style={{ background: '#F4F7FE', borderTop: '1px solid #DDE6F7', padding: '.8rem 1.8rem 1.2rem', textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: '#A8BAD8', fontFamily: "'DM Sans',sans-serif" }}>
-            Scan the QR with GPay · PhonePe · Paytm · or any UPI app · After paying, tap "I've already paid"
+            Scan QR with GPay · PhonePe · or any UPI app · After paying tap "I've already paid" below
           </div>
         </div>
       </div>
