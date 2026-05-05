@@ -15,7 +15,6 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
-import { generateAndUploadPaymentPdf }             from '../lib/generatePaymentPdf'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2157,10 +2156,17 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
         const payUrl  = `${baseUrl}/pay/${req.id}`
 
-        // Try to generate PDF; fall back to plain URL if upload fails
+        // Try to generate PDF via Edge Function; fall back to plain URL if it fails
         let pdfUrl = null
         try {
-          pdfUrl = await generateAndUploadPaymentPdf({ req, church, catMap })
+          const edgeResp = await fetch(`${window.location.origin}/functions/v1/generate-payment-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ req, church, catMap }),
+          })
+          if (!edgeResp.ok) throw new Error(await edgeResp.text())
+          const { publicUrl } = await edgeResp.json()
+          pdfUrl = publicUrl
         } catch (pdfErr) {
           console.warn('PDF generation failed, falling back to URL:', pdfErr.message)
         }
