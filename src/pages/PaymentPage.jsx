@@ -28,6 +28,7 @@ export default function PaymentPage({ requestId: propId }) {
   const [err,      setErr]      = useState(null)
   const [amounts,  setAmounts]  = useState({})
   const [paying,   setPaying]   = useState(false)
+  const [copied,   setCopied]   = useState(false)
   const [paidForm, setPaidForm] = useState(false)
   const [upiRef,   setUpiRef]   = useState('')
   const [saving,   setSaving]   = useState(false)
@@ -71,15 +72,29 @@ export default function PaymentPage({ requestId: propId }) {
     [amounts]
   )
 
+  function copyUpiId() {
+    if (!church?.upi_id) return
+    navigator.clipboard?.writeText(church.upi_id.trim()).catch(() => {
+      // Fallback for browsers without clipboard API
+      const ta = document.createElement('textarea')
+      ta.value = church.upi_id.trim()
+      ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select()
+      document.execCommand('copy'); document.body.removeChild(ta)
+    })
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+
   function payNow() {
     if (total <= 0) { alert('Please enter a valid amount.'); return }
     if (!church?.upi_id) { alert('UPI ID is not configured. Contact the church office.'); return }
     setPaying(true)
-    const pa   = church.upi_id.trim()        // UPI ID must NOT be encoded — @ must stay as @
-    const pn   = encodeURIComponent((church.church_name || 'Church').slice(0, 50))
-    const am   = total.toFixed(2)           // UPI spec: exactly 2 decimal places
-    const tn   = encodeURIComponent('Church Offering')
-    const upi  = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
+    const pa  = church.upi_id.trim()
+    const pn  = encodeURIComponent((church.church_name || 'Church').slice(0, 50))
+    const am  = total.toFixed(2)
+    const tn  = encodeURIComponent('Church Offering')
+    const upi = `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
     window.location.href = upi
     setTimeout(() => setPaying(false), 3000)
   }
@@ -224,26 +239,59 @@ export default function PaymentPage({ requestId: propId }) {
             <div style={{ background: 'rgba(255,255,255,.1)', border: '1px solid rgba(255,255,255,.15)', borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'rgba(255,255,255,.6)' }}>INR</div>
           </div>
 
-          {/* Pay button */}
-          <button onClick={payNow} disabled={paying || total <= 0} style={{
-            width: '100%', padding: 14,
-            background: 'linear-gradient(135deg,#1A73E8 0%,#1050C0 100%)',
-            color: '#fff', border: 'none', borderRadius: 12,
-            fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 500,
-            cursor: paying || total <= 0 ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            boxShadow: '0 6px 20px rgba(26,115,232,.4)', marginBottom: '.9rem',
-            opacity: paying ? .65 : 1,
-          }}>
-            {/* Google G icon */}
-            <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-              <path d="M43.6 20.5H42V20H24V28H35.3C33.7 32.7 29.2 36 24 36C17.4 36 12 30.6 12 24C12 17.4 17.4 12 24 12C27.1 12 29.9 13.2 32 15.2L37.7 9.5C34.2 6.2 29.3 4 24 4C12.9 4 4 12.9 4 24C4 35.1 12.9 44 24 44C35.1 44 44 35.1 44 24C44 22.8 43.9 21.7 43.6 20.5Z" fill="#FFC107"/>
-              <path d="M6.3 14.7L12.9 19.6C14.7 15.1 19 12 24 12C27.1 12 29.9 13.2 32 15.2L37.7 9.5C34.2 6.2 29.3 4 24 4C16.3 4 9.7 8.4 6.3 14.7Z" fill="#FF3D00"/>
-              <path d="M24 44C29.2 44 34 42 37.4 38.7L31.2 33.4C29.2 34.9 26.7 35.9 24 35.9C18.8 35.9 14.4 32.6 12.7 28L6.2 33.1C9.5 39.5 16.2 44 24 44Z" fill="#4CAF50"/>
-              <path d="M43.6 20.5H42V20H24V28H35.3C34.5 30.2 33.1 32.1 31.2 33.4L37.4 38.7C37 39.1 44 34 44 24C44 22.8 43.9 21.7 43.6 20.5Z" fill="#1976D2"/>
-            </svg>
-            {paying ? 'Opening GPay…' : 'Pay via GPay / UPI'}
-          </button>
+          {/* ── UPI Payment Card ── */}
+          {church?.upi_id ? (
+            <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.1rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: 10, letterSpacing: '.15em', textTransform: 'uppercase', color: '#A8BAD8', marginBottom: '0.75rem' }}>
+                Pay to UPI ID
+              </div>
+
+              {/* UPI ID + Copy row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#EBF1FD', borderRadius: 10, padding: '0.75rem 1rem', marginBottom: '0.75rem' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#0B1F4B', letterSpacing: '0.01em', wordBreak: 'break-all', fontFamily: "monospace" }}>
+                    {church.upi_id}
+                  </div>
+                </div>
+                <button onClick={copyUpiId} style={{
+                  flexShrink: 0, padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: copied ? '#16a34a' : '#2B5CE6', color: '#fff',
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                  transition: 'background .2s',
+                }}>
+                  {copied ? (
+                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>
+                  ) : (
+                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy ID</>
+                  )}
+                </button>
+              </div>
+
+              <p style={{ fontSize: 12.5, color: '#64748b', margin: '0 0 0.75rem', lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                Open <strong>GPay</strong>, <strong>PhonePe</strong>, or any UPI app → <em>Send Money</em> → paste the UPI ID above and enter amount{' '}
+                <strong style={{ color: '#0B1F4B' }}>₹{total.toLocaleString('en-IN')}</strong>.
+              </p>
+
+              {/* Secondary: try deep-link */}
+              <button onClick={payNow} disabled={paying || total <= 0} style={{
+                width: '100%', padding: '9px 14px', background: 'transparent',
+                border: '1.5px solid #CBD5E1', borderRadius: 10, fontSize: 12.5, fontWeight: 500,
+                color: '#475569', cursor: paying || total <= 0 ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                fontFamily: "'DM Sans',sans-serif", opacity: paying ? .6 : 1,
+              }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                {paying ? 'Opening…' : 'Or open UPI app directly'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '0.9rem 1.1rem', marginBottom: '1rem', fontSize: 13, color: '#dc2626' }}>
+              UPI ID not configured. Please contact the church office.
+            </div>
+          )}
 
           {/* I've Paid section */}
           {!paidForm ? (
@@ -279,15 +327,9 @@ export default function PaymentPage({ requestId: propId }) {
         </div>
 
         {/* ── Footer ── */}
-        <div style={{ background: '#F4F7FE', borderTop: '1px solid #DDE6F7', padding: '1rem 1.8rem 1.4rem', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: '.5rem' }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#5B8DEF' }}/>
-            <span style={{ fontSize: 11.5, color: '#2B5CE6', fontWeight: 500, fontFamily: "'DM Sans',sans-serif" }}>
-              {church?.upi_id || 'UPI ID not configured'}
-            </span>
-          </div>
+        <div style={{ background: '#F4F7FE', borderTop: '1px solid #DDE6F7', padding: '.8rem 1.8rem 1.2rem', textAlign: 'center' }}>
           <div style={{ fontSize: 11, color: '#A8BAD8', fontFamily: "'DM Sans',sans-serif" }}>
-            Secure UPI payment · Opens Google Pay or any UPI app
+            Secure UPI payment · After paying, tap "I've already paid" below to notify the treasurer
           </div>
         </div>
       </div>
