@@ -80,18 +80,26 @@ export default function PaymentPage({ requestId: propId }) {
 
     const pa     = church.upi_id.trim()
     const pn     = encodeURIComponent((church.church_name || 'Church').replace(/[^\x00-\x7F]/g, '').trim().slice(0, 50) || 'Church')
-    const am     = String(total)   // plain number
+    const am     = String(total)
     const tn     = encodeURIComponent('ChurchOffering')
     const params = `pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${tn}`
 
-    // gpay:// is Google Pay's own registered scheme — bypasses the browser UPI security check
-    // that causes "exceeded bank limit" when upi:// is triggered from an HTTPS page.
-    // If GPay is not installed, fall back to generic upi:// after 800ms.
-    window.location.href = `gpay://upi/pay?${params}`
-    setTimeout(() => {
+    const isAndroid = /Android/i.test(navigator.userAgent)
+
+    if (isAndroid) {
+      // Android Chrome: use intent:// URL — Chrome hands this directly to the Android
+      // Intent system, which is a different code path from URL scheme navigation
+      // and may bypass the browser-initiated UPI security check in GPay/banks.
+      // S.browser_fallback_url sends user to Play Store if GPay not installed.
+      const fallback = encodeURIComponent('https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.paisa.user')
+      window.location.href =
+        `intent://pay?${params}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;S.browser_fallback_url=${fallback};end`
+    } else {
+      // iOS / desktop
       window.location.href = `upi://pay?${params}`
-      setTimeout(() => setPaying(false), 2500)
-    }, 800)
+    }
+
+    setTimeout(() => setPaying(false), 3000)
   }
 
   function copyUpiId() {
