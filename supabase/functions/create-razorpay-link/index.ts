@@ -28,6 +28,7 @@ serve(async (req) => {
     }
 
     const body = {
+      upi_link:         true,          // UPI-specific payment link — shows GPay/PhonePe directly
       amount:           Math.round(Number(amount) * 100),   // paise
       currency:         'INR',
       accept_partial:   false,
