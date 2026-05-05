@@ -15,7 +15,6 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
-import { createPaymentLink }                       from '../lib/razorpay'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2153,23 +2152,8 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
         const payUrl = `${baseUrl}/pay/${req.id}`
 
-        // Try Razorpay payment link — falls back to direct pay URL if unavailable
-        let finalPayUrl = payUrl
-        try {
-          finalPayUrl = await createPaymentLink({
-            amount:     m.totalAmt,
-            memberName: m.member_name,
-            whatsapp:   m.whatsapp,
-            requestId:  req.id,
-            memberId:   m.member_id,
-            payUrl,
-          })
-        } catch (rpErr) {
-          console.warn('Razorpay link skipped:', rpErr.message)
-        }
-
         // Build WhatsApp message
-        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay securely:\n${finalPayUrl}\n\nThank you.`
+        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
