@@ -2153,7 +2153,7 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         const payUrl  = `${baseUrl}/pay/${req.id}`
 
         // Build WhatsApp message
-        const msg = `Dear ${m.member_name},\n\n${church.church_name} — Payment Request\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the link below, then tap *Share Payment File to WhatsApp* to get a one-tap GPay button.\n\n${payUrl}\n\nThank you.`
+        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the link below, then tap *Share Payment File to WhatsApp* to get a one-tap GPay button.\n\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
