@@ -289,8 +289,17 @@ export default function PaymentPage({ requestId: propId }) {
                     fgColor="#0B1F4B"
                   />
                 </div>
-                <p style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', margin: 0, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                  Open GPay / PhonePe → tap <strong>Scan QR</strong>
+                {/* same-phone tip */}
+                <div style={{ background: '#FFF9EC', border: '1px solid #FDE68A', borderRadius: 10, padding: '0.7rem 0.9rem', width: '100%' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: '#92400E', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
+                    📱 Paying from this phone?
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#78350F', lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                    <strong>Long-press</strong> the QR above → tap <strong>"Search with Google Lens"</strong> → tap the GPay / UPI icon that appears.
+                  </div>
+                </div>
+                <p style={{ fontSize: 11.5, color: '#94a3b8', textAlign: 'center', margin: 0, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                  Or open GPay / PhonePe on another device → tap <strong>Scan QR</strong>
                 </p>
               </div>
 
