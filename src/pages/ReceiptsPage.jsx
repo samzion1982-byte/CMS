@@ -2150,7 +2150,7 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
           status:      'pending',
           push_batch_id: batchId,
           created_by:  profile?.email || '',
-        }).select('id').single()
+        }).select('*').single()
         if (rErr) throw rErr
 
         // Build payment URL (fallback if PDF fails)
