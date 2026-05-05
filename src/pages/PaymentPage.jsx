@@ -262,8 +262,13 @@ export default function PaymentPage({ requestId: propId }) {
 
               {/* Same-phone tip */}
               <div style={{ background:'#FFF9EC', border:'1px solid #FDE68A', borderRadius:10, padding:'0.65rem 0.9rem', marginBottom:'0.9rem' }}>
-                <div style={{ fontSize:11.5, color:'#92400E', lineHeight:1.6, fontFamily:"'DM Sans',sans-serif" }}>
-                  <strong>On this phone:</strong> long-press the QR → <strong>"Search with Google Lens"</strong> → tap the GPay / UPI icon
+                <div style={{ fontSize:12, fontWeight:600, color:'#92400E', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>
+                  Paying from this phone? 3 taps:
+                </div>
+                <div style={{ fontSize:12, color:'#78350F', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
+                  1. Long-press QR above<br/>
+                  2. Tap <strong>"Search image with Google Lens"</strong><br/>
+                  3. Lens opens → tap the GPay / UPI icon
                 </div>
               </div>
 
