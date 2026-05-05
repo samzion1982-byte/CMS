@@ -2153,15 +2153,26 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('id').single()
         if (rErr) throw rErr
 
-        // Build WhatsApp message
-        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached PDF and tap *Tap here to Pay with GPay* to pay instantly.\n\nThank you.`
+        // Build payment URL (fallback if PDF fails)
+        const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
+        const payUrl  = `${baseUrl}/pay/${req.id}`
+
+        // Try to generate PDF; fall back to plain URL if upload fails
+        let pdfUrl = null
+        try {
+          pdfUrl = await generateAndUploadPaymentPdf({ req, church, catMap })
+        } catch (pdfErr) {
+          console.warn('PDF generation failed, falling back to URL:', pdfErr.message)
+        }
+
+        const msg = pdfUrl
+          ? `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached PDF and tap *Tap here to Pay with GPay* to pay instantly.\n\nThank you.`
+          : `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            // Generate and upload PDF payment slip with tappable GPay link
-            const pdfUrl = await generateAndUploadPaymentPdf({ req, church, catMap })
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, mediaUrl: pdfUrl })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, ...(pdfUrl && { mediaUrl: pdfUrl }) })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,
