@@ -97,11 +97,9 @@ export default function PaymentPage({ requestId: propId }) {
   async function sharePaymentFile() {
     if (!qrDataUrl || !church?.upi_id) return
     const upiId  = church.upi_id.trim()
-    // Minimal URL — no pn/tn to avoid encoding issues with church name apostrophes
-    // @ encoded as %40 to prevent Android URI parser treating it as user-info separator
-    const pa     = upiId.replace('@', '%40')
-    const gpay   = `gpay://upi/pay?pa=${pa}&am=${total}&cu=INR`
-    const upi    = `upi://pay?pa=${pa}&am=${total}&cu=INR`
+    // Raw @ required — UPI registry lookup fails if @ is percent-encoded as %40
+    const gpay   = `gpay://upi/pay?pa=${upiId}&am=${total}&cu=INR`
+    const upi    = `upi://pay?pa=${upiId}&am=${total}&cu=INR`
     const catRows = Object.entries(req.amounts || {}).map(([cid, rate]) => ({
       name: catMap[cid] || 'Category',
       amount: (parseFloat(rate) || 0) * (req.slot || 1),
