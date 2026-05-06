@@ -10,8 +10,8 @@ import {
   getFY, fyOptions, fmtAmt, fmtDate,
   getJournalEntries, getJournalEntryWithLines, createJournalEntry,
   updateJournalEntry, postJournalEntry, deleteJournalEntry,
-  nextEntryNumber, getChartOfAccounts,
-  VOUCHER_TYPES, VOUCHER_COLOR,
+  nextEntryNumber, getChartOfAccounts, getPostableAccounts,
+  VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR,
 } from '../lib/accountingLib'
 import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
@@ -265,7 +265,7 @@ function JournalEntryForm({ entryId }) {
   ])
 
   useEffect(() => {
-    getChartOfAccounts(true).then(setAccounts).catch(() => {})
+    getChartOfAccounts(true).then(all => setAccounts(getPostableAccounts(all))).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -483,8 +483,16 @@ function JournalEntryForm({ entryId }) {
                   <td style={{ padding: '6px 10px' }}>
                     <select value={line.account_id} onChange={e => setLine(i, 'account_id', e.target.value)} disabled={isPosted}
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
-                      <option value="">— Select Account —</option>
-                      {accounts.map(a => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+                      <option value="">— Select Ledger —</option>
+                      {['Asset','Liability','Equity','Income','Expense'].map(type => {
+                        const group = accounts.filter(a => a.account_type === type)
+                        if (!group.length) return null
+                        return (
+                          <optgroup key={type} label={type}>
+                            {group.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          </optgroup>
+                        )
+                      })}
                     </select>
                   </td>
                   <td style={{ padding: '6px 10px' }}>

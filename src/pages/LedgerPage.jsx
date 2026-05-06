@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getLedger, getChartOfAccounts, getFY, fyDateRange, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
+import { getLedger, getChartOfAccounts, getPostableAccounts, getFY, fyDateRange, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer } from 'lucide-react'
@@ -28,7 +28,7 @@ export default function LedgerPage() {
   const [church,     setChurch]     = useState(null)
 
   useEffect(() => {
-    getChartOfAccounts(true).then(setAccounts).catch(() => {})
+    getChartOfAccounts(true).then(all => setAccounts(getPostableAccounts(all))).catch(() => {})
     getChurch().then(setChurch).catch(() => {})
   }, [])
 

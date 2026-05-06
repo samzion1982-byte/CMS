@@ -56,13 +56,38 @@ export async function getChartOfAccounts(activeOnly = false) {
   let q = supabase
     .from('chart_of_accounts')
     .select('*')
-    .order('account_type')
     .order('sort_order')
-    .order('code')
+    .order('name')
   if (activeOnly) q = q.eq('is_active', true)
   const { data, error } = await q
   if (error) throw error
   return data || []
+}
+
+// Build tree structure from flat list
+export function buildCOATree(accounts) {
+  const byId = {}
+  accounts.forEach(a => { byId[a.id] = { ...a, children: [] } })
+  const roots = []
+  accounts.forEach(a => {
+    if (a.parent_id && byId[a.parent_id]) {
+      byId[a.parent_id].children.push(byId[a.id])
+    } else if (!a.parent_id) {
+      roots.push(byId[a.id])
+    }
+  })
+  // Sort each level
+  const sortNodes = nodes => {
+    nodes.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+    nodes.forEach(n => sortNodes(n.children))
+  }
+  sortNodes(roots)
+  return roots
+}
+
+// Only postable (level 3) accounts for journal entry dropdowns
+export function getPostableAccounts(accounts) {
+  return accounts.filter(a => a.is_postable !== false && a.level === 3)
 }
 
 export async function createAccount(account, performedBy) {
@@ -87,12 +112,20 @@ export async function updateAccount(id, account, performedBy) {
 }
 
 export async function deleteAccount(id, performedBy) {
-  // Check if account has any journal lines
-  const { count } = await supabase
+  // Check for child accounts
+  const { count: childCount } = await supabase
+    .from('chart_of_accounts')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_id', id)
+  if (childCount > 0) throw new Error('Cannot delete — this account has sub-accounts under it. Delete them first.')
+
+  // Check for journal lines
+  const { count: txCount } = await supabase
     .from('journal_entry_lines')
     .select('id', { count: 'exact', head: true })
     .eq('account_id', id)
-  if (count > 0) throw new Error('Cannot delete account with existing transactions.')
+  if (txCount > 0) throw new Error('Cannot delete — this account has existing transactions.')
+
   const { data: old } = await supabase.from('chart_of_accounts').select('*').eq('id', id).single()
   const { error } = await supabase.from('chart_of_accounts').delete().eq('id', id)
   if (error) throw error
