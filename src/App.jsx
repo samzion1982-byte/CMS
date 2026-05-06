@@ -23,6 +23,12 @@ import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
 import PaymentSchedulePage    from './pages/PaymentSchedulePage'
 import PaymentPage            from './pages/PaymentPage'
 import PaymentRequestLogPage  from './pages/PaymentRequestLogPage'
+import AccountingPage         from './pages/AccountingPage'
+import ChartOfAccountsPage    from './pages/ChartOfAccountsPage'
+import JournalEntryPage       from './pages/JournalEntryPage'
+import LedgerPage             from './pages/LedgerPage'
+import TrialBalancePage       from './pages/TrialBalancePage'
+import FinancialStatementsPage from './pages/FinancialStatementsPage'
 
 console.log('📱 App component rendering')
 
@@ -329,6 +335,16 @@ function AppRoutes() {
         path="/payment-request-log"
         element={<PrivateRoute><AppLayout><PaymentRequestLogPage /></AppLayout></PrivateRoute>}
       />
+
+      {/* ── Accounting Module ── */}
+      <Route path="/accounting"                  element={<PrivateRoute><AppLayout><AccountingPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/chart-of-accounts" element={<PrivateRoute><AppLayout><ChartOfAccountsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/journal-entries"   element={<PrivateRoute><AppLayout><JournalEntryPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/journal-entries/:id" element={<PrivateRoute><AppLayout><JournalEntryPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/journal-entry/new"   element={<PrivateRoute><AppLayout><JournalEntryPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/ledger"            element={<PrivateRoute><AppLayout><LedgerPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/trial-balance"     element={<PrivateRoute><AppLayout><TrialBalancePage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/statements"        element={<PrivateRoute><AppLayout><FinancialStatementsPage /></AppLayout></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

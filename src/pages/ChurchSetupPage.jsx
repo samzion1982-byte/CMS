@@ -591,6 +591,41 @@ export default function ChurchSetupPage() {
                   </div>
                 </div>
 
+                {/* Accounting Module */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Accounting Module</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: church?.accounting_enabled ? '#f0fdf4' : '#f8fafc', borderRadius: 10, border: `1.5px solid ${church?.accounting_enabled ? '#86efac' : '#e2e8f0'}` }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: church?.accounting_enabled ? '#16a34a' : '#64748b', margin: '0 0 2px' }}>
+                        {church?.accounting_enabled ? 'Accounting Enabled' : 'Accounting Disabled'}
+                      </p>
+                      <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                        {church?.accounting_enabled ? 'Double-entry accounts active — Finance → Accounts' : 'Enable to use the built-in double-entry accounting module'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const newVal = !church?.accounting_enabled
+                        const { error } = await supabase.from('churches').update({ accounting_enabled: newVal }).eq('id', church.id)
+                        if (error) { toast('Failed to update: ' + error.message, 'error'); return }
+                        setChurch(c => ({ ...c, accounting_enabled: newVal }))
+                        toast(newVal ? 'Accounting module enabled.' : 'Accounting module disabled.', 'success')
+                      }}
+                      style={{
+                        width: 48, height: 26, borderRadius: 99, border: 'none', cursor: 'pointer',
+                        background: church?.accounting_enabled ? '#16a34a' : '#d1d5db',
+                        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute', top: 3, left: church?.accounting_enabled ? 24 : 3,
+                        width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                      }} />
+                    </button>
+                  </div>
+                </div>
+
                 {/* WhatsApp receipt mode */}
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">WhatsApp receipt</p>

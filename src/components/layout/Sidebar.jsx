@@ -4,7 +4,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { Menu, ChevronLeft,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
-  BookOpen, MessageSquare, CreditCard, Send,
+  BookOpen, MessageSquare, CreditCard, Send, Landmark,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -19,6 +19,7 @@ const NAV = [
     { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
     { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Reports',           path: '/reports',           icon: BarChart3   },
+    { label: 'Accounts',          path: '/accounting',        icon: Landmark    },
   ]},
   { group: 'MODULES', items: [
     { label: 'Announcements', path: '/announcements', icon: Megaphone },
