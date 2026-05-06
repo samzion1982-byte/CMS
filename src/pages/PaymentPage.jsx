@@ -75,7 +75,7 @@ export default function PaymentPage({ requestId: propId }) {
 
   useEffect(() => {
     if (!church?.upi_id || total <= 0) return
-    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${total}&cu=INR&tn=ChurchOffering`
+    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR&tn=ChurchOffering`
     QRCodeLib.toDataURL(upiContent, { width: 220, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' } })
       .then(url => setQrDataUrl(url))
   }, [church, total])
@@ -85,7 +85,7 @@ export default function PaymentPage({ requestId: propId }) {
     const id  = church.upi_id.trim()
     const pn  = encodeURIComponent(church.church_name || 'Church')
     const tn  = encodeURIComponent('ChurchOffering')
-    const amt = String(total)
+    const amt = String(parseFloat(total))
     const gp  = `gpay://upi/pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`
     const up  = `upi://pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`
     const f = document.createElement('iframe')
@@ -188,7 +188,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0B1F4B;min-height:100vh
 <script>
 var SB='${js(SUPABASE_URL)}',KEY='${js(SUPABASE_ANON_KEY)}',RID='${js(req.id || requestId)}';
 function openGPay(){
-  var id='${js(upiId)}',pn=encodeURIComponent('${js(church.church_name||'Church')}'),tn=encodeURIComponent('ChurchOffering'),amt='${total}';
+  var id='${js(upiId)}',pn=encodeURIComponent('${js(church.church_name||'Church')}'),tn=encodeURIComponent('ChurchOffering'),amt='${parseFloat(total)}';
   var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
   var up='upi://pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR&tn='+tn;
   var f=document.createElement('iframe');f.style.display='none';f.src=gp;document.body.appendChild(f);
