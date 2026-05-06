@@ -2165,14 +2165,13 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
           console.warn('HTML generation failed, falling back to URL:', htmlErr.message)
         }
 
-        const msg = htmlUrl
-          ? `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached file and tap *Pay with GPay* to pay instantly.\n\nThank you.`
-          : `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
+        const pageUrl = htmlUrl || payUrl
+        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nTap the link below and press *Pay with GPay*:\n${pageUrl}\n\nThank you.`
 
-        // Send WhatsApp (best-effort)
+        // Send WhatsApp (best-effort) — send as text link, not attachment (Soft7 mangles HTML filenames)
         if (m.whatsapp) {
           try {
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, ...(htmlUrl && { mediaUrl: htmlUrl }) })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,
