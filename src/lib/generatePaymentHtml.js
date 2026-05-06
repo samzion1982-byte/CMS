@@ -11,8 +11,8 @@ export async function generateAndUploadPaymentHtml({ req, church, catMap }) {
   const upiId      = (church.upi_id || '').trim()
   const churchName = church.church_name || 'Church'
 
-  const upiContent = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR`
-  const gpayUrl    = `gpay://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR`
+  const upiContent = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(churchName)}&cu=INR`
+  const gpayUrl    = `gpay://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(churchName)}&cu=INR`
 
   const qrDataUrl = await QRCodeLib.toDataURL(upiContent, {
     width: 280, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' },
@@ -190,9 +190,9 @@ ${catRowsHtml}
 var SB='${jsStr(SUPABASE_URL)}',KEY='${jsStr(SUPABASE_ANON_KEY)}',RID='${jsStr(req.id)}';
 
 function openGPay(){
-  var id='${jsStr(upiId)}',pn=encodeURIComponent('${jsStr(churchName)}'),amt='${parseFloat(total)}';
-  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR';
-  var up='upi://pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR';
+  var id='${jsStr(upiId)}',pn=encodeURIComponent('${jsStr(churchName)}');
+  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&cu=INR';
+  var up='upi://pay?pa='+id+'&pn='+pn+'&cu=INR';
   var f=document.createElement('iframe');f.style.display='none';f.src=gp;document.body.appendChild(f);
   setTimeout(function(){window.location.href=up;},600);
 }

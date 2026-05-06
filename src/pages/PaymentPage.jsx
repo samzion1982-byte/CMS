@@ -75,7 +75,7 @@ export default function PaymentPage({ requestId: propId }) {
 
   useEffect(() => {
     if (!church?.upi_id || total <= 0) return
-    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR`
+    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&cu=INR`
     QRCodeLib.toDataURL(upiContent, { width: 220, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' } })
       .then(url => setQrDataUrl(url))
   }, [church, total])
@@ -84,9 +84,8 @@ export default function PaymentPage({ requestId: propId }) {
     if (!church?.upi_id || total <= 0) return
     const id  = church.upi_id.trim()
     const pn  = encodeURIComponent(church.church_name || 'Church')
-    const amt = String(parseFloat(total))
-    const gp  = `gpay://upi/pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR`
-    const up  = `upi://pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR`
+    const gp  = `gpay://upi/pay?pa=${id}&pn=${pn}&cu=INR`
+    const up  = `upi://pay?pa=${id}&pn=${pn}&cu=INR`
     const f = document.createElement('iframe')
     f.style.display = 'none'; f.src = gp
     document.body.appendChild(f)
@@ -187,9 +186,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#0B1F4B;min-height:100vh
 <script>
 var SB='${js(SUPABASE_URL)}',KEY='${js(SUPABASE_ANON_KEY)}',RID='${js(req.id || requestId)}';
 function openGPay(){
-  var id='${js(upiId)}',pn=encodeURIComponent('${js(church.church_name||'Church')}'),amt='${parseFloat(total)}';
-  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR';
-  var up='upi://pay?pa='+id+'&pn='+pn+'&am='+amt+'&cu=INR';
+  var id='${js(upiId)}',pn=encodeURIComponent('${js(church.church_name||'Church')}');
+  var gp='gpay://upi/pay?pa='+id+'&pn='+pn+'&cu=INR';
+  var up='upi://pay?pa='+id+'&pn='+pn+'&cu=INR';
   var f=document.createElement('iframe');f.style.display='none';f.src=gp;document.body.appendChild(f);
   setTimeout(function(){window.location.href=up;},600);
 }
@@ -370,7 +369,7 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
                 background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
                 fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:"'DM Sans',sans-serif",
               }}>
-                Pay ₹{total.toLocaleString('en-IN')} with GPay
+                Open GPay — enter ₹{total.toLocaleString('en-IN')}
               </button>
 
               {/* QR code + Save button */}
