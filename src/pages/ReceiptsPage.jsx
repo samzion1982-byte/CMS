@@ -15,7 +15,6 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
-import { generateAndUploadPaymentHtml }            from '../lib/generatePaymentHtml'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2153,22 +2152,13 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('*').single()
         if (rErr) throw rErr
 
-        // Build payment URL (fallback if HTML generation fails)
+        // Build payment page URL
         const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
         const payUrl  = `${baseUrl}/pay/${req.id}`
 
-        // Try to generate interactive HTML payment page; fall back to plain URL if it fails
-        let htmlUrl = null
-        try {
-          htmlUrl = await generateAndUploadPaymentHtml({ req, church, catMap })
-        } catch (htmlErr) {
-          console.warn('HTML generation failed, falling back to URL:', htmlErr.message)
-        }
+        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nTap the link below and press *Pay with GPay*:\n${payUrl}\n\nThank you.`
 
-        const pageUrl = htmlUrl || payUrl
-        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nTap the link below and press *Pay with GPay*:\n${pageUrl}\n\nThank you.`
-
-        // Send WhatsApp (best-effort) — send as text link, not attachment (Soft7 mangles HTML filenames)
+        // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
             const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
