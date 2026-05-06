@@ -377,8 +377,8 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
               {/* QR code + Save button */}
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:'0.9rem' }}>
                 {qrDataUrl
-                  ? <img src={qrDataUrl} alt="UPI Payment QR Code"
-                      style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block' }}
+                  ? <img src={qrDataUrl} alt="UPI Payment QR Code" onClick={openGPay}
+                      style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block', cursor:'pointer' }}
                     />
                   : <div style={{ width:220, height:220, borderRadius:12, border:'2px solid #DDE6F7', background:'#F4F7FE', display:'flex', alignItems:'center', justifyContent:'center' }}>
                       <div style={{ width:32, height:32, border:'3px solid #DDE6F7', borderTopColor:'#2B5CE6', borderRadius:'50%', animation:'hspin .7s linear infinite' }}/>
