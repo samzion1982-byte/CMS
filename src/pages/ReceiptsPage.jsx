@@ -1358,9 +1358,9 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 9999, padding: 12 }}>
       <div className="receipt-modal-official" style={{
-        background: '#ffffff', borderRadius: 18, width: '100%',
+        background: 'var(--card-bg)', borderRadius: 18, width: '100%',
         maxWidth: 920, maxHeight: '97vh', display: 'flex', flexDirection: 'column',
-        boxShadow: '0 40px 80px rgba(0,0,0,0.22), 0 8px 30px rgba(0,0,0,0.10), 0 0 0 1px rgba(13,34,68,0.07)',
+        boxShadow: '0 40px 80px rgba(0,0,0,0.35), 0 8px 30px rgba(0,0,0,0.20), 0 0 0 1px var(--card-border)',
         fontFamily: "'Poppins', var(--font-ui, Inter), sans-serif",
       }}>
 
@@ -1380,7 +1380,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
           </div>
           {/* Title + receipt number */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--sidebar-light)', letterSpacing: '-0.01em', lineHeight: 1 }}>
+            <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-0.01em', lineHeight: 1 }}>
               {editId ? 'Edit Receipt' : 'New Receipt'}
             </span>
             {form.receipt_number && (
@@ -1392,10 +1392,10 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
           {/* Spacer pushes FY badge to the right */}
           <div style={{ flex: 1 }}/>
           {/* FY badge — centred in remaining space */}
-          <span style={{ background: '#eef2ff', border: '1.5px solid #c7d2fe',
-            color: '#3730a3', fontSize: 12, fontWeight: 700,
+          <span style={{ background: 'var(--accent-subtle)', border: '1.5px solid var(--accent-ring)',
+            color: 'var(--accent)', fontSize: 12, fontWeight: 700,
             borderRadius: 8, padding: '4px 14px', letterSpacing: '0.03em',
-            boxShadow: '0 1px 4px rgba(55,48,163,0.12)' }}>
+            boxShadow: '0 1px 4px var(--accent-ring)' }}>
             FY {form.financial_year}
           </span>
           {/* Close */}
@@ -1420,8 +1420,8 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
             <div style={{ display: 'grid', gridTemplateColumns: '390px 1fr', overflow: 'hidden' }}>
 
               {/* ── Left panel ── */}
-              <div style={{ borderRight: '2px solid #e2e8f0', overflowY: 'auto',
-                maxHeight: 'calc(95vh - 140px)', background: '#ffffff',
+              <div style={{ borderRight: '2px solid var(--card-border)', overflowY: 'auto',
+                maxHeight: 'calc(95vh - 140px)', background: 'var(--card-bg)',
                 padding: '14px 18px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
 
                 {/* MEMBER */}
@@ -1499,7 +1499,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
                     <input ref={dateRef} type="date" value={form.receipt_date}
                       onChange={e => { sf('receipt_date')(e.target.value); setDateIsCarryForward(false) }}
                       className={`field-input${dateIsCarryForward ? ' date-carry-forward' : ''}`}
-                      style={{ height: 31, width: '100%' }}/>
+                      style={{ height: 31, width: '100%', color: 'var(--accent)', fontWeight: 700 }}/>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                     {selMonths.length > 0 && (
@@ -1608,18 +1608,18 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
               </div>
 
               {/* ── Right panel — categories ── */}
-              <div style={{ overflowY: 'auto', maxHeight: 'calc(95vh - 140px)', display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
-                <div style={{ padding: '9px 16px', borderBottom: '1px solid #e2e8f0',
-                  background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--sidebar-light)',
+              <div style={{ overflowY: 'auto', maxHeight: 'calc(95vh - 140px)', display: 'flex', flexDirection: 'column', background: 'var(--page-bg)' }}>
+                <div style={{ padding: '9px 16px', borderBottom: '1px solid var(--card-border)',
+                  background: 'var(--table-header-bg)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)',
                     textTransform: 'uppercase', letterSpacing: '0.1em' }}>Payment Categories</span>
-                  <span style={{ fontSize: 10, color: '#8896a8', marginLeft: 'auto' }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 'auto' }}>
                     Click name or enter amount
                   </span>
                   {enabledCount > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--sidebar-light)',
+                    <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--accent)',
                       color: '#fff', borderRadius: 10, padding: '2px 9px',
-                      boxShadow: '0 1px 4px rgba(13,34,68,0.25)' }}>
+                      boxShadow: '0 1px 4px var(--accent-ring)' }}>
                       {enabledCount} active
                     </span>
                   )}
@@ -1627,7 +1627,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
 
                 <table style={{ width: '100%', borderCollapse: 'collapse', flex: 1, tableLayout: 'fixed' }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                    <tr style={{ background: '#edf2f7', borderBottom: '2px solid #e2e8f0' }}>
+                    <tr style={{ background: 'var(--table-header-bg)', borderBottom: '2px solid var(--table-border)' }}>
                       <th style={{ width: 36, padding: '6px 8px' }}/>
                       <th style={{ padding: '6px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700,
                         color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Category</th>
@@ -1833,7 +1833,7 @@ function FieldLabel({ children }) {
 function HDivider() {
   return (
     <div style={{ height: 1, margin: '10px 0',
-      background: 'linear-gradient(90deg, var(--sidebar-light) 0%, rgba(30,74,138,0.12) 60%, transparent 100%)' }}/>
+      background: 'linear-gradient(90deg, var(--accent) 0%, var(--accent-subtle) 60%, transparent 100%)' }}/>
   )
 }
 

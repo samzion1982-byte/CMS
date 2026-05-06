@@ -88,10 +88,18 @@ function TypeBadge({ type, map }) {
 
 // ── Account Type Summary ──────────────────────────────────────────
 
+const TYPE_VARS = {
+  Asset:     { bg: 'var(--info-subtle)',    border: 'var(--info-border)',    text: 'var(--info)'    },
+  Liability: { bg: 'var(--danger-subtle)',  border: 'var(--danger-border)',  text: 'var(--danger)'  },
+  Equity:    { bg: 'var(--success-subtle)', border: 'var(--success-border)', text: 'var(--success)' },
+  Income:    { bg: 'var(--success-subtle)', border: 'var(--success-border)', text: 'var(--success)' },
+  Expense:   { bg: 'var(--warning-subtle)', border: 'var(--warning-border)', text: 'var(--warning)' },
+}
+
 function TypeSummaryCard({ type, count, loading }) {
-  const c = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
+  const c = TYPE_VARS[type] || { bg: 'var(--card-bg)', border: 'var(--card-border)', text: 'var(--text-2)' }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: c.bg + '55', borderRadius: 8, border: `1px solid ${c.bg}` }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: c.bg, borderRadius: 8, border: `1px solid ${c.border}` }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.text, flexShrink: 0 }} />
       <span style={{ fontSize: 12, fontWeight: 600, color: c.text, flex: 1 }}>{type}</span>
       <span style={{ fontSize: 16, fontWeight: 800, color: c.text }}>
@@ -219,7 +227,7 @@ export default function AccountingPage() {
 
           <button
             onClick={() => navigate('/accounting/journal-entry/new')}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}
           >
             <PlusCircle size={15} /> New Entry
           </button>

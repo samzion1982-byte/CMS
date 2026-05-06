@@ -42,11 +42,11 @@ export default function TrialBalancePage() {
 
   function doExport() {
     const data = display.map(r => ({
-      Code: r.code, Name: r.name, Type: r.account_type,
+      Name: r.name, Type: r.account_type,
       'Debit (₹)': r.total_debit > 0 ? r.total_debit : '',
       'Credit (₹)': r.total_credit > 0 ? r.total_credit : '',
     }))
-    data.push({ Code: '', Name: 'TOTAL', Type: '', 'Debit (₹)': totalDebit, 'Credit (₹)': totalCredit })
+    data.push({ Name: 'TOTAL', Type: '', 'Debit (₹)': totalDebit, 'Credit (₹)': totalCredit })
     exportToExcel(data, `TrialBalance_${fy}`)
   }
 
@@ -146,7 +146,6 @@ export default function TrialBalancePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead style={{ background: 'var(--table-header-bg)' }}>
                   <tr>
-                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 80 }}>Code</th>
                     <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account Name</th>
                     <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 100 }}>Type</th>
                     <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 150 }}>Debit (₹)</th>
@@ -165,7 +164,6 @@ export default function TrialBalancePage() {
                             <div style={{ width: 4, height: '100%', background: c.text, borderRadius: 0 }} />
                           </td>
                         )}
-                        <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: c.text }}>{r.code}</td>
                         <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-1)' }}>{r.name}</td>
                         <td style={{ padding: '9px 14px' }}>
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{type}</span>
@@ -182,13 +180,13 @@ export default function TrialBalancePage() {
                 </tbody>
                 <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
                   <tr>
-                    <td colSpan={3} style={{ padding: '11px 14px', fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>GRAND TOTAL</td>
+                    <td colSpan={2} style={{ padding: '11px 14px', fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>GRAND TOTAL</td>
                     <td style={{ padding: '11px 14px', fontSize: 14, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
                     <td style={{ padding: '11px 14px', fontSize: 14, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
                   </tr>
                   {balanced && (
                     <tr>
-                      <td colSpan={5} style={{ padding: '8px 14px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
+                      <td colSpan={4} style={{ padding: '8px 14px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
                         ✓ Trial Balance Agrees — Total Debits = Total Credits = {fmtAmt(totalDebit)}
                       </td>
                     </tr>

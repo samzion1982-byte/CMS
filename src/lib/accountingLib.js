@@ -76,7 +76,6 @@ export function buildCOATree(accounts) {
       roots.push(byId[a.id])
     }
   })
-  // Sort each level
   const sortNodes = nodes => {
     nodes.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
     nodes.forEach(n => sortNodes(n.children))
@@ -90,10 +89,33 @@ export function getPostableAccounts(accounts) {
   return accounts.filter(a => a.is_postable !== false && a.level === 3)
 }
 
+// Build breadcrumb path for an account: "Assets > Current Assets > Cash in Hand"
+export function getAccountPath(account, allAccounts) {
+  const parts = [account.name]
+  let current = account
+  while (current.parent_id) {
+    const parent = allAccounts.find(a => a.id === current.parent_id)
+    if (!parent) break
+    parts.unshift(parent.name)
+    current = parent
+  }
+  return parts.join(' > ')
+}
+
+// Build flat list of postable accounts with their full path (for dropdowns)
+export function getPostableAccountsWithPath(allAccounts) {
+  return getPostableAccounts(allAccounts).map(a => ({
+    ...a,
+    path: getAccountPath(a, allAccounts),
+  }))
+}
+
 export async function createAccount(account, performedBy) {
+  // Auto-generate a unique internal code — never shown to the user
+  const autoCode = `AC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`
   const { data, error } = await supabase
     .from('chart_of_accounts')
-    .insert({ ...account, created_by: performedBy, updated_by: performedBy })
+    .insert({ ...account, code: account.code || autoCode, created_by: performedBy, updated_by: performedBy })
     .select().single()
   if (error) throw error
   await logAudit('created', 'chart_of_accounts', data.id, data, null, performedBy)

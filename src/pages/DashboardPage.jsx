@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { useTheme } from '../lib/ThemeContext'
+import { useTheme, THEMES } from '../lib/ThemeContext'
 import { formatDate as formatDateLib } from '../lib/date'
 import {
   Users, Home, Calendar, MapPin, Activity, UserPlus,
@@ -94,6 +94,9 @@ const MALE_COLOR   = '#2563eb'
 const FEMALE_COLOR = '#ec4899'
 
 function AgeGroupChart({ ageGroups, loading }) {
+  const { theme } = useTheme()
+  const isDark = !!THEMES[theme]?.dark
+
   if (loading) {
     return (
       <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
@@ -159,10 +162,10 @@ function AgeGroupChart({ ageGroups, loading }) {
           return (
             <g key={t}>
               <line x1={padL} y1={y} x2={W - padR} y2={y}
-                stroke={t === 0 ? '#cbd5e1' : '#e2e8f0'}
+                stroke={t === 0 ? (isDark ? '#334155' : '#cbd5e1') : (isDark ? '#1e293b' : '#e2e8f0')}
                 strokeWidth={t === 0 ? 1.5 : 0.8}
                 strokeDasharray={t === 0 ? '' : '4 4'} />
-              <text x={padL - 6} y={y + 4} textAnchor="end" fontSize={9} fill="#94a3b8" fontFamily="Arial,sans-serif">{t}</text>
+              <text x={padL - 6} y={y + 4} textAnchor="end" fontSize={9} fill={isDark ? '#64748b' : '#94a3b8'} fontFamily="Arial,sans-serif">{t}</text>
             </g>
           )
         })}
@@ -201,16 +204,16 @@ function AgeGroupChart({ ageGroups, loading }) {
                   <text x={fX + barW/2} y={fY - SIDE - 5} textAnchor="middle" fontSize={9.5} fontWeight="700" fill={FEMALE_COLOR} fontFamily="Arial,sans-serif">{g.female}</text>
                 </g>
               )}
-              <text x={cx + 3} y={baseY + 16} textAnchor="middle" fontSize={10} fontWeight="700" fill="#334155" fontFamily="Arial,sans-serif">
+              <text x={cx + 3} y={baseY + 16} textAnchor="middle" fontSize={10} fontWeight="700" fill={isDark ? '#94a3b8' : '#334155'} fontFamily="Arial,sans-serif">
                 {g.label === 'Senior Citizen' ? 'Sr. Citizen' : g.label}
               </text>
-              <text x={cx + 3} y={baseY + 29} textAnchor="middle" fontSize={9} fill="#64748b" fontFamily="Arial,sans-serif">
+              <text x={cx + 3} y={baseY + 29} textAnchor="middle" fontSize={9} fill={isDark ? '#64748b' : '#64748b'} fontFamily="Arial,sans-serif">
                 {g.male + g.female > 0 ? `(${g.male + g.female})` : '—'}
               </text>
             </g>
           )
         })}
-        <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke="#cbd5e1" strokeWidth={1.5} />
+        <line x1={padL} y1={padT + chartH} x2={W - padR} y2={padT + chartH} stroke={isDark ? '#334155' : '#cbd5e1'} strokeWidth={1.5} />
       </svg>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         {groups.map(g => (
@@ -237,7 +240,7 @@ function AgeGroupChart({ ageGroups, loading }) {
 /* ── Zone Donut Pie Chart ────────────────────────────────────── */
 function ZonePieChart({ zones, profile }) {
   const { theme } = useTheme()
-  const isDarkTheme = theme === 'midnight'
+  const isDarkTheme = !!THEMES[theme]?.dark
   
   const [rotation, setRotation] = useState(() => {
     if (typeof window === 'undefined') return 0

@@ -10,7 +10,7 @@ import {
   getFY, fyOptions, fmtAmt, fmtDate,
   getJournalEntries, getJournalEntryWithLines, createJournalEntry,
   updateJournalEntry, postJournalEntry, deleteJournalEntry,
-  nextEntryNumber, getChartOfAccounts, getPostableAccounts,
+  nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
   VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR,
 } from '../lib/accountingLib'
 import {
@@ -265,7 +265,7 @@ function JournalEntryForm({ entryId }) {
   ])
 
   useEffect(() => {
-    getChartOfAccounts(true).then(all => setAccounts(getPostableAccounts(all))).catch(() => {})
+    getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -489,7 +489,7 @@ function JournalEntryForm({ entryId }) {
                         if (!group.length) return null
                         return (
                           <optgroup key={type} label={type}>
-                            {group.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                            {group.map(a => <option key={a.id} value={a.id}>{a.path}</option>)}
                           </optgroup>
                         )
                       })}

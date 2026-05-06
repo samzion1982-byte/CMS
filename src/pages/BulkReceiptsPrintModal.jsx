@@ -270,8 +270,17 @@ export default function BulkReceiptsPrintModal({ onClose, initialFY }) {
     let sent = 0, failed = 0, skipped = 0
     for (let i = 0; i < selected.length; i++) {
       const rec = selected[i]
-      const to  = rec.whatsapp || rec.mobile
+      let to = rec.whatsapp || rec.mobile
       setProgress({ current: i + 1, total: selected.length, name: rec.member_name || rec.receipt_number })
+
+      // Receipt may have been saved without a phone — fall back to member record
+      if (!to && rec.member_id) {
+        const { data: mem } = await supabase
+          .from('members').select('whatsapp, mobile')
+          .eq('member_id', rec.member_id).single()
+        to = mem?.whatsapp || mem?.mobile || ''
+      }
+
       if (!to) { skipped++; continue }
 
       const logBase = {

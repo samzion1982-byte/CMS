@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getLedger, getChartOfAccounts, getPostableAccounts, getFY, fyDateRange, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
+import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer } from 'lucide-react'
@@ -28,7 +28,7 @@ export default function LedgerPage() {
   const [church,     setChurch]     = useState(null)
 
   useEffect(() => {
-    getChartOfAccounts(true).then(all => setAccounts(getPostableAccounts(all))).catch(() => {})
+    getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
     getChurch().then(setChurch).catch(() => {})
   }, [])
 
@@ -102,7 +102,7 @@ export default function LedgerPage() {
             {['Asset','Liability','Equity','Income','Expense'].map(type => (
               <optgroup key={type} label={type}>
                 {accounts.filter(a => a.account_type === type).map(a => (
-                  <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
+                  <option key={a.id} value={a.id}>{a.path}</option>
                 ))}
               </optgroup>
             ))}
@@ -130,7 +130,7 @@ export default function LedgerPage() {
           <div className="card" style={{ flex: 1, padding: '16px 20px', background: c.bg + '33', borderLeft: `4px solid ${c.text}` }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: c.text, margin: '0 0 4px', letterSpacing: '0.07em' }}>{selectedAccount.account_type} Account</p>
             <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>{selectedAccount.name}</p>
-            <p style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: c.text, margin: 0 }}>Code: {selectedAccount.code}</p>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{selectedAccount.path}</p>
           </div>
           <div className="card" style={{ padding: '14px 20px', textAlign: 'center', minWidth: 130 }}>
             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', margin: '0 0 4px' }}>Total Debit</p>
@@ -167,7 +167,7 @@ export default function LedgerPage() {
           {/* Print header */}
           <div className="print-only" style={{ padding: '20px', textAlign: 'center', borderBottom: '2px solid #000' }}>
             <p style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>{church?.church_name}</p>
-            <p style={{ fontSize: 12, margin: '0 0 12px' }}>Account Ledger — {selectedAccount?.name} ({selectedAccount?.code})</p>
+            <p style={{ fontSize: 12, margin: '0 0 12px' }}>Account Ledger — {selectedAccount?.path}</p>
             <p style={{ fontSize: 11, margin: 0 }}>Period: {dateFrom} to {dateTo}</p>
           </div>
 

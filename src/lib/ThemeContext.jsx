@@ -4,11 +4,14 @@ import { supabase, adminSupabase } from './supabase'
 const ThemeContext = createContext()
 
 export const THEMES = {
-  royal:    { name: 'Royal',    icon: '👑' },
-  ocean:    { name: 'Ocean',    icon: '🌊' },
-  forest:   { name: 'Forest',   icon: '🌿' },
-  crimson:  { name: 'Crimson',  icon: '🍷' },
-  midnight: { name: 'Midnight', icon: '🌙' },
+  royal:    { name: 'Royal',    icon: '👑', dark: false },
+  ocean:    { name: 'Ocean',    icon: '🌊', dark: false },
+  forest:   { name: 'Forest',   icon: '🌿', dark: false },
+  crimson:  { name: 'Crimson',  icon: '🍷', dark: false },
+  midnight: { name: 'Midnight', icon: '🌙', dark: true  },
+  slate:    { name: 'Slate',    icon: '🪨', dark: true  },
+  ember:    { name: 'Ember',    icon: '🔥', dark: true  },
+  cyan:     { name: 'Cyan',     icon: '🩵', dark: true  },
 }
 
 export const FONTS = {
