@@ -72,7 +72,7 @@ export default function PaymentPage({ requestId: propId }) {
 
 
   const upiPayUrl = church?.upi_id
-    ? `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR`
+    ? `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&cu=INR`
     : null
 
 
