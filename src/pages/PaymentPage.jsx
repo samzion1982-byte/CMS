@@ -80,6 +80,20 @@ export default function PaymentPage({ requestId: propId }) {
       .then(url => setQrDataUrl(url))
   }, [church, total])
 
+  function openGPay() {
+    if (!church?.upi_id || total <= 0) return
+    const id  = church.upi_id.trim()
+    const pn  = encodeURIComponent(church.church_name || 'Church')
+    const tn  = encodeURIComponent('ChurchOffering')
+    const amt = String(total)
+    const gp  = `gpay://upi/pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`
+    const up  = `upi://pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`
+    const f = document.createElement('iframe')
+    f.style.display = 'none'; f.src = gp
+    document.body.appendChild(f)
+    setTimeout(() => { window.location.href = up }, 600)
+  }
+
   function copyUpiId() {
     if (!church?.upi_id) return
     navigator.clipboard?.writeText(church.upi_id.trim()).catch(() => {
@@ -351,29 +365,14 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
           {church?.upi_id ? (
             <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.3rem', marginBottom: '1rem' }}>
 
-              {/* Share payment file button */}
-              {qrDataUrl && (
-                <button onClick={sharePaymentFile} style={{
-                  width:'100%', padding:'13px', border:'none', borderRadius:12, marginBottom:'0.7rem',
-                  background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
-                  fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center',
-                  justifyContent:'center', gap:8, fontFamily:"'DM Sans',sans-serif",
-                }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                  </svg>
-                  Share Payment File to WhatsApp
-                </button>
-              )}
-              <div style={{ background:'#EBF1FD', border:'1px solid #C7D9F8', borderRadius:10, padding:'0.6rem 0.9rem', marginBottom:'0.9rem' }}>
-                <div style={{ fontSize:11.5, color:'#1e3a6e', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
-                  1. Tap <strong>Share Payment File to WhatsApp</strong> above<br/>
-                  2. Share it to <strong>yourself</strong> (Saved Messages / your own chat)<br/>
-                  3. Open WhatsApp → tap the file you just received<br/>
-                  4. Tap <strong>Pay ₹{total.toLocaleString('en-IN')} with GPay</strong>
-                </div>
-              </div>
+              {/* Pay with GPay button */}
+              <button onClick={openGPay} style={{
+                width:'100%', padding:'14px', border:'none', borderRadius:12, marginBottom:'0.7rem',
+                background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
+                fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:"'DM Sans',sans-serif",
+              }}>
+                Pay ₹{total.toLocaleString('en-IN')} with GPay
+              </button>
 
               {/* QR code + Save button */}
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:'0.9rem' }}>
