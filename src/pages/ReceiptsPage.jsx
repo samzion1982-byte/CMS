@@ -15,6 +15,7 @@ import {
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
+import { generateAndUploadPaymentHtml }            from '../lib/generatePaymentHtml'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -2152,30 +2153,26 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
         }).select('*').single()
         if (rErr) throw rErr
 
-        // Build payment URL (fallback if PDF fails)
+        // Build payment URL (fallback if HTML generation fails)
         const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
         const payUrl  = `${baseUrl}/pay/${req.id}`
 
-        // Try to generate PDF via Edge Function; fall back to plain URL if it fails
-        let pdfUrl = null
+        // Try to generate interactive HTML payment page; fall back to plain URL if it fails
+        let htmlUrl = null
         try {
-          const { data, error } = await supabase.functions.invoke('generate-payment-pdf', {
-            body: { req, church, catMap },
-          })
-          if (error) throw error
-          pdfUrl = data?.publicUrl
-        } catch (pdfErr) {
-          console.warn('PDF generation failed, falling back to URL:', pdfErr.message)
+          htmlUrl = await generateAndUploadPaymentHtml({ req, church, catMap })
+        } catch (htmlErr) {
+          console.warn('HTML generation failed, falling back to URL:', htmlErr.message)
         }
 
-        const msg = pdfUrl
-          ? `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached PDF and tap *Tap here to Pay with GPay* to pay instantly.\n\nThank you.`
+        const msg = htmlUrl
+          ? `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nOpen the attached file and tap *Pay with GPay* to pay instantly.\n\nThank you.`
           : `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nPay online:\n${payUrl}\n\nThank you.`
 
         // Send WhatsApp (best-effort)
         if (m.whatsapp) {
           try {
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, ...(pdfUrl && { mediaUrl: pdfUrl }) })
+            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg, ...(htmlUrl && { mediaUrl: htmlUrl }) })
             await supabase.from('payment_request_logs').insert({
               payment_request_id: req.id, member_id: m.member_id,
               member_name: m.member_name, whatsapp_number: m.whatsapp,
