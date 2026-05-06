@@ -110,9 +110,9 @@ export default function DeclarationPage() {
   const [fyLockedAlert,  setFyLockedAlert]  = useState(null)
   const exportMenuRef = useRef(null)
 
-  // Union of data-bearing and manually added FYs — always ascending (fully manual, no auto range)
+  // Union of data-bearing, manually added FYs, and always the current FY
   const availableFYs = useMemo(() => {
-    const all = new Set([...Object.keys(fyStats), ...manualFYs])
+    const all = new Set([...Object.keys(fyStats), ...manualFYs, getFY()])
     return [...all].sort()
   }, [fyStats, manualFYs])
 
@@ -128,6 +128,9 @@ export default function DeclarationPage() {
   }, [])
 
   useEffect(() => { loadFYData() }, [loadFYData])
+
+  // always land on the current FY when the page mounts (handles SPA navigation)
+  useEffect(() => { setFilterFY(getFY()) }, [])
 
   const updateFYActivity = useCallback(async (fy) => {
     if (!fy) return
@@ -985,6 +988,10 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
       setMemberId(d.member_id || '')
       setMemberName(d.member_name || '')
       setSelMember({ member_id: d.member_id, member_name: d.member_name })
+      if (d.member_id) {
+        supabase.from('members').select('mobile,whatsapp').ilike('member_id', d.member_id).limit(1)
+          .then(({ data: m }) => { if (m?.length) { setMemberMobile(m[0].mobile || ''); setMemberWhatsapp(m[0].whatsapp || '') } })
+      }
       const raw = d.declared_income != null ? String(Math.round(d.declared_income)) : ''
       setIncomeRaw(raw)
       setIncomeDisplay(raw ? Number(raw).toLocaleString('en-IN') : '')

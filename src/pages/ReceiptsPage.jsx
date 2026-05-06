@@ -10,11 +10,12 @@ import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
   IndianRupee, CheckSquare, Square, Settings, Lock,
-  FileSpreadsheet, ChevronDown, Printer, Send, Bell,
+  FileSpreadsheet, ChevronDown, Printer, Bell, Layers,
 } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
+import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -78,9 +79,9 @@ export default function ReceiptsPage() {
   const [church,          setChurch]          = useState(null)
   const [printingId,      setPrintingId]      = useState(null)
   const [pwGate,          setPwGate]          = useState(null)  // { label, onConfirmed }
-  const [showPushModal,   setShowPushModal]   = useState(false)
   const [showPending,     setShowPending]     = useState(false)
   const [pendingCount,    setPendingCount]    = useState(0)
+  const [showBulkPrint,   setShowBulkPrint]   = useState(false)
   const exportMenuRef = useRef(null)
 
   // show FYs with receipts + FYs with lock records + current FY
@@ -390,13 +391,30 @@ export default function ReceiptsPage() {
             </h1>
           <p className="page-subtitle">Record member payments across all categories</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+
+          {/* Pending Payments — FIRST */}
+          <button className="action-btn" onClick={() => setShowPending(true)}
+            style={{
+              position: 'relative', height: 34,
+              background: pendingCount > 0 ? '#d97706' : 'var(--page-bg)',
+              color: pendingCount > 0 ? '#fff' : 'var(--text-2)',
+              border: `1px solid ${pendingCount > 0 ? '#d97706' : 'var(--card-border)'}`,
+            }}
+            title="View pending payment confirmations">
+            {pendingCount > 0 && (
+              <span style={{ position: 'absolute', top: -5, right: -5, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 17, height: 17, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, border: '2px solid var(--page-bg)' }}>
+                {pendingCount > 99 ? '99+' : pendingCount}
+              </span>
+            )}
+            <Bell size={13}/>{pendingCount > 0 ? `Pending (${pendingCount})` : 'Pending'}
+          </button>
 
           {/* Excel Export dropdown */}
           <div ref={exportMenuRef} style={{ position: 'relative' }}>
             <button onClick={() => setShowExportMenu(o => !o)} disabled={exporting}
               className="action-btn"
-              style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1, gap: 5 }}>
+              style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1, gap: 5, height: 34 }}>
               {exporting ? <Loader2 size={13} className="animate-spin"/> : <FileSpreadsheet size={13}/>}
               Excel Export
               <ChevronDown size={11} style={{ marginLeft: 1, transition: 'transform 0.15s', transform: showExportMenu ? 'rotate(180deg)' : 'none' }}/>
@@ -435,33 +453,15 @@ export default function ReceiptsPage() {
             )}
           </div>
 
-          {/* Push Payment Request */}
-          <button className="action-btn" onClick={() => setShowPushModal(true)}
-            style={{ background: '#7c3aed', position: 'relative' }}
-            title="Send payment requests to eligible members">
-            <Send size={13}/>Push Payment
-          </button>
-
-          {/* Pending Payments */}
-          <button className="action-btn" onClick={() => setShowPending(true)}
-            style={{
-              position: 'relative',
-              background: pendingCount > 0 ? '#d97706' : 'var(--page-bg)',
-              color: pendingCount > 0 ? '#fff' : 'var(--text-2)',
-              border: `1px solid ${pendingCount > 0 ? '#d97706' : 'var(--card-border)'}`,
-            }}
-            title="View pending payment confirmations">
-            {pendingCount > 0 && (
-              <span style={{ position: 'absolute', top: -5, right: -5, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 17, height: 17, fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, border: '2px solid var(--page-bg)' }}>
-                {pendingCount > 99 ? '99+' : pendingCount}
-              </span>
-            )}
-            <Bell size={13}/>{pendingCount > 0 ? `Pending (${pendingCount})` : 'Pending'}
+          {/* Bulk Print / WhatsApp */}
+          <button className="action-btn" onClick={() => setShowBulkPrint(true)}
+            style={{ background: '#7c3aed', height: 34 }} title="Bulk print or WhatsApp receipts">
+            <Layers size={13}/> Bulk Print / WA
           </button>
 
           {/* New Receipt */}
           <button className="action-btn" onClick={openNew} disabled={catsLoading}
-            style={{ background: 'var(--sidebar-bg)' }} title="New receipt  (+)">
+            style={{ background: 'var(--sidebar-bg)', height: 34 }} title="New receipt  (+)">
             {catsLoading ? <Loader2 size={13} className="animate-spin"/> : <Plus size={13}/>}
             New Receipt
           </button>
@@ -677,17 +677,6 @@ export default function ReceiptsPage() {
         />
       )}
 
-      {showPushModal && (
-        <PushPaymentRequestModal
-          church={church}
-          categories={categories}
-          profile={profile}
-          toast={toast}
-          onClose={() => setShowPushModal(false)}
-          onSent={() => { setShowPushModal(false); loadPendingCount() }}
-        />
-      )}
-
       {showPending && (
         <PendingPaymentsModal
           categories={categories}
@@ -695,6 +684,13 @@ export default function ReceiptsPage() {
           toast={toast}
           onClose={() => setShowPending(false)}
           onConfirmed={() => { loadPendingCount(); setShowPending(false); openNew() }}
+        />
+      )}
+
+      {showBulkPrint && (
+        <BulkReceiptsPrintModal
+          initialFY={filterFY}
+          onClose={() => setShowBulkPrint(false)}
         />
       )}
     </div>
@@ -2042,293 +2038,6 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
             </div>
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════
-//  PUSH PAYMENT REQUEST MODAL
-// ════════════════════════════════════════════════════════
-
-const FY_MONTHS_PR  = ['April','May','June','July','August','September','October','November','December','January','February','March']
-const SLOT_DUE_IDX  = { 1:[0,1,2,3,4,5,6,7,8,9,10,11], 2:[0,2,4,6,8,10], 3:[0,3,6,9], 4:[0,4,8], 6:[0,6], 12:[0] }
-const SLOT_LBL_PR   = { 1:'Monthly', 2:'Every 2 mo', 3:'Quarterly', 4:'Every 4 mo', 6:'Half-Yearly', 12:'Annual' }
-
-function curFY() {
-  const m = new Date().getMonth() + 1, y = new Date().getFullYear()
-  return m >= 4 ? `${y}-${String(y+1).slice(-2)}` : `${y-1}-${String(y).slice(-2)}`
-}
-function fyMonthIdx(monthName) { return FY_MONTHS_PR.indexOf(monthName) }
-function billingMonths(slot, startIdx) {
-  return Array.from({ length: slot }, (_, i) => FY_MONTHS_PR[(startIdx + i) % 12]).join(', ')
-}
-
-function PushPaymentRequestModal({ church, categories, profile, toast, onClose, onSent }) {
-  const fy = curFY()
-  const today = new Date()
-  const calMonth = today.getMonth() + 1  // 1-12
-  const defaultMonth = FY_MONTHS_PR[calMonth >= 4 ? calMonth - 4 : calMonth + 8]
-
-  const [selMonth,    setSelMonth]    = useState(defaultMonth)
-  const [eligible,    setEligible]    = useState(null)   // null=not yet loaded
-  const [finding,     setFinding]     = useState(false)
-  const [selected,    setSelected]    = useState(new Set())
-  const [sending,     setSending]     = useState(false)
-  const [progress,    setProgress]    = useState(null)   // { done, total }
-  const [prSearch,    setPrSearch]    = useState('')
-
-  const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]))
-
-  async function findEligible() {
-    setFinding(true); setEligible(null); setPrSearch('')
-    try {
-      const { data: schedules, error } = await supabase
-        .from('member_payment_schedules')
-        .select('*')
-        .eq('excluded_from_online', false)
-      if (error) throw error
-
-      const idx = fyMonthIdx(selMonth)
-      const due = (schedules || []).filter(s => (SLOT_DUE_IDX[s.slot] || []).includes(idx))
-
-      // Fetch WhatsApp numbers from members table for any schedule missing it
-      const missingWA = due.filter(s => !s.whatsapp).map(s => s.member_id)
-      let waMap = {}
-      if (missingWA.length) {
-        const { data: mems } = await supabase
-          .from('members')
-          .select('member_id, whatsapp, mobile')
-          .in('member_id', missingWA)
-        ;(mems || []).forEach(m => { waMap[m.member_id] = m.whatsapp || m.mobile || '' })
-      }
-
-      const result = due.map(s => {
-        const months  = billingMonths(s.slot, idx)
-        const totalAmt = Object.values(s.amounts || {}).reduce((a, b) => a + (parseFloat(b) || 0) * s.slot, 0)
-        const whatsapp = s.whatsapp || waMap[s.member_id] || ''
-        return { ...s, whatsapp, billingMonths: months, totalAmt }
-      }).sort((a, b) => (a.member_id || '').localeCompare(b.member_id || '', undefined, { numeric: true }))
-
-      setEligible(result)
-      setSelected(new Set())
-    } catch (e) { toast('Error: ' + e.message, 'error') }
-    setFinding(false)
-  }
-
-  function toggleAll() {
-    if (selected.size === eligible.length) setSelected(new Set())
-    else setSelected(new Set(eligible.map(r => r.member_id)))
-  }
-
-  async function sendRequests() {
-    if (!church?.upi_id) { toast('Please set UPI ID in Church Setup first.', 'error'); return }
-    const toSend = (eligible || []).filter(r => selected.has(r.member_id))
-    if (!toSend.length) { toast('No members selected', 'info'); return }
-
-    setSending(true); setProgress({ done: 0, total: toSend.length })
-    const batchId = Date.now().toString()
-    let done = 0
-
-    // Fetch category names once for HTML generation
-    const { data: catData } = await supabase.from('payment_categories').select('id, name')
-    const catMap = Object.fromEntries((catData || []).map(c => [c.id, c.name]))
-
-    for (const m of toSend) {
-      try {
-        // Create payment_request record
-        const { data: req, error: rErr } = await supabase.from('payment_requests').insert({
-          member_id:   m.member_id,
-          member_name: m.member_name,
-          whatsapp:    m.whatsapp,
-          fy,
-          months:      m.billingMonths,
-          slot:        m.slot,
-          amounts:     m.amounts || {},
-          grand_total: m.totalAmt,
-          status:      'pending',
-          push_batch_id: batchId,
-          created_by:  profile?.email || '',
-        }).select('*').single()
-        if (rErr) throw rErr
-
-        // Build payment page URL
-        const baseUrl = (church?.site_url || '').trim().replace(/\/+$/, '') || window.location.origin
-        const payUrl  = `${baseUrl}/pay/${req.id}`
-
-        const msg = `${church.church_name} — Payment Request\n\nDear ${m.member_name},\n\nAmount: ₹${m.totalAmt.toLocaleString('en-IN')}\nPeriod: ${m.billingMonths} (${fy})\n\nTap the link below and press *Pay with GPay*:\n${payUrl}\n\nThank you.`
-
-        // Send WhatsApp (best-effort)
-        if (m.whatsapp) {
-          try {
-            const apiResp = await sendWhatsAppMessage(church, { to: m.whatsapp, message: msg })
-            await supabase.from('payment_request_logs').insert({
-              payment_request_id: req.id, member_id: m.member_id,
-              member_name: m.member_name, whatsapp_number: m.whatsapp,
-              message: msg, status: 'sent',
-              error_text: JSON.stringify(apiResp),
-              api_type: church.whatsapp_api_type || 'soft7',
-              sent_by: profile?.email || '',
-            })
-          } catch (waErr) {
-            await supabase.from('payment_request_logs').insert({
-              payment_request_id: req.id, member_id: m.member_id,
-              member_name: m.member_name, whatsapp_number: m.whatsapp,
-              message: msg, status: 'failed', error_text: waErr.message,
-              api_type: church.whatsapp_api_type || 'soft7',
-              sent_by: profile?.email || '',
-            })
-          }
-        }
-      } catch (e) {
-        console.error('Failed for', m.member_id, e.message)
-      }
-      done++
-      setProgress({ done, total: toSend.length })
-    }
-
-    toast(`${done} payment request${done !== 1 ? 's' : ''} sent`, 'success')
-    setSending(false)
-    onSent()
-  }
-
-  const allSelected = eligible?.length > 0 && selected.size === eligible.length
-
-  return (
-    <div onClick={e => { if (e.target === e.currentTarget && !sending) onClose() }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
-      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
-
-        {/* Header */}
-        <div style={{ background: '#7c3aed', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 60%)', pointerEvents: 'none' }}/>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
-            <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 8, padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Send size={16} color="#fff"/>
-            </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-ui)' }}>Push Payment Request</h3>
-              <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.75)', fontFamily: 'var(--font-ui)' }}>FY {fy}</p>
-            </div>
-          </div>
-          {!sending && (
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</button>
-          )}
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
-
-          {/* Month selector + Find button */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 20 }}>
-            <div className="field-group" style={{ flex: '0 0 180px' }}>
-              <label className="field-label">Payment Month</label>
-              <select className="field-input" value={selMonth} onChange={e => { setSelMonth(e.target.value); setEligible(null) }}
-                style={{ appearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 28 }}>
-                {FY_MONTHS_PR.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-            <button onClick={findEligible} disabled={finding} className="btn btn-primary" style={{ background: '#7c3aed', borderColor: '#7c3aed' }}>
-              {finding ? <><Loader2 size={14} className="animate-spin"/>Finding…</> : <><Search size={14}/>Find Eligible</>}
-            </button>
-          </div>
-
-          {eligible === null && !finding && (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-3)', fontSize: 13 }}>
-              Select a month and click "Find Eligible" to see which members are due.
-            </div>
-          )}
-
-          {eligible !== null && eligible.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-3)', fontSize: 13 }}>
-              No members are due for <strong>{selMonth}</strong>. Check Payment Schedule or run Auto-Scan first.
-            </div>
-          )}
-
-          {eligible !== null && eligible.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
-                  {eligible.length} member{eligible.length !== 1 ? 's' : ''} eligible · {selected.size} selected
-                </div>
-                <button onClick={toggleAll} className="btn btn-ghost btn-sm">
-                  {allSelected ? <Square size={13}/> : <CheckSquare size={13}/>}
-                  {allSelected ? 'Deselect All' : 'Select All'}
-                </button>
-              </div>
-
-              {/* Search */}
-              <div style={{ position: 'relative', marginBottom: 10 }}>
-                <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }}/>
-                <input
-                  className="field-input"
-                  style={{ paddingLeft: 28, fontSize: 12 }}
-                  placeholder="Search by name or member ID…"
-                  value={prSearch}
-                  onChange={e => setPrSearch(e.target.value)}
-                />
-              </div>
-
-              <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--page-bg)' }}>
-                      <th style={{ padding: '8px 12px', width: 30 }}/>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Member</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Period</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Slot</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {eligible.filter(m => {
-                      const q = prSearch.trim().toLowerCase()
-                      return !q || m.member_name?.toLowerCase().includes(q) || m.member_id?.toLowerCase().includes(q)
-                    }).map((m, i) => {
-                      const chk = selected.has(m.member_id)
-                      return (
-                        <tr key={m.member_id} onClick={() => setSelected(prev => { const n = new Set(prev); if (n.has(m.member_id)) n.delete(m.member_id); else n.add(m.member_id); return n })}
-                          style={{ borderBottom: '1px solid var(--card-border)', cursor: 'pointer', background: chk ? 'rgba(124,58,237,0.05)' : i % 2 === 0 ? 'transparent' : 'var(--page-bg)' }}>
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            {chk ? <CheckSquare size={14} style={{ color: '#7c3aed' }}/> : <Square size={14} style={{ color: 'var(--text-3)' }}/>}
-                          </td>
-                          <td style={{ padding: '8px 12px' }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-1)' }}>{m.member_name}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{m.member_id} · {m.whatsapp || 'No WhatsApp'}</div>
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--text-2)', fontSize: 12 }}>{m.billingMonths}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#f5f3ff', color: '#7c3aed' }}>{SLOT_LBL_PR[m.slot]}</span>
-                          </td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-1)' }}>₹{m.totalAmt.toLocaleString('en-IN')}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Progress bar while sending */}
-              {sending && progress && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
-                    <span>Sending requests…</span>
-                    <span>{progress.done} / {progress.total}</span>
-                  </div>
-                  <div style={{ height: 6, background: 'var(--card-border)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', background: '#7c3aed', borderRadius: 3, width: `${(progress.done / progress.total) * 100}%`, transition: 'width 0.3s ease' }}/>
-                  </div>
-                </div>
-              )}
-
-              <button onClick={sendRequests} disabled={sending || selected.size === 0}
-                style={{ width: '100%', padding: '11px 0', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: sending || selected.size === 0 ? 'not-allowed' : 'pointer', opacity: sending || selected.size === 0 ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                {sending ? <Loader2 size={15} className="animate-spin"/> : <Send size={15}/>}
-                {sending ? 'Sending…' : `Send to ${selected.size} Member${selected.size !== 1 ? 's' : ''} via WhatsApp`}
-              </button>
-            </>
-          )}
-        </div>
       </div>
     </div>
   )
