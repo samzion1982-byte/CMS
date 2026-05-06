@@ -80,18 +80,9 @@ export default function PaymentPage({ requestId: propId }) {
       .then(url => setQrDataUrl(url))
   }, [church, total])
 
-  function openGPay() {
-    if (!church?.upi_id || total <= 0) return
-    const id  = church.upi_id.trim()
-    const pn  = encodeURIComponent(church.church_name || 'Church')
-    const amt = String(parseFloat(total))
-    const gp  = `gpay://upi/pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR`
-    const up  = `upi://pay?pa=${id}&pn=${pn}&am=${amt}&cu=INR`
-    const f = document.createElement('iframe')
-    f.style.display = 'none'; f.src = gp
-    document.body.appendChild(f)
-    setTimeout(() => { window.location.href = up }, 600)
-  }
+  const upiPayUrl = church?.upi_id
+    ? `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR`
+    : null
 
   function copyUpiId() {
     if (!church?.upi_id) return
@@ -365,20 +356,25 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
             <div style={{ background: '#fff', border: '1.5px solid #DDE6F7', borderRadius: 14, padding: '1.3rem', marginBottom: '1rem' }}>
 
               {/* Pay with GPay button */}
-              <button onClick={openGPay} style={{
-                width:'100%', padding:'14px', border:'none', borderRadius:12, marginBottom:'0.7rem',
-                background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
-                fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:"'DM Sans',sans-serif",
-              }}>
-                Pay ₹{total.toLocaleString('en-IN')} with GPay
-              </button>
+              {upiPayUrl && (
+                <a href={upiPayUrl} style={{
+                  display:'block', width:'100%', padding:'14px', borderRadius:12, marginBottom:'0.7rem',
+                  background:'linear-gradient(135deg,#0B1F4B 0%,#2B5CE6 100%)', color:'#fff',
+                  fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:"'DM Sans',sans-serif",
+                  textAlign:'center', textDecoration:'none', boxSizing:'border-box',
+                }}>
+                  Pay ₹{total.toLocaleString('en-IN')} with GPay
+                </a>
+              )}
 
               {/* QR code + Save button */}
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:'0.9rem' }}>
                 {qrDataUrl
-                  ? <img src={qrDataUrl} alt="UPI Payment QR Code" onClick={openGPay}
-                      style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block', cursor:'pointer' }}
-                    />
+                  ? <a href={upiPayUrl || '#'}>
+                      <img src={qrDataUrl} alt="UPI Payment QR Code"
+                        style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block', cursor:'pointer' }}
+                      />
+                    </a>
                   : <div style={{ width:220, height:220, borderRadius:12, border:'2px solid #DDE6F7', background:'#F4F7FE', display:'flex', alignItems:'center', justifyContent:'center' }}>
                       <div style={{ width:32, height:32, border:'3px solid #DDE6F7', borderTopColor:'#2B5CE6', borderRadius:'50%', animation:'hspin .7s linear infinite' }}/>
                     </div>
