@@ -8,8 +8,8 @@ export async function generateAndUploadPaymentPdf({ req, church, catMap }) {
   const churchName = church.church_name || 'Church'
 
   // Raw @ — PDF link annotations pass the URL directly to Android Intent (no HTML parsing)
-  const gpayUrl = `gpay://upi/pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR&tn=ChurchOffering`
-  const upiUrl  = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR&tn=ChurchOffering`
+  const gpayUrl = `gpay://upi/pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR`
+  const upiUrl  = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(churchName)}&am=${parseFloat(total)}&cu=INR`
 
   // QR as backup (same URL as upiUrl)
   const qrDataUrl = await QRCodeLib.toDataURL(upiUrl, {
