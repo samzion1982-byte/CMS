@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import QRCodeLib from 'qrcode'
 
 // Isolated Supabase client — no auth session, no redirects, no persistence
 const SUPABASE_URL      = 'https://wjasjrthijpxlarreics.supabase.co'
@@ -28,8 +27,6 @@ export default function PaymentPage({ requestId: propId }) {
   const [loading,  setLoading]  = useState(true)
   const [err,      setErr]      = useState(null)
   const [amounts,  setAmounts]  = useState({})
-  const [copied,   setCopied]   = useState(false)
-  const [qrDataUrl, setQrDataUrl] = useState('')
   const [paidForm, setPaidForm] = useState(false)
   const [upiRef,   setUpiRef]   = useState('')
   const [saving,   setSaving]   = useState(false)
@@ -73,30 +70,11 @@ export default function PaymentPage({ requestId: propId }) {
     [amounts]
   )
 
-  useEffect(() => {
-    if (!church?.upi_id || total <= 0) return
-    const upiContent = `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR`
-    QRCodeLib.toDataURL(upiContent, { width: 220, margin: 2, color: { dark: '#0B1F4B', light: '#FFFFFF' } })
-      .then(url => setQrDataUrl(url))
-  }, [church, total])
 
   const upiPayUrl = church?.upi_id
     ? `upi://pay?pa=${church.upi_id.trim()}&pn=${encodeURIComponent(church.church_name||'Church')}&am=${parseFloat(total)}&cu=INR`
     : null
 
-  function copyUpiId() {
-    if (!church?.upi_id) return
-    navigator.clipboard?.writeText(church.upi_id.trim()).catch(() => {
-      // Fallback for browsers without clipboard API
-      const ta = document.createElement('textarea')
-      ta.value = church.upi_id.trim()
-      ta.style.position = 'fixed'; ta.style.opacity = '0'
-      document.body.appendChild(ta); ta.select()
-      document.execCommand('copy'); document.body.removeChild(ta)
-    })
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2500)
-  }
 
   async function sharePaymentFile() {
     if (!qrDataUrl || !church?.upi_id) return
@@ -367,67 +345,6 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
                 </a>
               )}
 
-              {/* QR code + Save button */}
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:'0.9rem' }}>
-                {qrDataUrl
-                  ? <a href={upiPayUrl || '#'}>
-                      <img src={qrDataUrl} alt="UPI Payment QR Code"
-                        style={{ width:220, height:220, borderRadius:12, border:'2px solid #0B1F4B', display:'block', cursor:'pointer' }}
-                      />
-                    </a>
-                  : <div style={{ width:220, height:220, borderRadius:12, border:'2px solid #DDE6F7', background:'#F4F7FE', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <div style={{ width:32, height:32, border:'3px solid #DDE6F7', borderTopColor:'#2B5CE6', borderRadius:'50%', animation:'hspin .7s linear infinite' }}/>
-                    </div>
-                }
-                {qrDataUrl && (
-                  <a href={qrDataUrl} download="upi-payment-qr.png" style={{
-                    display:'flex', alignItems:'center', gap:6,
-                    padding:'8px 20px', borderRadius:8, background:'#0B1F4B', color:'#fff',
-                    fontSize:13, fontWeight:500, textDecoration:'none', fontFamily:"'DM Sans',sans-serif",
-                  }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Save QR to phone
-                  </a>
-                )}
-              </div>
-
-              {/* Same-phone tip */}
-              <div style={{ background:'#EBF1FD', border:'1px solid #C7D9F8', borderRadius:10, padding:'0.65rem 0.9rem', marginBottom:'0.9rem' }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'#1e3a6e', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>
-                  Paying from this phone?
-                </div>
-                <div style={{ fontSize:12, color:'#1e3a6e', lineHeight:1.8, fontFamily:"'DM Sans',sans-serif" }}>
-                  1. Tap <strong>Save QR to phone</strong> above<br/>
-                  2. Open <strong>GPay</strong> → tap the <strong>Scan</strong> icon<br/>
-                  3. Tap the <strong>Gallery</strong> icon → select saved QR
-                </div>
-              </div>
-
-              {/* UPI ID + Copy */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 0 0.6rem' }}>
-                <div style={{ flex:1, height:1, background:'#EEF3FB' }}/>
-                <span style={{ fontSize:11, color:'#A8BAD8', whiteSpace:'nowrap' }}>or pay by UPI ID</span>
-                <div style={{ flex:1, height:1, background:'#EEF3FB' }}/>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:10, background:'#EBF1FD', borderRadius:10, padding:'0.65rem 0.9rem' }}>
-                <div style={{ flex:1, minWidth:0, fontSize:14, fontWeight:600, color:'#0B1F4B', wordBreak:'break-all', fontFamily:'monospace' }}>
-                  {church.upi_id}
-                </div>
-                <button onClick={copyUpiId} style={{
-                  flexShrink:0, padding:'6px 13px', borderRadius:8, border:'none',
-                  background: copied ? '#16a34a' : '#2B5CE6', color:'#fff',
-                  fontSize:12, fontWeight:500, cursor:'pointer',
-                  display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap',
-                  transition:'background .2s',
-                }}>
-                  {copied
-                    ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>
-                    : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</>
-                  }
-                </button>
-              </div>
             </div>
           ) : (
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12, padding:'0.9rem 1.1rem', marginBottom:'1rem', fontSize:13, color:'#dc2626' }}>
