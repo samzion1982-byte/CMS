@@ -66,7 +66,7 @@ serve(async (req) => {
       const isHtml = (mediaUrl || '').toLowerCase().includes('.html')
       const payload = {
         number:       phone,
-        type:         mediaUrl ? (isDoc ? (isHtml ? 'file' : 'document') : 'media') : 'text',
+        type:         mediaUrl ? (isDoc ? 'document' : 'media') : 'text',
         message:      message || '',
         instance_id:  church.instance_id,
         access_token: church.access_token,
