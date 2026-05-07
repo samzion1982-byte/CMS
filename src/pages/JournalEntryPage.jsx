@@ -11,6 +11,7 @@ import {
   getJournalEntries, getJournalEntryWithLines, createJournalEntry,
   updateJournalEntry, postJournalEntry, deleteJournalEntry,
   nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
+  getEntrySystemStatus,
   VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR,
 } from '../lib/accountingLib'
 import {
@@ -30,10 +31,24 @@ function VBadge({ type }) {
 // ════════════════════════════════════════════════════════════════
 
 export default function JournalEntryPage() {
-  const { profile } = useAuth()
-  const toast = useToast()
   const navigate = useNavigate()
-  const { id: routeId } = useParams()        // undefined = list, 'new' = create, uuid = edit
+  const { id: routeId } = useParams()
+  const [checked, setChecked] = useState(false)
+
+  useEffect(() => {
+    getEntrySystemStatus().then(s => {
+      if (!s.locked) { navigate('/accounting', { replace: true }); return }
+      setChecked(true)
+    }).catch(() => setChecked(true))
+  }, [navigate])
+
+  if (!checked) return (
+    <div className="page-container">
+      <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
+        <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />
+      </div>
+    </div>
+  )
 
   if (routeId === 'new' || (routeId && routeId !== 'new')) {
     return <JournalEntryForm entryId={routeId === 'new' ? null : routeId} />

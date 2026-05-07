@@ -10,13 +10,14 @@ import { useToast } from '../lib/toast'
 import {
   getFY, fyOptions, fmtAmt,
   getAccountingStats, getJournalEntries, getChartOfAccounts,
-  isAccountingEnabled, TYPE_COLOR, VOUCHER_COLOR,
+  isAccountingEnabled, getEntrySystemStatus, lockEntrySystem,
+  TYPE_COLOR, VOUCHER_COLOR,
 } from '../lib/accountingLib'
 import {
   BookOpen, Settings, TrendingUp, TrendingDown, Scale, IndianRupee,
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
   BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
-  ChevronDown, Landmark,
+  ChevronDown, Landmark, Lock, Loader2,
 } from 'lucide-react'
 
 // ── Stat Card ────────────────────────────────────────────────────
@@ -109,6 +110,235 @@ function TypeSummaryCard({ type, count, loading }) {
   )
 }
 
+const MASTER_PASSWORD = 'Master007))&'
+
+// ════════════════════════════════════════════════════════════════
+//  ENTRY SYSTEM SETUP MODAL  (one-time, two-step: choose → password)
+// ════════════════════════════════════════════════════════════════
+
+function EntrySystemSetupModal({ onLocked }) {
+  const toast = useToast()
+  const [step,     setStep]     = useState('choose')   // 'choose' | 'password'
+  const [selected, setSelected] = useState(null)
+  const [password, setPassword] = useState('')
+  const [pwError,  setPwError]  = useState('')
+  const [saving,   setSaving]   = useState(false)
+  const [churchId, setChurchId] = useState(null)
+
+  useEffect(() => {
+    getEntrySystemStatus().then(s => setChurchId(s.id)).catch(() => {})
+  }, [])
+
+  function handleProceedToPassword() {
+    setPassword('')
+    setPwError('')
+    setStep('password')
+  }
+
+  function handleSkip() {
+    sessionStorage.setItem('ac_setup_skipped', '1')
+    onLocked(null)
+  }
+
+  async function handleConfirmLock() {
+    if (password !== MASTER_PASSWORD) {
+      setPwError('Incorrect password. Please try again.')
+      setPassword('')
+      return
+    }
+    setPwError('')
+    setSaving(true)
+    try {
+      await lockEntrySystem(churchId, selected)
+      toast(`${selected === 'double' ? 'Double' : 'Single'} Entry System locked successfully.`, 'success')
+      onLocked(selected)
+    } catch (e) {
+      toast('Failed to save: ' + e.message, 'error')
+    }
+    setSaving(false)
+  }
+
+  const CARDS = [
+    {
+      value:    'single',
+      icon:     '📒',
+      title:    'Single Entry System',
+      subtitle: 'Simple cash-book style recording — income and payments only.',
+      bullets:  [
+        'Easy to use — no accounting background needed',
+        'Record cash received and cash paid out',
+        'Basic income & expenditure reports',
+        'Best for small or newly registered churches',
+      ],
+    },
+    {
+      value:    'double',
+      icon:     '📊',
+      title:    'Double Entry System',
+      subtitle: 'Full double-entry bookkeeping — every transaction has debit and credit entries.',
+      bullets:  [
+        'Complete Chart of Accounts (Assets, Liabilities, Equity)',
+        'Trial Balance, Balance Sheet, P&L reports',
+        'Audit-ready financial statements',
+        'Recommended for larger or registered churches',
+      ],
+    },
+  ]
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 2000,
+      background: 'rgba(0,0,0,0.65)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+    }}>
+      <div style={{
+        background: 'var(--card-bg)', borderRadius: 18,
+        width: '100%', maxWidth: step === 'password' ? 420 : 660,
+        boxShadow: '0 32px 80px rgba(0,0,0,0.35)',
+        overflow: 'hidden', transition: 'max-width 0.2s',
+      }}>
+
+        {/* ── STEP 1: Choose ───────────────────────────────────── */}
+        {step === 'choose' && <>
+          <div style={{ padding: '24px 28px 20px', borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <Lock size={26} color="#2563eb" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 8px' }}>
+              Choose Your Accounting System
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+              This is a <strong style={{ color: 'var(--text-2)' }}>one-time setup</strong>. Once confirmed with the master password, this cannot be changed.
+            </p>
+          </div>
+
+          <div style={{ padding: '22px 28px', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {CARDS.map(card => {
+              const active = selected === card.value
+              return (
+                <div key={card.value} onClick={() => setSelected(card.value)}
+                  style={{
+                    flex: 1, minWidth: 200, padding: '18px 20px', borderRadius: 12, cursor: 'pointer',
+                    border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`,
+                    background: active ? 'var(--sidebar-item-active-bg)' : 'var(--card-bg)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                      border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`,
+                      background: active ? 'var(--accent)' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {active && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff', display: 'block' }} />}
+                    </div>
+                    <span style={{ fontSize: 20 }}>{card.icon}</span>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-1)', margin: 0 }}>
+                      {card.title}
+                    </p>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.5 }}>{card.subtitle}</p>
+                  <ul style={{ margin: 0, padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {card.bullets.map(b => (
+                      <li key={b} style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ padding: '16px 28px 20px', borderTop: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={handleProceedToPassword}
+              disabled={!selected}
+              style={{
+                width: '100%', maxWidth: 320, height: 46,
+                background: selected ? 'var(--accent)' : '#e5e7eb',
+                color: selected ? '#fff' : '#9ca3af',
+                border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
+                cursor: selected ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <Lock size={15} /> Confirm &amp; Lock →
+            </button>
+            <button onClick={handleSkip}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--text-3)', textDecoration: 'underline', padding: 0 }}>
+              Skip for now (development only)
+            </button>
+          </div>
+        </>}
+
+        {/* ── STEP 2: Master Password ───────────────────────────── */}
+        {step === 'password' && <>
+          <div style={{ padding: '28px 32px 24px', borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <Lock size={26} color="#d97706" />
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 6px' }}>
+              Enter Master Password
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+              Locking as: <strong style={{ color: 'var(--accent)' }}>
+                {selected === 'double' ? 'Double Entry System' : 'Single Entry System'}
+              </strong>
+              <br />Enter the master password to confirm this permanent change.
+            </p>
+          </div>
+
+          <div style={{ padding: '24px 32px' }}>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 8 }}>
+              Master Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setPwError('') }}
+              onKeyDown={e => e.key === 'Enter' && handleConfirmLock()}
+              placeholder="Enter master password…"
+              autoFocus
+              style={{
+                width: '100%', height: 42, padding: '0 14px',
+                border: `1.5px solid ${pwError ? '#b91c1c' : 'var(--card-border)'}`,
+                borderRadius: 9, fontSize: 14, background: 'var(--input-bg)',
+                color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box',
+                letterSpacing: '0.1em',
+              }}
+            />
+            {pwError && (
+              <p style={{ fontSize: 12, color: '#b91c1c', margin: '6px 0 0', fontWeight: 600 }}>{pwError}</p>
+            )}
+          </div>
+
+          <div style={{ padding: '0 32px 28px', display: 'flex', gap: 10 }}>
+            <button onClick={() => { setStep('choose'); setPwError('') }}
+              style={{ flex: 1, height: 42, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+              ← Back
+            </button>
+            <button onClick={handleConfirmLock} disabled={!password || saving}
+              style={{
+                flex: 2, height: 42,
+                background: password ? '#d97706' : '#e5e7eb',
+                color: password ? '#fff' : '#9ca3af',
+                border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                cursor: password ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+              {saving ? 'Locking…' : 'Confirm & Lock'}
+            </button>
+          </div>
+        </>}
+
+      </div>
+    </div>
+  )
+}
+
 // ════════════════════════════════════════════════════════════════
 //  MAIN PAGE
 // ════════════════════════════════════════════════════════════════
@@ -118,20 +348,25 @@ export default function AccountingPage() {
   const toast = useToast()
   const navigate = useNavigate()
 
-  const [enabled,   setEnabled]   = useState(null) // null = loading
-  const [fy,        setFy]        = useState(getFY())
-  const [stats,     setStats]     = useState(null)
-  const [accounts,  setAccounts]  = useState([])
-  const [entries,   setEntries]   = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [fyOpen,    setFyOpen]    = useState(false)
+  const [enabled,         setEnabled]         = useState(null) // null = loading
+  const [entryLocked,     setEntryLocked]     = useState(null) // null = loading
+  const [entrySystem,     setEntrySystem]     = useState(null)
+  const [setupDismissed,  setSetupDismissed]  = useState(() => !!sessionStorage.getItem('ac_setup_skipped'))
+  const [fy,            setFy]            = useState(getFY())
+  const [stats,         setStats]         = useState(null)
+  const [accounts,      setAccounts]      = useState([])
+  const [entries,       setEntries]       = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [fyOpen,        setFyOpen]        = useState(false)
   const FYS = fyOptions()
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const on = await isAccountingEnabled()
+      const [on, setup] = await Promise.all([isAccountingEnabled(), getEntrySystemStatus()])
       setEnabled(on)
+      setEntryLocked(setup.locked)
+      setEntrySystem(setup.entry_system)
       if (!on) { setLoading(false); return }
       const [s, accts, ents] = await Promise.all([
         getAccountingStats(fy),
@@ -186,10 +421,19 @@ export default function AccountingPage() {
     )
   }
 
-  const L = loading || enabled === null
+  const L = loading || enabled === null || entryLocked === null
+
+  // Show setup modal when accounting is on, not yet locked, and not skipped this session
+  const showSetup = enabled === true && entryLocked === false && !setupDismissed
 
   return (
     <div className="page-container">
+      {showSetup && (
+        <EntrySystemSetupModal onLocked={system => {
+          if (system) { setEntryLocked(true); setEntrySystem(system) }
+          setSetupDismissed(true)
+        }} />
+      )}
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header">

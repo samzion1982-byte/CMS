@@ -50,6 +50,45 @@ export async function toggleAccountingEnabled(val) {
   return supabase.from('churches').update({ accounting_enabled: val }).gte('id', '00000000-0000-0000-0000-000000000000')
 }
 
+// Returns { entry_system: 'single'|'double', locked: bool, id }
+export async function getEntrySystemStatus() {
+  const { data } = await supabase
+    .from('churches')
+    .select('id, accounting_entry_system, accounting_entry_system_locked')
+    .limit(1).single()
+  return {
+    id:           data?.id,
+    entry_system: data?.accounting_entry_system || 'double',
+    locked:       data?.accounting_entry_system_locked === true,
+  }
+}
+
+// Saves entry_system and permanently locks it
+export async function lockEntrySystem(churchId, system) {
+  const { error } = await supabase.from('churches').update({
+    accounting_entry_system:        system,
+    accounting_entry_system_locked: true,
+  }).eq('id', churchId)
+  if (error) throw error
+}
+
+// Removes the lock so the setup modal appears again (dev / master-password action)
+export async function resetEntrySystemLock(churchId) {
+  const { error } = await supabase.from('churches')
+    .update({ accounting_entry_system_locked: false })
+    .eq('id', churchId)
+  if (error) throw error
+}
+
+// Deletes all journal entries + entry lines (CASCADE) and clears account balances
+export async function flushJournalEntries() {
+  const { error: e1 } = await supabase.from('journal_entries')
+    .delete().gte('id', '00000000-0000-0000-0000-000000000000')
+  if (e1) throw e1
+  await supabase.from('account_balances')
+    .delete().gte('id', '00000000-0000-0000-0000-000000000000')
+}
+
 // ── Chart of Accounts ─────────────────────────────────────────────
 
 export async function getChartOfAccounts(activeOnly = false) {
@@ -182,11 +221,10 @@ export async function getJournalEntryWithLines(id) {
   return entry
 }
 
-export async function nextEntryNumber(fy, type) {
-  const prefix = type === 'Receipt'  ? 'RV' :
-                 type === 'Payment'  ? 'PV' :
-                 type === 'Contra'   ? 'CT' :
-                 type === 'Opening'  ? 'OB' : 'JV'
+// customPrefixes: { Receipt, Payment, Journal, Contra, Opening } — from accounting settings
+export async function nextEntryNumber(fy, type, customPrefixes = {}) {
+  const defaults = { Receipt: 'RV', Payment: 'PV', Journal: 'JV', Contra: 'CT', Opening: 'OB' }
+  const prefix = customPrefixes[type] || defaults[type] || 'JV'
   const pattern = `${prefix}-${fy.replace('-', '')}-`
   const { data } = await supabase
     .from('journal_entries')
@@ -196,6 +234,23 @@ export async function nextEntryNumber(fy, type) {
     .limit(1)
   const seq = data?.[0] ? parseInt(data[0].entry_number.split('-').pop(), 10) || 0 : 0
   return `${pattern}${String(seq + 1).padStart(5, '0')}`
+}
+
+// Returns all accounting display/format settings for the church
+export async function getAccountingSettings() {
+  const { data } = await supabase
+    .from('churches')
+    .select(`
+      accounting_country, accounting_currency, accounting_number_format, accounting_date_format,
+      accounting_report_subtitle, accounting_default_voucher, accounting_auto_post,
+      accounting_prefix_receipt, accounting_prefix_payment, accounting_prefix_journal,
+      accounting_prefix_contra, accounting_prefix_opening,
+      accounting_default_cash_id, accounting_default_bank_id,
+      accounting_period_lock_date, accounting_opening_date, accounting_auto_post_receipts,
+      accounting_fiscal_month, accounting_entry_system
+    `)
+    .limit(1).single()
+  return data || {}
 }
 
 export async function createJournalEntry(entry, lines, performedBy) {

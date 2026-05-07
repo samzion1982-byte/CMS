@@ -24,6 +24,7 @@ import PaymentSchedulePage    from './pages/PaymentSchedulePage'
 import PaymentPage            from './pages/PaymentPage'
 import PaymentRequestLogPage  from './pages/PaymentRequestLogPage'
 import AccountingPage         from './pages/AccountingPage'
+import AccountingSettingsPage from './pages/AccountingSettingsPage'
 import ChartOfAccountsPage    from './pages/ChartOfAccountsPage'
 import JournalEntryPage       from './pages/JournalEntryPage'
 import LedgerPage             from './pages/LedgerPage'
@@ -345,6 +346,7 @@ function AppRoutes() {
       <Route path="/accounting/ledger"            element={<PrivateRoute><AppLayout><LedgerPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/trial-balance"     element={<PrivateRoute><AppLayout><TrialBalancePage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/statements"        element={<PrivateRoute><AppLayout><FinancialStatementsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/settings"         element={<PrivateRoute><AppLayout><AccountingSettingsPage /></AppLayout></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
