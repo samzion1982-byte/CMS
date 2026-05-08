@@ -286,36 +286,36 @@ export default function JournalEntryModal({ onClose, onSaved }) {
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
 
-        {/* ── Header — color follows voucher type ─────────────── */}
+        {/* ── Header — theme-aware (white/dark), voucher color accent ── */}
         <div style={{
-          background: `linear-gradient(135deg, ${VCOL.text}f0 0%, ${VCOL.text}cc 100%)`,
+          background: 'var(--card-bg)',
           borderRadius: '14px 14px 0 0',
           padding: '13px 20px',
           display: 'flex', alignItems: 'center', gap: 12,
           flexShrink: 0,
-          boxShadow: `inset 0 1.5px 0 rgba(255,255,255,0.22), inset 0 -3px 0 rgba(0,0,0,0.18), 0 4px 16px ${VCOL.text}33`,
-          position: 'relative', overflow: 'hidden',
-          transition: 'background 0.35s ease',
+          borderBottom: `3px solid ${VCOL.text}`,
+          transition: 'border-color 0.25s ease',
         }}>
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(130deg, rgba(255,255,255,0.18) 0%, transparent 55%)' }} />
           <div style={{
             width: 34, height: 34, borderRadius: 9,
-            background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
-            transition: 'background 0.3s',
+            background: `${VCOL.text}18`, border: `1.5px solid ${VCOL.text}44`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.25s, border-color 0.25s',
           }}>
-            <FileText size={16} style={{ color: '#fff' }} />
+            <FileText size={16} style={{ color: VCOL.text, transition: 'color 0.25s' }} />
           </div>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>New {header.voucher_type} Entry</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>
+              New {header.voucher_type} Entry
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
               {ready ? header.entry_number || 'Auto-numbered' : 'Loading…'}
             </div>
           </div>
           <button onClick={onClose}
-            style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s', position: 'relative' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.75)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}>
+            style={{ background: 'var(--table-header-bg)', border: '1px solid var(--card-border)', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', transition: 'all 0.15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.color = '#b91c1c'; e.currentTarget.style.borderColor = '#fecaca' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--table-header-bg)'; e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.borderColor = 'var(--card-border)' }}>
             <X size={14} />
           </button>
         </div>

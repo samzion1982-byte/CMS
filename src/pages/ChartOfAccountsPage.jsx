@@ -311,11 +311,14 @@ export default function ChartOfAccountsPage() {
 
   useEffect(() => {
     function onKey(e) {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
-      if (e.key === '+' || e.key === '=') setShowNewEntry(true)
+      // + key (Shift+= on most keyboards) — capture phase so it fires even when search input is focused
+      if (e.key === '+' && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        setShowNewEntry(true)
+      }
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [])
 
   // ── Filter tree by search ──────────────────────────────────────
