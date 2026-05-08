@@ -179,7 +179,7 @@ function JournalEntryList() {
               </div>
             )}
           </div>
-          <button onClick={() => navigate('/accounting/journal-entry/new')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={() => navigate('/accounting/journal-entries/new')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <Plus size={15} /> New Entry
           </button>
         </div>
