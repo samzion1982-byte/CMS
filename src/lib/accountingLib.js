@@ -476,6 +476,37 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
   const dateFrom = fromDate || from
   const dateTo   = toDate   || to
 
+  // ── Opening balance: read from COA opening_balance field on Asset accounts ──
+  // This is the primary source; Opening-type journal entries add to it.
+  const { data: assetAccts } = await supabase
+    .from('chart_of_accounts')
+    .select('opening_balance, opening_balance_date')
+    .eq('account_type', 'Asset')
+    .eq('is_active', true)
+
+  const coaOpening = (assetAccts || []).reduce((s, a) => {
+    const obDate = a.opening_balance_date || from
+    return obDate <= dateFrom ? s + (Number(a.opening_balance) || 0) : s
+  }, 0)
+
+  // For custom date ranges: add pre-period transactions (FY start → day before fromDate)
+  // so opening balance reflects the cash position at the START of the chosen period.
+  let prePeriodNet = coaOpening
+  if (dateFrom > from) {
+    const { data: preEntries } = await supabase
+      .from('journal_entries')
+      .select('voucher_type, total_debit, total_credit')
+      .eq('financial_year', fy)
+      .eq('is_posted', true)
+      .gte('entry_date', from)
+      .lt('entry_date', dateFrom)
+    for (const e of preEntries || []) {
+      if (e.voucher_type === 'Receipt') prePeriodNet += Number(e.total_debit  || 0)
+      if (e.voucher_type === 'Payment') prePeriodNet -= Number(e.total_credit || 0)
+    }
+  }
+
+  // ── Period entries ────────────────────────────────────────────────
   const { data: entries, error } = await supabase
     .from('journal_entries')
     .select(`
@@ -492,19 +523,12 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
 
   const receiptGroups = {}
   const paymentGroups = {}
-  let openingBalance  = 0
+  let openingBalance  = prePeriodNet
 
   for (const entry of entries || []) {
     const lines = entry.journal_entry_lines || []
 
-    if (entry.voucher_type === 'Opening') {
-      // Opening cash balance = net debit to Asset accounts
-      for (const l of lines) {
-        if (l.chart_of_accounts?.account_type === 'Asset') {
-          openingBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
-        }
-      }
-    } else if (entry.voucher_type === 'Receipt') {
+    if (entry.voucher_type === 'Receipt') {
       // Category = the Income account that was credited
       const incomeLine = lines.find(l => l.chart_of_accounts?.account_type === 'Income')
       const cat = incomeLine?.chart_of_accounts?.name || entry.narration || 'Other Receipts'
@@ -515,7 +539,7 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
       const cat = expLine?.chart_of_accounts?.name || entry.narration || 'Other Payments'
       paymentGroups[cat] = (paymentGroups[cat] || 0) + Number(entry.total_credit || 0)
     }
-    // Contra (cash↔bank transfers) and Journal entries excluded from R&P
+    // Opening, Contra, Journal entries excluded from period R&P body
   }
 
   const receipts = Object.entries(receiptGroups)

@@ -22,6 +22,13 @@ import {
   RefreshCw, CheckCircle, XCircle, Calendar,
 } from 'lucide-react'
 
+// DD-MM-YYYY display format for ISO date strings
+function fmtD(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}-${m}-${y}`
+}
+
 // ════════════════════════════════════════════════════════════════
 //  Shared layout helpers
 // ════════════════════════════════════════════════════════════════
@@ -140,14 +147,17 @@ function ReceiptsPayments({ data }) {
 //  Income & Expenditure Account
 // ════════════════════════════════════════════════════════════════
 
-function IncomeExpenditure({ data }) {
+function IncomeExpenditure({ data, showZero }) {
   const surplus   = data.surplus
   const isDeficit = surplus < 0
+
+  const expenses = showZero ? data.expenses : data.expenses.filter(a => Math.abs(a.total_debit - a.total_credit) >= 0.01)
+  const income   = showZero ? data.income   : data.income.filter(a => Math.abs(a.total_credit - a.total_debit) >= 0.01)
 
   const leftRows = [
     { label: 'EXPENDITURE', bold: true, muted: true },
     { label: '' },
-    ...data.expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    ...expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
     { label: '' },
     { label: 'Total Expenditure', amount: data.totalExpenses, bold: true },
     { label: '' },
@@ -157,7 +167,7 @@ function IncomeExpenditure({ data }) {
   const rightRows = [
     { label: 'INCOME', bold: true, muted: true },
     { label: '' },
-    ...data.income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
     { label: '' },
     { label: 'Total Income', amount: data.totalIncome, bold: true },
     { label: '' },
@@ -196,26 +206,33 @@ function IncomeExpenditure({ data }) {
 //  Balance Sheet
 // ════════════════════════════════════════════════════════════════
 
-function BalanceSheet({ data }) {
+function BalanceSheet({ data, showZero }) {
   const isBalanced = Math.abs(data.totalAssets - (data.totalLiabilities + data.totalCorpus)) < 0.01
+
+  const filterAccts = (list, getAmt) =>
+    showZero ? list : list.filter(a => Math.abs(getAmt(a)) >= 0.01)
+
+  const corpus      = filterAccts(data.corpus,      a => a.total_credit - a.total_debit)
+  const liabilities = filterAccts(data.liabilities, a => a.total_credit - a.total_debit)
+  const assets      = filterAccts(data.assets,      a => a.total_debit  - a.total_credit)
 
   const leftRows = [
     { label: 'CORPUS / GENERAL FUND', bold: true, muted: true },
     { label: '' },
-    ...data.corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
     { label: data.surplus >= 0 ? 'Add: Surplus for the year' : 'Less: Deficit for the year', amount: Math.abs(data.surplus), indent: true, italic: true },
     { label: 'Total Corpus Fund', amount: data.totalCorpus, bold: true },
     { label: '' },
     { label: 'LIABILITIES', bold: true, muted: true },
     { label: '' },
-    ...data.liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
     { label: 'Total Liabilities', amount: data.totalLiabilities, bold: true },
   ]
 
   const rightRows = [
     { label: 'ASSETS', bold: true, muted: true },
     { label: '' },
-    ...data.assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    ...assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
     { label: '' },
     { label: 'Total Assets', amount: data.totalAssets, bold: true },
   ]
@@ -265,6 +282,7 @@ export default function FinancialStatementsPage() {
   const [church,     setChurch]     = useState(null)
   const [genFrom,    setGenFrom]    = useState(null)   // dates used for last generate (for display)
   const [genTo,      setGenTo]      = useState(null)
+  const [showZero,   setShowZero]   = useState(false)
   const FYS = fyOptions()
 
   function handleFyChange(f) {
@@ -391,9 +409,19 @@ export default function FinancialStatementsPage() {
 
         {rangeMode === 'full' && (
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-            {fyDateRange(fy).from} — {fyDateRange(fy).to}
+            {fmtD(fyDateRange(fy).from)} — {fmtD(fyDateRange(fy).to)}
           </span>
         )}
+
+        {/* divider */}
+        <div style={{ width: 1, height: 22, background: 'var(--card-border)', marginLeft: 4 }} />
+
+        {/* Zero-balance toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12, color: 'var(--text-2)', userSelect: 'none' }}>
+          <input type="checkbox" checked={showZero} onChange={e => setShowZero(e.target.checked)}
+            style={{ width: 15, height: 15, accentColor: 'var(--accent)', cursor: 'pointer' }} />
+          Show zero-balance accounts
+        </label>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────── */}
@@ -415,13 +443,13 @@ export default function FinancialStatementsPage() {
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>
             {rangeMode === 'custom'
-              ? `Generating for ${fromDate} to ${toDate}`
+              ? `${fmtD(fromDate)} to ${fmtD(toDate)}`
               : `Full year — FY ${fy}`}
           </p>
           <button onClick={generate}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             <RefreshCw size={14} />
-            {rangeMode === 'custom' ? `Generate ${fromDate} → ${toDate}` : `Generate for FY ${fy}`}
+            {rangeMode === 'custom' ? `Generate ${fmtD(fromDate)} → ${fmtD(toDate)}` : `Generate for FY ${fy}`}
           </button>
         </div>
       )}
@@ -449,13 +477,13 @@ export default function FinancialStatementsPage() {
               &nbsp;·&nbsp;
               {genFrom === fyDateRange(fy).from && genTo === fyDateRange(fy).to
                 ? `Full Year FY ${fy}`
-                : `${genFrom} to ${genTo}`}
+                : `${fmtD(genFrom)} to ${fmtD(genTo)}`}
             </p>
           </div>
 
           {tab === 'rp' && rp && <ReceiptsPayments data={rp} />}
-          {tab === 'ie' && ie && <IncomeExpenditure data={ie} />}
-          {tab === 'bs' && bs && <BalanceSheet data={bs} />}
+          {tab === 'ie' && ie && <IncomeExpenditure data={ie} showZero={showZero} />}
+          {tab === 'bs' && bs && <BalanceSheet data={bs} showZero={showZero} />}
         </div>
       )}
 
