@@ -385,6 +385,20 @@ export default function AccountingPage() {
 
   useEffect(() => { load() }, [load])
 
+  // + key opens new entry modal (capture phase — works even when buttons/links have focus)
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== '+') return
+      const tag = document.activeElement?.tagName?.toUpperCase()
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (showNewEntry) return
+      e.preventDefault()
+      setShowNewEntry(true)
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [showNewEntry])
+
   // ── Account type counts ────────────────────────────────────────
   const typeCounts = ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].reduce((acc, t) => {
     acc[t] = accounts.filter(a => a.account_type === t).length

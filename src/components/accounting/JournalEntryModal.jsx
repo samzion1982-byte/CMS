@@ -204,10 +204,10 @@ export default function JournalEntryModal({ onClose, onSaved }) {
       .catch(() => {})
   }, [header.voucher_type, header.financial_year])
 
-  // Focus first voucher type pill on open (Tab from there moves to date)
+  // Focus the active voucher pill on modal open
   useEffect(() => {
-    setTimeout(() => document.getElementById('je-first-pill')?.focus(), 120)
-  }, [])
+    setTimeout(() => document.getElementById(`je-pill-${header.voucher_type}`)?.focus(), 120)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sh = (k, v) => setHeader(h => ({ ...h, [k]: v }))
 
@@ -338,13 +338,40 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           </button>
         </div>
 
-        {/* ── Voucher Type Pills ─────────────────────────────── */}
-        <div style={{ padding: '10px 20px', display: 'flex', gap: 7, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', alignItems: 'center' }}>
-          {VOUCHER_TYPES.map((t, idx) => {
+        {/* ── Voucher Type Pills — roving tabIndex radio group ── */}
+        <div
+          role="radiogroup"
+          aria-label="Voucher type"
+          style={{ padding: '10px 20px', display: 'flex', gap: 7, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', alignItems: 'center' }}
+          onKeyDown={e => {
+            const types = VOUCHER_TYPES
+            const cur = types.indexOf(header.voucher_type)
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+              e.preventDefault()
+              const next = types[(cur + 1) % types.length]
+              sh('voucher_type', next)
+              document.getElementById(`je-pill-${next}`)?.focus()
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+              e.preventDefault()
+              const prev = types[(cur - 1 + types.length) % types.length]
+              sh('voucher_type', prev)
+              document.getElementById(`je-pill-${prev}`)?.focus()
+            } else if (e.key === 'Tab' || e.key === 'Enter') {
+              e.preventDefault()
+              document.getElementById('je-modal-date')?.focus()
+            }
+          }}
+        >
+          {VOUCHER_TYPES.map((t) => {
             const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
             const active = header.voucher_type === t
             return (
-              <button key={t} id={idx === 0 ? 'je-first-pill' : undefined}
+              <button
+                key={t}
+                id={`je-pill-${t}`}
+                role="radio"
+                aria-checked={active}
+                tabIndex={active ? 0 : -1}
                 onClick={() => sh('voucher_type', t)}
                 style={{
                   padding: '7px 18px',
