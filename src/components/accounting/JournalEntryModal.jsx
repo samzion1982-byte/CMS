@@ -338,41 +338,48 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           </button>
         </div>
 
-        {/* ── Voucher Type Pills — roving tabIndex radio group ── */}
+        {/* ── Voucher Type Pills ────────────────────────────────
+             Each pill is individually Tab-able and auto-selects on focus.
+             Tab cycles Receipt → Payment → Journal → Contra → Opening → Date.
+             ← / → arrows also navigate. Enter from any pill jumps to Date. ── */}
         <div
           role="radiogroup"
           aria-label="Voucher type"
           style={{ padding: '10px 20px', display: 'flex', gap: 7, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', alignItems: 'center' }}
-          onKeyDown={e => {
-            const types = VOUCHER_TYPES
-            const cur = types.indexOf(header.voucher_type)
-            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-              e.preventDefault()
-              const next = types[(cur + 1) % types.length]
-              sh('voucher_type', next)
-              document.getElementById(`je-pill-${next}`)?.focus()
-            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-              e.preventDefault()
-              const prev = types[(cur - 1 + types.length) % types.length]
-              sh('voucher_type', prev)
-              document.getElementById(`je-pill-${prev}`)?.focus()
-            } else if (e.key === 'Tab' || e.key === 'Enter') {
-              e.preventDefault()
-              document.getElementById('je-modal-date')?.focus()
-            }
-          }}
         >
-          {VOUCHER_TYPES.map((t) => {
+          {VOUCHER_TYPES.map((t, idx) => {
             const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
             const active = header.voucher_type === t
+            const isLast = idx === VOUCHER_TYPES.length - 1
             return (
               <button
                 key={t}
                 id={`je-pill-${t}`}
                 role="radio"
                 aria-checked={active}
-                tabIndex={active ? 0 : -1}
+                tabIndex={0}
                 onClick={() => sh('voucher_type', t)}
+                onFocus={() => sh('voucher_type', t)}
+                onKeyDown={e => {
+                  const types = VOUCHER_TYPES
+                  const cur   = types.indexOf(t)
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    const next = types[(cur + 1) % types.length]
+                    sh('voucher_type', next)
+                    document.getElementById(`je-pill-${next}`)?.focus()
+                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    const prev = types[(cur - 1 + types.length) % types.length]
+                    sh('voucher_type', prev)
+                    document.getElementById(`je-pill-${prev}`)?.focus()
+                  } else if (e.key === 'Enter' || (e.key === 'Tab' && isLast && !e.shiftKey)) {
+                    // Enter from any pill, or Tab from last pill → jump to date
+                    e.preventDefault()
+                    document.getElementById('je-modal-date')?.focus()
+                  }
+                  // Tab on non-last pill: let browser move to next pill naturally
+                }}
                 style={{
                   padding: '7px 18px',
                   borderRadius: 99,
@@ -388,6 +395,9 @@ export default function JournalEntryModal({ onClose, onSaved }) {
               </button>
             )
           })}
+          <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4 }}>
+            Tab / ← → to switch · Enter to go to date
+          </span>
         </div>
 
         {/* ── Body (two-panel) ──────────────────────────────── */}
