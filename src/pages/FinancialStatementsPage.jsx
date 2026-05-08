@@ -14,12 +14,12 @@ import {
   getReceiptsAndPayments,
   getIncomeStatement,
   getBalanceSheet,
-  getFY, fyOptions, fmtAmt,
+  getFY, fyOptions, fyDateRange, fmtAmt,
 } from '../lib/accountingLib'
 import { getChurch } from '../lib/supabase'
 import {
   BarChart2, ArrowLeft, Loader2, Printer, ChevronDown,
-  RefreshCw, CheckCircle, XCircle,
+  RefreshCw, CheckCircle, XCircle, Calendar,
 } from 'lucide-react'
 
 // ════════════════════════════════════════════════════════════════
@@ -251,32 +251,51 @@ export default function FinancialStatementsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
 
-  const [tab,       setTab]       = useState('rp')
-  const [fy,        setFy]        = useState(getFY())
-  const [fyOpen,    setFyOpen]    = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [generated, setGenerated] = useState(false)
-  const [rp,        setRp]        = useState(null)
-  const [ie,        setIe]        = useState(null)
-  const [bs,        setBs]        = useState(null)
-  const [church,    setChurch]    = useState(null)
+  const [tab,        setTab]        = useState('rp')
+  const [fy,         setFy]         = useState(getFY())
+  const [fyOpen,     setFyOpen]     = useState(false)
+  const [rangeMode,  setRangeMode]  = useState('full')   // 'full' | 'custom'
+  const [fromDate,   setFromDate]   = useState(() => fyDateRange(getFY()).from)
+  const [toDate,     setToDate]     = useState(() => fyDateRange(getFY()).to)
+  const [loading,    setLoading]    = useState(false)
+  const [generated,  setGenerated]  = useState(false)
+  const [rp,         setRp]         = useState(null)
+  const [ie,         setIe]         = useState(null)
+  const [bs,         setBs]         = useState(null)
+  const [church,     setChurch]     = useState(null)
+  const [genFrom,    setGenFrom]    = useState(null)   // dates used for last generate (for display)
+  const [genTo,      setGenTo]      = useState(null)
   const FYS = fyOptions()
 
+  function handleFyChange(f) {
+    setFy(f)
+    setFyOpen(false)
+    setGenerated(false)
+    const { from, to } = fyDateRange(f)
+    setFromDate(from)
+    setToDate(to)
+  }
+
   const generate = useCallback(async () => {
+    const fd = rangeMode === 'custom' ? fromDate : null
+    const td = rangeMode === 'custom' ? toDate   : null
     setLoading(true)
     setGenerated(false)
     try {
       const [rpData, ieData, bsData, c] = await Promise.all([
-        getReceiptsAndPayments(fy),
-        getIncomeStatement(fy),
-        getBalanceSheet(fy),
+        getReceiptsAndPayments(fy, fd, td),
+        getIncomeStatement(fy, fd, td),
+        getBalanceSheet(fy, fd, td),
         getChurch(),
       ])
       setRp(rpData); setIe(ieData); setBs(bsData); setChurch(c)
+      const { from, to } = fyDateRange(fy)
+      setGenFrom(fd || from)
+      setGenTo(td || to)
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, toast])
+  }, [fy, rangeMode, fromDate, toDate, toast])
 
   return (
     <div className="page-container">
@@ -305,7 +324,7 @@ export default function FinancialStatementsPage() {
             {fyOpen && (
               <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 200, minWidth: 130, overflow: 'hidden' }}>
                 {FYS.map(f => (
-                  <button key={f} onClick={() => { setFy(f); setFyOpen(false); setGenerated(false) }}
+                  <button key={f} onClick={() => handleFyChange(f)}
                     style={{ display: 'block', width: '100%', padding: '9px 14px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
                     {f}
                   </button>
@@ -329,6 +348,54 @@ export default function FinancialStatementsPage() {
         </div>
       </div>
 
+      {/* ── Date Range Picker ───────────────────────────────────── */}
+      <div className="card" style={{ padding: '12px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <Calendar size={15} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Period</span>
+
+        {/* Full Year / Custom toggle */}
+        <div style={{ display: 'flex', background: 'var(--table-header-bg)', borderRadius: 8, padding: 3, gap: 2 }}>
+          {[['full', 'Full Year'], ['custom', 'Custom Range']].map(([mode, label]) => (
+            <button key={mode} onClick={() => { setRangeMode(mode); setGenerated(false) }}
+              style={{
+                padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                fontSize: 12, fontWeight: rangeMode === mode ? 700 : 500,
+                background: rangeMode === mode ? 'var(--card-bg)' : 'transparent',
+                color: rangeMode === mode ? 'var(--accent)' : 'var(--text-2)',
+                boxShadow: rangeMode === mode ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {rangeMode === 'custom' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase' }}>From</label>
+              <input type="date" value={fromDate}
+                min={fyDateRange(fy).from} max={toDate}
+                onChange={e => { setFromDate(e.target.value); setGenerated(false) }}
+                style={{ height: 34, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase' }}>To</label>
+              <input type="date" value={toDate}
+                min={fromDate} max={fyDateRange(fy).to}
+                onChange={e => { setToDate(e.target.value); setGenerated(false) }}
+                style={{ height: 34, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }} />
+            </div>
+          </>
+        )}
+
+        {rangeMode === 'full' && (
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            {fyDateRange(fy).from} — {fyDateRange(fy).to}
+          </span>
+        )}
+      </div>
+
       {/* ── Tabs ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--table-header-bg)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
         {TABS.map(t => (
@@ -344,14 +411,17 @@ export default function FinancialStatementsPage() {
         <div style={{ padding: '60px 24px', textAlign: 'center', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 12 }}>
           <BarChart2 size={36} style={{ color: 'var(--text-3)', display: 'block', margin: '0 auto 12px' }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-2)', margin: '0 0 6px' }}>
-            Select a Financial Year and click Generate
+            Select a period and click Generate
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>
-            Generates all three statements for FY {fy}
+            {rangeMode === 'custom'
+              ? `Generating for ${fromDate} to ${toDate}`
+              : `Full year — FY ${fy}`}
           </p>
           <button onClick={generate}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-            <RefreshCw size={14} /> Generate for FY {fy}
+            <RefreshCw size={14} />
+            {rangeMode === 'custom' ? `Generate ${fromDate} → ${toDate}` : `Generate for FY ${fy}`}
           </button>
         </div>
       )}
@@ -375,8 +445,11 @@ export default function FinancialStatementsPage() {
               <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 2px' }}>{church.diocese}</p>
             )}
             <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-              Financial Year {fy} &nbsp;·&nbsp;
               {tab === 'rp' ? 'Receipts & Payments Account' : tab === 'ie' ? 'Income & Expenditure Account' : 'Balance Sheet'}
+              &nbsp;·&nbsp;
+              {genFrom === fyDateRange(fy).from && genTo === fyDateRange(fy).to
+                ? `Full Year FY ${fy}`
+                : `${genFrom} to ${genTo}`}
             </p>
           </div>
 

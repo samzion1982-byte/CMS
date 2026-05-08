@@ -408,18 +408,22 @@ export async function getLedger(accountId, from, to) {
 
 // ── Trial Balance ─────────────────────────────────────────────────
 
-export async function getTrialBalance(fy) {
+export async function getTrialBalance(fy, fromDate = null, toDate = null) {
   const { from, to } = fyDateRange(fy)
+  const dateFrom = fromDate || from
+  const dateTo   = toDate   || to
   const accounts = await getChartOfAccounts()
 
   const { data: lines } = await supabase
     .from('journal_entry_lines')
     .select(`
       account_id, debit_amount, credit_amount,
-      journal_entries!inner(financial_year, is_posted)
+      journal_entries!inner(financial_year, is_posted, entry_date)
     `)
     .eq('journal_entries.financial_year', fy)
     .eq('journal_entries.is_posted', true)
+    .gte('journal_entries.entry_date', dateFrom)
+    .lte('journal_entries.entry_date', dateTo)
 
   const balMap = {}
   for (const l of lines || []) {
@@ -440,8 +444,8 @@ export async function getTrialBalance(fy) {
 
 // Income & Expenditure Account (church-appropriate P&L)
 // Returns surplus (positive) or deficit (negative)
-export async function getIncomeStatement(fy) {
-  const tb = await getTrialBalance(fy)
+export async function getIncomeStatement(fy, fromDate = null, toDate = null) {
+  const tb = await getTrialBalance(fy, fromDate, toDate)
   const income   = tb.filter(a => a.account_type === 'Income')
   const expenses = tb.filter(a => a.account_type === 'Expense')
   const totalIncome    = income.reduce((s, a)   => s + (a.total_credit - a.total_debit), 0)
@@ -451,12 +455,12 @@ export async function getIncomeStatement(fy) {
 }
 
 // Balance Sheet — uses "Corpus Fund" terminology (church/non-profit standard)
-export async function getBalanceSheet(fy) {
-  const tb = await getTrialBalance(fy)
+export async function getBalanceSheet(fy, fromDate = null, toDate = null) {
+  const tb = await getTrialBalance(fy, fromDate, toDate)
   const assets      = tb.filter(a => a.account_type === 'Asset')
   const liabilities = tb.filter(a => a.account_type === 'Liability')
   const corpus      = tb.filter(a => a.account_type === 'Equity')  // "Corpus Fund / General Fund"
-  const { surplus } = await getIncomeStatement(fy)
+  const { surplus } = await getIncomeStatement(fy, fromDate, toDate)
 
   const totalAssets      = assets.reduce((s, a)      => s + (a.total_debit  - a.total_credit), 0)
   const totalLiabilities = liabilities.reduce((s, a) => s + (a.total_credit - a.total_debit),  0)
@@ -467,7 +471,11 @@ export async function getBalanceSheet(fy) {
 }
 
 // Receipts & Payments Account (cash-basis — church standard report)
-export async function getReceiptsAndPayments(fy) {
+export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null) {
+  const { from, to } = fyDateRange(fy)
+  const dateFrom = fromDate || from
+  const dateTo   = toDate   || to
+
   const { data: entries, error } = await supabase
     .from('journal_entries')
     .select(`
@@ -477,6 +485,8 @@ export async function getReceiptsAndPayments(fy) {
     `)
     .eq('financial_year', fy)
     .eq('is_posted', true)
+    .gte('entry_date', dateFrom)
+    .lte('entry_date', dateTo)
     .order('entry_date')
   if (error) throw error
 
