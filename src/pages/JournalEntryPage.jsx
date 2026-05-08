@@ -2,7 +2,7 @@
    JournalEntryPage.jsx — List + Create/Edit Journal Entries
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -17,6 +17,7 @@ import {
 import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
+  Settings, Zap,
 } from 'lucide-react'
 
 // ── Voucher type badge ────────────────────────────────────────────
@@ -33,11 +34,13 @@ function VBadge({ type }) {
 export default function JournalEntryPage() {
   const navigate = useNavigate()
   const { id: routeId } = useParams()
-  const [checked, setChecked] = useState(false)
+  const [checked,    setChecked]    = useState(false)
+  const [needsSetup, setNeedsSetup] = useState(false)
 
   useEffect(() => {
-    // Only block if accounting is entirely disabled; allow entry creation regardless of lock status
-    getEntrySystemStatus().then(() => setChecked(true)).catch(() => setChecked(true))
+    getEntrySystemStatus()
+      .then(s => { if (!s.locked) setNeedsSetup(true); setChecked(true) })
+      .catch(() => setChecked(true))
   }, [])
 
   if (!checked) return (
@@ -48,10 +51,44 @@ export default function JournalEntryPage() {
     </div>
   )
 
+  if (needsSetup) return <EntrySetupPrompt />
+
   if (routeId === 'new' || (routeId && routeId !== 'new')) {
     return <JournalEntryForm entryId={routeId === 'new' ? null : routeId} />
   }
   return <JournalEntryList />
+}
+
+// ── Entry system setup prompt ─────────────────────────────────────
+
+function EntrySetupPrompt() {
+  const navigate = useNavigate()
+  return (
+    <div className="page-container">
+      <div style={{ maxWidth: 520, margin: '80px auto', textAlign: 'center' }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <Settings size={28} style={{ color: '#c2410c' }} />
+        </div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 10px' }}>Entry System Not Configured</h2>
+        <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 6px' }}>
+          Before creating journal entries, you need to choose your accounting method and lock it with the master password.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 28px' }}>
+          Go to <strong>Accounts → Settings</strong> and select Single-Entry or Double-Entry, then click <em>Lock Entry System</em>.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button onClick={() => navigate('/accounting')}
+            style={{ padding: '10px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+            ← Back to Accounts
+          </button>
+          <button onClick={() => navigate('/accounting/settings')}
+            style={{ padding: '10px 22px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Settings size={14} /> Go to Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── List ─────────────────────────────────────────────────────────
@@ -263,6 +300,12 @@ function JournalEntryForm({ entryId }) {
   const [posting,  setPosting]    = useState(false)
   const [isPosted, setIsPosted]   = useState(false)
 
+  const dateInputRef = useRef(null)
+  // stable refs for keyboard handlers — always point to latest functions
+  const saveDraftRef = useRef(null)
+  const savePostRef  = useRef(null)
+  const addLineRef   = useRef(null)
+
   const [header, setHeader] = useState({
     entry_number:  '',
     entry_date:    today,
@@ -333,6 +376,19 @@ function JournalEntryForm({ entryId }) {
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l))
   }
 
+  function autoBalance() {
+    if (balanced) return
+    if (totalDebit > totalCredit) {
+      const need = (totalDebit - totalCredit).toFixed(2)
+      const idx = lines.findIndex(l => !parseFloat(l.credit_amount))
+      if (idx >= 0) setLine(idx, 'credit_amount', need)
+    } else {
+      const need = (totalCredit - totalDebit).toFixed(2)
+      const idx = lines.findIndex(l => !parseFloat(l.debit_amount))
+      if (idx >= 0) setLine(idx, 'debit_amount', need)
+    }
+  }
+
   async function handleSave(andPost = false) {
     if (!header.entry_date) { toast('Entry date is required', 'error'); return }
     const validLines = lines.filter(l => l.account_id && (parseFloat(l.debit_amount) > 0 || parseFloat(l.credit_amount) > 0))
@@ -357,6 +413,36 @@ function JournalEntryForm({ entryId }) {
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
+
+  // Keep refs current every render so keyboard handler never captures stale closures
+  saveDraftRef.current = () => handleSave(false)
+  savePostRef.current  = () => handleSave(true)
+  addLineRef.current   = addLine
+
+  // Auto-focus entry date on new entry load
+  useEffect(() => {
+    if (!loading && !isPosted && !entryId) {
+      setTimeout(() => dateInputRef.current?.focus(), 80)
+    }
+  }, [loading]) // eslint-disable-line
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    if (isPosted) return
+    function onKey(e) {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === 's') {
+        e.preventDefault(); saveDraftRef.current?.()
+      }
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault(); savePostRef.current?.()
+      }
+      if (e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault(); addLineRef.current?.()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [isPosted])
 
   if (loading) return (
     <div className="page-container">
@@ -424,7 +510,7 @@ function JournalEntryForm({ entryId }) {
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Entry Date *</label>
-              <input type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)} disabled={isPosted}
+              <input ref={dateInputRef} type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)} disabled={isPosted}
                 style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
           </div>
@@ -464,6 +550,12 @@ function JournalEntryForm({ entryId }) {
               <p style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: balanced ? '#16a34a' : '#b91c1c', margin: 0 }}>{balanced ? '✓ OK' : fmtAmt(diff)}</p>
             </div>
           </div>
+          {!isPosted && !balanced && totalDebit > 0 && (
+            <button onClick={autoBalance}
+              style={{ marginTop: 10, width: '100%', padding: '6px 12px', background: '#fff7ed', color: '#c2410c', border: '1.5px dashed #fdba74', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <Zap size={13} /> Auto-balance: fill {fmtAmt(diff)} on next empty line
+            </button>
+          )}
         </div>
       </div>
 
@@ -561,6 +653,18 @@ function JournalEntryForm({ entryId }) {
             style={{ padding: '9px 22px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
           </button>
+        </div>
+      )}
+
+      {!isPosted && (
+        <div style={{ marginTop: 12, padding: '7px 14px', background: 'var(--table-header-bg)', border: '1px solid var(--card-border)', borderRadius: 8, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', color: 'var(--text-3)', textTransform: 'uppercase' }}>Shortcuts</span>
+          {[['Ctrl+S','Save Draft'],['Ctrl+Enter','Save & Post'],['Alt+N','Add Line']].map(([k, l]) => (
+            <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-2)' }}>
+              <kbd style={{ padding: '2px 7px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 4, fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>{k}</kbd>
+              {l}
+            </span>
+          ))}
         </div>
       )}
     </div>
