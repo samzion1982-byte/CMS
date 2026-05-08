@@ -8,6 +8,24 @@ const variants = {
 }
 
 const styles = `
+@keyframes btnBreath {
+  0%, 100% { filter: hue-rotate(0deg)   brightness(1)    saturate(1);    }
+  35%       { filter: hue-rotate(22deg)  brightness(1.05) saturate(1.18); }
+  70%       { filter: hue-rotate(-14deg) brightness(1.02) saturate(1.1);  }
+}
+@keyframes btnBreathHover {
+  0%, 100% { filter: hue-rotate(0deg)   brightness(1.08) saturate(1.2);  }
+  35%       { filter: hue-rotate(32deg)  brightness(1.15) saturate(1.4);  }
+  70%       { filter: hue-rotate(-18deg) brightness(1.1)  saturate(1.28); }
+}
+@keyframes btnGlow {
+  0%   { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(248,113,113,0.35); }
+  25%  { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(251,191,36,0.35);  }
+  50%  { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(74,222,128,0.35);  }
+  75%  { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(96,165,250,0.35);  }
+  100% { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(248,113,113,0.35); }
+}
+
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 16px; font-size: 13px; font-weight: 600;
@@ -15,7 +33,6 @@ const styles = `
   cursor: pointer;
   transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1),
               box-shadow 0.18s ease,
-              filter 0.15s ease,
               background 0.15s ease;
   white-space: nowrap; font-family: inherit;
   position: relative; overflow: hidden;
@@ -37,29 +54,39 @@ const styles = `
   pointer-events: none;
 }
 .btn:hover:not(:disabled)::before { left: 155%; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; animation: none !important; }
 .btn:active:not(:disabled) {
   transform: translateY(1px) scale(0.97) !important;
   transition-duration: 0.07s !important;
 }
 
 .btn-primary {
-  background: linear-gradient(160deg, #2563eb 0%, #1d4ed8 100%);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px,
+      transparent 1px, transparent 8px
+    ),
+    linear-gradient(160deg, #2563eb 0%, #1d4ed8 100%);
+  background-size: 8px 8px, 100% 100%;
   color: #fff; border-color: #1d4ed8;
   box-shadow: 0 2px 0 rgba(0,0,0,0.14),
               0 4px 14px rgba(37,99,235,0.32),
               inset 0 1px 0 rgba(255,255,255,0.18);
+  animation: btnBreath 5s ease-in-out infinite;
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 4px 0 rgba(0,0,0,0.14),
-              0 12px 24px rgba(37,99,235,0.42),
-              inset 0 1px 0 rgba(255,255,255,0.22);
-  filter: brightness(1.06);
+  animation: btnGlow 2.5s ease-in-out infinite, btnBreathHover 2s ease-in-out infinite;
 }
 
 .btn-secondary {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(100,116,139,0.06) 0px, rgba(100,116,139,0.06) 1px,
+      transparent 1px, transparent 8px
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background-size: 8px 8px, 100% 100%;
   color: #334155; border-color: #d1d5db;
   box-shadow: 0 2px 0 rgba(0,0,0,0.06),
               0 2px 6px rgba(0,0,0,0.04),
@@ -67,26 +94,30 @@ const styles = `
 }
 .btn-secondary:hover:not(:disabled) {
   transform: translateY(-2px);
-  background: #ffffff;
   border-color: #94a3b8; color: #1e293b;
   box-shadow: 0 4px 0 rgba(0,0,0,0.07),
               0 10px 20px rgba(0,0,0,0.09),
               inset 0 1px 0 rgba(255,255,255,0.9);
+  filter: brightness(1.04);
 }
 
 .btn-danger {
-  background: linear-gradient(160deg, #dc2626 0%, #b91c1c 100%);
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px,
+      transparent 1px, transparent 8px
+    ),
+    linear-gradient(160deg, #dc2626 0%, #b91c1c 100%);
+  background-size: 8px 8px, 100% 100%;
   color: #fff; border-color: #b91c1c;
   box-shadow: 0 2px 0 rgba(0,0,0,0.14),
               0 4px 12px rgba(220,38,38,0.28),
               inset 0 1px 0 rgba(255,255,255,0.16);
+  animation: btnBreath 5s ease-in-out infinite;
 }
 .btn-danger:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 4px 0 rgba(0,0,0,0.14),
-              0 12px 24px rgba(220,38,38,0.38),
-              inset 0 1px 0 rgba(255,255,255,0.20);
-  filter: brightness(1.06);
+  animation: btnGlow 2.5s ease-in-out infinite, btnBreathHover 2s ease-in-out infinite;
 }
 
 .btn-ghost { background: transparent; color: #64748b; border-color: transparent; }
