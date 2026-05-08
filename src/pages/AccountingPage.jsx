@@ -19,28 +19,28 @@ import {
   BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
   ChevronDown, Landmark, Lock, Loader2,
 } from 'lucide-react'
+import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
 // ── Stat Card ────────────────────────────────────────────────────
 
 function StatCard({ icon: Icon, label, value, sub, iconBg, iconColor, loading, trend }) {
   return (
-    <div className="card" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-      <div style={{ width: 52, height: 52, borderRadius: 14, flexShrink: 0, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={22} color={iconColor} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 4px' }}>{label}</p>
-        <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.1, margin: '0 0 3px', fontFamily: 'monospace' }}>
-          {loading ? <span className="loading-skeleton" style={{ display: 'inline-block', width: 100, height: 22, borderRadius: 6 }} /> : (value ?? '—')}
-        </p>
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{loading ? '' : sub}</p>
-      </div>
-      {trend !== undefined && !loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: trend >= 0 ? '#16a34a' : '#dc2626' }}>
-          {trend >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-          {fmtAmt(Math.abs(trend))}
+    <div className="card" style={{ padding: '16px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={15} color={iconColor} />
         </div>
-      )}
+        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: 0, lineHeight: 1.3, flex: 1 }}>{label}</p>
+        {trend !== undefined && !loading && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: trend >= 0 ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 2 }}>
+            {trend >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 19, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.1, margin: '0 0 4px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {loading ? <span className="loading-skeleton" style={{ display: 'inline-block', width: 80, height: 20, borderRadius: 5 }} /> : (value ?? '—')}
+      </p>
+      <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{loading ? '' : sub}</p>
     </div>
   )
 }
@@ -352,6 +352,7 @@ export default function AccountingPage() {
   const [entryLocked,     setEntryLocked]     = useState(null) // null = loading
   const [entrySystem,     setEntrySystem]     = useState(null)
   const [setupDismissed,  setSetupDismissed]  = useState(() => !!sessionStorage.getItem('ac_setup_skipped'))
+  const [showNewEntry,    setShowNewEntry]    = useState(false)
   const [fy,            setFy]            = useState(getFY())
   const [stats,         setStats]         = useState(null)
   const [accounts,      setAccounts]      = useState([])
@@ -470,7 +471,7 @@ export default function AccountingPage() {
           </button>
 
           <button
-            onClick={() => navigate('/accounting/journal-entries/new')}
+            onClick={() => setShowNewEntry(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}
           >
             <PlusCircle size={15} /> New Entry
@@ -496,7 +497,7 @@ export default function AccountingPage() {
       )}
 
       {/* ── Stats Row ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
         <StatCard icon={Wallet}      label="Total Assets"      value={L ? null : fmtAmt(stats?.totalAssets)}      sub="All asset accounts"          iconBg="#dbeafe" iconColor="#2563eb" loading={L} />
         <StatCard icon={Scale}       label="Total Liabilities" value={L ? null : fmtAmt(stats?.totalLiabilities)} sub="All liability accounts"      iconBg="#fee2e2" iconColor="#b91c1c" loading={L} />
         <StatCard icon={TrendingUp}  label="Total Income"      value={L ? null : fmtAmt(stats?.totalIncome)}      sub={`FY ${fy}`}                  iconBg="#dcfce7" iconColor="#16a34a" loading={L} />
@@ -532,7 +533,7 @@ export default function AccountingPage() {
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
               <FileText size={28} style={{ opacity: 0.3, marginBottom: 8 }} />
               <p style={{ fontSize: 13, margin: 0 }}>No entries yet for FY {fy}</p>
-              <button onClick={() => navigate('/accounting/journal-entries/new')} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button onClick={() => setShowNewEntry(true)} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
                 Create first entry
               </button>
             </div>
@@ -587,7 +588,7 @@ export default function AccountingPage() {
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Actions</p>
             </div>
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => navigate('/accounting/journal-entries/new')}   color="#2563eb" />
+              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => setShowNewEntry(true)}   color="#2563eb" />
               <QuickBtn icon={BookMarked}    label="Chart of Accounts"   desc="Manage account heads for the church"     onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
               <QuickBtn icon={ClipboardList} label="Ledger"              desc="View transactions for any account"       onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />
               <QuickBtn icon={Scale}         label="Trial Balance"       desc="Verify total debits = total credits"     onClick={() => navigate('/accounting/trial-balance')}        color="#c2410c" />
@@ -620,6 +621,7 @@ export default function AccountingPage() {
         </div>
       </div>
 
+      {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
     </div>
   )
 }

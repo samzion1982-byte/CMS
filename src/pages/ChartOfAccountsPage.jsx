@@ -15,6 +15,7 @@ import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText,
 } from 'lucide-react'
+import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
 // ── Level config ──────────────────────────────────────────────────
 
@@ -294,6 +295,7 @@ export default function ChartOfAccountsPage() {
   const [saving,      setSaving]      = useState(false)
   const [deleting,    setDeleting]    = useState(null)
   const [search,      setSearch]      = useState('')
+  const [showNewEntry, setShowNewEntry] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -306,6 +308,15 @@ export default function ChartOfAccountsPage() {
   }, [toast])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    function onKey(e) {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+      if (e.key === '+' || e.key === '=') setShowNewEntry(true)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   // ── Filter tree by search ──────────────────────────────────────
   function filterTree(nodes, q) {
@@ -512,6 +523,7 @@ export default function ChartOfAccountsPage() {
           saving={saving}
         />
       )}
+      {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={() => {}} />}
     </div>
   )
 }

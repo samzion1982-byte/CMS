@@ -1,0 +1,493 @@
+/* ═══════════════════════════════════════════════════════════════
+   JournalEntryModal.jsx — New Journal Entry modal (two-panel)
+   ═══════════════════════════════════════════════════════════════ */
+
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useAuth } from '../../lib/AuthContext'
+import { useToast } from '../../lib/toast'
+import {
+  getFY, fmtAmt,
+  createJournalEntry, postJournalEntry,
+  nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
+  VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR, displayAccountType,
+} from '../../lib/accountingLib'
+import {
+  X, Save, CheckSquare, PlusCircle, Minus, AlertCircle, Zap, Loader2, FileText,
+} from 'lucide-react'
+
+// ── Account type → default side ──────────────────────────────────
+
+function getDefaultSide(accountType) {
+  return ['Asset', 'Expense'].includes(accountType) ? 'debit' : 'credit'
+}
+
+// ── Typeahead Account Search ──────────────────────────────────────
+
+function AccountSearch({ value, accounts, onChange, lineIdx }) {
+  const [input,   setInput]   = useState('')
+  const [focused, setFocused] = useState(false)
+  const [open,    setOpen]    = useState(false)
+  const [hi,      setHi]      = useState(0)
+  const savedRef = useRef(null)
+
+  const selected = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
+  const displayName = selected
+    ? `${selected.name}${selected.code ? '  [' + selected.code + ']' : ''}`
+    : ''
+
+  const filtered = useMemo(() => {
+    if (!focused) return []
+    const q = input.trim().toLowerCase()
+    if (!q) return accounts.slice(0, 15)
+    return accounts.filter(a =>
+      a.name.toLowerCase().includes(q) ||
+      (a.code || '').toLowerCase().includes(q) ||
+      (a.path || '').toLowerCase().includes(q)
+    ).slice(0, 12)
+  }, [input, focused, accounts])
+
+  function handleFocus() {
+    savedRef.current = value
+    setFocused(true)
+    setInput('')
+    setOpen(true)
+    setHi(0)
+  }
+
+  function handleBlur() {
+    setTimeout(() => {
+      setFocused(false)
+      setOpen(false)
+      if (!value && savedRef.current) onChange(savedRef.current)
+    }, 160)
+  }
+
+  function select(a) {
+    savedRef.current = a.id
+    onChange(a.id)
+    setFocused(false)
+    setOpen(false)
+    // Auto-focus debit or credit
+    const side = getDefaultSide(a.account_type)
+    setTimeout(() => {
+      document.querySelector(`[data-line="${lineIdx}"][data-side="${side}"]`)?.focus()
+    }, 40)
+  }
+
+  function handleKey(e) {
+    if (!open || !filtered.length) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    if (e.key === 'Enter')     { e.preventDefault(); if (filtered[hi]) select(filtered[hi]) }
+    if (e.key === 'Escape')    { setOpen(false); setFocused(false) }
+  }
+
+  const tc = TYPE_COLOR[selected?.account_type] || {}
+
+  return (
+    <div style={{ position: 'relative', flex: 1 }}>
+      <input
+        value={focused ? input : displayName}
+        onChange={e => { setInput(e.target.value); setHi(0) }}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKey}
+        placeholder="Type to search…"
+        style={{
+          width: '100%', height: 34, padding: '0 8px',
+          border: `1.5px solid ${selected ? (tc.text || 'var(--accent)') + '88' : 'var(--card-border)'}`,
+          borderRadius: 7, fontSize: 12,
+          background: selected ? (tc.bg || '#f0fdf4') : 'var(--input-bg)',
+          color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box',
+          transition: 'border-color 0.15s',
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute', top: 36, left: 0, right: 0, zIndex: 2000,
+          background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+          borderRadius: 9, boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+          maxHeight: 210, overflowY: 'auto',
+        }}>
+          {filtered.map((a, i) => {
+            const bc = TYPE_COLOR[a.account_type] || { bg: '#f1f5f9', text: '#64748b' }
+            return (
+              <div key={a.id}
+                onMouseDown={e => { e.preventDefault(); select(a) }}
+                style={{
+                  padding: '7px 12px', cursor: 'pointer',
+                  background: i === hi ? 'var(--sidebar-item-active-bg)' : 'transparent',
+                  borderBottom: i < filtered.length - 1 ? '1px solid var(--card-border)' : 'none',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: i === hi ? 'var(--accent)' : 'var(--text-1)' }}>{a.name}</span>
+                {a.code && <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-3)' }}>{a.code}</span>}
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: bc.bg, color: bc.text }}>{displayAccountType(a.account_type)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MODAL
+// ════════════════════════════════════════════════════════════════
+
+export default function JournalEntryModal({ onClose, onSaved }) {
+  const { profile } = useAuth()
+  const toast = useToast()
+
+  const today     = new Date().toISOString().slice(0, 10)
+  const currentFY = getFY()
+
+  const [accounts, setAccounts] = useState([])
+  const [saving,   setSaving]   = useState(false)
+  const [ready,    setReady]    = useState(false)
+
+  const [header, setHeader] = useState({
+    entry_number:   '',
+    entry_date:     today,
+    financial_year: currentFY,
+    voucher_type:   'Receipt',
+    narration:      '',
+    reference_no:   '',
+  })
+
+  const [lines, setLines] = useState([
+    { account_id: '', debit_amount: '', credit_amount: '', description: '' },
+    { account_id: '', debit_amount: '', credit_amount: '', description: '' },
+  ])
+
+  // Load accounts
+  useEffect(() => {
+    getChartOfAccounts(true)
+      .then(all => { setAccounts(getPostableAccountsWithPath(all)); setReady(true) })
+      .catch(() => setReady(true))
+  }, [])
+
+  // Auto entry number
+  useEffect(() => {
+    nextEntryNumber(header.financial_year, header.voucher_type)
+      .then(n => setHeader(h => ({ ...h, entry_number: n })))
+      .catch(() => {})
+  }, [header.voucher_type, header.financial_year])
+
+  // Auto-focus entry date on open
+  useEffect(() => {
+    setTimeout(() => document.getElementById('je-modal-date')?.focus(), 120)
+  }, [])
+
+  const sh  = (k, v) => setHeader(h => ({ ...h, [k]: v }))
+  const sl  = (i, k, v) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l))
+
+  function addLine() {
+    setLines(ls => [...ls, { account_id: '', debit_amount: '', credit_amount: '', description: '' }])
+  }
+  function removeLine(i) {
+    if (lines.length <= 2) return
+    setLines(ls => ls.filter((_, idx) => idx !== i))
+  }
+
+  const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit_amount)  || 0), 0)
+  const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit_amount) || 0), 0)
+  const diff        = Math.abs(totalDebit - totalCredit)
+  const balanced    = diff < 0.01
+
+  function autoBalance() {
+    if (balanced) return
+    if (totalDebit > totalCredit) {
+      const idx = lines.findIndex(l => !parseFloat(l.credit_amount))
+      if (idx >= 0) sl(idx, 'credit_amount', (totalDebit - totalCredit).toFixed(2))
+    } else {
+      const idx = lines.findIndex(l => !parseFloat(l.debit_amount))
+      if (idx >= 0) sl(idx, 'debit_amount', (totalCredit - totalDebit).toFixed(2))
+    }
+  }
+
+  async function handleSave(andPost = false) {
+    if (!header.entry_date) { toast('Entry date is required', 'error'); return }
+    const validLines = lines.filter(l => l.account_id && (parseFloat(l.debit_amount) > 0 || parseFloat(l.credit_amount) > 0))
+    if (validLines.length < 2) { toast('At least 2 line items with amounts are required', 'error'); return }
+    if (!balanced) { toast(`Entry not balanced — difference ₹${diff.toFixed(2)}`, 'error'); return }
+    setSaving(true)
+    try {
+      const je = await createJournalEntry(header, validLines, profile?.email || 'user')
+      if (andPost) {
+        await postJournalEntry(je.id, profile?.email || 'user')
+        toast('Entry saved and posted!', 'success')
+      } else {
+        toast('Entry saved as draft.', 'success')
+      }
+      onSaved?.()
+      onClose()
+    } catch (e) { toast(e.message, 'error') }
+    setSaving(false)
+  }
+
+  // Stable refs for keyboard shortcuts
+  const saveDraftRef = useRef(null)
+  const savePostRef  = useRef(null)
+  const addLineRef   = useRef(null)
+  saveDraftRef.current = () => handleSave(false)
+  savePostRef.current  = () => handleSave(true)
+  addLineRef.current   = addLine
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === 's') { e.preventDefault(); saveDraftRef.current?.() }
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); savePostRef.current?.() }
+      if (e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); addLineRef.current?.() }
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const VCOL = VOUCHER_COLOR[header.voucher_type] || { bg: '#f1f5f9', text: '#475569' }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)',
+      backdropFilter: 'blur(3px)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12,
+    }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{
+        width: 'min(96vw, 1100px)', maxHeight: '92vh',
+        background: 'var(--card-bg)', borderRadius: 14,
+        boxShadow: '0 32px 80px rgba(0,0,0,0.45)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+
+        {/* ── Header ────────────────────────────────────────── */}
+        <div style={{
+          background: 'var(--sidebar-bg)',
+          borderRadius: '14px 14px 0 0',
+          padding: '13px 20px',
+          display: 'flex', alignItems: 'center', gap: 12,
+          flexShrink: 0,
+          boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.22), inset 0 -3px 0 rgba(0,0,0,0.28)',
+          position: 'relative', overflow: 'hidden',
+        }}>
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(130deg, rgba(255,255,255,0.12) 0%, transparent 55%)' }} />
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+            <FileText size={15} style={{ color: '#fff' }} />
+          </div>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
+              New Journal Entry
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+              {ready ? header.entry_number || 'Auto-numbered' : 'Loading…'}
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s', position: 'relative' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.8)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}>
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* ── Voucher Type Pills ─────────────────────────────── */}
+        <div style={{ padding: '10px 20px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', paddingBottom: 10 }}>
+          {VOUCHER_TYPES.map(t => {
+            const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
+            const active = header.voucher_type === t
+            return (
+              <button key={t} onClick={() => sh('voucher_type', t)}
+                style={{ padding: '5px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `2px solid ${active ? vc.text : 'var(--card-border)'}`, background: active ? vc.bg : 'var(--card-bg)', color: active ? vc.text : 'var(--text-2)', transition: 'all 0.14s' }}>
+                {t}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Body (two-panel) ──────────────────────────────── */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* LEFT: Entry Details */}
+          <div style={{ width: 340, flexShrink: 0, borderRight: '1px solid var(--card-border)', padding: '16px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: '0 0 10px' }}>Entry Details</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Date *</label>
+                  <input id="je-modal-date" type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)}
+                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Reference No</label>
+                  <input value={header.reference_no} onChange={e => sh('reference_no', e.target.value)} placeholder="Cheque / receipt #"
+                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Number</label>
+                  <input value={header.entry_number} onChange={e => sh('entry_number', e.target.value)}
+                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', fontWeight: 700, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Financial Year</label>
+                  <input value={header.financial_year} disabled
+                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-3)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Narration / Description</label>
+              <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} rows={4} placeholder="Describe the transaction…"
+                style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', minHeight: 80 }} />
+            </div>
+
+            {/* Balance summary */}
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: '0 0 8px' }}>Balance</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                <div style={{ textAlign: 'center', padding: '8px 4px', background: '#dbeafe22', borderRadius: 8, border: '1px solid #dbeafe' }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', margin: '0 0 2px' }}>Debit</p>
+                  <p style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', margin: 0 }}>{fmtAmt(totalDebit)}</p>
+                </div>
+                <div style={{ textAlign: 'center', padding: '8px 4px', background: '#dcfce722', borderRadius: 8, border: '1px solid #dcfce7' }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: '#16a34a', margin: '0 0 2px' }}>Credit</p>
+                  <p style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: '#16a34a', margin: 0 }}>{fmtAmt(totalCredit)}</p>
+                </div>
+                <div style={{ textAlign: 'center', padding: '8px 4px', background: balanced ? '#dcfce722' : '#fee2e222', borderRadius: 8, border: `1px solid ${balanced ? '#dcfce7' : '#fecaca'}` }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: balanced ? '#16a34a' : '#b91c1c', margin: '0 0 2px' }}>Status</p>
+                  <p style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: balanced ? '#16a34a' : '#b91c1c', margin: 0 }}>{balanced ? '✓ OK' : fmtAmt(diff)}</p>
+                </div>
+              </div>
+              {!balanced && totalDebit > 0 && (
+                <button onClick={autoBalance}
+                  style={{ width: '100%', padding: '6px 10px', background: '#fff7ed', color: '#c2410c', border: '1.5px dashed #fdba74', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <Zap size={12} /> Auto-balance {fmtAmt(diff)} on next empty line
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT: Transaction Lines */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Transaction Lines</p>
+              <button onClick={addLine}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                <PlusCircle size={12} /> Add Line <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 2 }}>Alt+N</span>
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+                <thead style={{ background: 'var(--table-header-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
+                  <tr>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'center', width: 30 }}>#</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account / Ledger</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 110 }}>Description</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 110 }}>Debit (₹)</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 110 }}>Credit (₹)</th>
+                    <th style={{ width: 32 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line, i) => (
+                    <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                      <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
+                      <td style={{ padding: '4px 6px' }}>
+                        <AccountSearch
+                          value={line.account_id}
+                          accounts={accounts}
+                          lineIdx={i}
+                          onChange={v => sl(i, 'account_id', v)}
+                        />
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        <input value={line.description} onChange={e => sl(i, 'description', e.target.value)} placeholder="Optional"
+                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 11, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        <input type="number" min="0" step="0.01"
+                          data-line={i} data-side="debit"
+                          value={line.debit_amount} onChange={e => sl(i, 'debit_amount', e.target.value)}
+                          placeholder="0.00"
+                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.debit_amount) > 0 ? '#dbeafe22' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box' }} />
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        <input type="number" min="0" step="0.01"
+                          data-line={i} data-side="credit"
+                          value={line.credit_amount} onChange={e => sl(i, 'credit_amount', e.target.value)}
+                          placeholder="0.00"
+                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.credit_amount) > 0 ? '#dcfce722' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box' }} />
+                      </td>
+                      <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                        <button onClick={() => removeLine(i)} disabled={lines.length <= 2}
+                          style={{ padding: 4, background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.25 : 0.7, display: 'flex', alignItems: 'center' }}
+                          onMouseEnter={e => { if (lines.length > 2) e.currentTarget.style.opacity = '1' }}
+                          onMouseLeave={e => { if (lines.length > 2) e.currentTarget.style.opacity = '0.7' }}>
+                          <Minus size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
+                  <tr>
+                    <td colSpan={3} style={{ padding: '9px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
+                    <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
+                    <td />
+                  </tr>
+                  {!balanced && totalDebit > 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '7px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#c2410c', fontSize: 11, fontWeight: 600 }}>
+                          <AlertCircle size={13} /> Not balanced — difference of {fmtAmt(diff)}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer ────────────────────────────────────────── */}
+        <div style={{
+          flexShrink: 0, borderTop: '1px solid var(--card-border)',
+          padding: '10px 20px',
+          display: 'flex', alignItems: 'center', gap: 12,
+          background: 'var(--table-header-bg)',
+        }}>
+          {/* Shortcut hints */}
+          <div style={{ flex: 1, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            {[['Ctrl+S','Draft'],['Ctrl+Enter','Post'],['Alt+N','Add Line'],['Esc','Close']].map(([k, l]) => (
+              <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-3)' }}>
+                <kbd style={{ padding: '1px 6px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)' }}>{k}</kbd>
+                {l}
+              </span>
+            ))}
+          </div>
+          <button onClick={onClose}
+            style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+            Cancel
+          </button>
+          <button onClick={() => handleSave(false)} disabled={saving}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--accent)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)' }}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Draft
+          </button>
+          <button onClick={() => handleSave(true)} disabled={saving || !balanced}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckSquare size={13} />} Save &amp; Post
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

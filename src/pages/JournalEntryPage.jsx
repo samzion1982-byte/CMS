@@ -19,6 +19,7 @@ import {
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
   Settings, Zap,
 } from 'lucide-react'
+import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -53,8 +54,8 @@ export default function JournalEntryPage() {
 
   if (needsSetup) return <EntrySetupPrompt />
 
-  if (routeId === 'new' || (routeId && routeId !== 'new')) {
-    return <JournalEntryForm entryId={routeId === 'new' ? null : routeId} />
+  if (routeId) {
+    return <JournalEntryForm entryId={routeId} />
   }
   return <JournalEntryList />
 }
@@ -97,6 +98,7 @@ function JournalEntryList() {
   const toast = useToast()
   const navigate = useNavigate()
 
+  const [showNewEntry, setShowNewEntry] = useState(false)
   const [entries,    setEntries]    = useState([])
   const [loading,    setLoading]    = useState(true)
   const [fy,         setFy]         = useState(getFY())
@@ -179,7 +181,7 @@ function JournalEntryList() {
               </div>
             )}
           </div>
-          <button onClick={() => navigate('/accounting/journal-entries/new')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={() => setShowNewEntry(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <Plus size={15} /> New Entry
           </button>
         </div>
@@ -278,6 +280,7 @@ function JournalEntryList() {
           </>
         )}
       </div>
+      {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
     </div>
   )
 }
