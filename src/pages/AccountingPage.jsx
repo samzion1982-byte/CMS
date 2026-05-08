@@ -470,7 +470,7 @@ export default function AccountingPage() {
           </button>
 
           <button
-            onClick={() => navigate('/accounting/journal-entry/new')}
+            onClick={() => navigate('/accounting/journal-entries/new')}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}
           >
             <PlusCircle size={15} /> New Entry
@@ -532,7 +532,7 @@ export default function AccountingPage() {
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
               <FileText size={28} style={{ opacity: 0.3, marginBottom: 8 }} />
               <p style={{ fontSize: 13, margin: 0 }}>No entries yet for FY {fy}</p>
-              <button onClick={() => navigate('/accounting/journal-entry/new')} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button onClick={() => navigate('/accounting/journal-entries/new')} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
                 Create first entry
               </button>
             </div>
@@ -587,7 +587,7 @@ export default function AccountingPage() {
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Actions</p>
             </div>
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => navigate('/accounting/journal-entry/new')}   color="#2563eb" />
+              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => navigate('/accounting/journal-entries/new')}   color="#2563eb" />
               <QuickBtn icon={BookMarked}    label="Chart of Accounts"   desc="Manage account heads for the church"     onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
               <QuickBtn icon={ClipboardList} label="Ledger"              desc="View transactions for any account"       onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />
               <QuickBtn icon={Scale}         label="Trial Balance"       desc="Verify total debits = total credits"     onClick={() => navigate('/accounting/trial-balance')}        color="#c2410c" />
