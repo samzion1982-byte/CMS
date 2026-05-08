@@ -752,6 +752,38 @@ html { zoom: 0.95; }
   }
   .action-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
 
+  /* ── Universal catch-all: every <button> not already covered above ──
+     Inline-styled and Tailwind-styled buttons across all pages get the
+     same shine sweep + spring lift + press as .btn / .action-btn.      */
+  button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item) {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1),
+                box-shadow 0.18s ease,
+                filter 0.15s ease;
+  }
+  button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item)::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -120%;
+    width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+    transform: skewX(-15deg);
+    transition: left 0.5s ease;
+    pointer-events: none;
+  }
+  button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item):hover:not(:disabled)::before {
+    left: 155%;
+  }
+  button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item):hover:not(:disabled) {
+    transform: translateY(-2px);
+    filter: brightness(1.07);
+  }
+  button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item):active:not(:disabled) {
+    transform: translateY(1px) scale(0.97) !important;
+    transition-duration: 0.07s !important;
+  }
+
   /* ── Form fields ── */
   .field-group { display: flex; flex-direction: column; gap: 5px; }
 
