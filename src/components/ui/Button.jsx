@@ -8,16 +8,6 @@ const variants = {
 }
 
 const styles = `
-@keyframes btnBreath {
-  0%, 100% { filter: hue-rotate(0deg)   brightness(1)    saturate(1);    }
-  35%       { filter: hue-rotate(22deg)  brightness(1.05) saturate(1.18); }
-  70%       { filter: hue-rotate(-14deg) brightness(1.02) saturate(1.1);  }
-}
-@keyframes btnBreathHover {
-  0%, 100% { filter: hue-rotate(0deg)   brightness(1.08) saturate(1.2);  }
-  35%       { filter: hue-rotate(32deg)  brightness(1.15) saturate(1.4);  }
-  70%       { filter: hue-rotate(-18deg) brightness(1.1)  saturate(1.28); }
-}
 @keyframes btnGlow {
   0%   { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(248,113,113,0.35); }
   25%  { box-shadow: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(251,191,36,0.35);  }
@@ -72,11 +62,11 @@ const styles = `
   box-shadow: 0 2px 0 rgba(0,0,0,0.14),
               0 4px 14px rgba(37,99,235,0.32),
               inset 0 1px 0 rgba(255,255,255,0.18);
-  animation: btnBreath 5s ease-in-out infinite;
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  animation: btnGlow 2.5s ease-in-out infinite, btnBreathHover 2s ease-in-out infinite;
+  filter: brightness(1.06);
+  animation: btnGlow 2.5s ease-in-out infinite;
 }
 
 .btn-secondary {
@@ -113,11 +103,11 @@ const styles = `
   box-shadow: 0 2px 0 rgba(0,0,0,0.14),
               0 4px 12px rgba(220,38,38,0.28),
               inset 0 1px 0 rgba(255,255,255,0.16);
-  animation: btnBreath 5s ease-in-out infinite;
 }
 .btn-danger:hover:not(:disabled) {
   transform: translateY(-2px);
-  animation: btnGlow 2.5s ease-in-out infinite, btnBreathHover 2s ease-in-out infinite;
+  filter: brightness(1.06);
+  animation: btnGlow 2.5s ease-in-out infinite;
 }
 
 .btn-ghost { background: transparent; color: #64748b; border-color: transparent; }
