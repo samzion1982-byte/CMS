@@ -58,23 +58,33 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
     setTimeout(() => {
       setFocused(false)
       setOpen(false)
-      if (!value && savedRef.current) onChange(savedRef.current)
+      // Restore previous selection if nothing was newly chosen
+      if (!value && savedRef.current) {
+        const restored = accounts.find(a => a.id === savedRef.current)
+        const side = restored ? getDefaultSide(restored.account_type) : null
+        onChange(savedRef.current, side)
+      }
     }, 160)
   }
 
   function select(a) {
     savedRef.current = a.id
-    onChange(a.id)
+    const side = getDefaultSide(a.account_type)
+    onChange(a.id, side)
     setFocused(false)
     setOpen(false)
-    // Auto-focus debit or credit
-    const side = getDefaultSide(a.account_type)
     setTimeout(() => {
       document.querySelector(`[data-line="${lineIdx}"][data-side="${side}"]`)?.focus()
     }, 40)
   }
 
   function handleKey(e) {
+    // Tab confirms highlighted result and moves to amount field
+    if (e.key === 'Tab' && open && filtered.length > 0) {
+      e.preventDefault()
+      select(filtered[hi])
+      return
+    }
     if (!open || !filtered.length) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
@@ -99,7 +109,7 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
           borderRadius: 7, fontSize: 12,
           background: selected ? (tc.bg || '#f0fdf4') : 'var(--input-bg)',
           color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box',
-          transition: 'border-color 0.15s',
+          transition: 'border-color 0.15s, background 0.15s',
         }}
       />
       {open && filtered.length > 0 && (
@@ -122,7 +132,9 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
                 }}>
                 <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: i === hi ? 'var(--accent)' : 'var(--text-1)' }}>{a.name}</span>
                 {a.code && <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-3)' }}>{a.code}</span>}
-                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: bc.bg, color: bc.text }}>{displayAccountType(a.account_type)}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: bc.bg, color: bc.text }}>
+                  {displayAccountType(a.account_type)}
+                </span>
               </div>
             )
           })}
@@ -156,19 +168,18 @@ export default function JournalEntryModal({ onClose, onSaved }) {
     reference_no:   '',
   })
 
+  // Lines: side = 'debit' | 'credit' | null  (set when account is picked)
   const [lines, setLines] = useState([
-    { account_id: '', debit_amount: '', credit_amount: '', description: '' },
-    { account_id: '', debit_amount: '', credit_amount: '', description: '' },
+    { account_id: '', debit_amount: '', credit_amount: '', side: null },
+    { account_id: '', debit_amount: '', credit_amount: '', side: null },
   ])
 
-  // Load accounts
   useEffect(() => {
     getChartOfAccounts(true)
       .then(all => { setAccounts(getPostableAccountsWithPath(all)); setReady(true) })
       .catch(() => setReady(true))
   }, [])
 
-  // Auto entry number
   useEffect(() => {
     nextEntryNumber(header.financial_year, header.voucher_type)
       .then(n => setHeader(h => ({ ...h, entry_number: n })))
@@ -180,11 +191,21 @@ export default function JournalEntryModal({ onClose, onSaved }) {
     setTimeout(() => document.getElementById('je-modal-date')?.focus(), 120)
   }, [])
 
-  const sh  = (k, v) => setHeader(h => ({ ...h, [k]: v }))
-  const sl  = (i, k, v) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l))
+  const sh = (k, v) => setHeader(h => ({ ...h, [k]: v }))
+
+  function handleLineAccountChange(i, accountId, side) {
+    setLines(ls => ls.map((l, idx) => {
+      if (idx !== i) return l
+      return { ...l, account_id: accountId, side: accountId ? side : null }
+    }))
+  }
+
+  function sl(i, k, v) {
+    setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l))
+  }
 
   function addLine() {
-    setLines(ls => [...ls, { account_id: '', debit_amount: '', credit_amount: '', description: '' }])
+    setLines(ls => [...ls, { account_id: '', debit_amount: '', credit_amount: '', side: null }])
   }
   function removeLine(i) {
     if (lines.length <= 2) return
@@ -227,7 +248,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
     setSaving(false)
   }
 
-  // Stable refs for keyboard shortcuts
+  // Stable refs — always point to current closures
   const saveDraftRef = useRef(null)
   const savePostRef  = useRef(null)
   const addLineRef   = useRef(null)
@@ -235,6 +256,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
   savePostRef.current  = () => handleSave(true)
   addLineRef.current   = addLine
 
+  // Keyboard shortcuts — capture phase so they fire even inside inputs
   useEffect(() => {
     function onKey(e) {
       if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === 's') { e.preventDefault(); saveDraftRef.current?.() }
@@ -242,18 +264,19 @@ export default function JournalEntryModal({ onClose, onSaved }) {
       if (e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); addLineRef.current?.() }
       if (e.key === 'Escape') onClose()
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
   const VCOL = VOUCHER_COLOR[header.voucher_type] || { bg: '#f1f5f9', text: '#475569' }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)',
-      backdropFilter: 'blur(3px)', zIndex: 9999,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12,
-    }}
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.65)',
+        backdropFilter: 'blur(3px)', zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12,
+      }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
@@ -263,44 +286,62 @@ export default function JournalEntryModal({ onClose, onSaved }) {
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
 
-        {/* ── Header ────────────────────────────────────────── */}
+        {/* ── Header — color follows voucher type ─────────────── */}
         <div style={{
-          background: 'var(--sidebar-bg)',
+          background: `linear-gradient(135deg, ${VCOL.text}f0 0%, ${VCOL.text}cc 100%)`,
           borderRadius: '14px 14px 0 0',
           padding: '13px 20px',
           display: 'flex', alignItems: 'center', gap: 12,
           flexShrink: 0,
-          boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.22), inset 0 -3px 0 rgba(0,0,0,0.28)',
+          boxShadow: `inset 0 1.5px 0 rgba(255,255,255,0.22), inset 0 -3px 0 rgba(0,0,0,0.18), 0 4px 16px ${VCOL.text}33`,
           position: 'relative', overflow: 'hidden',
+          transition: 'background 0.35s ease',
         }}>
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(130deg, rgba(255,255,255,0.12) 0%, transparent 55%)' }} />
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            <FileText size={15} style={{ color: '#fff' }} />
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(130deg, rgba(255,255,255,0.18) 0%, transparent 55%)' }} />
+          <div style={{
+            width: 34, height: 34, borderRadius: 9,
+            background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
+            transition: 'background 0.3s',
+          }}>
+            <FileText size={16} style={{ color: '#fff' }} />
           </div>
           <div style={{ position: 'relative', flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
-              New Journal Entry
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>New {header.voucher_type} Entry</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>
               {ready ? header.entry_number || 'Auto-numbered' : 'Loading…'}
             </div>
           </div>
           <button onClick={onClose}
-            style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s', position: 'relative' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.8)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}>
+            style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.28)', borderRadius: 7, padding: '5px 8px', cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', transition: 'all 0.15s', position: 'relative' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.75)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}>
             <X size={14} />
           </button>
         </div>
 
         {/* ── Voucher Type Pills ─────────────────────────────── */}
-        <div style={{ padding: '10px 20px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', paddingBottom: 10 }}>
+        <div style={{ padding: '10px 20px', display: 'flex', gap: 7, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', alignItems: 'center' }}>
           {VOUCHER_TYPES.map(t => {
             const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
             const active = header.voucher_type === t
             return (
               <button key={t} onClick={() => sh('voucher_type', t)}
-                style={{ padding: '5px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `2px solid ${active ? vc.text : 'var(--card-border)'}`, background: active ? vc.bg : 'var(--card-bg)', color: active ? vc.text : 'var(--text-2)', transition: 'all 0.14s' }}>
+                style={{
+                  padding: active ? '7px 20px' : '6px 16px',
+                  borderRadius: 99,
+                  fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: `2px solid ${active ? vc.text : 'var(--card-border)'}`,
+                  background: active ? vc.text : 'transparent',
+                  color: active ? '#fff' : 'var(--text-2)',
+                  boxShadow: active ? `0 4px 14px ${vc.text}44, 0 2px 4px ${vc.text}28` : 'none',
+                  transform: active ? 'translateY(-2px) scale(1.05)' : 'translateY(0) scale(1)',
+                  transition: 'all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  position: 'relative', overflow: 'hidden',
+                }}>
+                {active && (
+                  <span style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, transparent 60%)', pointerEvents: 'none', borderRadius: 99 }} />
+                )}
                 {t}
               </button>
             )
@@ -311,45 +352,51 @@ export default function JournalEntryModal({ onClose, onSaved }) {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
           {/* LEFT: Entry Details */}
-          <div style={{ width: 340, flexShrink: 0, borderRight: '1px solid var(--card-border)', padding: '16px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ width: 308, flexShrink: 0, borderRight: '1px solid var(--card-border)', padding: '14px 16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+            {/* FY badge at top */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: 0 }}>Entry Details</p>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99,
+                background: `${VCOL.text}16`, color: VCOL.text, border: `1px solid ${VCOL.text}40`,
+                transition: 'all 0.25s',
+              }}>
+                FY {header.financial_year}
+              </span>
+            </div>
+
+            {/* Date — full width, auto-focused */}
             <div>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: '0 0 10px' }}>Entry Details</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                <div>
-                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Date *</label>
-                  <input id="je-modal-date" type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)}
-                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Reference No</label>
-                  <input value={header.reference_no} onChange={e => sh('reference_no', e.target.value)} placeholder="Cheque / receipt #"
-                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
+              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Date *</label>
+              <input id="je-modal-date" type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)}
+                style={{ width: '100%', height: 36, padding: '0 10px', border: `1.5px solid ${VCOL.text}66`, borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.25s' }} />
+            </div>
+
+            {/* Entry # + Reference */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry No</label>
+                <input value={header.entry_number} onChange={e => sh('entry_number', e.target.value)}
+                  style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', fontWeight: 700, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Number</label>
-                  <input value={header.entry_number} onChange={e => sh('entry_number', e.target.value)}
-                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', fontWeight: 700, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Financial Year</label>
-                  <input value={header.financial_year} disabled
-                    style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-3)', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Reference</label>
+                <input value={header.reference_no} onChange={e => sh('reference_no', e.target.value)} placeholder="Cheque #"
+                  style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
               </div>
             </div>
 
+            {/* Narration */}
             <div>
-              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Narration / Description</label>
-              <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} rows={4} placeholder="Describe the transaction…"
-                style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', minHeight: 80 }} />
+              <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Narration</label>
+              <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} rows={3} placeholder="Describe the transaction…"
+                style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', minHeight: 72 }} />
             </div>
 
             {/* Balance summary */}
             <div>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: '0 0 8px' }}>Balance</p>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', margin: '0 0 8px' }}>Balance Check</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
                 <div style={{ textAlign: 'center', padding: '8px 4px', background: '#dbeafe22', borderRadius: 8, border: '1px solid #dbeafe' }}>
                   <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', margin: '0 0 2px' }}>Debit</p>
@@ -367,7 +414,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
               {!balanced && totalDebit > 0 && (
                 <button onClick={autoBalance}
                   style={{ width: '100%', padding: '6px 10px', background: '#fff7ed', color: '#c2410c', border: '1.5px dashed #fdba74', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                  <Zap size={12} /> Auto-balance {fmtAmt(diff)} on next empty line
+                  <Zap size={12} /> Auto-balance {fmtAmt(diff)}
                 </button>
               )}
             </div>
@@ -376,76 +423,102 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           {/* RIGHT: Transaction Lines */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Transaction Lines</p>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Transaction Lines</p>
+                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '2px 0 0' }}>
+                  Tab/Enter to confirm account → cursor jumps to Debit or Credit automatically
+                </p>
+              </div>
               <button onClick={addLine}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                <PlusCircle size={12} /> Add Line <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 2 }}>Alt+N</span>
+                <PlusCircle size={12} /> Add Line <span style={{ opacity: 0.55, fontSize: 9, marginLeft: 2 }}>Alt+N</span>
               </button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 380 }}>
                 <thead style={{ background: 'var(--table-header-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
                     <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'center', width: 30 }}>#</th>
                     <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account / Ledger</th>
-                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 110 }}>Description</th>
-                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 110 }}>Debit (₹)</th>
-                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 110 }}>Credit (₹)</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 130 }}>Debit (₹)</th>
+                    <th style={{ padding: '8px 10px', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 130 }}>Credit (₹)</th>
                     <th style={{ width: 32 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((line, i) => (
-                    <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
-                      <td style={{ padding: '6px 10px', fontSize: 11, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <AccountSearch
-                          value={line.account_id}
-                          accounts={accounts}
-                          lineIdx={i}
-                          onChange={v => sl(i, 'account_id', v)}
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input value={line.description} onChange={e => sl(i, 'description', e.target.value)} placeholder="Optional"
-                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 11, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input type="number" min="0" step="0.01"
-                          data-line={i} data-side="debit"
-                          value={line.debit_amount} onChange={e => sl(i, 'debit_amount', e.target.value)}
-                          placeholder="0.00"
-                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.debit_amount) > 0 ? '#dbeafe22' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box' }} />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input type="number" min="0" step="0.01"
-                          data-line={i} data-side="credit"
-                          value={line.credit_amount} onChange={e => sl(i, 'credit_amount', e.target.value)}
-                          placeholder="0.00"
-                          style={{ width: '100%', height: 34, padding: '0 7px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.credit_amount) > 0 ? '#dcfce722' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box' }} />
-                      </td>
-                      <td style={{ padding: '4px 6px', textAlign: 'center' }}>
-                        <button onClick={() => removeLine(i)} disabled={lines.length <= 2}
-                          style={{ padding: 4, background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.25 : 0.7, display: 'flex', alignItems: 'center' }}
-                          onMouseEnter={e => { if (lines.length > 2) e.currentTarget.style.opacity = '1' }}
-                          onMouseLeave={e => { if (lines.length > 2) e.currentTarget.style.opacity = '0.7' }}>
-                          <Minus size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {lines.map((line, i) => {
+                    const debitDisabled  = line.side === 'credit'
+                    const creditDisabled = line.side === 'debit'
+                    return (
+                      <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                        <td style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
+                        <td style={{ padding: '4px 6px', minWidth: 180 }}>
+                          <AccountSearch
+                            value={line.account_id}
+                            accounts={accounts}
+                            lineIdx={i}
+                            onChange={(accountId, side) => handleLineAccountChange(i, accountId, side)}
+                          />
+                        </td>
+                        <td style={{ padding: '4px 6px' }}>
+                          <input type="number" min="0" step="0.01"
+                            data-line={i} data-side="debit"
+                            value={line.debit_amount}
+                            onChange={e => sl(i, 'debit_amount', e.target.value)}
+                            disabled={debitDisabled}
+                            placeholder={debitDisabled ? '—' : '0.00'}
+                            style={{
+                              width: '100%', height: 34, padding: '0 8px',
+                              border: `1.5px solid ${debitDisabled ? 'transparent' : '#bfdbfe'}`,
+                              borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right',
+                              background: debitDisabled ? 'var(--table-header-bg)' : parseFloat(line.debit_amount) > 0 ? '#dbeafe44' : 'var(--input-bg)',
+                              color: debitDisabled ? 'var(--text-3)' : '#2563eb',
+                              outline: 'none', boxSizing: 'border-box',
+                              cursor: debitDisabled ? 'not-allowed' : 'text',
+                              opacity: debitDisabled ? 0.45 : 1,
+                            }} />
+                        </td>
+                        <td style={{ padding: '4px 6px' }}>
+                          <input type="number" min="0" step="0.01"
+                            data-line={i} data-side="credit"
+                            value={line.credit_amount}
+                            onChange={e => sl(i, 'credit_amount', e.target.value)}
+                            disabled={creditDisabled}
+                            placeholder={creditDisabled ? '—' : '0.00'}
+                            style={{
+                              width: '100%', height: 34, padding: '0 8px',
+                              border: `1.5px solid ${creditDisabled ? 'transparent' : '#bbf7d0'}`,
+                              borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right',
+                              background: creditDisabled ? 'var(--table-header-bg)' : parseFloat(line.credit_amount) > 0 ? '#dcfce744' : 'var(--input-bg)',
+                              color: creditDisabled ? 'var(--text-3)' : '#16a34a',
+                              outline: 'none', boxSizing: 'border-box',
+                              cursor: creditDisabled ? 'not-allowed' : 'text',
+                              opacity: creditDisabled ? 0.45 : 1,
+                            }} />
+                        </td>
+                        <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                          <button onClick={() => removeLine(i)} disabled={lines.length <= 2}
+                            style={{ padding: 4, background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.2 : 0.6, display: 'flex', alignItems: 'center', transition: 'opacity 0.15s' }}
+                            onMouseEnter={e => { if (lines.length > 2) e.currentTarget.style.opacity = '1' }}
+                            onMouseLeave={e => { if (lines.length > 2) e.currentTarget.style.opacity = '0.6' }}>
+                            <Minus size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
                   <tr>
-                    <td colSpan={3} style={{ padding: '9px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL</td>
+                    <td colSpan={2} style={{ padding: '9px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
                     <td style={{ padding: '9px 10px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
                     <td />
                   </tr>
                   {!balanced && totalDebit > 0 && (
                     <tr>
-                      <td colSpan={6} style={{ padding: '7px 10px' }}>
+                      <td colSpan={5} style={{ padding: '7px 10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#c2410c', fontSize: 11, fontWeight: 600 }}>
                           <AlertCircle size={13} /> Not balanced — difference of {fmtAmt(diff)}
                         </div>
@@ -465,9 +538,8 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           display: 'flex', alignItems: 'center', gap: 12,
           background: 'var(--table-header-bg)',
         }}>
-          {/* Shortcut hints */}
           <div style={{ flex: 1, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            {[['Ctrl+S','Draft'],['Ctrl+Enter','Post'],['Alt+N','Add Line'],['Esc','Close']].map(([k, l]) => (
+            {[['Ctrl+S','Draft'],['Ctrl+↵','Post'],['Alt+N','Add Line'],['Esc','Close']].map(([k, l]) => (
               <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-3)' }}>
                 <kbd style={{ padding: '1px 6px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)' }}>{k}</kbd>
                 {l}
@@ -479,11 +551,11 @@ export default function JournalEntryModal({ onClose, onSaved }) {
             Cancel
           </button>
           <button onClick={() => handleSave(false)} disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--accent)', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', background: 'var(--card-bg)', border: `1.5px solid ${VCOL.text}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: VCOL.text, transition: 'border-color 0.25s, color 0.25s' }}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Draft
           </button>
           <button onClick={() => handleSave(true)} disabled={saving || !balanced}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 22px', background: balanced ? VCOL.text : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: balanced ? 'pointer' : 'not-allowed', transition: 'background 0.25s', boxShadow: balanced ? `0 4px 12px ${VCOL.text}44` : 'none' }}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckSquare size={13} />} Save &amp; Post
           </button>
         </div>
