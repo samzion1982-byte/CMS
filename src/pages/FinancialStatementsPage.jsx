@@ -1,26 +1,245 @@
 /* ═══════════════════════════════════════════════════════════════
-   FinancialStatementsPage.jsx — P&L + Balance Sheet
+   FinancialStatementsPage.jsx
+   Church financial statements — three standard reports:
+
+   1. Receipts & Payments Account  (cash-basis summary)
+   2. Income & Expenditure Account (accrual — Surplus / Deficit)
+   3. Balance Sheet                (Assets vs Liabilities + Corpus Fund)
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getIncomeStatement, getBalanceSheet, getFY, fyOptions, fmtAmt } from '../lib/accountingLib'
+import {
+  getReceiptsAndPayments,
+  getIncomeStatement,
+  getBalanceSheet,
+  getFY, fyOptions, fmtAmt,
+} from '../lib/accountingLib'
 import { getChurch } from '../lib/supabase'
-import { BarChart2, ArrowLeft, Loader2, Printer, ChevronDown } from 'lucide-react'
+import {
+  BarChart2, ArrowLeft, Loader2, Printer, ChevronDown,
+  RefreshCw, CheckCircle, XCircle,
+} from 'lucide-react'
 
-// ── Section Row ───────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+//  Shared layout helpers
+// ════════════════════════════════════════════════════════════════
 
-function StmtRow({ label, amount, bold, indent, positive = true, isHeader, isTotal }) {
+const TABS = [
+  { id: 'rp', label: 'Receipts & Payments' },
+  { id: 'ie', label: 'Income & Expenditure' },
+  { id: 'bs', label: 'Balance Sheet'        },
+]
+
+const TH = {
+  padding: '10px 16px', fontSize: 11, fontWeight: 700,
+  textTransform: 'uppercase', letterSpacing: '0.07em',
+  color: 'var(--text-3)', textAlign: 'left',
+}
+const TD = { padding: '8px 16px', fontSize: 13, color: 'var(--text-1)', verticalAlign: 'middle' }
+
+// Two-column table used for both R&P and I&E
+function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel }) {
+  const maxLen = Math.max(leftRows.length, rightRows.length)
+  const rows   = Array.from({ length: maxLen }, (_, i) => ({ l: leftRows[i] || null, r: rightRows[i] || null }))
+
   return (
-    <tr style={{ background: isHeader ? 'var(--table-header-bg)' : isTotal ? 'rgba(0,0,0,0.04)' : 'transparent', borderTop: isTotal ? '2px solid var(--card-border)' : 'none' }}>
-      <td style={{ padding: isHeader ? '9px 16px' : '7px 16px', fontSize: isHeader ? 11 : 13, fontWeight: isHeader ? 700 : (bold || isTotal ? 700 : 400), color: isHeader ? 'var(--text-3)' : 'var(--text-1)', textTransform: isHeader ? 'uppercase' : 'none', letterSpacing: isHeader ? '0.07em' : 'normal', paddingLeft: indent ? 32 : 16 }}>
-        {label}
+    <div style={{ border: '1.5px solid var(--card-border)', borderRadius: 10, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead style={{ background: 'var(--table-header-bg)' }}>
+          <tr>
+            <th style={TH}>{leftLabel}</th>
+            <th style={{ ...TH, textAlign: 'right', width: 150 }}>Amount</th>
+            <th style={{ ...TH, borderLeft: '2px solid var(--card-border)' }}>{rightLabel}</th>
+            <th style={{ ...TH, textAlign: 'right', width: 150 }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
+              <CellPair cell={row.l} />
+              <td style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: row.r?.bold ? 700 : 400, paddingLeft: row.r?.indent ? 36 : 16, color: row.r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: row.r?.italic ? 'italic' : 'normal' }}>
+                {row.r?.label || ''}
+              </td>
+              <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: row.r?.bold ? 700 : 400, color: 'var(--text-1)' }}>
+                {row.r?.amount !== undefined ? fmtAmt(row.r.amount) : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
+            <td style={{ ...TD, fontWeight: 800 }}>TOTAL</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(leftTotal)}</td>
+            <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)' }}>TOTAL</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(rightTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function CellPair({ cell }) {
+  return (
+    <>
+      <td style={{ ...TD, fontWeight: cell?.bold ? 700 : 400, paddingLeft: cell?.indent ? 36 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal' }}>
+        {cell?.label || ''}
       </td>
-      <td style={{ padding: isHeader ? '9px 16px' : '7px 16px', fontSize: isHeader ? 11 : 13, fontWeight: bold || isTotal ? 700 : 400, fontFamily: amount !== undefined ? 'monospace' : 'inherit', textAlign: 'right', color: amount !== undefined ? (amount >= 0 ? (positive ? '#16a34a' : '#b91c1c') : (positive ? '#b91c1c' : '#16a34a')) : 'var(--text-3)' }}>
-        {amount !== undefined ? fmtAmt(Math.abs(amount)) : ''}
+      <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: cell?.bold ? 700 : 400, color: 'var(--text-1)' }}>
+        {cell?.amount !== undefined ? fmtAmt(cell.amount) : ''}
       </td>
-    </tr>
+    </>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Receipts & Payments Account
+// ════════════════════════════════════════════════════════════════
+
+function ReceiptsPayments({ data }) {
+  const leftRows = [
+    { label: 'Opening Balance (Cash & Bank)', amount: data.openingBalance, bold: true },
+    { label: '' },
+    { label: 'RECEIPTS', bold: true, muted: true },
+    ...data.receipts.map(r => ({ label: r.name, amount: r.amount, indent: true })),
+    { label: '' },
+    { label: 'Total Receipts', amount: data.totalReceipts, bold: true },
+  ]
+
+  const rightRows = [
+    { label: 'PAYMENTS', bold: true, muted: true },
+    { label: '' },
+    ...data.payments.map(p => ({ label: p.name, amount: p.amount, indent: true })),
+    { label: '' },
+    { label: 'Total Payments', amount: data.totalPayments, bold: true },
+    { label: '' },
+    { label: 'Closing Balance (Cash & Bank)', amount: data.closingBalance, bold: true },
+  ]
+
+  const leftTotal  = data.openingBalance + data.totalReceipts
+  const rightTotal = data.totalPayments  + data.closingBalance
+
+  return (
+    <div>
+      <TwoColTable
+        leftRows={leftRows} rightRows={rightRows}
+        leftTotal={leftTotal} rightTotal={rightTotal}
+        leftLabel="Dr  —  Receipts"
+        rightLabel="Cr  —  Payments"
+      />
+      <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
+        Receipts grouped by income category · Payments grouped by expense category
+      </p>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Income & Expenditure Account
+// ════════════════════════════════════════════════════════════════
+
+function IncomeExpenditure({ data }) {
+  const surplus   = data.surplus
+  const isDeficit = surplus < 0
+
+  const leftRows = [
+    { label: 'EXPENDITURE', bold: true, muted: true },
+    { label: '' },
+    ...data.expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    { label: '' },
+    { label: 'Total Expenditure', amount: data.totalExpenses, bold: true },
+    { label: '' },
+    ...(!isDeficit ? [{ label: 'Surplus transferred to Corpus Fund', amount: surplus, bold: true, italic: true }] : []),
+  ]
+
+  const rightRows = [
+    { label: 'INCOME', bold: true, muted: true },
+    { label: '' },
+    ...data.income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    { label: '' },
+    { label: 'Total Income', amount: data.totalIncome, bold: true },
+    { label: '' },
+    ...(isDeficit ? [{ label: 'Deficit (Excess of Expenditure)', amount: Math.abs(surplus), bold: true, italic: true }] : []),
+  ]
+
+  const leftTotal  = data.totalExpenses + (surplus > 0 ? surplus : 0)
+  const rightTotal = data.totalIncome   + (surplus < 0 ? Math.abs(surplus) : 0)
+
+  return (
+    <div>
+      <TwoColTable
+        leftRows={leftRows} rightRows={rightRows}
+        leftTotal={leftTotal} rightTotal={rightTotal}
+        leftLabel="Dr  —  Expenditure"
+        rightLabel="Cr  —  Income"
+      />
+      <div style={{ marginTop: 14, padding: '12px 20px', borderRadius: 10, background: isDeficit ? '#fff5f5' : '#f0fdf4', border: `1.5px solid ${isDeficit ? '#fca5a5' : '#86efac'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+        {isDeficit ? <XCircle size={20} color="#b91c1c" /> : <CheckCircle size={20} color="#16a34a" />}
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 800, margin: 0, color: isDeficit ? '#b91c1c' : '#15803d' }}>
+            {isDeficit ? `Deficit: ${fmtAmt(Math.abs(surplus))}` : `Surplus: ${fmtAmt(surplus)}`}
+          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
+            {isDeficit
+              ? 'Expenditure exceeds Income — deficit carried to Corpus Fund.'
+              : 'Income exceeds Expenditure — surplus transferred to Corpus Fund.'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Balance Sheet
+// ════════════════════════════════════════════════════════════════
+
+function BalanceSheet({ data }) {
+  const isBalanced = Math.abs(data.totalAssets - (data.totalLiabilities + data.totalCorpus)) < 0.01
+
+  const leftRows = [
+    { label: 'CORPUS / GENERAL FUND', bold: true, muted: true },
+    { label: '' },
+    ...data.corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    { label: data.surplus >= 0 ? 'Add: Surplus for the year' : 'Less: Deficit for the year', amount: Math.abs(data.surplus), indent: true, italic: true },
+    { label: 'Total Corpus Fund', amount: data.totalCorpus, bold: true },
+    { label: '' },
+    { label: 'LIABILITIES', bold: true, muted: true },
+    { label: '' },
+    ...data.liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    { label: 'Total Liabilities', amount: data.totalLiabilities, bold: true },
+  ]
+
+  const rightRows = [
+    { label: 'ASSETS', bold: true, muted: true },
+    { label: '' },
+    ...data.assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    { label: '' },
+    { label: 'Total Assets', amount: data.totalAssets, bold: true },
+  ]
+
+  const leftTotal  = data.totalCorpus + data.totalLiabilities
+  const rightTotal = data.totalAssets
+
+  return (
+    <div>
+      <TwoColTable
+        leftRows={leftRows} rightRows={rightRows}
+        leftTotal={leftTotal} rightTotal={rightTotal}
+        leftLabel="Corpus Fund & Liabilities"
+        rightLabel="Assets"
+      />
+      <div style={{ marginTop: 14, padding: '12px 20px', borderRadius: 10, background: isBalanced ? '#f0fdf4' : '#fff5f5', border: `1.5px solid ${isBalanced ? '#86efac' : '#fca5a5'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+        {isBalanced ? <CheckCircle size={20} color="#16a34a" /> : <XCircle size={20} color="#b91c1c" />}
+        <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: isBalanced ? '#15803d' : '#b91c1c' }}>
+          {isBalanced
+            ? 'Balance Sheet is balanced — Assets = Corpus Fund + Liabilities'
+            : `Does not balance — difference ${fmtAmt(Math.abs(data.totalAssets - data.totalLiabilities - data.totalCorpus))}`}
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -29,35 +248,40 @@ function StmtRow({ label, amount, bold, indent, positive = true, isHeader, isTot
 // ════════════════════════════════════════════════════════════════
 
 export default function FinancialStatementsPage() {
-  const navigate      = useNavigate()
-  const toast         = useToast()
-  const [searchParams] = useSearchParams()
-  const initTab = searchParams.get('tab') === 'bs' ? 'bs' : 'pl'
+  const navigate = useNavigate()
+  const toast    = useToast()
 
-  const [tab,       setTab]       = useState(initTab)
+  const [tab,       setTab]       = useState('rp')
   const [fy,        setFy]        = useState(getFY())
   const [fyOpen,    setFyOpen]    = useState(false)
   const [loading,   setLoading]   = useState(false)
   const [generated, setGenerated] = useState(false)
-  const [pl,        setPl]        = useState(null)
+  const [rp,        setRp]        = useState(null)
+  const [ie,        setIe]        = useState(null)
   const [bs,        setBs]        = useState(null)
   const [church,    setChurch]    = useState(null)
   const FYS = fyOptions()
 
   const generate = useCallback(async () => {
     setLoading(true)
+    setGenerated(false)
     try {
-      const [plData, bsData, c] = await Promise.all([getIncomeStatement(fy), getBalanceSheet(fy), getChurch()])
-      setPl(plData); setBs(bsData); setChurch(c)
+      const [rpData, ieData, bsData, c] = await Promise.all([
+        getReceiptsAndPayments(fy),
+        getIncomeStatement(fy),
+        getBalanceSheet(fy),
+        getChurch(),
+      ])
+      setRp(rpData); setIe(ieData); setBs(bsData); setChurch(c)
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
   }, [fy, toast])
 
-  const bsBalanced = bs ? Math.abs(bs.totalAssets - (bs.totalLiabilities + bs.totalEquity)) < 0.01 : false
-
   return (
     <div className="page-container">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
@@ -67,181 +291,101 @@ export default function FinancialStatementsPage() {
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <BarChart2 size={20} style={{ color: 'var(--accent)' }} /> Financial Statements
             </h1>
-            <p className="page-subtitle">Income Statement &amp; Balance Sheet</p>
+            <p className="page-subtitle">R&amp;P · Income &amp; Expenditure · Balance Sheet — FY {fy}</p>
           </div>
         </div>
-        {generated && (
-          <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-            <Printer size={15} /> Print
-          </button>
-        )}
-      </div>
 
-      {/* Controls */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative' }}>
-          <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Financial Year</label>
-          <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px', height: 36, background: 'var(--input-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-            FY {fy} <ChevronDown size={13} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* FY picker */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setFyOpen(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+              FY {fy} <ChevronDown size={14} />
+            </button>
+            {fyOpen && (
+              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 200, minWidth: 130, overflow: 'hidden' }}>
+                {FYS.map(f => (
+                  <button key={f} onClick={() => { setFy(f); setFyOpen(false); setGenerated(false) }}
+                    style={{ display: 'block', width: '100%', padding: '9px 14px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
+                    {f}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button onClick={generate} disabled={loading}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {loading ? 'Generating…' : generated ? 'Refresh' : 'Generate'}
           </button>
-          {fyOpen && (
-            <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
-              {FYS.map(f => <button key={f} onClick={() => { setFy(f); setFyOpen(false); setGenerated(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>FY {f}</button>)}
-            </div>
+
+          {generated && (
+            <button onClick={() => window.print()}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+              <Printer size={14} /> Print
+            </button>
           )}
         </div>
-        <button onClick={generate} disabled={loading}
-          style={{ height: 36, padding: '0 22px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
-          {loading ? <Loader2 size={14} className="animate-spin" /> : null} Generate
-        </button>
       </div>
 
-      {/* Tab selector */}
-      {generated && (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
-          {[['pl', 'Income Statement (P&L)'], ['bs', 'Balance Sheet']].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)}
-              style={{ padding: '8px 20px', borderRadius: 8, border: '2px solid', borderColor: tab === key ? 'var(--accent)' : 'var(--card-border)', background: tab === key ? 'var(--accent)' : 'var(--card-bg)', color: tab === key ? '#fff' : 'var(--text-2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* ── Tabs ───────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--table-header-bg)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ padding: '8px 22px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: tab === t.id ? 700 : 500, background: tab === t.id ? 'var(--card-bg)' : 'transparent', color: tab === t.id ? 'var(--accent)' : 'var(--text-2)', boxShadow: tab === t.id ? '0 1px 4px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
+      {/* ── Empty state ─────────────────────────────────────────── */}
       {!generated && !loading && (
-        <div className="card" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
-          <BarChart2 size={32} style={{ opacity: 0.25, display: 'block', margin: '0 auto 12px' }} />
-          <p style={{ fontSize: 13 }}>Select a financial year and click Generate to view statements.</p>
+        <div style={{ padding: '60px 24px', textAlign: 'center', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 12 }}>
+          <BarChart2 size={36} style={{ color: 'var(--text-3)', display: 'block', margin: '0 auto 12px' }} />
+          <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-2)', margin: '0 0 6px' }}>
+            Select a Financial Year and click Generate
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>
+            Generates all three statements for FY {fy}
+          </p>
+          <button onClick={generate}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            <RefreshCw size={14} /> Generate for FY {fy}
+          </button>
         </div>
       )}
 
       {loading && (
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} /> Generating statements…
+        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
+          <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
+          Generating financial statements…
         </div>
       )}
 
-      {/* Print header (visible in print only) */}
-      {generated && (
-        <div className="print-only" style={{ textAlign: 'center', marginBottom: 16 }}>
-          <p style={{ fontSize: 17, fontWeight: 800, margin: '0 0 4px' }}>{church?.church_name}</p>
-          <p style={{ fontSize: 12, margin: '0 0 4px' }}>{church?.address}, {church?.city}</p>
-          <p style={{ fontSize: 14, fontWeight: 700, margin: '0 0 2px' }}>{tab === 'pl' ? 'Income & Expenditure Statement' : 'Balance Sheet'}</p>
-          <p style={{ fontSize: 12, margin: 0 }}>For the Financial Year {fy}</p>
+      {/* ── Reports ─────────────────────────────────────────────── */}
+      {generated && !loading && (
+        <div className="card" style={{ padding: 24 }}>
+          {/* Church header */}
+          <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--card-border)' }}>
+            <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>
+              {church?.church_name || 'Church'}
+            </p>
+            {church?.diocese && (
+              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 2px' }}>{church.diocese}</p>
+            )}
+            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+              Financial Year {fy} &nbsp;·&nbsp;
+              {tab === 'rp' ? 'Receipts & Payments Account' : tab === 'ie' ? 'Income & Expenditure Account' : 'Balance Sheet'}
+            </p>
+          </div>
+
+          {tab === 'rp' && rp && <ReceiptsPayments data={rp} />}
+          {tab === 'ie' && ie && <IncomeExpenditure data={ie} />}
+          {tab === 'bs' && bs && <BalanceSheet data={bs} />}
         </div>
       )}
 
-      {/* ── P&L ─────────────────────────────────────────────── */}
-      {generated && !loading && tab === 'pl' && pl && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          {/* Income */}
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <StmtRow label="INCOME" isHeader />
-              {pl.income.map(a => (
-                <StmtRow key={a.id} label={a.name} amount={a.total_credit - a.total_debit} indent positive />
-              ))}
-              <StmtRow label="Total Income" amount={pl.totalIncome} bold isTotal positive />
-            </table>
-          </div>
-
-          {/* Expenses */}
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <StmtRow label="EXPENDITURE" isHeader />
-              {pl.expenses.map(a => (
-                <StmtRow key={a.id} label={a.name} amount={a.total_debit - a.total_credit} indent positive={false} />
-              ))}
-              <StmtRow label="Total Expenditure" amount={pl.totalExpenses} bold isTotal positive={false} />
-            </table>
-          </div>
-
-          {/* Net result */}
-          <div className="card" style={{ gridColumn: '1 / -1', padding: '18px 22px', background: pl.netIncome >= 0 ? '#dcfce733' : '#fee2e233', borderLeft: `4px solid ${pl.netIncome >= 0 ? '#16a34a' : '#b91c1c'}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: pl.netIncome >= 0 ? '#16a34a' : '#b91c1c', margin: '0 0 4px' }}>
-                  {pl.netIncome >= 0 ? 'Net Surplus (Income over Expenditure)' : 'Net Deficit (Expenditure over Income)'}
-                </p>
-                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>For Financial Year {fy}</p>
-              </div>
-              <p style={{ fontSize: 26, fontWeight: 800, fontFamily: 'monospace', color: pl.netIncome >= 0 ? '#16a34a' : '#b91c1c', margin: 0 }}>
-                {fmtAmt(Math.abs(pl.netIncome))}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Balance Sheet ────────────────────────────────────── */}
-      {generated && !loading && tab === 'bs' && bs && (
-        <>
-          {/* Balance status */}
-          <div style={{ marginBottom: 16 }}>
-            <div className="card" style={{ padding: '14px 20px', background: bsBalanced ? '#dcfce733' : '#fee2e233', borderLeft: `4px solid ${bsBalanced ? '#16a34a' : '#b91c1c'}` }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: bsBalanced ? '#16a34a' : '#b91c1c', margin: 0 }}>
-                {bsBalanced ? '✓ Balance Sheet Agrees — Assets = Liabilities + Equity' : `⚠ Balance Sheet Disagrees — difference of ${fmtAmt(Math.abs(bs.totalAssets - (bs.totalLiabilities + bs.totalEquity)))}`}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            {/* Assets */}
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <StmtRow label="ASSETS" isHeader />
-                {bs.assets.map(a => (
-                  <StmtRow key={a.id} label={a.name} amount={a.total_debit - a.total_credit} indent positive />
-                ))}
-                <StmtRow label="Total Assets" amount={bs.totalAssets} bold isTotal positive />
-              </table>
-            </div>
-
-            {/* Liabilities + Equity */}
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <StmtRow label="LIABILITIES" isHeader />
-                {bs.liabilities.map(a => (
-                  <StmtRow key={a.id} label={a.name} amount={a.total_credit - a.total_debit} indent positive={false} />
-                ))}
-                <StmtRow label="Total Liabilities" amount={bs.totalLiabilities} bold isTotal positive={false} />
-
-                <StmtRow label="FUNDS & EQUITY" isHeader />
-                {bs.equity.map(a => (
-                  <StmtRow key={a.id} label={a.name} amount={a.total_credit - a.total_debit} indent positive />
-                ))}
-                <tr style={{ background: 'rgba(0,0,0,0.012)' }}>
-                  <td style={{ padding: '7px 16px 7px 32px', fontSize: 13, color: pl?.netIncome >= 0 ? '#16a34a' : '#b91c1c', fontStyle: 'italic' }}>
-                    {pl?.netIncome >= 0 ? '+ Surplus for the year' : '− Deficit for the year'}
-                  </td>
-                  <td style={{ padding: '7px 16px', fontSize: 13, fontFamily: 'monospace', textAlign: 'right', color: pl?.netIncome >= 0 ? '#16a34a' : '#b91c1c' }}>
-                    {pl ? fmtAmt(Math.abs(pl.netIncome)) : '—'}
-                  </td>
-                </tr>
-                <StmtRow label="Total Funds & Equity" amount={bs.totalEquity} bold isTotal positive />
-              </table>
-            </div>
-
-            {/* Total check */}
-            <div className="card" style={{ gridColumn: '1 / -1', padding: '14px 20px', display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', margin: '0 0 4px' }}>Total Assets</p>
-                <p style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', margin: 0 }}>{fmtAmt(bs.totalAssets)}</p>
-              </div>
-              <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 800, color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>=</div>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#b91c1c', margin: '0 0 4px' }}>Liabilities</p>
-                <p style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', color: '#b91c1c', margin: 0 }}>{fmtAmt(bs.totalLiabilities)}</p>
-              </div>
-              <div style={{ textAlign: 'center', fontSize: 24, fontWeight: 800, color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}>+</div>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#16a34a', margin: '0 0 4px' }}>Funds &amp; Equity</p>
-                <p style={{ fontSize: 22, fontWeight: 800, fontFamily: 'monospace', color: '#16a34a', margin: 0 }}>{fmtAmt(bs.totalEquity)}</p>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   )
 }

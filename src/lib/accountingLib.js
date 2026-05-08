@@ -438,27 +438,88 @@ export async function getTrialBalance(fy) {
 
 // ── Financial Statements ──────────────────────────────────────────
 
+// Income & Expenditure Account (church-appropriate P&L)
+// Returns surplus (positive) or deficit (negative)
 export async function getIncomeStatement(fy) {
   const tb = await getTrialBalance(fy)
   const income   = tb.filter(a => a.account_type === 'Income')
   const expenses = tb.filter(a => a.account_type === 'Expense')
-  const totalIncome   = income.reduce((s, a)   => s + (a.total_credit - a.total_debit), 0)
-  const totalExpenses = expenses.reduce((s, a) => s + (a.total_debit - a.total_credit), 0)
-  return { income, expenses, totalIncome, totalExpenses, netIncome: totalIncome - totalExpenses }
+  const totalIncome    = income.reduce((s, a)   => s + (a.total_credit - a.total_debit), 0)
+  const totalExpenses  = expenses.reduce((s, a) => s + (a.total_debit  - a.total_credit), 0)
+  const surplus        = totalIncome - totalExpenses  // positive = surplus, negative = deficit
+  return { income, expenses, totalIncome, totalExpenses, netIncome: surplus, surplus }
 }
 
+// Balance Sheet — uses "Corpus Fund" terminology (church/non-profit standard)
 export async function getBalanceSheet(fy) {
   const tb = await getTrialBalance(fy)
   const assets      = tb.filter(a => a.account_type === 'Asset')
   const liabilities = tb.filter(a => a.account_type === 'Liability')
-  const equity      = tb.filter(a => a.account_type === 'Equity')
-  const { netIncome } = await getIncomeStatement(fy)
+  const corpus      = tb.filter(a => a.account_type === 'Equity')  // "Corpus Fund / General Fund"
+  const { surplus } = await getIncomeStatement(fy)
 
-  const totalAssets      = assets.reduce((s, a)      => s + (a.total_debit - a.total_credit), 0)
-  const totalLiabilities = liabilities.reduce((s, a) => s + (a.total_credit - a.total_debit), 0)
-  const totalEquity      = equity.reduce((s, a)      => s + (a.total_credit - a.total_debit), 0) + netIncome
+  const totalAssets      = assets.reduce((s, a)      => s + (a.total_debit  - a.total_credit), 0)
+  const totalLiabilities = liabilities.reduce((s, a) => s + (a.total_credit - a.total_debit),  0)
+  const totalCorpus      = corpus.reduce((s, a)      => s + (a.total_credit - a.total_debit),  0) + surplus
 
-  return { assets, liabilities, equity, netIncome, totalAssets, totalLiabilities, totalEquity }
+  return { assets, liabilities, corpus, surplus, totalAssets, totalLiabilities, totalCorpus,
+           totalEquity: totalCorpus }  // totalEquity kept for backward compat
+}
+
+// Receipts & Payments Account (cash-basis — church standard report)
+export async function getReceiptsAndPayments(fy) {
+  const { data: entries, error } = await supabase
+    .from('journal_entries')
+    .select(`
+      entry_number, entry_date, voucher_type, narration, total_debit, total_credit,
+      journal_entry_lines(account_id, debit_amount, credit_amount,
+        chart_of_accounts(name, account_type))
+    `)
+    .eq('financial_year', fy)
+    .eq('is_posted', true)
+    .order('entry_date')
+  if (error) throw error
+
+  const receiptGroups = {}
+  const paymentGroups = {}
+  let openingBalance  = 0
+
+  for (const entry of entries || []) {
+    const lines = entry.journal_entry_lines || []
+
+    if (entry.voucher_type === 'Opening') {
+      // Opening cash balance = net debit to Asset accounts
+      for (const l of lines) {
+        if (l.chart_of_accounts?.account_type === 'Asset') {
+          openingBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
+        }
+      }
+    } else if (entry.voucher_type === 'Receipt') {
+      // Category = the Income account that was credited
+      const incomeLine = lines.find(l => l.chart_of_accounts?.account_type === 'Income')
+      const cat = incomeLine?.chart_of_accounts?.name || entry.narration || 'Other Receipts'
+      receiptGroups[cat] = (receiptGroups[cat] || 0) + Number(entry.total_debit || 0)
+    } else if (entry.voucher_type === 'Payment') {
+      // Category = the Expense account that was debited
+      const expLine = lines.find(l => l.chart_of_accounts?.account_type === 'Expense')
+      const cat = expLine?.chart_of_accounts?.name || entry.narration || 'Other Payments'
+      paymentGroups[cat] = (paymentGroups[cat] || 0) + Number(entry.total_credit || 0)
+    }
+    // Contra (cash↔bank transfers) and Journal entries excluded from R&P
+  }
+
+  const receipts = Object.entries(receiptGroups)
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount)
+  const payments = Object.entries(paymentGroups)
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount)
+
+  const totalReceipts = receipts.reduce((s, r) => s + r.amount, 0)
+  const totalPayments = payments.reduce((s, p) => s + p.amount, 0)
+  const closingBalance = openingBalance + totalReceipts - totalPayments
+
+  return { openingBalance, receipts, payments, totalReceipts, totalPayments, closingBalance }
 }
 
 // ── Dashboard stats ───────────────────────────────────────────────

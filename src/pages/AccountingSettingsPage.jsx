@@ -21,6 +21,7 @@ import {
   Globe, FileText, Receipt, CreditCard, CalendarOff,
   Link2, Eye, EyeOff, Hash, Calendar,
   Download, Upload, Database, ShieldCheck, XCircle, AlertCircle,
+  Plus, Pencil, X, Tag,
 } from 'lucide-react'
 
 const MASTER_PASSWORD = 'Master007))&'
@@ -30,15 +31,70 @@ const MONTHS = [
   'July','August','September','October','November','December',
 ]
 
-const COUNTRY_PRESETS = {
-  'India':     { currency: '₹',    numberFormat: 'indian',       dateFormat: 'DD-MM-YYYY' },
-  'USA':       { currency: '$',    numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
-  'UK':        { currency: '£',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  'Canada':    { currency: 'CA$',  numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  'Australia': { currency: 'A$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  'Singapore': { currency: 'S$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  'Custom':    null,
-}
+// Comprehensive country → currency/format presets
+const COUNTRIES = [
+  { country: 'India',              currency: '₹',     numberFormat: 'indian',        dateFormat: 'DD-MM-YYYY' },
+  { country: 'USA',                currency: '$',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
+  { country: 'UK',                 currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Canada',             currency: 'CA$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Australia',          currency: 'A$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'New Zealand',        currency: 'NZ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Singapore',          currency: 'S$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Malaysia',           currency: 'RM',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Philippines',        currency: '₱',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
+  { country: 'Indonesia',          currency: 'Rp',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Sri Lanka',          currency: 'Rs',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Bangladesh',         currency: '৳',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Pakistan',           currency: '₨',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nepal',              currency: 'रू',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Myanmar',            currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Thailand',           currency: '฿',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'South Korea',        currency: '₩',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Japan',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'China',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Hong Kong',          currency: 'HK$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'UAE',                currency: 'د.إ',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Saudi Arabia',       currency: '﷼',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Kuwait',             currency: 'KD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Qatar',              currency: 'QR',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Bahrain',            currency: 'BD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Oman',               currency: 'OMR',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Israel',             currency: '₪',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Germany',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'France',             currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Italy',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Spain',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Netherlands',        currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Belgium',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Portugal',           currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Switzerland',        currency: 'CHF',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Sweden',             currency: 'kr',    numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Norway',             currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Denmark',            currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'South Africa',       currency: 'R',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nigeria',            currency: '₦',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Kenya',              currency: 'KSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Ghana',              currency: '₵',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Tanzania',           currency: 'TSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Uganda',             currency: 'USh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Ethiopia',           currency: 'Br',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Egypt',              currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Brazil',             currency: 'R$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Mexico',             currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Argentina',          currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Colombia',           currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Papua New Guinea',   currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Fiji',               currency: 'FJ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Custom',             currency: '',      numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+]
+
+// Flat lookup for easy access
+const COUNTRY_PRESETS = Object.fromEntries(
+  COUNTRIES.map(c => [c.country, c.country === 'Custom' ? null : { currency: c.currency, numberFormat: c.numberFormat, dateFormat: c.dateFormat }])
+)
+
+// Built-in voucher types that cannot be deleted
+const BUILTIN_VOUCHER_TYPES = ['Receipt', 'Payment', 'Journal', 'Contra', 'Opening']
 
 const DATE_FORMATS   = ['DD-MM-YYYY', 'MM-DD-YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY']
 const NUMBER_FORMATS = [
@@ -184,6 +240,122 @@ function EntryCard({ value, selected, onSelect, title, subtitle, bullets }) {
   )
 }
 
+// ── Settings page lock screen (master password required to open) ──
+
+function SettingsLockScreen({ onUnlock }) {
+  const [password, setPassword] = useState('')
+  const [showPw,   setShowPw]   = useState(false)
+  const [error,    setError]    = useState('')
+  const inputRef = useRef(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
+
+  function attempt() {
+    if (password === MASTER_PASSWORD) { onUnlock() }
+    else { setError('Incorrect password.'); setPassword('') }
+  }
+
+  return (
+    <div style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 20, width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+        <div style={{ padding: '32px 32px 24px', textAlign: 'center' }}>
+          <div style={{ width: 60, height: 60, borderRadius: 18, background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Lock size={26} color="#b91c1c" />
+          </div>
+          <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 6px' }}>Account Settings</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+            Enter the master password to access accounting settings.
+          </p>
+        </div>
+        <div style={{ padding: '0 32px 28px' }}>
+          <FL>Master Password</FL>
+          <div style={{ position: 'relative', marginBottom: 14 }}>
+            <input ref={inputRef} type={showPw ? 'text' : 'password'} value={password}
+              onChange={e => { setPassword(e.target.value); setError('') }}
+              onKeyDown={e => e.key === 'Enter' && attempt()}
+              placeholder="Enter master password…"
+              style={{ ...INPUT_STYLE, letterSpacing: showPw ? 'normal' : '0.12em', border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}` }} />
+            <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+              {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          {error && <p style={{ fontSize: 12, color: '#b91c1c', fontWeight: 600, margin: '-8px 0 10px' }}>{error}</p>}
+          <button onClick={attempt} disabled={!password}
+            style={{ width: '100%', height: 44, background: password ? '#b91c1c' : '#e5e7eb', color: password ? '#fff' : '#9ca3af', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: password ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <Lock size={15} /> Unlock Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Custom Voucher Type modal ──────────────────────────────────────
+
+function VoucherTypeModal({ editing, onSave, onCancel }) {
+  const [name,   setName]   = useState(editing?.name   || '')
+  const [prefix, setPrefix] = useState(editing?.prefix || '')
+  const [color,  setColor]  = useState(editing?.color  || 'blue')
+
+  const COLOR_OPTS = [
+    { value: 'blue',   label: 'Blue',   bg: '#dbeafe', text: '#1d4ed8' },
+    { value: 'green',  label: 'Green',  bg: '#dcfce7', text: '#16a34a' },
+    { value: 'purple', label: 'Purple', bg: '#f3e8ff', text: '#7c3aed' },
+    { value: 'orange', label: 'Orange', bg: '#fff7ed', text: '#c2410c' },
+    { value: 'pink',   label: 'Pink',   bg: '#fce7f3', text: '#be185d' },
+  ]
+
+  function handleSave() {
+    const n = name.trim()
+    const p = prefix.trim().toUpperCase().slice(0, 4)
+    if (!n || !p) return
+    if (BUILTIN_VOUCHER_TYPES.includes(n)) return
+    onSave({ name: n, prefix: p, color })
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 380, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{editing ? 'Edit Voucher Type' : 'Add Voucher Type'}</p>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <FL>Voucher Type Name</FL>
+            <input value={name} onChange={e => setName(e.target.value)}
+              placeholder="e.g. Tithe Receipt, Salary, Building Fund…"
+              style={{ ...INPUT_STYLE }} />
+          </div>
+          <div>
+            <FL>Entry Number Prefix (2–4 chars)</FL>
+            <input value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase().slice(0, 4))}
+              placeholder="e.g. TR, SF, SL"
+              style={{ ...INPUT_STYLE, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase' }} />
+          </div>
+          <div>
+            <FL>Badge Color</FL>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {COLOR_OPTS.map(c => (
+                <button key={c.value} onClick={() => setColor(c.value)}
+                  style={{ flex: 1, padding: '6px 4px', borderRadius: 7, border: `2px solid ${color === c.value ? c.text : 'transparent'}`, background: c.bg, cursor: 'pointer', fontSize: 10, fontWeight: 700, color: c.text }}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, paddingTop: 4 }}>
+            <button onClick={onCancel} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
+            <button onClick={handleSave} disabled={!name.trim() || !prefix.trim()}
+              style={{ flex: 2, height: 40, background: (name.trim() && prefix.trim()) ? 'var(--accent)' : '#e5e7eb', color: (name.trim() && prefix.trim()) ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: (name.trim() && prefix.trim()) ? 'pointer' : 'not-allowed' }}>
+              {editing ? 'Save Changes' : 'Add Type'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ════════════════════════════════════════════════════════════════
 //  MAIN PAGE
 // ════════════════════════════════════════════════════════════════
@@ -194,13 +366,16 @@ export default function AccountingSettingsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
 
+  const [pageUnlocked, setPageUnlocked] = useState(() => !!sessionStorage.getItem('ac_settings_unlocked'))
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
   const [churchId,    setChurchId]    = useState(null)
   const [churchName,  setChurchName]  = useState('')
+  const [diocese,     setDiocese]     = useState('')
   const [acEnabled,   setAcEnabled]   = useState(false)
   const [accounts,    setAccounts]    = useState([])
   const [dangerModal, setDangerModal] = useState(null)
+  const [voucherModal, setVoucherModal] = useState(null) // null | 'add' | { editing: obj, idx: number }
 
   // ── Form state ────────────────────────────────────────────────
   const [entrySystem,   setEntrySystem]   = useState('double')
@@ -237,6 +412,9 @@ export default function AccountingSettingsPage() {
   // Fiscal Year
   const [fiscalMonth, setFiscalMonth] = useState(4)
 
+  // Custom Voucher Types (stored as JSON in churches)
+  const [customVouchers, setCustomVouchers] = useState([])  // [{name, prefix, color}]
+
   // Backup & Restore
   const fileInputRef                  = useRef(null)
   const [exportWorking, setExportWorking] = useState(false)
@@ -253,7 +431,9 @@ export default function AccountingSettingsPage() {
       if (error || !data) { toast('Could not load settings', 'error'); setLoading(false); return }
       setChurchId(data.id)
       setChurchName(data.church_name || '')
+      setDiocese(data.diocese || '')
       setAcEnabled(!!data.accounting_enabled)
+      setCustomVouchers(Array.isArray(data.accounting_custom_vouchers) ? data.accounting_custom_vouchers : [])
       setEntrySystem(data.accounting_entry_system || 'double')
       setEntryLocked(!!data.accounting_entry_system_locked)
       setCountry(data.accounting_country || 'India')
@@ -281,7 +461,7 @@ export default function AccountingSettingsPage() {
     })
   }, [toast])
 
-  // When country changes, auto-apply presets (unless Custom)
+  // When country changes, auto-apply presets
   function handleCountryChange(c) {
     setCountry(c)
     const preset = COUNTRY_PRESETS[c]
@@ -290,6 +470,19 @@ export default function AccountingSettingsPage() {
       setNumberFormat(preset.numberFormat)
       setDateFormat(preset.dateFormat)
     }
+  }
+
+  // Custom voucher type handlers
+  function handleAddVoucher(v) {
+    setCustomVouchers(prev => [...prev, v])
+    setVoucherModal(null)
+  }
+  function handleEditVoucher(v, idx) {
+    setCustomVouchers(prev => prev.map((item, i) => i === idx ? v : item))
+    setVoucherModal(null)
+  }
+  function handleDeleteVoucher(idx) {
+    setCustomVouchers(prev => prev.filter((_, i) => i !== idx))
   }
 
   // ── Backup export ─────────────────────────────────────────────
@@ -361,8 +554,9 @@ export default function AccountingSettingsPage() {
       accounting_default_bank_id:   defaultBankId   || null,
       accounting_period_lock_date:  periodLockDate  || null,
       accounting_opening_date:      openingDate     || null,
-      accounting_auto_post_receipts: autoPostReceipts,
-      accounting_fiscal_month:      fiscalMonth,
+      accounting_auto_post_receipts:   autoPostReceipts,
+      accounting_fiscal_month:         fiscalMonth,
+      accounting_custom_vouchers:      customVouchers,
     }).eq('id', churchId)
     if (error) { toast('Failed to save: ' + error.message, 'error'); setSaving(false); return }
     toast('Settings saved.', 'success')
@@ -403,6 +597,15 @@ export default function AccountingSettingsPage() {
   const fyPart = `${new Date().getFullYear()}${String(new Date().getFullYear() + 1).slice(2)}`
   const previewEntry = `${prefixes.prefix_receipt}-${fyPart}-00001`
 
+  if (!pageUnlocked) return (
+    <div className="page-container">
+      <SettingsLockScreen onUnlock={() => {
+        sessionStorage.setItem('ac_settings_unlocked', '1')
+        setPageUnlocked(true)
+      }} />
+    </div>
+  )
+
   if (loading) return (
     <div className="page-container">
       <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
@@ -416,6 +619,14 @@ export default function AccountingSettingsPage() {
     <div className="page-container">
 
       {/* Danger modals */}
+      {/* Voucher type modal */}
+      {voucherModal === 'add' && (
+        <VoucherTypeModal onSave={handleAddVoucher} onCancel={() => setVoucherModal(null)} />
+      )}
+      {voucherModal && voucherModal !== 'add' && (
+        <VoucherTypeModal editing={voucherModal.editing} onSave={v => handleEditVoucher(v, voucherModal.idx)} onCancel={() => setVoucherModal(null)} />
+      )}
+
       {dangerModal === 'flush' && (
         <MasterPasswordModal
           title="Flush All Journal Entries"
@@ -516,7 +727,7 @@ export default function AccountingSettingsPage() {
           <div>
             <FL>Country / Region</FL>
             <select value={country} onChange={e => handleCountryChange(e.target.value)} style={{ ...INPUT_STYLE }}>
-              {Object.keys(COUNTRY_PRESETS).map(c => <option key={c} value={c}>{c}</option>)}
+              {COUNTRIES.map(c => <option key={c.country} value={c.country}>{c.country}</option>)}
             </select>
           </div>
 
@@ -565,18 +776,25 @@ export default function AccountingSettingsPage() {
 
       {/* ── 3. Report Settings ───────────────────────────────────── */}
       <SectionCard icon={FileText} title="Report Settings" subtitle="Appears on all printed reports and exports.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
           <div>
-            <FL>Report Title (from Church Setup)</FL>
+            <FL>Church Name (from Church Setup)</FL>
             <input value={churchName} disabled
               style={{ ...INPUT_STYLE, background: 'var(--table-header-bg)', color: 'var(--text-3)', cursor: 'not-allowed' }} />
-            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Edit in Church Setup to change</p>
+            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Edit in Church Setup</p>
           </div>
           <div>
-            <FL>Report Subtitle (optional)</FL>
+            <FL>Diocese (from Church Setup)</FL>
+            <input value={diocese} disabled
+              style={{ ...INPUT_STYLE, background: 'var(--table-header-bg)', color: 'var(--text-3)', cursor: 'not-allowed' }} />
+            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Shown on reports below church name</p>
+          </div>
+          <div>
+            <FL>Additional Subtitle (optional)</FL>
             <input value={reportSubtitle} onChange={e => setReportSubtitle(e.target.value)}
-              placeholder="e.g. Diocese of XYZ — Finance Department"
+              placeholder="e.g. Finance Department"
               style={{ ...INPUT_STYLE }} />
+            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Third line on printed reports</p>
           </div>
         </div>
       </SectionCard>
@@ -633,6 +851,102 @@ export default function AccountingSettingsPage() {
           label="Auto-post entries on Save"
           desc="Entries are posted immediately instead of saving as drafts."
         />
+
+        {/* Custom Voucher Types */}
+        <div style={{ marginTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <FL>Custom Voucher Types</FL>
+            <button onClick={() => setVoucherModal('add')}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              <Plus size={12} /> Add Type
+            </button>
+          </div>
+
+          <div style={{ border: '1.5px solid var(--card-border)', borderRadius: 9, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ background: 'var(--table-header-bg)' }}>
+                <tr>
+                  {['Type', 'Prefix', 'Preview', 'Source', ''].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Built-in types (read-only) */}
+                {BUILTIN_VOUCHER_TYPES.map(type => {
+                  const pk = `prefix_${type.toLowerCase()}`
+                  const pfx = prefixes[pk] || type.slice(0,2).toUpperCase()
+                  return (
+                    <tr key={type} style={{ borderTop: '1px solid var(--card-border)', background: 'var(--table-header-bg)' }}>
+                      <td style={{ padding: '7px 14px', fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Tag size={12} style={{ color: 'var(--text-3)' }} /> {type}
+                        </div>
+                      </td>
+                      <td style={{ padding: '5px 10px', width: 100 }}>
+                        <input value={prefixes[pk] || ''}
+                          onChange={e => setPrefixes(p => ({ ...p, [pk]: e.target.value.toUpperCase().slice(0,4) }))}
+                          style={{ ...INPUT_STYLE, height: 30, width: 70, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase' }} />
+                      </td>
+                      <td style={{ padding: '7px 14px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-3)' }}>
+                        {pfx}-{fyPart}-00001
+                      </td>
+                      <td style={{ padding: '7px 14px' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: 'var(--card-border)', color: 'var(--text-3)', fontWeight: 700 }}>BUILT-IN</span>
+                      </td>
+                      <td style={{ padding: '7px 10px' }} />
+                    </tr>
+                  )
+                })}
+                {/* Custom types */}
+                {customVouchers.map((v, idx) => {
+                  const COLOR_MAP = {
+                    blue:   { bg: '#dbeafe', text: '#1d4ed8' },
+                    green:  { bg: '#dcfce7', text: '#16a34a' },
+                    purple: { bg: '#f3e8ff', text: '#7c3aed' },
+                    orange: { bg: '#fff7ed', text: '#c2410c' },
+                    pink:   { bg: '#fce7f3', text: '#be185d' },
+                  }
+                  const clr = COLOR_MAP[v.color] || COLOR_MAP.blue
+                  return (
+                    <tr key={idx} style={{ borderTop: '1px solid var(--card-border)' }}>
+                      <td style={{ padding: '7px 14px' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: clr.bg, color: clr.text }}>{v.name}</span>
+                      </td>
+                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>{v.prefix}</td>
+                      <td style={{ padding: '7px 14px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-3)' }}>
+                        {v.prefix}-{fyPart}-00001
+                      </td>
+                      <td style={{ padding: '7px 14px' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 5, background: clr.bg, color: clr.text, fontWeight: 700 }}>CUSTOM</span>
+                      </td>
+                      <td style={{ padding: '5px 10px', whiteSpace: 'nowrap' }}>
+                        <button onClick={() => setVoucherModal({ editing: v, idx })}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '4px 6px', borderRadius: 5, marginRight: 2 }}>
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => handleDeleteVoucher(idx)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', padding: '4px 6px', borderRadius: 5 }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {customVouchers.length === 0 && (
+                  <tr style={{ borderTop: '1px solid var(--card-border)' }}>
+                    <td colSpan={5} style={{ padding: '14px', textAlign: 'center', fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
+                      No custom voucher types yet — click Add Type to create one
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 0 0' }}>
+            Custom types appear alongside built-in types when creating journal entries.
+          </p>
+        </div>
       </SectionCard>
 
       {/* ── 5. Default Accounts ──────────────────────────────────── */}

@@ -30,6 +30,7 @@ import JournalEntryPage       from './pages/JournalEntryPage'
 import LedgerPage             from './pages/LedgerPage'
 import TrialBalancePage       from './pages/TrialBalancePage'
 import FinancialStatementsPage from './pages/FinancialStatementsPage'
+import BankAccountsPage        from './pages/BankAccountsPage'
 
 console.log('📱 App component rendering')
 
@@ -347,6 +348,7 @@ function AppRoutes() {
       <Route path="/accounting/trial-balance"     element={<PrivateRoute><AppLayout><TrialBalancePage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/statements"        element={<PrivateRoute><AppLayout><FinancialStatementsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/settings"         element={<PrivateRoute><AppLayout><AccountingSettingsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/bank-accounts"   element={<PrivateRoute><AppLayout><BankAccountsPage /></AppLayout></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

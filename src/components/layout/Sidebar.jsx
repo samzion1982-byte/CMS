@@ -5,6 +5,7 @@ import { Menu, ChevronLeft,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
+  BookMarked, ScrollText, TrendingUp, Building2, Scale, BarChart2,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -19,7 +20,15 @@ const NAV = [
     { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
     { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Reports',           path: '/reports',           icon: BarChart3   },
-    { label: 'Accounts',          path: '/accounting',        icon: Landmark    },
+  ]},
+  { group: 'ACCOUNTS', items: [
+    { label: 'Dashboard',         path: '/accounting',                        icon: Landmark    },
+    { label: 'Chart of Accounts', path: '/accounting/chart-of-accounts',      icon: BookMarked, sub: true },
+    { label: 'Journal Entries',   path: '/accounting/journal-entries',        icon: ScrollText, sub: true },
+    { label: 'Ledger',            path: '/accounting/ledger',                 icon: TrendingUp, sub: true },
+    { label: 'Trial Balance',     path: '/accounting/trial-balance',          icon: Scale,      sub: true },
+    { label: 'Financial Reports', path: '/accounting/statements',             icon: BarChart2,  sub: true },
+    { label: 'Bank Accounts',     path: '/accounting/bank-accounts',          icon: Building2,  sub: true },
   ]},
   { group: 'MODULES', items: [
     { label: 'Announcements', path: '/announcements', icon: Megaphone },
@@ -97,7 +106,8 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
 
               {group.items.map(item => {
                 if (item.superOnly && !isSuperAdmin) return null
-                const isActive = location.pathname === item.path
+                const isActive = location.pathname === item.path ||
+                  (item.path !== '/accounting' && location.pathname.startsWith(item.path))
                 return (
                   <NavItem
                     key={item.label}
@@ -150,6 +160,7 @@ function CollapseBtn({ collapsed, onToggle }) {
 function NavItem({ item, isActive, collapsed, onClick }) {
   const [hov, setHov] = useState(false)
   const Icon = item.icon
+  const isSub = item.sub && !collapsed
 
   return (
     <button
@@ -160,10 +171,10 @@ function NavItem({ item, isActive, collapsed, onClick }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: collapsed ? 0 : 10,
+        gap: collapsed ? 0 : 8,
         justifyContent: collapsed ? 'center' : 'flex-start',
         width: '100%',
-        padding: collapsed ? '11px 0' : '10px 10px',
+        padding: collapsed ? '11px 0' : isSub ? '7px 10px 7px 22px' : '10px 10px',
         borderRadius: 8,
         border: 'none',
         borderLeft: !collapsed && isActive
