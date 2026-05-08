@@ -79,8 +79,8 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
   }
 
   function handleKey(e) {
-    // Tab confirms highlighted result and moves to amount field
-    if (e.key === 'Tab' && open && filtered.length > 0) {
+    // Tab confirms only if user has actually typed a query
+    if (e.key === 'Tab' && open && filtered.length > 0 && input.trim()) {
       e.preventDefault()
       select(filtered[hi])
       return
@@ -94,6 +94,15 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
 
   const tc = TYPE_COLOR[selected?.account_type] || {}
 
+  function clearSelection(e) {
+    e.preventDefault()
+    savedRef.current = null
+    onChange('', null)
+    setInput('')
+    setFocused(false)
+    setOpen(false)
+  }
+
   return (
     <div style={{ position: 'relative', flex: 1 }}>
       <input
@@ -104,7 +113,7 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
         onKeyDown={handleKey}
         placeholder="Type to search…"
         style={{
-          width: '100%', height: 34, padding: '0 8px',
+          width: '100%', height: 34, padding: selected ? '0 28px 0 8px' : '0 8px',
           border: `1.5px solid ${selected ? (tc.text || 'var(--accent)') + '88' : 'var(--card-border)'}`,
           borderRadius: 7, fontSize: 12,
           background: selected ? (tc.bg || '#f0fdf4') : 'var(--input-bg)',
@@ -112,6 +121,15 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
           transition: 'border-color 0.15s, background 0.15s',
         }}
       />
+      {selected && !focused && (
+        <button
+          onMouseDown={clearSelection}
+          style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: 2, borderRadius: 4 }}
+          onMouseEnter={e => e.currentTarget.style.color = '#b91c1c'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-3)'}>
+          <X size={12} />
+        </button>
+      )}
       {open && filtered.length > 0 && (
         <div style={{
           position: 'absolute', top: 36, left: 0, right: 0, zIndex: 2000,
@@ -186,9 +204,9 @@ export default function JournalEntryModal({ onClose, onSaved }) {
       .catch(() => {})
   }, [header.voucher_type, header.financial_year])
 
-  // Auto-focus entry date on open
+  // Focus first voucher type pill on open (Tab from there moves to date)
   useEffect(() => {
-    setTimeout(() => document.getElementById('je-modal-date')?.focus(), 120)
+    setTimeout(() => document.getElementById('je-first-pill')?.focus(), 120)
   }, [])
 
   const sh = (k, v) => setHeader(h => ({ ...h, [k]: v }))
@@ -280,7 +298,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
-        width: 'min(96vw, 1100px)', maxHeight: '92vh',
+        width: 'min(98vw, 1180px)', height: '96vh',
         background: 'var(--card-bg)', borderRadius: 14,
         boxShadow: '0 32px 80px rgba(0,0,0,0.45)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -322,26 +340,23 @@ export default function JournalEntryModal({ onClose, onSaved }) {
 
         {/* ── Voucher Type Pills ─────────────────────────────── */}
         <div style={{ padding: '10px 20px', display: 'flex', gap: 7, flexWrap: 'wrap', flexShrink: 0, borderBottom: '1px solid var(--card-border)', alignItems: 'center' }}>
-          {VOUCHER_TYPES.map(t => {
+          {VOUCHER_TYPES.map((t, idx) => {
             const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
             const active = header.voucher_type === t
             return (
-              <button key={t} onClick={() => sh('voucher_type', t)}
+              <button key={t} id={idx === 0 ? 'je-first-pill' : undefined}
+                onClick={() => sh('voucher_type', t)}
                 style={{
-                  padding: active ? '7px 20px' : '6px 16px',
+                  padding: '7px 18px',
                   borderRadius: 99,
                   fontSize: 11, fontWeight: 700, cursor: 'pointer',
                   border: `2px solid ${active ? vc.text : 'var(--card-border)'}`,
                   background: active ? vc.text : 'transparent',
                   color: active ? '#fff' : 'var(--text-2)',
-                  boxShadow: active ? `0 4px 14px ${vc.text}44, 0 2px 4px ${vc.text}28` : 'none',
-                  transform: active ? 'translateY(-2px) scale(1.05)' : 'translateY(0) scale(1)',
-                  transition: 'all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  position: 'relative', overflow: 'hidden',
+                  boxShadow: active ? `0 3px 10px ${vc.text}38` : 'none',
+                  outline: 'none',
+                  transition: 'background 0.18s ease-out, border-color 0.18s ease-out, color 0.18s ease-out, box-shadow 0.18s ease-out',
                 }}>
-                {active && (
-                  <span style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, transparent 60%)', pointerEvents: 'none', borderRadius: 99 }} />
-                )}
                 {t}
               </button>
             )
@@ -352,7 +367,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
           {/* LEFT: Entry Details */}
-          <div style={{ width: 308, flexShrink: 0, borderRight: '1px solid var(--card-border)', padding: '14px 16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ width: 360, flexShrink: 0, borderRight: '1px solid var(--card-border)', padding: '14px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
             {/* FY badge at top */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

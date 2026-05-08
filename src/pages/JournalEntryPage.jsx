@@ -101,6 +101,20 @@ function JournalEntryList() {
   const [showNewEntry, setShowNewEntry] = useState(false)
   const [entries,    setEntries]    = useState([])
   const [loading,    setLoading]    = useState(true)
+
+  // + key opens new entry modal — capture phase so it fires even when filters are focused
+  useEffect(() => {
+    function handler(e) {
+      if (e.key !== '+') return
+      const tag = document.activeElement?.tagName?.toUpperCase()
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (showNewEntry) return
+      e.preventDefault()
+      setShowNewEntry(true)
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [showNewEntry])
   const [fy,         setFy]         = useState(getFY())
   const [search,     setSearch]     = useState('')
   const [filterType, setFilterType] = useState('')
