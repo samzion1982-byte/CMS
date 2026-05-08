@@ -29,7 +29,7 @@ export default function AppLayout({ children }) {
         const info = JSON.parse(raw)
         if (!info.userId) return false
         setPendingInfo(info)
-        setDeviceForm({ userName: '', orgName: '', area: '', city: '' })
+        setDeviceForm(info.prefill || { userName: '', orgName: '', area: '', city: '' })
         setIsEditMode(false)
         setShowDeviceSetup(true)
         return true

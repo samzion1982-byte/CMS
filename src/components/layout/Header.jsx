@@ -117,7 +117,7 @@ function LiveClock({ g }) {
 }
 
 /* ── User badge + dropdown ───────────────────────────────────── */
-const DEVICE_EDIT_ROLES = ['super_admin', 'admin1']
+const DEVICE_EDIT_ROLES = ['super_admin', 'admin1', 'admin', 'user', 'demo']
 
 function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, font, setFont, onSignOut, onEditDevice }) {
   const [open, setOpen] = useState(false)
@@ -150,24 +150,29 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
           transition: 'border-color 0.2s, box-shadow 0.2s',
         }}
       >
-        {/* Avatar */}
+        {/* Avatar — 3-layer: colour base + sheen + initials */}
         <div style={{
-          width: 44, height: 44, borderRadius: '50%',
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.76) 45%, rgba(241,245,249,0.68) 100%)',
-          border: '1px solid rgba(255,255,255,0.80)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: `
-            inset 0 1px 0 rgba(255,255,255,0.85),
-            0 12px 28px rgba(15,23,42,0.12)
-          `,
-          display: 'grid', placeItems: 'center',
-          fontSize: 15, fontWeight: 800, color: '#111827',
-          flexShrink: 0, fontFamily: 'var(--font-ui)',
-          letterSpacing: '0.03em',
-          textShadow: '0 1px 2px rgba(255,255,255,0.85)',
+          width: 44, height: 44, borderRadius: '50%', position: 'relative',
+          flexShrink: 0,
+          animation: 'avatarFill 18s linear infinite',
+          boxShadow: 'inset -4px -4px 8px rgba(0,0,0,0.22), inset 3px 3px 6px rgba(255,255,255,0.55), 0 6px 18px rgba(0,0,0,0.38)',
         }}>
-          {ini}
+          {/* Gradient sheen — sphere highlight */}
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.52) 0%, rgba(255,255,255,0.18) 42%, transparent 58%, rgba(0,0,0,0.10) 100%)',
+            pointerEvents: 'none',
+          }} />
+          {/* Initials */}
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            display: 'grid', placeItems: 'center',
+            fontSize: 15, fontWeight: 800, color: '#1e293b',
+            fontFamily: 'var(--font-ui)', letterSpacing: '0.03em',
+            textShadow: '0 1px 3px rgba(255,255,255,0.7)',
+          }}>
+            {ini}
+          </div>
         </div>
         {/* Name + role */}
         <div style={{ textAlign: 'left', lineHeight: 1.4 }}>
@@ -184,12 +189,13 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
           position: 'fixed',
           top: HEADER_H + 8,
           right: 16,
-          width: 260,
+          width: 290,
+          maxHeight: 'calc(100vh - 110px)',
+          overflowY: 'auto',
           background: g.drop.bg,
           border: `1px solid ${g.drop.border}`,
           borderRadius: 16,
           boxShadow: '0 16px 48px rgba(0,0,0,0.22), 0 4px 12px rgba(0,0,0,0.1)',
-          overflow: 'hidden',
           zIndex: 9999,
           animation: 'dropDown 0.18s ease both',
         }}>
@@ -197,19 +203,27 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
           {/* Profile section */}
           <div style={{ padding: '16px 18px 14px', borderBottom: `1px solid ${g.drop.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              {/* Avatar — 3-layer: colour base + sheen + initials */}
               <div style={{
-                width: 46, height: 46, borderRadius: '50%',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.78) 48%, rgba(241,245,249,0.72) 100%)',
-                border: '1px solid rgba(255,255,255,0.72)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                boxShadow: '0 12px 28px rgba(15,23,42,0.12)',
-                display: 'grid', placeItems: 'center',
-                fontSize: 16, fontWeight: 800, color: '#111827', flexShrink: 0,
-                fontFamily: 'var(--font-ui)',
-                letterSpacing: '0.03em',
+                width: 46, height: 46, borderRadius: '50%', position: 'relative',
+                flexShrink: 0,
+                animation: 'avatarFill 18s linear infinite',
+                boxShadow: 'inset -4px -4px 8px rgba(0,0,0,0.22), inset 3px 3px 6px rgba(255,255,255,0.55), 0 6px 18px rgba(0,0,0,0.38)',
               }}>
-                {ini}
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.52) 0%, rgba(255,255,255,0.18) 42%, transparent 58%, rgba(0,0,0,0.10) 100%)',
+                  pointerEvents: 'none',
+                }} />
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: '50%',
+                  display: 'grid', placeItems: 'center',
+                  fontSize: 16, fontWeight: 800, color: '#1e293b',
+                  fontFamily: 'var(--font-ui)', letterSpacing: '0.03em',
+                  textShadow: '0 1px 3px rgba(255,255,255,0.7)',
+                }}>
+                  {ini}
+                </div>
               </div>
               <div style={{ overflow: 'hidden' }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: g.drop.text, margin: 0, fontFamily: 'var(--font-ui)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -220,16 +234,36 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
                 </p>
               </div>
             </div>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
-              color: g.drop.text, background: g.drop.hov,
-              padding: '5px 12px', borderRadius: 6,
-              border: `1px solid ${g.drop.border}`,
-              fontFamily: 'var(--font-ui)',
-            }}>
-              ★ {roleLabel}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
+                color: g.drop.text, background: g.drop.hov,
+                padding: '5px 12px', borderRadius: 6,
+                border: `1px solid ${g.drop.border}`,
+                fontFamily: 'var(--font-ui)',
+              }}>
+                ★ {roleLabel}
+              </span>
+              <button
+                onClick={() => { setOpen(false); onSignOut() }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 10px', borderRadius: 6,
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  background: 'transparent',
+                  color: '#ef4444', cursor: 'pointer',
+                  fontSize: 11, fontWeight: 600,
+                  fontFamily: 'var(--font-ui)',
+                  transition: 'background 0.15s',
+                }}
+              >
+                <LogOut size={12} />
+                Sign Out
+              </button>
+            </div>
           </div>
 
           {/* Theme picker */}
@@ -248,14 +282,17 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
                     {group.map(([key, t]) => {
                       const sel = theme === key
                       return (
-                        <button key={key} onClick={() => setTheme(key)} style={{
+                        <button key={key} onClick={() => setTheme(key)}
+                          onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
+                          onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
+                          style={{
                           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                           padding: '7px 4px', borderRadius: 10,
                           border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
                           background: sel ? g.drop.hov : 'transparent',
                           boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
                           transform: sel ? 'translateY(-1px)' : 'none',
-                          cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
+                          cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
                         }}>
                           <span style={{ fontSize: 15 }}>{t.icon}</span>
                           <span style={{ fontSize: 8, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
@@ -279,14 +316,17 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
               {Object.entries(FONTS).map(([key, f]) => {
                 const sel = font === key
                 return (
-                  <button key={key} onClick={() => setFont(key)} style={{
+                  <button key={key} onClick={() => setFont(key)}
+                    onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
+                    onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
+                    style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                     padding: '7px 3px', borderRadius: 8,
                     border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
                     background: sel ? g.drop.hov : 'transparent',
                     boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
                     transform: sel ? 'translateY(-1px)' : 'none',
-                    cursor: 'pointer', outline: 'none', transition: 'all 0.15s',
+                    cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
                   }}>
                     <span style={{ fontSize: 18, fontFamily: f.family, fontWeight: 700, color: g.drop.text, lineHeight: 1 }}>{f.sample}</span>
                     <span style={{ fontSize: 8, fontWeight: sel ? 700 : 500, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)', marginTop: 2 }}>
@@ -320,24 +360,6 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
             </button>
           )}
 
-          {/* Sign out */}
-          <button
-            onClick={() => { setOpen(false); onSignOut() }}
-            onMouseEnter={e => e.currentTarget.style.background = g.drop.hov}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              width: '100%', padding: '13px 18px',
-              background: 'none', border: 'none',
-              color: '#ef4444', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600,
-              fontFamily: 'var(--font-ui)',
-              transition: 'background 0.15s',
-            }}
-          >
-            <LogOut size={15} />
-            Sign Out
-          </button>
         </div>
       )}
     </div>
@@ -694,6 +716,14 @@ export default function Header({ onEditDevice }) {
         @keyframes licensePulseRed {
           0%, 100% { transform: scale(1); opacity: 1; }
           50% { transform: scale(1.2); opacity: 0.55; }
+        }
+        @keyframes avatarFill {
+          0%   { background-color: #fca5a5; }
+          20%  { background-color: #fdba74; }
+          40%  { background-color: #86efac; }
+          60%  { background-color: #93c5fd; }
+          80%  { background-color: #d8b4fe; }
+          100% { background-color: #fca5a5; }
         }
       `}</style>
     </>

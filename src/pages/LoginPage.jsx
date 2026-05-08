@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
-import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, tagLoginWithDevice } from '../lib/loginLogs'
+import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, tagLoginWithDevice } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -50,13 +50,25 @@ export default function LoginPage() {
           // Same device ID found — tag log and proceed
           tagLoginWithDevice(uid, { deviceId: devId, userName: knownByDevice.user_name, location: knownByDevice.location, org: knownByDevice.org_name })
         } else {
-          // Device ID not found (cleared cache/cookies) — check if user ever registered
+          // Device ID not found — check if user ever registered on another device
           const knownByUser = await checkDeviceRegisteredByUser(uid)
           if (knownByUser) {
-            // Re-associate the new device ID silently — no popup
-            sessionStorage.removeItem('device_setup_pending')
-            saveDevice({ deviceId: devId, userId: uid, orgName: knownByUser.org_name, userName: knownByUser.user_name, location: knownByUser.location })
-            tagLoginWithDevice(uid, { deviceId: devId, userName: knownByUser.user_name, location: knownByUser.location, org: knownByUser.org_name })
+            // Known user on an unrecognised device_id — show the popup pre-filled
+            // with their name/org so they can confirm or correct the city
+            // (silently reusing the old location would show the wrong city when
+            // logging in from a different place)
+            const loc = knownByUser.location || ''
+            const idx = loc.lastIndexOf(', ')
+            sessionStorage.setItem('device_setup_pending', JSON.stringify({
+              deviceId: devId,
+              userId: uid,
+              prefill: {
+                userName: knownByUser.user_name || '',
+                orgName:  knownByUser.org_name  || '',
+                area:     idx !== -1 ? loc.slice(0, idx) : '',
+                city:     idx !== -1 ? loc.slice(idx + 2) : loc,
+              },
+            }))
           } else {
             // Truly new user/device — complete the flag so AppLayout shows the popup
             sessionStorage.setItem('device_setup_pending', JSON.stringify({ deviceId: devId, userId: uid }))
