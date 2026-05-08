@@ -11,19 +11,17 @@ import { HEADER_H } from './Header'
 
 const NAV = [
   { group: 'MAIN', items: [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Members',   path: '/members',   icon: Users },
+    { label: 'Dashboard',     path: '/dashboard',     icon: LayoutDashboard },
+    { label: 'Members',       path: '/members',       icon: Users           },
+    { label: 'Announcements', path: '/announcements', icon: Megaphone       },
   ]},
-  { group: 'FINANCE', items: [
+  { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },
     { label: 'Receipt Entry',     path: '/receipts',          icon: IndianRupee },
     { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
     { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Accounts',          path: '/accounting',        icon: Landmark,    accountingOnly: true },
     { label: 'Reports',           path: '/reports',           icon: BarChart3   },
-  ]},
-  { group: 'MODULES', items: [
-    { label: 'Announcements', path: '/announcements', icon: Megaphone },
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
     { label: 'Church Setup',      path: '/church-setup',    icon: Church,         superOnly: true },
