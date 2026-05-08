@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
+import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer } from 'lucide-react'
@@ -100,7 +100,7 @@ export default function LedgerPage() {
             style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
             <option value="">— Select Account —</option>
             {['Asset','Liability','Equity','Income','Expense'].map(type => (
-              <optgroup key={type} label={type}>
+              <optgroup key={type} label={displayAccountType(type)}>
                 {accounts.filter(a => a.account_type === type).map(a => (
                   <option key={a.id} value={a.id}>{a.path}</option>
                 ))}

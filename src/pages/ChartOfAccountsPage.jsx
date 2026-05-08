@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getChartOfAccounts, buildCOATree, createAccount, updateAccount, deleteAccount,
-  TYPE_COLOR,
+  TYPE_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
@@ -223,12 +223,12 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
             {(isEdit && node.level === 1) || (!isEdit && thisLevel === 1) ? (
               <select value={form.account_type} onChange={e => s('account_type', e.target.value)}
                 style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
-                {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{displayAccountType(t)}</option>)}
               </select>
             ) : (
               <div style={{ height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: c.bg + '44', color: c.text, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.text, flexShrink: 0 }} />
-                {form.account_type}
+                {displayAccountType(form.account_type)}
                 <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 400, marginLeft: 4 }}>(inherited from parent)</span>
               </div>
             )}

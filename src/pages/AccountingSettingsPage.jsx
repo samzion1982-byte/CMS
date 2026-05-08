@@ -23,6 +23,7 @@ import {
   Download, Upload, Database, ShieldCheck, XCircle, AlertCircle,
   Plus, Pencil, X, Tag,
 } from 'lucide-react'
+import { displayAccountType } from '../lib/accountingLib'
 
 const MASTER_PASSWORD = 'Master007))&'
 
@@ -31,60 +32,60 @@ const MONTHS = [
   'July','August','September','October','November','December',
 ]
 
-// Comprehensive country → currency/format presets
+// Comprehensive country → currency/format presets (A-Z, Custom last)
 const COUNTRIES = [
-  { country: 'India',              currency: '₹',     numberFormat: 'indian',        dateFormat: 'DD-MM-YYYY' },
-  { country: 'USA',                currency: '$',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
-  { country: 'UK',                 currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Canada',             currency: 'CA$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Australia',          currency: 'A$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'New Zealand',        currency: 'NZ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Singapore',          currency: 'S$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Malaysia',           currency: 'RM',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Philippines',        currency: '₱',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
-  { country: 'Indonesia',          currency: 'Rp',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Sri Lanka',          currency: 'Rs',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Bangladesh',         currency: '৳',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Pakistan',           currency: '₨',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Nepal',              currency: 'रू',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Myanmar',            currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Thailand',           currency: '฿',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'South Korea',        currency: '₩',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
-  { country: 'Japan',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
-  { country: 'China',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
-  { country: 'Hong Kong',          currency: 'HK$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'UAE',                currency: 'د.إ',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Saudi Arabia',       currency: '﷼',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Kuwait',             currency: 'KD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Qatar',              currency: 'QR',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Bahrain',            currency: 'BD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Oman',               currency: 'OMR',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Israel',             currency: '₪',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Germany',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'France',             currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Italy',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Spain',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Netherlands',        currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Belgium',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Portugal',           currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Switzerland',        currency: 'CHF',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Sweden',             currency: 'kr',    numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
-  { country: 'Norway',             currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Denmark',            currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'South Africa',       currency: 'R',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Nigeria',            currency: '₦',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Kenya',              currency: 'KSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Ghana',              currency: '₵',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Tanzania',           currency: 'TSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Uganda',             currency: 'USh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Ethiopia',           currency: 'Br',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Egypt',              currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Brazil',             currency: 'R$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Mexico',             currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Argentina',          currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Australia',          currency: 'A$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Bahrain',            currency: 'BD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Bangladesh',         currency: '৳',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Belgium',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Brazil',             currency: 'R$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Canada',             currency: 'CA$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'China',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
   { country: 'Colombia',           currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Papua New Guinea',   currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Denmark',            currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Egypt',              currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Ethiopia',           currency: 'Br',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Fiji',               currency: 'FJ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'France',             currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Germany',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Ghana',              currency: '₵',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Hong Kong',          currency: 'HK$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'India',              currency: '₹',     numberFormat: 'indian',        dateFormat: 'DD-MM-YYYY' },
+  { country: 'Indonesia',          currency: 'Rp',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Israel',             currency: '₪',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Italy',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Japan',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Kenya',              currency: 'KSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Kuwait',             currency: 'KD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Malaysia',           currency: 'RM',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Mexico',             currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Myanmar',            currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nepal',              currency: 'रू',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Netherlands',        currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'New Zealand',        currency: 'NZ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nigeria',            currency: '₦',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Norway',             currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Oman',               currency: 'OMR',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Pakistan',           currency: '₨',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Papua New Guinea',   currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Philippines',        currency: '₱',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
+  { country: 'Portugal',           currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Qatar',              currency: 'QR',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Saudi Arabia',       currency: '﷼',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Singapore',          currency: 'S$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'South Africa',       currency: 'R',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'South Korea',        currency: '₩',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Spain',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Sri Lanka',          currency: 'Rs',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Sweden',             currency: 'kr',    numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Switzerland',        currency: 'CHF',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Tanzania',           currency: 'TSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Thailand',           currency: '฿',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'UAE',                currency: 'د.إ',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Uganda',             currency: 'USh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'UK',                 currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'USA',                currency: '$',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
   { country: 'Custom',             currency: '',      numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
 ]
 
@@ -714,7 +715,7 @@ export default function AccountingSettingsPage() {
               bullets={['No accounting background needed','Track cash in and cash out','Basic reports']} />
             <EntryCard value="double" selected={entrySystem} onSelect={setEntrySystem}
               title="Double Entry System" subtitle="Full double-entry bookkeeping."
-              bullets={['Trial Balance, P&L, Balance Sheet','Audit-ready','Recommended for registered churches']} />
+              bullets={['Trial Balance, Income & Expenditure, Balance Sheet','Audit-ready','Recommended for registered churches']} />
           </div>
         )}
       </SectionCard>
@@ -960,7 +961,7 @@ export default function AccountingSettingsPage() {
                 const group = accounts.filter(a => a.account_type === type)
                 if (!group.length) return null
                 return (
-                  <optgroup key={type} label={type}>
+                  <optgroup key={type} label={displayAccountType(type)}>
                     {group.map(a => <option key={a.id} value={a.id}>{a.path}</option>)}
                   </optgroup>
                 )
@@ -975,7 +976,7 @@ export default function AccountingSettingsPage() {
                 const group = accounts.filter(a => a.account_type === type)
                 if (!group.length) return null
                 return (
-                  <optgroup key={type} label={type}>
+                  <optgroup key={type} label={displayAccountType(type)}>
                     {group.map(a => <option key={a.id} value={a.id}>{a.path}</option>)}
                   </optgroup>
                 )

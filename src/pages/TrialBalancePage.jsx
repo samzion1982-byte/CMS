@@ -5,7 +5,7 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getTrialBalance, getFY, fyOptions, fmtAmt, TYPE_COLOR } from '../lib/accountingLib'
+import { getTrialBalance, getFY, fyOptions, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { Scale, ArrowLeft, Loader2, FileSpreadsheet, Printer, ChevronDown } from 'lucide-react'
@@ -166,7 +166,7 @@ export default function TrialBalancePage() {
                         )}
                         <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-1)' }}>{r.name}</td>
                         <td style={{ padding: '9px 14px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{type}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
                         </td>
                         <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: r.total_debit > 0 ? '#2563eb' : 'var(--text-3)' }}>
                           {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}

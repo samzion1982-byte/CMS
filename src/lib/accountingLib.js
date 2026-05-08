@@ -570,6 +570,11 @@ export async function getAuditLog(limit = 100) {
 
 export const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
+// Church-appropriate display label: "Equity" stored in DB, shown as "Corpus Fund" in UI
+export function displayAccountType(type) {
+  return type === 'Equity' ? 'Corpus Fund' : type
+}
+
 export const TYPE_COLOR = {
   Asset:     { bg: '#dbeafe', text: '#1d4ed8' },
   Liability: { bg: '#fee2e2', text: '#b91c1c' },

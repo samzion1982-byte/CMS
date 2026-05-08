@@ -12,7 +12,7 @@ import {
   updateJournalEntry, postJournalEntry, deleteJournalEntry,
   nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
   getEntrySystemStatus,
-  VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR,
+  VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
@@ -36,11 +36,9 @@ export default function JournalEntryPage() {
   const [checked, setChecked] = useState(false)
 
   useEffect(() => {
-    getEntrySystemStatus().then(s => {
-      if (!s.locked) { navigate('/accounting', { replace: true }); return }
-      setChecked(true)
-    }).catch(() => setChecked(true))
-  }, [navigate])
+    // Only block if accounting is entirely disabled; allow entry creation regardless of lock status
+    getEntrySystemStatus().then(() => setChecked(true)).catch(() => setChecked(true))
+  }, [])
 
   if (!checked) return (
     <div className="page-container">
@@ -503,7 +501,7 @@ function JournalEntryForm({ entryId }) {
                         const group = accounts.filter(a => a.account_type === type)
                         if (!group.length) return null
                         return (
-                          <optgroup key={type} label={type}>
+                          <optgroup key={type} label={displayAccountType(type)}>
                             {group.map(a => <option key={a.id} value={a.id}>{a.path}</option>)}
                           </optgroup>
                         )

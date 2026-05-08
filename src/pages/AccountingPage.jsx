@@ -11,7 +11,7 @@ import {
   getFY, fyOptions, fmtAmt,
   getAccountingStats, getJournalEntries, getChartOfAccounts,
   isAccountingEnabled, getEntrySystemStatus, lockEntrySystem,
-  TYPE_COLOR, VOUCHER_COLOR,
+  TYPE_COLOR, VOUCHER_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
   BookOpen, Settings, TrendingUp, TrendingDown, Scale, IndianRupee,
@@ -102,7 +102,7 @@ function TypeSummaryCard({ type, count, loading }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: c.bg, borderRadius: 8, border: `1px solid ${c.border}` }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.text, flexShrink: 0 }} />
-      <span style={{ fontSize: 12, fontWeight: 600, color: c.text, flex: 1 }}>{type}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: c.text, flex: 1 }}>{displayAccountType(type)}</span>
       <span style={{ fontSize: 16, fontWeight: 800, color: c.text }}>
         {loading ? '—' : count}
       </span>
@@ -177,8 +177,8 @@ function EntrySystemSetupModal({ onLocked }) {
       title:    'Double Entry System',
       subtitle: 'Full double-entry bookkeeping — every transaction has debit and credit entries.',
       bullets:  [
-        'Complete Chart of Accounts (Assets, Liabilities, Equity)',
-        'Trial Balance, Balance Sheet, P&L reports',
+        'Complete Chart of Accounts (Assets, Liabilities, Corpus Fund)',
+        'Trial Balance, Balance Sheet, Income & Expenditure reports',
         'Audit-ready financial statements',
         'Recommended for larger or registered churches',
       ],
@@ -501,7 +501,7 @@ export default function AccountingPage() {
         <StatCard icon={Scale}       label="Total Liabilities" value={L ? null : fmtAmt(stats?.totalLiabilities)} sub="All liability accounts"      iconBg="#fee2e2" iconColor="#b91c1c" loading={L} />
         <StatCard icon={TrendingUp}  label="Total Income"      value={L ? null : fmtAmt(stats?.totalIncome)}      sub={`FY ${fy}`}                  iconBg="#dcfce7" iconColor="#16a34a" loading={L} />
         <StatCard icon={TrendingDown}label="Total Expenses"    value={L ? null : fmtAmt(stats?.totalExpenses)}    sub={`FY ${fy}`}                  iconBg="#fff7ed" iconColor="#c2410c" loading={L} />
-        <StatCard icon={IndianRupee} label="Net Income"        value={L ? null : fmtAmt(stats?.netIncome)}        sub="Income minus Expenses"       iconBg="#f3e8ff" iconColor="#7c3aed" loading={L} trend={L ? undefined : stats?.netIncome} />
+        <StatCard icon={IndianRupee} label="Surplus / Deficit"  value={L ? null : fmtAmt(stats?.netIncome)}        sub="Income minus Expenditure"    iconBg="#f3e8ff" iconColor="#7c3aed" loading={L} trend={L ? undefined : stats?.netIncome} />
       </div>
 
       {/* ── Main 2-col layout ───────────────────────────────────── */}
@@ -587,12 +587,12 @@ export default function AccountingPage() {
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Actions</p>
             </div>
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <QuickBtn icon={PlusCircle}    label="New Journal Entry"  desc="Record a transaction"       onClick={() => navigate('/accounting/journal-entry/new')}   color="#2563eb" />
-              <QuickBtn icon={BookMarked}    label="Chart of Accounts"  desc="Manage account heads"       onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
-              <QuickBtn icon={ClipboardList} label="Ledger"             desc="View account transactions"  onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />
-              <QuickBtn icon={Scale}         label="Trial Balance"      desc="Verify debit = credit"      onClick={() => navigate('/accounting/trial-balance')}        color="#c2410c" />
-              <QuickBtn icon={BarChart2}     label="Income Statement"   desc="Profit &amp; Loss report"       onClick={() => navigate('/accounting/statements')}           color="#0891b2" />
-              <QuickBtn icon={List}          label="Balance Sheet"      desc="Assets vs Liabilities"      onClick={() => navigate('/accounting/statements?tab=bs')}    color="#065f46" />
+              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => navigate('/accounting/journal-entry/new')}   color="#2563eb" />
+              <QuickBtn icon={BookMarked}    label="Chart of Accounts"   desc="Manage account heads for the church"     onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
+              <QuickBtn icon={ClipboardList} label="Ledger"              desc="View transactions for any account"       onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />
+              <QuickBtn icon={Scale}         label="Trial Balance"       desc="Verify total debits = total credits"     onClick={() => navigate('/accounting/trial-balance')}        color="#c2410c" />
+              <QuickBtn icon={BarChart2}     label="Financial Statements" desc="Receipts &amp; Payments, I&amp;E, Balance Sheet" onClick={() => navigate('/accounting/statements')}         color="#0891b2" />
+              <QuickBtn icon={List}          label="GL Reports"          desc="Day Book &amp; Account-wise Summary"     onClick={() => navigate('/accounting/gl-reports')}          color="#065f46" />
             </div>
           </div>
 
