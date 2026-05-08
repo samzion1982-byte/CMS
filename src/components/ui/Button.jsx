@@ -26,7 +26,12 @@ const styles = `
   position: absolute;
   top: 0; left: -120%;
   width: 55%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255,182,193,0.22) 20%,
+    rgba(255,255,255,0.32) 40%,
+    rgba(173,216,230,0.22) 60%,
+    transparent 100%);
   transform: skewX(-15deg);
   transition: left 0.5s ease;
   pointer-events: none;
