@@ -15,6 +15,9 @@ import {
   CheckCircle2, Banknote, Landmark, ChevronRight, Pencil,
 } from 'lucide-react'
 
+// strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
+function norm(s) { return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() }
+
 // ── Typeahead account picker ──────────────────────────────────────
 function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
   const [query, setQuery] = useState('')
@@ -28,9 +31,10 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
   const filtered = useMemo(() => {
     if (!open) return []
     const q = query.trim().toLowerCase()
+    const qn = norm(q)
     if (!q) return accounts.slice(0, 15)
     return accounts.filter(a =>
-      a.name.toLowerCase().includes(q) || (a.path || '').toLowerCase().includes(q)
+      a.name.toLowerCase().includes(q) || norm(a.name).includes(qn)
     ).slice(0, 12)
   }, [query, open, accounts])
 
@@ -43,6 +47,7 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
     else if (e.key === 'ArrowUp')       { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === 'Escape')        { setOpen(false) }
     else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
+    else if (e.key === 'Tab'   && open) { if (filtered[hi]) pick(filtered[hi]) }
   }
 
   return (
@@ -63,17 +68,11 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
         }}>
           {filtered.map((a, i) => (
             <div key={a.id} onMouseDown={() => pick(a)} style={{
-              padding: '7px 12px', cursor: 'pointer',
+              padding: '8px 12px', cursor: 'pointer',
               background: i === hi ? 'var(--accent-subtle)' : 'transparent',
               borderBottom: '1px solid var(--card-border)',
             }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-              {a.path && a.path !== a.name && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{a.path}</div>}
-              <span style={{
-                fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, marginTop: 2,
-                background: TYPE_COLOR[a.account_type]?.bg, color: TYPE_COLOR[a.account_type]?.text,
-                display: 'inline-block',
-              }}>{a.account_type}</span>
             </div>
           ))}
         </div>
@@ -234,7 +233,7 @@ export default function ReceiptVoucherPage() {
       {/* ══ ALWAYS VISIBLE: header + voucher details ══ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <button onClick={() => navigate(-1)} className="nav-item"
-          style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center' }}>
+          style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center', width: 'auto', flexShrink: 0 }}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1 }}>
@@ -351,7 +350,7 @@ export default function ReceiptVoucherPage() {
         <div className="card" style={{ padding: '22px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
             <button onClick={goBack} className="nav-item"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0' }}>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0', width: 'auto' }}>
               <ArrowLeft size={14} /> Back
             </button>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
@@ -520,7 +519,7 @@ export default function ReceiptVoucherPage() {
                   disabled={busy}
                   style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a', fontSize: 15, paddingTop: 6 }} />
                 <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
-                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', marginTop: 6,
+                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', marginTop: 6, width: 'auto',
                     cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
                     color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
                   <Trash2 size={15} />
