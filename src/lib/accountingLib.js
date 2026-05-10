@@ -426,7 +426,7 @@ async function reverseBalanceCache(lines, fy) {
       .select('*')
       .eq('account_id', line.account_id)
       .eq('financial_year', fy)
-      .single()
+      .maybeSingle()
     if (!existing) continue
     const newDebit  = Number(existing.total_debit)  - Number(line.debit_amount  || 0)
     const newCredit = Number(existing.total_credit) - Number(line.credit_amount || 0)
@@ -450,7 +450,7 @@ async function updateBalanceCache(lines, fy) {
       .select('*')
       .eq('account_id', line.account_id)
       .eq('financial_year', fy)
-      .single()
+      .maybeSingle()
 
     const base = existing || { opening_balance: 0, total_debit: 0, total_credit: 0 }
     const newDebit  = Number(base.total_debit)  + Number(line.debit_amount  || 0)

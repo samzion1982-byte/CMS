@@ -154,7 +154,7 @@ export default function ReceiptVoucherPage() {
       const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
       setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
       setLoaded(true)
-    }).catch(() => { toast.error('Failed to load data'); setLoaded(true) })
+    }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
 
   // ── Wizard navigation ─────────────────────────────────────────
@@ -215,10 +215,10 @@ export default function ReceiptVoucherPage() {
         ...validLines.map(l => ({ account_id: l.account_id, debit_amount: 0, credit_amount: parseFloat(l.amount), description: l.description || null })),
       ]
       const je = await createJournalEntry(entry, jLines, user?.email || 'system')
-      if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast.success(`${receiptNo} posted`) }
-      else         { toast.success(`${receiptNo} saved as draft`) }
+      if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast(`${receiptNo} posted`, 'success') }
+      else         { toast(`${receiptNo} saved as draft`, 'success') }
       navigate('/accounting/journal-entries')
-    } catch (err) { toast.error(err.message || 'Failed to save'); setSt(false) }
+    } catch (err) { toast(err.message || 'Failed to save', 'error'); setSt(false) }
   }
 
   // ── Loading ───────────────────────────────────────────────────
@@ -492,34 +492,38 @@ export default function ReceiptVoucherPage() {
             </div>
 
             {/* Column headers */}
-            <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 6 }}>
-              {['#', 'Account', 'Description', 'Amount (₹)', ''].map(h => (
+            <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 8 }}>
+              {['#', 'Account / Description', 'Amount (₹)', ''].map(h => (
                 <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
               ))}
             </div>
 
             {lines.map((line, idx) => (
               <div key={line._key}
-                style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, textAlign: 'right' }}>{idx + 1}</span>
-                <AccountPicker
-                  value={line.account_id}
-                  accounts={creditAccounts}
-                  onChange={id => updateLine(idx, 'account_id', id)}
-                  placeholder="Select account…"
-                  disabled={busy}
-                />
-                <input className="field-input" placeholder="Description"
-                  value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} disabled={busy} />
+                style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 12, alignItems: 'start' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700, textAlign: 'center', paddingTop: 10 }}>{idx + 1}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <AccountPicker
+                    value={line.account_id}
+                    accounts={creditAccounts}
+                    onChange={id => updateLine(idx, 'account_id', id)}
+                    placeholder="Select account…"
+                    disabled={busy}
+                  />
+                  <input className="field-input" placeholder="Description (optional)"
+                    value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)}
+                    disabled={busy}
+                    style={{ fontSize: 12, height: 30 }} />
+                </div>
                 <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
                   value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
                   disabled={busy}
-                  style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }} />
+                  style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a', fontSize: 15, paddingTop: 6 }} />
                 <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
-                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
+                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', marginTop: 6,
                     cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
                     color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </button>
               </div>
             ))}
