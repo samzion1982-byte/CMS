@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import { supabase } from '../lib/supabase'
 import {
   getFY, fmtAmt,
   getChartOfAccounts, getPostableAccountsWithPath,
@@ -9,7 +10,10 @@ import {
   createJournalEntry, postJournalEntry,
   TYPE_COLOR,
 } from '../lib/accountingLib'
-import { PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import {
+  PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
+  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil,
+} from 'lucide-react'
 
 // ── Typeahead account picker ──────────────────────────────────────
 function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
@@ -35,10 +39,10 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
   function pick(a)   { saved.current = a.id; onChange(a.id); setOpen(false) }
 
   function onKey(e) {
-    if (e.key === 'ArrowDown')             { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp')          { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape')           { setOpen(false) }
-    else if (e.key === 'Enter' && open)    { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
+    if (e.key === 'ArrowDown')          { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
+    else if (e.key === 'ArrowUp')       { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    else if (e.key === 'Escape')        { setOpen(false) }
+    else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
   }
 
   return (
@@ -80,49 +84,121 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
 
 const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', description: '', amount: '' })
 
+// mask last 4 of account number
+function maskAccNo(no) {
+  if (!no) return ''
+  const s = String(no).replace(/\s/g, '')
+  return s.length > 4 ? '•••• ' + s.slice(-4) : s
+}
+
 // ── Main Page ─────────────────────────────────────────────────────
 export default function ReceiptVoucherPage() {
   const { user }  = useAuth()
   const navigate  = useNavigate()
   const toast     = useToast()
 
-  const [allAccounts,  setAllAccounts]  = useState([])
+  // ── Data
+  const [allCoa,       setAllCoa]       = useState([])
+  const [bankAccounts, setBankAccounts] = useState([])
   const [receiptNo,    setReceiptNo]    = useState('')
+  const [loaded,       setLoaded]       = useState(false)
+
+  // ── Voucher header (always visible)
   const [entryDate,    setEntryDate]    = useState(() => new Date().toISOString().slice(0, 10))
   const [receivedFrom, setReceivedFrom] = useState('')
   const [refNo,        setRefNo]        = useState('')
-  const [cashBankId,   setCashBankId]   = useState('')
-  const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
   const [narration,    setNarration]    = useState('')
-  const [saving,       setSaving]       = useState(false)
-  const [posting,      setPosting]      = useState(false)
-  const [loaded,       setLoaded]       = useState(false)
 
-  const assetAccounts  = useMemo(() => getPostableAccountsWithPath(allAccounts).filter(a => a.account_type === 'Asset'), [allAccounts])
-  const creditAccounts = useMemo(() => getPostableAccountsWithPath(allAccounts), [allAccounts])
+  // ── Wizard state
+  // step: 1 = cash/bank choice  2 = pick account  3 = credit entries
+  const [step,         setStep]         = useState(1)
+  const [receiptType,  setReceiptType]  = useState('')   // 'cash' | 'bank'
+  const [debitCoaId,   setDebitCoaId]   = useState('')   // COA account id for the debit line
+  const [debitLabel,   setDebitLabel]   = useState('')   // display label
+  const [needCoaLink,  setNeedCoaLink]  = useState(false) // bank account has no coa_account_id
 
-  const total          = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
-  const isValid        = cashBankId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
-  const cashBankAcc    = useMemo(() => assetAccounts.find(a => a.id === cashBankId), [assetAccounts, cashBankId])
-  const balanced       = total > 0  // debit === credit always by design
+  // ── Credit entries
+  const [lines, setLines] = useState(() => [blankLine(), blankLine()])
+
+  // ── Save state
+  const [saving,  setSaving]  = useState(false)
+  const [posting, setPosting] = useState(false)
+
+  // ── Derived
+  const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
+
+  const cashAccounts  = useMemo(() => {
+    const filtered = assetAccounts.filter(a => /cash|hand|petty/i.test(a.name))
+    return filtered.length > 0 ? filtered : assetAccounts
+  }, [assetAccounts])
+
+  const bankCoaAccounts = useMemo(() =>
+    assetAccounts.filter(a => /bank/i.test(a.name)),
+  [assetAccounts])
+
+  const creditAccounts = useMemo(() => getPostableAccountsWithPath(allCoa), [allCoa])
+
+  const total   = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
+  const isValid = debitCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
+  const busy    = saving || posting
 
   useEffect(() => {
-    Promise.all([getChartOfAccounts(true), getAccountingSettings()])
-      .then(async ([accounts, s]) => {
-        setAllAccounts(accounts)
-        const fy  = getFY(new Date().toISOString().slice(0, 10))
-        const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
-        setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
-        if (s.accounting_default_cash_id) setCashBankId(s.accounting_default_cash_id)
-        setLoaded(true)
-      })
-      .catch(() => { toast.error('Failed to load accounts'); setLoaded(true) })
+    Promise.all([
+      getChartOfAccounts(true),
+      getAccountingSettings(),
+      supabase.from('bank_accounts').select('*').eq('is_active', true).order('sort_order').order('created_at'),
+    ]).then(async ([coa, s, { data: banks }]) => {
+      setAllCoa(coa)
+      setBankAccounts(banks || [])
+      const fy  = getFY(new Date().toISOString().slice(0, 10))
+      const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
+      setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
+      setLoaded(true)
+    }).catch(() => { toast.error('Failed to load data'); setLoaded(true) })
   }, [])
 
+  // ── Wizard navigation ─────────────────────────────────────────
+  function chooseType(type) {
+    setReceiptType(type)
+    setDebitCoaId('')
+    setDebitLabel('')
+    setNeedCoaLink(false)
+    setStep(2)
+  }
+
+  function chooseCashAccount(acc) {
+    setDebitCoaId(acc.id)
+    setDebitLabel(acc.name)
+    setNeedCoaLink(false)
+    setStep(3)
+  }
+
+  function chooseBankAccount(bank) {
+    if (bank.coa_account_id) {
+      setDebitCoaId(bank.coa_account_id)
+      setDebitLabel(`${bank.bank_name} — ${maskAccNo(bank.account_number)}`)
+      setNeedCoaLink(false)
+      setStep(3)
+    } else {
+      // Bank account not linked to COA — need user to pick the COA account
+      setDebitLabel(`${bank.bank_name} — ${maskAccNo(bank.account_number)}`)
+      setDebitCoaId('')
+      setNeedCoaLink(true)
+      setStep(3)
+    }
+  }
+
+  function goBack() {
+    if (step === 3) { setStep(2); setNeedCoaLink(false) }
+    else if (step === 2) { setStep(1) }
+  }
+
+  // ── Credit line helpers ───────────────────────────────────────
   function updateLine(idx, field, val) { setLines(ls => ls.map((l, i) => i === idx ? { ...l, [field]: val } : l)) }
   function addLine()       { setLines(ls => [...ls, blankLine()]) }
   function removeLine(idx) { setLines(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls) }
 
+  // ── Save / Post ───────────────────────────────────────────────
   async function handleSave(andPost = false) {
     if (!isValid) return
     const setSt = andPost ? setPosting : setSaving
@@ -135,7 +211,7 @@ export default function ReceiptVoucherPage() {
         voucher_type: 'Receipt', narration: narration || null, reference_no: refNo || null,
       }
       const jLines = [
-        { account_id: cashBankId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
+        { account_id: debitCoaId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
         ...validLines.map(l => ({ account_id: l.account_id, debit_amount: 0, credit_amount: parseFloat(l.amount), description: l.description || null })),
       ]
       const je = await createJournalEntry(entry, jLines, user?.email || 'system')
@@ -145,184 +221,341 @@ export default function ReceiptVoucherPage() {
     } catch (err) { toast.error(err.message || 'Failed to save'); setSt(false) }
   }
 
+  // ── Loading ───────────────────────────────────────────────────
   if (!loaded) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
       <Loader2 size={28} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--accent)' }} />
     </div>
   )
 
-  const busy = saving || posting
-
   return (
-    <div style={{ maxWidth: 820, margin: '0 auto' }}>
+    <div style={{ maxWidth: 760, margin: '0 auto' }}>
 
-      {/* ── Page header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+      {/* ══ ALWAYS VISIBLE: header + voucher details ══ */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <button onClick={() => navigate(-1)} className="nav-item"
           style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center' }}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1 }}>
-          <h1 className="page-title" style={{ marginBottom: 2 }}>Receipt Voucher</h1>
-          <p className="page-subtitle">Record money received into cash or bank</p>
+          <h1 className="page-title" style={{ marginBottom: 1 }}>Receipt Voucher</h1>
         </div>
-        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)' }}>{receiptNo}</div>
+        <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '4px 10px', borderRadius: 6 }}>
+          {receiptNo}
+        </div>
       </div>
 
-      {/* ── Voucher metadata ── */}
-      <div className="card" style={{ marginBottom: 14, padding: '16px 20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px 16px' }}>
+      {/* Voucher meta row */}
+      <div className="card" style={{ marginBottom: 20, padding: '14px 18px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', gap: '10px 16px' }}>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Date *</label>
-            <input className="field-input" type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} disabled={busy} />
+            <input className="field-input" type="date" value={entryDate}
+              onChange={e => setEntryDate(e.target.value)} disabled={busy} />
           </div>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Received From</label>
-            <input className="field-input" placeholder="Donor / member name" value={receivedFrom} onChange={e => setReceivedFrom(e.target.value)} disabled={busy} />
+            <input className="field-input" placeholder="Donor / member name"
+              value={receivedFrom} onChange={e => setReceivedFrom(e.target.value)} disabled={busy} />
           </div>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Reference No</label>
-            <input className="field-input" placeholder="Cheque / UPI ref." value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
+            <input className="field-input" placeholder="Cheque / UPI ref."
+              value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
           </div>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Narration</label>
-            <input className="field-input" placeholder="Brief description" value={narration} onChange={e => setNarration(e.target.value)} disabled={busy} />
+            <input className="field-input" placeholder="Brief description"
+              value={narration} onChange={e => setNarration(e.target.value)} disabled={busy} />
           </div>
         </div>
       </div>
 
-      {/* ── Two-column layout: Cash/Bank | Credit entries ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 14, alignItems: 'start', marginBottom: 20 }}>
-
-        {/* LEFT — Cash / Bank card (DEBIT side) */}
-        <div className="card" style={{ padding: '18px 20px', position: 'sticky', top: 80 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#dc2626', marginBottom: 10 }}>
-            Debit — Received Into
+      {/* ══ STEP PROGRESS ══ */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, fontSize: 12 }}>
+        {[
+          { n: 1, label: 'Cash or Bank?' },
+          { n: 2, label: receiptType === 'bank' ? 'Select Bank Account' : 'Select Cash Account' },
+          { n: 3, label: 'Credit Entries' },
+        ].map((s, i) => (
+          <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700,
+              background: step >= s.n ? 'var(--accent)' : 'var(--card-border)',
+              color: step >= s.n ? '#fff' : 'var(--text-3)',
+              flexShrink: 0,
+            }}>{step > s.n ? '✓' : s.n}</div>
+            <span style={{ color: step >= s.n ? 'var(--text-1)' : 'var(--text-3)', fontWeight: step === s.n ? 700 : 400 }}>
+              {s.label}
+            </span>
+            {i < 2 && <ChevronRight size={14} color="var(--text-3)" />}
           </div>
+        ))}
+      </div>
 
-          {/* Account picker */}
-          <AccountPicker
-            value={cashBankId}
-            accounts={assetAccounts}
-            onChange={setCashBankId}
-            placeholder="Cash or bank account…"
-            disabled={busy}
-          />
-          {cashBankAcc && (
-            <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 5 }}>{cashBankAcc.path}</div>
-          )}
+      {/* ══ STEP 1: Cash or Bank ══ */}
+      {step === 1 && (
+        <div className="card" style={{ padding: '28px 24px' }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 24, textAlign: 'center' }}>
+            How was this receipt received?
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 480, margin: '0 auto' }}>
+            {/* Cash button */}
+            <button onClick={() => chooseType('cash')}
+              style={{
+                padding: '28px 16px', borderRadius: 14,
+                border: '2px solid var(--card-border)',
+                background: 'var(--card-bg)', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                transition: 'border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#16a34a'; e.currentTarget.style.background = 'rgba(22,163,74,0.05)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
+            >
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(22,163,74,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Banknote size={26} color="#16a34a" />
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Cash</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Cash in hand / petty cash</div>
+              </div>
+            </button>
 
-          {/* Divider */}
-          <div style={{ borderTop: '1px solid var(--card-border)', margin: '16px 0 12px' }} />
+            {/* Bank button */}
+            <button onClick={() => chooseType('bank')}
+              style={{
+                padding: '28px 16px', borderRadius: 14,
+                border: '2px solid var(--card-border)',
+                background: 'var(--card-bg)', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                transition: 'border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.background = 'rgba(37,99,235,0.05)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
+            >
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(37,99,235,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Landmark size={26} color="#2563eb" />
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Bank</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Cheque / transfer / UPI</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
 
-          {/* Auto-debit amount display */}
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>
-            Debit Amount
-            <span style={{ marginLeft: 6, fontSize: 9, color: '#94a3b8', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
-              (auto-calculated)
+      {/* ══ STEP 2: Pick account ══ */}
+      {step === 2 && (
+        <div className="card" style={{ padding: '22px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+            <button onClick={goBack} className="nav-item"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, padding: '4px 0' }}>
+              <ArrowLeft size={14} /> Back
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+              {receiptType === 'bank' ? 'Select Bank Account' : 'Select Cash Account'}
             </span>
           </div>
 
-          <div style={{
-            padding: '14px 16px', borderRadius: 10,
-            background: balanced ? 'rgba(220,38,38,0.06)' : 'var(--page-bg)',
-            border: `2px ${balanced ? 'solid #dc262630' : 'dashed var(--card-border)'}`,
-            textAlign: 'center',
-            transition: 'all 0.25s ease',
-          }}>
-            {balanced ? (
-              <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 22, color: '#dc2626', letterSpacing: '0.02em' }}>
-                {fmtAmt(total)}
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
-                Enter credit amounts →
-              </div>
-            )}
-          </div>
+          {/* CASH accounts */}
+          {receiptType === 'cash' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {cashAccounts.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: 20 }}>
+                  No cash accounts found. Add one in Chart of Accounts.
+                </p>
+              )}
+              {cashAccounts.map(acc => (
+                <button key={acc.id} onClick={() => chooseCashAccount(acc)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '14px 16px', borderRadius: 10,
+                    border: '1.5px solid var(--card-border)',
+                    background: 'var(--card-bg)', cursor: 'pointer', textAlign: 'left',
+                    transition: 'border-color 0.15s, background 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#16a34a'; e.currentTarget.style.background = 'rgba(22,163,74,0.05)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
+                >
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(22,163,74,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Banknote size={18} color="#16a34a" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{acc.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{acc.path}</div>
+                  </div>
+                  <ChevronRight size={16} color="var(--text-3)" />
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Balance indicator */}
-          {balanced && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)' }}>
-              <CheckCircle2 size={14} color="#16a34a" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>Entry Balanced</span>
+          {/* BANK accounts */}
+          {receiptType === 'bank' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {bankAccounts.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: 20 }}>
+                  No bank accounts found. Add one in Accounting → Bank Accounts.
+                </p>
+              )}
+              {bankAccounts.map(bank => (
+                <button key={bank.id} onClick={() => chooseBankAccount(bank)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '14px 16px', borderRadius: 10,
+                    border: '1.5px solid var(--card-border)',
+                    background: 'var(--card-bg)', cursor: 'pointer', textAlign: 'left',
+                    transition: 'border-color 0.15s, background 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.background = 'rgba(37,99,235,0.05)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
+                >
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(37,99,235,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Landmark size={18} color="#2563eb" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{bank.bank_name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+                      A/c: {maskAccNo(bank.account_number)}
+                    </div>
+                    {bank.branch && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{bank.branch}</div>}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', background: 'var(--page-bg)', padding: '2px 8px', borderRadius: 6, marginRight: 6 }}>
+                    {bank.account_type}
+                  </span>
+                  <ChevronRight size={16} color="var(--text-3)" />
+                </button>
+              ))}
             </div>
           )}
         </div>
+      )}
 
-        {/* RIGHT — Credit entries */}
-        <div className="card" style={{ padding: '18px 20px' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#16a34a', marginBottom: 12 }}>
-            Credit Entries — Income / Other Accounts
-          </div>
-
-          {/* Column headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 6 }}>
-            {['#', 'Account', 'Description', 'Amount (₹)', ''].map(h => (
-              <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
-            ))}
-          </div>
-
-          {/* Credit lines */}
-          {lines.map((line, idx) => (
-            <div key={line._key}
-              style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, textAlign: 'right' }}>{idx + 1}</span>
-              <AccountPicker
-                value={line.account_id}
-                accounts={creditAccounts}
-                onChange={id => updateLine(idx, 'account_id', id)}
-                placeholder="Select account…"
-                disabled={busy}
-              />
-              <input className="field-input" placeholder="Description"
-                value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} disabled={busy} />
-              <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
-                value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
-                disabled={busy}
-                style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }} />
-              <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
-                style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
-                  cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
-                  color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
-                <Trash2 size={14} />
-              </button>
+      {/* ══ STEP 3: Credit entries ══ */}
+      {step === 3 && (
+        <>
+          {/* Selected account banner */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14,
+            padding: '12px 16px', borderRadius: 10,
+            background: receiptType === 'bank' ? 'rgba(37,99,235,0.07)' : 'rgba(22,163,74,0.07)',
+            border: `1.5px solid ${receiptType === 'bank' ? 'rgba(37,99,235,0.2)' : 'rgba(22,163,74,0.2)'}`,
+          }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: receiptType === 'bank' ? 'rgba(37,99,235,0.15)' : 'rgba(22,163,74,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {receiptType === 'bank' ? <Landmark size={16} color="#2563eb" /> : <Banknote size={16} color="#16a34a" />}
             </div>
-          ))}
-
-          {/* Add line + running total */}
-          <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, gap: 12 }}>
-            <button onClick={addLine} disabled={busy}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
-                border: '1.5px dashed var(--card-border)', background: 'transparent',
-                color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-              <PlusCircle size={13} /> Add Line
-            </button>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-                Total Credit
-              </span>
-              <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 18, color: total > 0 ? '#16a34a' : 'var(--text-3)' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: receiptType === 'bank' ? '#2563eb' : '#16a34a', marginBottom: 2 }}>
+                Debit — Received Into
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{debitLabel}</div>
+            </div>
+            {/* Auto debit amount */}
+            <div style={{ textAlign: 'right', marginRight: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Debit Amount</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 18, color: total > 0 ? '#dc2626' : 'var(--text-3)' }}>
                 {total > 0 ? fmtAmt(total) : '—'}
-              </span>
+              </div>
+            </div>
+            {total > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#16a34a' }}>
+                <CheckCircle2 size={16} />
+              </div>
+            )}
+            <button onClick={goBack}
+              style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', color: 'var(--text-2)', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+              <Pencil size={11} /> Change
+            </button>
+          </div>
+
+          {/* If bank account has no COA link, ask user to pick */}
+          {needCoaLink && (
+            <div className="card" style={{ marginBottom: 14, padding: '14px 18px', borderLeft: '3px solid #f59e0b' }}>
+              <p style={{ fontSize: 12, color: '#92400e', fontWeight: 600, marginBottom: 8 }}>
+                This bank account is not linked to a Chart of Accounts entry. Please select the matching account:
+              </p>
+              <AccountPicker
+                value={debitCoaId}
+                accounts={bankCoaAccounts.length > 0 ? bankCoaAccounts : assetAccounts}
+                onChange={id => setDebitCoaId(id)}
+                placeholder="Select the bank's COA account…"
+              />
+            </div>
+          )}
+
+          {/* Credit entries table */}
+          <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#16a34a', marginBottom: 12 }}>
+              Credit Entries
+            </div>
+
+            {/* Column headers */}
+            <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 6 }}>
+              {['#', 'Account', 'Description', 'Amount (₹)', ''].map(h => (
+                <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
+              ))}
+            </div>
+
+            {lines.map((line, idx) => (
+              <div key={line._key}
+                style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, textAlign: 'right' }}>{idx + 1}</span>
+                <AccountPicker
+                  value={line.account_id}
+                  accounts={creditAccounts}
+                  onChange={id => updateLine(idx, 'account_id', id)}
+                  placeholder="Select account…"
+                  disabled={busy}
+                />
+                <input className="field-input" placeholder="Description"
+                  value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} disabled={busy} />
+                <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
+                  value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
+                  disabled={busy}
+                  style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }} />
+                <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
+                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
+                    cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
+                    color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+
+            {/* Add line + total */}
+            <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, gap: 12 }}>
+              <button onClick={addLine} disabled={busy}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
+                  border: '1.5px dashed var(--card-border)', background: 'transparent',
+                  color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <PlusCircle size={13} /> Add Line
+              </button>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)' }}>Total Credit</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 20, color: total > 0 ? '#16a34a' : 'var(--text-3)' }}>
+                  {total > 0 ? fmtAmt(total) : '—'}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-        <button onClick={() => handleSave(false)} disabled={!isValid || busy} className="btn btn-secondary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Save size={14} />}
-          Save Draft
-        </button>
-        <button onClick={() => handleSave(true)} disabled={!isValid || busy} className="btn btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {posting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <CheckSquare size={14} />}
-          Post
-        </button>
-      </div>
+          {/* Save / Post */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button onClick={() => handleSave(false)} disabled={!isValid || busy} className="btn btn-secondary"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Save size={14} />}
+              Save Draft
+            </button>
+            <button onClick={() => handleSave(true)} disabled={!isValid || busy} className="btn btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {posting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <CheckSquare size={14} />}
+              Post
+            </button>
+          </div>
+        </>
+      )}
 
     </div>
   )
