@@ -188,7 +188,7 @@ export async function checkDeviceRegistered(deviceId) {
   if (!deviceId) return null
   const { data } = await adminSupabase
     .from('user_devices')
-    .select('org_name, user_name, location')
+    .select('org_name, user_name, location, avatar_name')
     .eq('device_id', deviceId)
     .maybeSingle()
   return data || null
@@ -199,22 +199,58 @@ export async function checkDeviceRegistered(deviceId) {
 // and silently re-associate the new device_id.
 export async function checkDeviceRegisteredByUser(userId) {
   if (!userId) return null
-  const { data } = await adminSupabase
+  // Prefer the most-recent row that has avatar_name set; fall back to overall most-recent
+  const { data: recent } = await adminSupabase
     .from('user_devices')
-    .select('org_name, user_name, location')
+    .select('org_name, user_name, location, avatar_name')
     .eq('user_id', userId)
     .order('registered_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return data || null
+  if (!recent) return null
+  if (recent.avatar_name) return recent
+  // Most-recent row has no avatar_name — look for it in any other row
+  const { data: withAvatar } = await adminSupabase
+    .from('user_devices')
+    .select('avatar_name')
+    .eq('user_id', userId)
+    .not('avatar_name', 'is', null)
+    .limit(1)
+    .maybeSingle()
+  return { ...recent, avatar_name: withAvatar?.avatar_name || null }
 }
 
-export async function saveDevice({ deviceId, userId, orgName, userName, location }) {
+export async function saveDevice({ deviceId, userId, orgName, userName, location, avatarName }) {
+  let resolvedAvatar = avatarName || null
+
+  // If blank, carry forward whatever is already stored for this user
+  if (!resolvedAvatar && userId) {
+    const { data: existing } = await adminSupabase
+      .from('user_devices')
+      .select('avatar_name')
+      .eq('user_id', userId)
+      .not('avatar_name', 'is', null)
+      .limit(1)
+      .maybeSingle()
+    resolvedAvatar = existing?.avatar_name || null
+  }
+
+  const payload = { device_id: deviceId, user_id: userId, org_name: orgName, user_name: userName, location }
+  if (resolvedAvatar) payload.avatar_name = resolvedAvatar
+
   const { error } = await adminSupabase
     .from('user_devices')
-    .upsert({ device_id: deviceId, user_id: userId, org_name: orgName, user_name: userName, location },
-             { onConflict: 'device_id' })
+    .upsert(payload, { onConflict: 'device_id' })
   if (error) throw error
+
+  // Sync to every other row so future device changes always carry the value
+  if (userId && resolvedAvatar) {
+    await adminSupabase
+      .from('user_devices')
+      .update({ avatar_name: resolvedAvatar })
+      .eq('user_id', userId)
+      .neq('device_id', deviceId)
+  }
 }
 
 /* Tag the most recent untagged login log for this user with device details.

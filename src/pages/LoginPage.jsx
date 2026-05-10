@@ -63,10 +63,11 @@ export default function LoginPage() {
               deviceId: devId,
               userId: uid,
               prefill: {
-                userName: knownByUser.user_name || '',
-                orgName:  knownByUser.org_name  || '',
-                area:     idx !== -1 ? loc.slice(0, idx) : '',
-                city:     idx !== -1 ? loc.slice(idx + 2) : loc,
+                userName:   knownByUser.user_name   || '',
+                orgName:    knownByUser.org_name    || '',
+                area:       idx !== -1 ? loc.slice(0, idx) : '',
+                city:       idx !== -1 ? loc.slice(idx + 2) : loc,
+                avatarName: knownByUser.avatar_name || '',
               },
             }))
           } else {

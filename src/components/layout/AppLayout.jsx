@@ -29,7 +29,7 @@ export default function AppLayout({ children }) {
         const info = JSON.parse(raw)
         if (!info.userId) return false
         setPendingInfo(info)
-        setDeviceForm({ ...(info.prefill || { userName: '', orgName: '', area: '', city: '' }), avatarName: '' })
+        setDeviceForm({ userName: '', orgName: '', area: '', city: '', avatarName: '', ...(info.prefill || {}) })
         setIsEditMode(false)
         setShowDeviceSetup(true)
         return true
@@ -69,11 +69,12 @@ export default function AppLayout({ children }) {
     const location = [deviceForm.area, deviceForm.city].filter(Boolean).join(', ')
     try {
       await saveDevice({
-        deviceId: pendingInfo.deviceId,
-        userId:   pendingInfo.userId,
-        orgName:  deviceForm.orgName,
-        userName: deviceForm.userName,
+        deviceId:   pendingInfo.deviceId,
+        userId:     pendingInfo.userId,
+        orgName:    deviceForm.orgName,
+        userName:   deviceForm.userName,
         location,
+        avatarName: deviceForm.avatarName?.trim() || null,
       })
       if (!isEditMode) {
         tagLoginWithDevice(pendingInfo.userId, {
@@ -150,11 +151,11 @@ export default function AppLayout({ children }) {
 
             <div style={{ padding: '16px 22px' }}>
               {[
-                { label: 'YOUR NAME',           key: 'userName',   required: true,  hint: null },
-                { label: 'ORGANISATION / ROLE', key: 'orgName',    required: false, hint: null },
-                { label: 'AREA',                key: 'area',       required: false, hint: null },
-                { label: 'CITY',                key: 'city',       required: true,  hint: null },
-                { label: 'AVATAR NAME',         key: 'avatarName', required: false, hint: 'Initials shown in the avatar circle — leave blank to use your account name' },
+                { label: 'YOUR NAME',          key: 'userName',   required: true,  hint: null },
+                { label: 'AVATAR NAME',        key: 'avatarName', required: false, hint: 'Initials shown in the avatar circle — leave blank to use your account name' },
+                { label: 'ORGANISATION  ROLE', key: 'orgName',    required: false, hint: null },
+                { label: 'AREA',               key: 'area',       required: false, hint: null },
+                { label: 'CITY',               key: 'city',       required: true,  hint: null },
               ].map(f => (
                 <div key={f.key} style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: '#60a5fa', marginBottom: 6 }}>
