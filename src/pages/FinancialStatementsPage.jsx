@@ -7,7 +7,7 @@
    3. Balance Sheet                (Assets vs Liabilities + Corpus Fund)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import {
@@ -321,6 +321,12 @@ export default function FinancialStatementsPage() {
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
   }, [fy, rangeMode, fromDate, toDate, toast])
+
+  // Auto-generate on every mount so navigating back always shows fresh data
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; generate() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page-container">
