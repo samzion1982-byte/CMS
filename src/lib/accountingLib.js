@@ -658,10 +658,18 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
     const lines = entry.journal_entry_lines || []
 
     if (entry.voucher_type === 'Receipt') {
-      const incomeLine = lines.find(l => l.chart_of_accounts?.account_type === 'Income')
-      const cat = incomeLine?.chart_of_accounts?.name || entry.narration || 'Other Receipts'
-      receiptGroups[cat] = (receiptGroups[cat] || 0) + Number(entry.total_debit || 0)
-      // Find which cash/bank was debited
+      // Group by each income credit line separately (handles multi-line receipts)
+      const incomeLines = lines.filter(l => l.chart_of_accounts?.account_type === 'Income' && Number(l.credit_amount) > 0)
+      if (incomeLines.length > 0) {
+        for (const il of incomeLines) {
+          const cat = il.chart_of_accounts?.name || entry.narration || 'Other Receipts'
+          receiptGroups[cat] = (receiptGroups[cat] || 0) + Number(il.credit_amount)
+        }
+      } else {
+        const cat = entry.narration || 'Other Receipts'
+        receiptGroups[cat] = (receiptGroups[cat] || 0) + Number(entry.total_debit || 0)
+      }
+      // Find which cash/bank was debited (for cash vs bank split)
       let classified = false
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.debit_amount) > 0) {
@@ -673,10 +681,18 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
       if (!classified) cashReceipts += Number(entry.total_debit || 0)
 
     } else if (entry.voucher_type === 'Payment') {
-      const expLine = lines.find(l => l.chart_of_accounts?.account_type === 'Expense')
-      const cat = expLine?.chart_of_accounts?.name || entry.narration || 'Other Payments'
-      paymentGroups[cat] = (paymentGroups[cat] || 0) + Number(entry.total_credit || 0)
-      // Find which cash/bank was credited
+      // Group by each expense debit line separately (handles multi-line payments)
+      const expLines = lines.filter(l => l.chart_of_accounts?.account_type === 'Expense' && Number(l.debit_amount) > 0)
+      if (expLines.length > 0) {
+        for (const el of expLines) {
+          const cat = el.chart_of_accounts?.name || entry.narration || 'Other Payments'
+          paymentGroups[cat] = (paymentGroups[cat] || 0) + Number(el.debit_amount)
+        }
+      } else {
+        const cat = entry.narration || 'Other Payments'
+        paymentGroups[cat] = (paymentGroups[cat] || 0) + Number(entry.total_credit || 0)
+      }
+      // Find which cash/bank was credited (for cash vs bank split)
       let classified = false
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.credit_amount) > 0) {
