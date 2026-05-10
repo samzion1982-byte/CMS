@@ -18,14 +18,15 @@ export function fyDateRange(fy) {
   return { from: `${startY}-04-01`, to: `${startY + 1}-03-31` }
 }
 
-export function fyOptions(count = 4) {
-  const options = new Set()
-  options.add(getFY())
-  const y = new Date().getFullYear()
-  for (let d = 1; d <= count; d++) {
-    options.add(`${y - d}-${String(y - d + 1).slice(2)}`)
+export function fyOptions() {
+  const START_YEAR = 2026            // 2026-27 is the earliest FY in use
+  const currentFY = getFY()
+  const currentStartYear = parseInt(currentFY.split('-')[0])
+  const options = []
+  for (let y = START_YEAR; y <= currentStartYear; y++) {
+    options.push(`${y}-${String(y + 1).slice(2)}`)
   }
-  return [...options].sort().reverse()
+  return options.sort().reverse()   // newest first
 }
 
 export function fmtAmt(n) {
@@ -116,16 +117,16 @@ export function buildCOATree(accounts) {
     }
   })
   const sortNodes = nodes => {
-    nodes.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+    nodes.sort((a, b) => a.name.localeCompare(b.name) || (a.sort_order - b.sort_order))
     nodes.forEach(n => sortNodes(n.children))
   }
   sortNodes(roots)
   return roots
 }
 
-// Only postable (level 3) accounts for journal entry dropdowns
+// Postable accounts for journal entry dropdowns (level 3 ledgers + level 4 sub-ledgers)
 export function getPostableAccounts(accounts) {
-  return accounts.filter(a => a.is_postable !== false && a.level === 3)
+  return accounts.filter(a => a.is_postable !== false && (a.level === 3 || a.level === 4))
 }
 
 // Build breadcrumb path for an account: "Assets > Current Assets > Cash in Hand"
@@ -195,7 +196,7 @@ export async function deleteAccount(id, performedBy) {
 
 // ── Journal Entries ───────────────────────────────────────────────
 
-export async function getJournalEntries({ fy, from, to, type, posted } = {}) {
+export async function getJournalEntries({ fy, from, to, type, posted, deleted = false } = {}) {
   let q = supabase
     .from('journal_entries')
     .select('*')
@@ -206,6 +207,7 @@ export async function getJournalEntries({ fy, from, to, type, posted } = {}) {
   if (to)     q = q.lte('entry_date', to)
   if (type)   q = q.eq('voucher_type', type)
   if (posted !== undefined && posted !== null) q = q.eq('is_posted', posted)
+  q = q.eq('is_deleted', deleted)
   const { data, error } = await q
   if (error) throw error
   return data || []
@@ -320,6 +322,46 @@ export async function updateJournalEntry(id, entry, lines, performedBy) {
   return je
 }
 
+export async function updatePostedJournalEntry(id, entry, lines, performedBy) {
+  const { data: old } = await supabase.from('journal_entries').select('*').eq('id', id).single()
+  const { data: oldLines } = await supabase.from('journal_entry_lines').select('*').eq('journal_entry_id', id)
+
+  const totalDebit  = lines.reduce((s, l) => s + Number(l.debit_amount  || 0), 0)
+  const totalCredit = lines.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
+
+  const { data: je, error: jeErr } = await supabase
+    .from('journal_entries')
+    .update({
+      ...entry,
+      is_posted:    true,
+      total_debit:  totalDebit,
+      total_credit: totalCredit,
+      updated_at:   new Date().toISOString(),
+      updated_by:   performedBy,
+    })
+    .eq('id', id).select().single()
+  if (jeErr) throw jeErr
+
+  await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', id)
+  const lineRows = lines.map((l, i) => ({
+    journal_entry_id: id,
+    account_id:       l.account_id,
+    debit_amount:     Number(l.debit_amount  || 0),
+    credit_amount:    Number(l.credit_amount || 0),
+    description:      l.description || null,
+    line_number:      i + 1,
+  }))
+  const { error: lErr } = await supabase.from('journal_entry_lines').insert(lineRows)
+  if (lErr) throw lErr
+
+  // Reverse old balance contribution, then apply new lines
+  if (oldLines?.length) await reverseBalanceCache(oldLines, old.financial_year)
+  await updateBalanceCache(lineRows, entry.financial_year || old.financial_year)
+
+  await logAudit('modified_posted', 'journal_entry', id, je, old, performedBy)
+  return je
+}
+
 export async function postJournalEntry(id, performedBy) {
   const entry = await getJournalEntryWithLines(id)
   if (entry.is_posted) throw new Error('Entry already posted.')
@@ -336,15 +378,70 @@ export async function postJournalEntry(id, performedBy) {
   await logAudit('posted', 'journal_entry', id, null, null, performedBy)
 }
 
-export async function deleteJournalEntry(id, performedBy) {
+export async function softDeleteJournalEntry(id, performedBy) {
   const { data: entry } = await supabase.from('journal_entries').select('*').eq('id', id).single()
-  if (entry?.is_posted) throw new Error('Cannot delete a posted entry.')
+  const { error } = await supabase.from('journal_entries')
+    .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: performedBy })
+    .eq('id', id)
+  if (error) throw error
+  await logAudit('soft_deleted', 'journal_entry', id, null, entry, performedBy)
+}
+
+export async function restoreJournalEntry(id, performedBy) {
+  const { error } = await supabase.from('journal_entries')
+    .update({ is_deleted: false, deleted_at: null, deleted_by: null })
+    .eq('id', id)
+  if (error) throw error
+  await logAudit('restored', 'journal_entry', id, null, null, performedBy)
+}
+
+export async function verifyDeletePassword(entered) {
+  const { data } = await supabase.from('churches').select('accounting_delete_password').limit(1).single()
+  const stored = data?.accounting_delete_password
+  if (!stored) return { ok: false, noPassword: true }
+  return { ok: entered === stored, noPassword: false }
+}
+
+export async function permanentDeleteJournalEntry(id, performedBy, password) {
+  const { ok, noPassword } = await verifyDeletePassword(password)
+  if (noPassword) throw new Error('No delete password configured. Set one in Accounting → Settings.')
+  if (!ok) throw new Error('Incorrect password. Permanent deletion cancelled.')
+  const { data: entry } = await supabase.from('journal_entries').select('*').eq('id', id).single()
+  // Reverse balance cache if the entry was posted
+  if (entry?.is_posted) {
+    const { data: lines } = await supabase.from('journal_entry_lines').select('*').eq('journal_entry_id', id)
+    if (lines?.length) await reverseBalanceCache(lines, entry.financial_year)
+  }
   const { error } = await supabase.from('journal_entries').delete().eq('id', id)
   if (error) throw error
-  await logAudit('deleted', 'journal_entry', id, null, entry, performedBy)
+  await logAudit('permanently_deleted', 'journal_entry', id, null, entry, performedBy)
 }
 
 // ── Account Balance Cache ─────────────────────────────────────────
+
+async function reverseBalanceCache(lines, fy) {
+  for (const line of lines) {
+    const { data: existing } = await supabase
+      .from('account_balances')
+      .select('*')
+      .eq('account_id', line.account_id)
+      .eq('financial_year', fy)
+      .single()
+    if (!existing) continue
+    const newDebit  = Number(existing.total_debit)  - Number(line.debit_amount  || 0)
+    const newCredit = Number(existing.total_credit) - Number(line.credit_amount || 0)
+    const closing   = Number(existing.opening_balance) + newDebit - newCredit
+    await supabase.from('account_balances').upsert({
+      account_id:      line.account_id,
+      financial_year:  fy,
+      opening_balance: Number(existing.opening_balance),
+      total_debit:     Math.max(0, newDebit),
+      total_credit:    Math.max(0, newCredit),
+      closing_balance: closing,
+      last_updated_at: new Date().toISOString(),
+    }, { onConflict: 'account_id,financial_year' })
+  }
+}
 
 async function updateBalanceCache(lines, fy) {
   for (const line of lines) {
@@ -596,6 +693,17 @@ export async function getAuditLog(limit = 100) {
     .select('*')
     .order('performed_at', { ascending: false })
     .limit(limit)
+  if (error) throw error
+  return data || []
+}
+
+export async function getEntryAuditLog(entryId) {
+  const { data, error } = await supabase
+    .from('accounting_audit_log')
+    .select('*')
+    .eq('entity_type', 'journal_entry')
+    .eq('entity_id', entryId)
+    .order('performed_at', { ascending: false })
   if (error) throw error
   return data || []
 }

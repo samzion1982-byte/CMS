@@ -247,14 +247,14 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
               </span>
               <button
                 onClick={() => { setOpen(false); onSignOut() }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.1)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                onMouseEnter={e => e.currentTarget.style.background = '#7f1d1d'}
+                onMouseLeave={e => e.currentTarget.style.background = '#991b1b'}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '5px 10px', borderRadius: 6,
-                  border: '1px solid rgba(239,68,68,0.25)',
-                  background: 'transparent',
-                  color: '#ef4444', cursor: 'pointer',
+                  border: 'none',
+                  background: '#991b1b',
+                  color: '#fff', cursor: 'pointer',
                   fontSize: 11, fontWeight: 600,
                   fontFamily: 'var(--font-ui)',
                   transition: 'background 0.15s',

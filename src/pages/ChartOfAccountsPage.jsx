@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getChartOfAccounts, buildCOATree, createAccount, updateAccount, deleteAccount,
-  TYPE_COLOR, displayAccountType,
+  TYPE_COLOR, displayAccountType, getFY, fyDateRange,
 } from '../lib/accountingLib'
 import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
@@ -19,8 +19,8 @@ import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
 // ── Level config ──────────────────────────────────────────────────
 
-const LEVEL_LABEL  = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger' }
-const LEVEL_NEXT   = { 1: 'Group', 2: 'Ledger' }  // label for the child-add button
+const LEVEL_LABEL  = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger', 4: 'Sub-Ledger' }
+const LEVEL_NEXT   = { 1: 'Group', 2: 'Ledger', 3: 'Sub-Ledger' }
 const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
 // ── Single tree node ──────────────────────────────────────────────
@@ -34,6 +34,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
   const isL1 = node.level === 1
   const isL2 = node.level === 2
   const isL3 = node.level === 3
+  const isL4 = node.level === 4
 
   const indent = depth * 28
 
@@ -53,7 +54,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
           transition: 'background 0.12s',
         }}
         onMouseEnter={e => { if (!isL1) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = isL2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}
+        onMouseLeave={e => { e.currentTarget.style.background = isL1 ? c.bg + '44' : isL2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}
       >
         {/* Expand / leaf icon */}
         <button
@@ -62,7 +63,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
         >
           {hasChildren
             ? (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />)
-            : isL3 ? <FileText size={12} color={c.text} />
+            : (node.level >= 3) ? <FileText size={12} color={c.text} />
             : <Folder size={13} color={c.text} />}
         </button>
 
@@ -71,15 +72,15 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
           onClick={() => hasChildren && setOpen(o => !o)}
           style={{
             flex: 1, cursor: hasChildren ? 'pointer' : 'default',
-            fontSize: isL1 ? 14 : isL2 ? 13 : 13,
-            fontWeight: isL1 ? 800 : isL2 ? 700 : 500,
+            fontSize: isL1 ? 14 : 13,
+            fontWeight: isL1 ? 800 : isL2 ? 700 : isL3 ? 500 : 400,
             color: isL1 ? c.text : 'var(--text-1)',
             letterSpacing: isL1 ? '0.02em' : 'normal',
             userSelect: 'none',
           }}
         >
           {node.name}
-          {isL3 && !node.is_active && (
+          {(isL3 || isL4) && !node.is_active && (
             <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 8, color: '#94a3b8', background: '#f1f5f9', padding: '1px 6px', borderRadius: 99 }}>Inactive</span>
           )}
         </span>
@@ -92,14 +93,14 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
         {/* Child count */}
         {hasChildren && (
           <span style={{ fontSize: 10, color: 'var(--text-3)', flexShrink: 0 }}>
-            {node.children.length} {node.level === 1 ? 'groups' : 'ledgers'}
+            {node.children.length} {node.level === 1 ? 'groups' : node.level === 2 ? 'ledgers' : 'sub-ledgers'}
           </span>
         )}
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          {/* Add child (L1 adds group, L2 adds ledger) */}
-          {node.level < 3 && (
+          {/* Add child (L1→Group, L2→Ledger, L3→Sub-Ledger) */}
+          {node.level < 4 && (
             <button
               onClick={() => onAdd(node)}
               title={`Add ${LEVEL_NEXT[node.level]} under ${node.name}`}
@@ -157,6 +158,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
   const isEdit = mode === 'edit'
   const parentLevel = parentNode?.level || 0
   const thisLevel   = isEdit ? node.level : parentLevel + 1
+  const fyStart = fyDateRange(getFY()).from
 
   const [form, setForm] = useState(() => isEdit
     ? {
@@ -174,7 +176,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
         description:          '',
         is_active:            true,
         opening_balance:      '',
-        opening_balance_date: '',
+        opening_balance_date: fyStart,
         sort_order:           0,
       }
   )
@@ -189,7 +191,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
         {/* Header */}
         <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12, background: c.bg + '33' }}>
           <div style={{ width: 36, height: 36, borderRadius: 9, background: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {thisLevel === 3 ? <FileText size={16} color={c.text} /> : <FolderOpen size={16} color={c.text} />}
+            {thisLevel >= 3 ? <FileText size={16} color={c.text} /> : <FolderOpen size={16} color={c.text} />}
           </div>
           <div style={{ flex: 1 }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
@@ -241,8 +243,8 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
               style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Opening balance — only for level 3 ledgers */}
-          {thisLevel === 3 && (
+          {/* Opening balance — for ledgers (L3) and sub-ledgers (L4) */}
+          {thisLevel >= 3 && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Opening Balance (₹)</label>
@@ -342,6 +344,7 @@ export default function ChartOfAccountsPage() {
     l1: accounts.filter(a => a.level === 1).length,
     l2: accounts.filter(a => a.level === 2).length,
     l3: accounts.filter(a => a.level === 3).length,
+    l4: accounts.filter(a => a.level === 4).length,
   }
 
   // ── Handlers ──────────────────────────────────────────────────
@@ -382,11 +385,11 @@ export default function ChartOfAccountsPage() {
         account_type:         form.account_type,
         description:          form.description || null,
         is_active:            form.is_active,
-        opening_balance:      level === 3 ? (Number(form.opening_balance) || 0) : 0,
-        opening_balance_date: level === 3 ? (form.opening_balance_date || null) : null,
+        opening_balance:      level >= 3 ? (Number(form.opening_balance) || 0) : 0,
+        opening_balance_date: level >= 3 ? (form.opening_balance_date || null) : null,
         sort_order:           Number(form.sort_order) || 0,
         level,
-        is_postable:          level === 3,
+        is_postable:          level >= 3,
         parent_id:            parent?.id || null,
         ...(!isEdit && { code: baseCode }),
       }
@@ -439,6 +442,7 @@ export default function ChartOfAccountsPage() {
           { label: 'Main Accounts', count: totalCounts.l1, icon: '🗂️' },
           { label: 'Account Groups', count: totalCounts.l2, icon: '📁' },
           { label: 'Ledgers',        count: totalCounts.l3, icon: '📄' },
+          { label: 'Sub-Ledgers',    count: totalCounts.l4, icon: '📋' },
         ].map(s => (
           <div key={s.label} className="card" style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
             <span style={{ fontSize: 22 }}>{s.icon}</span>
@@ -468,9 +472,10 @@ export default function ChartOfAccountsPage() {
       {/* Legend */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         {[
-          { icon: <FolderOpen size={13} />, label: 'Main Account — top-level grouping', color: '#7c3aed' },
-          { icon: <Folder size={13} />,     label: 'Account Group — sub-category',     color: '#2563eb' },
-          { icon: <FileText size={13} />,   label: 'Ledger — postable account',        color: '#16a34a' },
+          { icon: <FolderOpen size={13} />, label: 'Main Account — top-level grouping',  color: '#7c3aed' },
+          { icon: <Folder size={13} />,     label: 'Account Group — sub-category',       color: '#2563eb' },
+          { icon: <FileText size={13} />,   label: 'Ledger — postable account',          color: '#16a34a' },
+          { icon: <FileText size={11} />,   label: 'Sub-Ledger — detailed posting level', color: '#c2410c' },
         ].map(l => (
           <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: l.color }}>
             {l.icon} <span style={{ color: 'var(--text-3)' }}>{l.label}</span>

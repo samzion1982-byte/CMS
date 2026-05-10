@@ -602,15 +602,6 @@ html { zoom: 0.95; }
     letter-spacing: 0.01em;
   }
 
-  /* ── Button animation keyframes ── */
-  @keyframes btnGlow {
-    0%   { box-shadow: var(--btn-shadow-base), 0 0 14px rgba(248,113,113,0.35); }
-    25%  { box-shadow: var(--btn-shadow-base), 0 0 14px rgba(251,191,36,0.35);  }
-    50%  { box-shadow: var(--btn-shadow-base), 0 0 14px rgba(74,222,128,0.35);  }
-    75%  { box-shadow: var(--btn-shadow-base), 0 0 14px rgba(96,165,250,0.35);  }
-    100% { box-shadow: var(--btn-shadow-base), 0 0 14px rgba(248,113,113,0.35); }
-  }
-
   /* ── Buttons ── */
   .btn {
     display: inline-flex;
@@ -668,12 +659,13 @@ html { zoom: 0.95; }
     box-shadow: 0 2px 0 rgba(0,0,0,0.14),
                 0 4px 14px var(--accent-ring),
                 inset 0 1px 0 rgba(255,255,255,0.18);
-    --btn-shadow-base: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.22);
   }
   .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
     filter: brightness(1.06);
-    animation: btnGlow 2.5s ease-in-out infinite;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.16),
+                0 8px 20px var(--accent-ring),
+                inset 0 1px 0 rgba(255,255,255,0.22);
   }
 
   .btn-secondary {
@@ -720,12 +712,13 @@ html { zoom: 0.95; }
     box-shadow: 0 2px 0 rgba(0,0,0,0.14),
                 0 4px 12px rgba(220,38,38,0.28),
                 inset 0 1px 0 rgba(255,255,255,0.16);
-    --btn-shadow-base: 0 4px 0 rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.20);
   }
   .btn-danger:hover:not(:disabled) {
     transform: translateY(-2px);
     filter: brightness(1.06);
-    animation: btnGlow 2.5s ease-in-out infinite;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.16),
+                0 8px 20px rgba(220,38,38,0.28),
+                inset 0 1px 0 rgba(255,255,255,0.20);
   }
 
   .btn-ghost {
@@ -780,12 +773,10 @@ html { zoom: 0.95; }
   }
   .action-btn:hover:not(:disabled)::before { left: 155%; }
   .action-btn:hover:not(:disabled) {
-    transform: translateY(-3px);
+    transform: translateY(-2px);
     box-shadow: 0 5px 0 rgba(0,0,0,0.16),
-                0 14px 28px rgba(0,0,0,0.26);
-    filter: brightness(1.1);
-    animation: btnGlow 2.5s ease-in-out infinite;
-    --btn-shadow-base: 0 5px 0 rgba(0,0,0,0.16), 0 14px 28px rgba(0,0,0,0.26);
+                0 10px 22px rgba(0,0,0,0.22);
+    filter: brightness(1.08);
   }
   .action-btn:active:not(:disabled) {
     transform: translateY(1px) scale(0.97);
@@ -825,8 +816,7 @@ html { zoom: 0.95; }
     left: 155%;
   }
   button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item):not(.eye-btn):hover:not(:disabled) {
-    transform: translateY(-2px);
-    filter: brightness(1.07);
+    transform: translateY(-1px);
   }
   button:not(.btn):not(.action-btn):not(.payment-mode-btn):not(.btn-confirm-payment):not(.nav-item):not(.eye-btn):active:not(:disabled) {
     transform: translateY(1px) scale(0.97) !important;
@@ -936,12 +926,16 @@ html { zoom: 0.95; }
     color: var(--text-1);
     letter-spacing: 0.1px;
     line-height: 1.25;
+    cursor: default;
+    user-select: none;
   }
   .page-subtitle {
     font-size: 12.5px;
     color: var(--text-3);
     margin-top: 5px;
     letter-spacing: 0.01em;
+    cursor: default;
+    user-select: none;
   }
 }
 

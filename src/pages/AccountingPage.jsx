@@ -565,9 +565,9 @@ export default function AccountingPage() {
                   {entries.map((e, i) => (
                     <tr key={e.id}
                       onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
-                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
-                      onMouseEnter={ev => ev.currentTarget.style.background = 'var(--sidebar-item-hover)'}
-                      onMouseLeave={ev => ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'}
+                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}
+                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)'; ev.currentTarget.style.boxShadow = 'inset 3px 0 0 var(--accent)' }}
+                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'; ev.currentTarget.style.boxShadow = 'none' }}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                       <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
@@ -635,7 +635,7 @@ export default function AccountingPage() {
         </div>
       </div>
 
-      {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
+      {showNewEntry && <JournalEntryModal fy={fy} onClose={() => setShowNewEntry(false)} onSaved={load} />}
     </div>
   )
 }

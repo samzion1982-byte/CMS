@@ -9,15 +9,16 @@ import { useToast } from '../lib/toast'
 import {
   getFY, fyOptions, fmtAmt, fmtDate,
   getJournalEntries, getJournalEntryWithLines, createJournalEntry,
-  updateJournalEntry, postJournalEntry, deleteJournalEntry,
+  updateJournalEntry, updatePostedJournalEntry, postJournalEntry,
+  softDeleteJournalEntry, restoreJournalEntry, permanentDeleteJournalEntry,
   nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
-  getEntrySystemStatus,
+  getEntrySystemStatus, getEntryAuditLog,
   VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
-  Settings, Zap,
+  Settings, Zap, Eye, Clock, User, ShieldAlert, RotateCcw, ShieldOff, Lock,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -92,9 +93,102 @@ function EntrySetupPrompt() {
   )
 }
 
+// ── Permanent Delete Modal ────────────────────────────────────────
+
+function PermanentDeleteModal({ entry, onClose, onDeleted }) {
+  const { profile } = useAuth()
+  const toast = useToast()
+  const [password, setPassword] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const inputRef = useRef(null)
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
+
+  async function handlePermanentDelete() {
+    if (!password.trim()) { toast('Enter the delete password.', 'error'); return }
+    setDeleting(true)
+    try {
+      await permanentDeleteJournalEntry(entry.id, profile.email, password)
+      toast(`"${entry.entry_number}" permanently deleted.`, 'success')
+      onDeleted()
+      onClose()
+    } catch (e) { toast(e.message, 'error') }
+    setDeleting(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 440, boxShadow: '0 32px 80px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+
+        {/* Header */}
+        <div style={{ padding: '16px 20px', background: '#fee2e2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <ShieldOff size={18} color="#fff" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#7f1d1d', margin: 0 }}>Permanent Delete</p>
+            <p style={{ fontSize: 11, color: '#b91c1c', margin: 0 }}>This action cannot be undone</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', display: 'flex' }}><X size={16} /></button>
+        </div>
+
+        {/* Warning */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--card-border)' }}>
+          <div style={{ display: 'flex', gap: 10, padding: '12px 14px', background: '#fff7ed', border: '1.5px solid #fdba74', borderRadius: 9, marginBottom: 14 }}>
+            <AlertCircle size={16} style={{ color: '#c2410c', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+              <strong>You are about to permanently erase this entry.</strong> All journal lines and audit history linked to this voucher will be removed from the system forever. This cannot be recovered.
+            </div>
+          </div>
+          <div style={{ padding: '10px 14px', background: 'var(--table-header-bg)', borderRadius: 8, border: '1px solid var(--card-border)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12 }}><span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>Entry</span><strong style={{ color: 'var(--text-1)', fontFamily: 'monospace' }}>{entry.entry_number}</strong></span>
+            <span style={{ fontSize: 12 }}><span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>Type</span><strong style={{ color: 'var(--text-1)' }}>{entry.voucher_type}</strong></span>
+            <span style={{ fontSize: 12 }}><span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>Amount</span><strong style={{ color: '#2563eb', fontFamily: 'monospace' }}>{fmtAmt(entry.total_debit)}</strong></span>
+            {entry.is_posted && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#dcfce7', color: '#16a34a', alignSelf: 'center' }}>Posted</span>
+            )}
+          </div>
+        </div>
+
+        {/* Password */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--card-border)' }}>
+          <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 7 }}>
+            <Lock size={11} /> Delete Password
+          </label>
+          <input
+            ref={inputRef}
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handlePermanentDelete() }}
+            placeholder="Enter accounting delete password…"
+            style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
+          />
+          <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 0 0' }}>
+            The delete password is set in Accounting → Settings.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '14px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+            Cancel
+          </button>
+          <button onClick={handlePermanentDelete} disabled={deleting || !password.trim()}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 20px', background: password.trim() ? '#b91c1c' : '#e5e7eb', color: password.trim() ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: password.trim() ? 'pointer' : 'not-allowed' }}>
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <ShieldOff size={14} />}
+            Delete Forever
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── List ─────────────────────────────────────────────────────────
 
 function JournalEntryList() {
+  const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -115,11 +209,13 @@ function JournalEntryList() {
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
   }, [showNewEntry])
-  const [fy,         setFy]         = useState(getFY())
-  const [search,     setSearch]     = useState('')
-  const [filterType, setFilterType] = useState('')
-  const [filterPost, setFilterPost] = useState('')
-  const [fyOpen,     setFyOpen]     = useState(false)
+  const [fy,          setFy]          = useState(getFY())
+  const [search,      setSearch]      = useState('')
+  const [filterType,  setFilterType]  = useState('')
+  const [filterPost,  setFilterPost]  = useState('')
+  const [showTrash,   setShowTrash]   = useState(false)
+  const [permDeleteEntry, setPermDeleteEntry] = useState(null) // entry to permanently delete
+  const [fyOpen,      setFyOpen]      = useState(false)
   const FYS = fyOptions()
 
   const load = useCallback(async () => {
@@ -127,36 +223,16 @@ function JournalEntryList() {
     try {
       const data = await getJournalEntries({
         fy,
-        type:   filterType || undefined,
-        posted: filterPost === '' ? undefined : filterPost === 'true',
+        type:    filterType || undefined,
+        posted:  filterPost === '' ? undefined : filterPost === 'true',
+        deleted: showTrash,
       })
       setEntries(data)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, filterType, filterPost, toast])
+  }, [fy, filterType, filterPost, showTrash, toast])
 
   useEffect(() => { load() }, [load])
-
-  async function handlePost(id, e) {
-    e.stopPropagation()
-    const { profile } = useAuth ? {} : {}
-    try {
-      // We post with a placeholder email since this is called from list
-      await postJournalEntry(id, 'user')
-      toast('Entry posted successfully.', 'success')
-      load()
-    } catch (err) { toast(err.message, 'error') }
-  }
-
-  async function handleDelete(id, e) {
-    e.stopPropagation()
-    if (!window.confirm('Delete this draft entry?')) return
-    try {
-      await deleteJournalEntry(id, 'user')
-      toast('Entry deleted.', 'success')
-      load()
-    } catch (err) { toast(err.message, 'error') }
-  }
 
   const filtered = entries.filter(e => {
     if (!search) return true
@@ -213,13 +289,29 @@ function JournalEntryList() {
           <option value="">All Types</option>
           {VOUCHER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={filterPost} onChange={e => setFilterPost(e.target.value)} style={{ height: 36, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
-          <option value="">All Status</option>
-          <option value="false">Drafts</option>
-          <option value="true">Posted</option>
-        </select>
-        <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{filtered.length} entries</span>
+        {!showTrash && (
+          <select value={filterPost} onChange={e => setFilterPost(e.target.value)} style={{ height: 36, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
+            <option value="">All Status</option>
+            <option value="false">Drafts</option>
+            <option value="true">Posted</option>
+          </select>
+        )}
+        <button onClick={() => setShowTrash(t => !t)}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, height: 36, padding: '0 14px', background: showTrash ? '#fee2e2' : 'var(--input-bg)', color: showTrash ? '#b91c1c' : 'var(--text-2)', border: `1.5px solid ${showTrash ? '#fca5a5' : 'var(--card-border)'}`, borderRadius: 8, fontSize: 13, fontWeight: showTrash ? 700 : 400, cursor: 'pointer' }}>
+          <Trash2 size={13} /> {showTrash ? 'Trash (active)' : 'Trash'}
+        </button>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>{filtered.length} {showTrash ? 'deleted' : ''} entries</span>
       </div>
+
+      {/* Trash mode banner */}
+      {showTrash && (
+        <div style={{ marginBottom: 16, padding: '10px 16px', background: '#fee2e2', border: '1.5px solid #fca5a5', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Trash2 size={15} style={{ color: '#b91c1c', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: '#7f1d1d', fontWeight: 500 }}>
+            You are viewing <strong>deleted entries</strong>. Restore to recover, or permanently delete to erase forever.
+          </span>
+        </div>
+      )}
 
       {/* Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
@@ -244,9 +336,9 @@ function JournalEntryList() {
                 <tbody>
                   {filtered.map((e, i) => (
                     <tr key={e.id} onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
-                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
-                      onMouseEnter={ev => ev.currentTarget.style.background = 'var(--sidebar-item-hover)'}
-                      onMouseLeave={ev => ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'}
+                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}
+                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)'; ev.currentTarget.style.boxShadow = 'inset 3px 0 0 var(--accent)' }}
+                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'; ev.currentTarget.style.boxShadow = 'none' }}
                     >
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
@@ -264,11 +356,36 @@ function JournalEntryList() {
                       </td>
                       <td style={{ padding: '10px 14px' }} onClick={ev => ev.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 5 }}>
-                          {!e.is_posted && (
+                          {showTrash ? (
                             <>
-                              <button onClick={ev => { ev.stopPropagation(); navigate(`/accounting/journal-entries/${e.id}`) }} style={{ padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
-                              <button onClick={async ev => { ev.stopPropagation(); try { await postJournalEntry(e.id, 'user'); toast('Posted!', 'success'); load() } catch(err){toast(err.message,'error')} }} style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Post</button>
-                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm('Delete?')) return; try { await deleteJournalEntry(e.id, 'user'); toast('Deleted.','success'); load() } catch(err){toast(err.message,'error')} }} style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Del</button>
+                              <button onClick={async ev => { ev.stopPropagation(); try { await restoreJournalEntry(e.id, profile?.email || 'admin'); toast('Entry restored.', 'success'); load() } catch(err){toast(err.message,'error')} }}
+                                style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <RotateCcw size={11} /> Restore
+                              </button>
+                              <button onClick={ev => { ev.stopPropagation(); setPermDeleteEntry(e) }}
+                                style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <ShieldOff size={11} /> Del Forever
+                              </button>
+                            </>
+                          ) : e.is_posted ? (
+                            <>
+                              <button onClick={ev => { ev.stopPropagation(); navigate(`/accounting/journal-entries/${e.id}`) }}
+                                style={{ padding: '4px 8px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Eye size={11} />
+                              </button>
+                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm('Move this posted entry to trash?')) return; try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); load() } catch(err){toast(err.message,'error')} }}
+                                style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Trash2 size={11} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={ev => { ev.stopPropagation(); navigate(`/accounting/journal-entries/${e.id}`) }}
+                                style={{ padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
+                              <button onClick={async ev => { ev.stopPropagation(); try { await postJournalEntry(e.id, profile?.email || 'admin'); toast('Posted!', 'success'); load() } catch(err){toast(err.message,'error')} }}
+                                style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Post</button>
+                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm('Move this entry to trash?')) return; try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); load() } catch(err){toast(err.message,'error')} }}
+                                style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Del</button>
                             </>
                           )}
                         </div>
@@ -295,6 +412,7 @@ function JournalEntryList() {
         )}
       </div>
       {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
+      {permDeleteEntry && <PermanentDeleteModal entry={permDeleteEntry} onClose={() => setPermDeleteEntry(null)} onDeleted={load} />}
     </div>
   )
 }
@@ -312,10 +430,12 @@ function JournalEntryForm({ entryId }) {
   const currentFY = getFY()
 
   const [accounts, setAccounts]   = useState([])
-  const [loading,  setLoading]    = useState(!!entryId)
-  const [saving,   setSaving]     = useState(false)
-  const [posting,  setPosting]    = useState(false)
-  const [isPosted, setIsPosted]   = useState(false)
+  const [loading,       setLoading]       = useState(!!entryId)
+  const [saving,        setSaving]        = useState(false)
+  const [posting,       setPosting]       = useState(false)
+  const [isPosted,      setIsPosted]      = useState(false)
+  const [editingPosted, setEditingPosted] = useState(false)
+  const [auditLog,      setAuditLog]      = useState([])
 
   const dateInputRef = useRef(null)
   // stable refs for keyboard handlers — always point to latest functions
@@ -365,6 +485,7 @@ function JournalEntryForm({ entryId }) {
         description:   l.description || '',
       })))
       setLoading(false)
+      getEntryAuditLog(entryId).then(setAuditLog).catch(() => {})
     }).catch(e => { toast(e.message, 'error'); setLoading(false) })
   }, [entryId, currentFY, toast])
 
@@ -415,21 +536,36 @@ function JournalEntryForm({ entryId }) {
     setSaving(true)
     try {
       let je
-      if (entryId) {
+      if (entryId && editingPosted) {
+        je = await updatePostedJournalEntry(entryId, header, validLines, profile.email)
+        toast('Posted entry updated.', 'success')
+        setEditingPosted(false)
+        getEntryAuditLog(entryId).then(setAuditLog).catch(() => {})
+      } else if (entryId) {
         je = await updateJournalEntry(entryId, header, validLines, profile.email)
+        if (andPost) {
+          await postJournalEntry(je.id, profile.email)
+          toast('Entry saved and posted!', 'success')
+        } else {
+          toast('Entry saved as draft.', 'success')
+        }
+        navigate('/accounting/journal-entries')
       } else {
         je = await createJournalEntry(header, validLines, profile.email)
+        if (andPost) {
+          await postJournalEntry(je.id, profile.email)
+          toast('Entry saved and posted!', 'success')
+        } else {
+          toast('Entry saved as draft.', 'success')
+        }
+        navigate('/accounting/journal-entries')
       }
-      if (andPost) {
-        await postJournalEntry(je.id, profile.email)
-        toast('Entry saved and posted!', 'success')
-      } else {
-        toast('Entry saved as draft.', 'success')
-      }
-      navigate('/accounting/journal-entries')
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
+
+  // When editing a posted entry treat it as editable for form purposes
+  const formReadOnly = isPosted && !editingPosted
 
   // Keep refs current every render so keyboard handler never captures stale closures
   saveDraftRef.current = () => handleSave(false)
@@ -438,14 +574,14 @@ function JournalEntryForm({ entryId }) {
 
   // Auto-focus entry date on new entry load
   useEffect(() => {
-    if (!loading && !isPosted && !entryId) {
+    if (!loading && !entryId) {
       setTimeout(() => dateInputRef.current?.focus(), 80)
     }
   }, [loading]) // eslint-disable-line
 
   // Global keyboard shortcuts
   useEffect(() => {
-    if (isPosted) return
+    if (formReadOnly) return
     function onKey(e) {
       if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === 's') {
         e.preventDefault(); saveDraftRef.current?.()
@@ -482,25 +618,57 @@ function JournalEntryForm({ entryId }) {
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <FileText size={20} style={{ color: 'var(--accent)' }} />
-              {isPosted ? `View: ${header.entry_number}` : (entryId ? `Edit: ${header.entry_number}` : 'New Journal Entry')}
+              {formReadOnly ? `View: ${header.entry_number}` : (entryId ? `Edit: ${header.entry_number}` : 'New Journal Entry')}
             </h1>
-            <p className="page-subtitle">{isPosted ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}</p>
+            <p className="page-subtitle">
+              {editingPosted ? 'Editing posted entry — changes update financial records' : formReadOnly ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}
+            </p>
           </div>
         </div>
-        {!isPosted && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => handleSave(false)} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
+        <div style={{ display: 'flex', gap: 8 }}>
+          {isPosted && !editingPosted && (
+            <button onClick={() => {
+              if (!window.confirm('This entry is posted. Editing it will update financial records and is logged. Continue?')) return
+              setEditingPosted(true)
+            }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#fff7ed', color: '#c2410c', border: '1.5px solid #fdba74', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <Edit2 size={14} /> Edit Entry
             </button>
-            <button onClick={() => handleSave(true)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
-            </button>
-          </div>
-        )}
+          )}
+          {editingPosted && (
+            <>
+              <button onClick={() => setEditingPosted(false)} style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                Cancel
+              </button>
+              <button onClick={() => handleSave(false)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#c2410c' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
+              </button>
+            </>
+          )}
+          {!isPosted && (
+            <>
+              <button onClick={() => handleSave(false)} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
+              </button>
+              <button onClick={() => handleSave(true)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
+      {/* Warning banner when editing posted entry */}
+      {editingPosted && (
+        <div style={{ marginBottom: 16, padding: '10px 16px', background: '#fff7ed', border: '1.5px solid #fdba74', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ShieldAlert size={16} style={{ color: '#c2410c', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>
+            You are editing a <strong>posted entry</strong>. Changes will update account balances and are permanently logged with your name.
+          </span>
+        </div>
+      )}
+
       {/* Voucher type selector */}
-      {!isPosted && (
+      {!formReadOnly && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {VOUCHER_TYPES.map(t => {
             const vc = VOUCHER_COLOR[t] || { bg: '#f1f5f9', text: '#475569' }
@@ -522,12 +690,12 @@ function JournalEntryForm({ entryId }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Entry Number</label>
-              <input value={header.entry_number} onChange={e => sh('entry_number', e.target.value)} disabled={isPosted}
+              <input value={header.entry_number} onChange={e => sh('entry_number', e.target.value)} disabled={formReadOnly}
                 style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', fontWeight: 700, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Entry Date *</label>
-              <input ref={dateInputRef} type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)} disabled={isPosted}
+              <input ref={dateInputRef} type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)} disabled={formReadOnly}
                 style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
           </div>
@@ -539,7 +707,7 @@ function JournalEntryForm({ entryId }) {
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Reference No</label>
-              <input value={header.reference_no} onChange={e => sh('reference_no', e.target.value)} disabled={isPosted} placeholder="e.g. Cheque no."
+              <input value={header.reference_no} onChange={e => sh('reference_no', e.target.value)} disabled={formReadOnly} placeholder="e.g. Cheque no."
                 style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
           </div>
@@ -550,7 +718,7 @@ function JournalEntryForm({ entryId }) {
           <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 14px' }}>Narration &amp; Summary</p>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Narration / Description</label>
-            <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} disabled={isPosted} rows={3} placeholder="Describe the transaction…"
+            <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} disabled={formReadOnly} rows={3} placeholder="Describe the transaction…"
               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'none', boxSizing: 'border-box' }} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
@@ -567,7 +735,7 @@ function JournalEntryForm({ entryId }) {
               <p style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: balanced ? '#16a34a' : '#b91c1c', margin: 0 }}>{balanced ? '✓ OK' : fmtAmt(diff)}</p>
             </div>
           </div>
-          {!isPosted && !balanced && totalDebit > 0 && (
+          {!formReadOnly && !balanced && totalDebit > 0 && (
             <button onClick={autoBalance}
               style={{ marginTop: 10, width: '100%', padding: '6px 12px', background: '#fff7ed', color: '#c2410c', border: '1.5px dashed #fdba74', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Zap size={13} /> Auto-balance: fill {fmtAmt(diff)} on next empty line
@@ -580,7 +748,7 @@ function JournalEntryForm({ entryId }) {
       <div className="card" style={{ overflow: 'hidden', marginBottom: 20 }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Transaction Lines</p>
-          {!isPosted && (
+          {!formReadOnly && (
             <button onClick={addLine} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               <PlusCircle size={13} /> Add Line
             </button>
@@ -595,7 +763,7 @@ function JournalEntryForm({ entryId }) {
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Description</th>
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 140 }}>Debit (₹)</th>
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 140 }}>Credit (₹)</th>
-                {!isPosted && <th style={{ width: 40 }}></th>}
+                {!formReadOnly && <th style={{ width: 40 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -603,7 +771,7 @@ function JournalEntryForm({ entryId }) {
                 <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
                   <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
                   <td style={{ padding: '6px 10px' }}>
-                    <select value={line.account_id} onChange={e => setLine(i, 'account_id', e.target.value)} disabled={isPosted}
+                    <select value={line.account_id} onChange={e => setLine(i, 'account_id', e.target.value)} disabled={formReadOnly}
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
                       <option value="">— Select Ledger —</option>
                       {['Asset','Liability','Equity','Income','Expense'].map(type => {
@@ -618,18 +786,18 @@ function JournalEntryForm({ entryId }) {
                     </select>
                   </td>
                   <td style={{ padding: '6px 10px' }}>
-                    <input value={line.description} onChange={e => setLine(i, 'description', e.target.value)} disabled={isPosted} placeholder="Optional"
+                    <input value={line.description} onChange={e => setLine(i, 'description', e.target.value)} disabled={formReadOnly} placeholder="Optional"
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
                   </td>
                   <td style={{ padding: '6px 10px' }}>
-                    <input type="number" min="0" step="0.01" value={line.debit_amount} onChange={e => setLine(i, 'debit_amount', e.target.value)} disabled={isPosted} placeholder="0.00"
+                    <input type="number" min="0" step="0.01" value={line.debit_amount} onChange={e => setLine(i, 'debit_amount', e.target.value)} disabled={formReadOnly} placeholder="0.00"
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.debit_amount) > 0 ? '#dbeafe22' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box' }} />
                   </td>
                   <td style={{ padding: '6px 10px' }}>
-                    <input type="number" min="0" step="0.01" value={line.credit_amount} onChange={e => setLine(i, 'credit_amount', e.target.value)} disabled={isPosted} placeholder="0.00"
+                    <input type="number" min="0" step="0.01" value={line.credit_amount} onChange={e => setLine(i, 'credit_amount', e.target.value)} disabled={formReadOnly} placeholder="0.00"
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.credit_amount) > 0 ? '#dcfce722' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box' }} />
                   </td>
-                  {!isPosted && (
+                  {!formReadOnly && (
                     <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                       <button onClick={() => removeLine(i)} disabled={lines.length <= 2} style={{ padding: '4px', background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.3 : 1, display: 'flex', alignItems: 'center' }}>
                         <Minus size={14} />
@@ -644,11 +812,11 @@ function JournalEntryForm({ entryId }) {
                 <td colSpan={3} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL</td>
                 <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
                 <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
-                {!isPosted && <td />}
+                {!formReadOnly && <td />}
               </tr>
               {!balanced && totalDebit > 0 && (
                 <tr>
-                  <td colSpan={isPosted ? 5 : 6} style={{ padding: '8px 14px' }}>
+                  <td colSpan={formReadOnly ? 5 : 6} style={{ padding: '8px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c2410c', fontSize: 12, fontWeight: 600 }}>
                       <AlertCircle size={14} /> Entry not balanced — difference of {fmtAmt(diff)}
                     </div>
@@ -660,28 +828,96 @@ function JournalEntryForm({ entryId }) {
         </div>
       </div>
 
-      {!isPosted && (
+      {!formReadOnly && (
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={() => navigate('/accounting/journal-entries')} style={{ padding: '9px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
-          <button onClick={() => handleSave(false)} disabled={saving} style={{ padding: '9px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--accent)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 7 }}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
-          </button>
-          <button onClick={() => handleSave(true)} disabled={saving || !balanced}
-            style={{ padding: '9px 22px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
-          </button>
+          <button onClick={() => { if (editingPosted) setEditingPosted(false); else navigate('/accounting/journal-entries') }} style={{ padding: '9px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
+          {editingPosted ? (
+            <button onClick={() => handleSave(false)} disabled={saving || !balanced}
+              style={{ padding: '9px 22px', background: balanced ? '#c2410c' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
+            </button>
+          ) : (
+            <>
+              <button onClick={() => handleSave(false)} disabled={saving} style={{ padding: '9px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--accent)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
+              </button>
+              <button onClick={() => handleSave(true)} disabled={saving || !balanced}
+                style={{ padding: '9px 22px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7 }}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {!isPosted && (
+      {!formReadOnly && (
         <div style={{ marginTop: 12, padding: '7px 14px', background: 'var(--table-header-bg)', border: '1px solid var(--card-border)', borderRadius: 8, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', color: 'var(--text-3)', textTransform: 'uppercase' }}>Shortcuts</span>
-          {[['Ctrl+S','Save Draft'],['Ctrl+Enter','Save & Post'],['Alt+N','Add Line']].map(([k, l]) => (
+          {(editingPosted
+            ? [['Ctrl+S','Save Changes']]
+            : [['Ctrl+S','Save Draft'],['Ctrl+Enter','Save & Post'],['Alt+N','Add Line']]
+          ).map(([k, l]) => (
             <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-2)' }}>
               <kbd style={{ padding: '2px 7px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 4, fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>{k}</kbd>
               {l}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Audit Log */}
+      {entryId && auditLog.length > 0 && (
+        <div className="card" style={{ marginTop: 24, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Clock size={14} style={{ color: 'var(--text-3)' }} />
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Change History</p>
+          </div>
+          <div>
+            {auditLog.map((log, i) => {
+              const ACTION_STYLE = {
+                created:        { bg: '#dcfce7', text: '#16a34a', label: 'Created' },
+                modified:       { bg: '#dbeafe', text: '#2563eb', label: 'Modified (Draft)' },
+                modified_posted:{ bg: '#fff7ed', text: '#c2410c', label: 'Modified (Posted)' },
+                posted:         { bg: '#f3e8ff', text: '#7c3aed', label: 'Posted' },
+                deleted:        { bg: '#fee2e2', text: '#b91c1c', label: 'Deleted' },
+              }
+              const s = ACTION_STYLE[log.action] || { bg: '#f1f5f9', text: '#475569', label: log.action }
+              const at = new Date(log.performed_at)
+              const dateStr = at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+              const timeStr = at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+              return (
+                <div key={log.id} style={{ padding: '12px 20px', borderBottom: i < auditLog.length - 1 ? '1px solid var(--card-border)' : 'none', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 99, background: s.bg, color: s.text, whiteSpace: 'nowrap', marginTop: 1 }}>{s.label}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-2)' }}>
+                        <User size={11} style={{ color: 'var(--text-3)' }} />
+                        <strong>{log.performed_by}</strong>
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{dateStr} at {timeStr}</span>
+                    </div>
+                    {log.old_data && log.entity_data && (
+                      <div style={{ marginTop: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        {['narration','voucher_type','entry_date','reference_no','total_debit','total_credit'].map(field => {
+                          const oldVal = log.old_data[field]
+                          const newVal = log.entity_data[field]
+                          if (oldVal === newVal || (oldVal == null && newVal == null)) return null
+                          return (
+                            <span key={field} style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-2)', textTransform: 'capitalize' }}>{field.replace(/_/g,' ')}:</span>{' '}
+                              <span style={{ textDecoration: 'line-through', color: '#b91c1c' }}>{String(oldVal ?? '—')}</span>
+                              {' → '}
+                              <span style={{ color: '#16a34a' }}>{String(newVal ?? '—')}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

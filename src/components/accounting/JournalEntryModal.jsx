@@ -2,18 +2,22 @@
    JournalEntryModal.jsx — New Journal Entry modal (two-panel)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { useToast } from '../../lib/toast'
 import {
   getFY, fmtAmt,
-  createJournalEntry, postJournalEntry,
+  createJournalEntry, updateJournalEntry, postJournalEntry, getJournalEntryWithLines,
   nextEntryNumber, getChartOfAccounts, getPostableAccountsWithPath,
   VOUCHER_TYPES, VOUCHER_COLOR, TYPE_COLOR, displayAccountType,
 } from '../../lib/accountingLib'
 import {
   X, Save, CheckSquare, PlusCircle, Minus, AlertCircle, Zap, Loader2, FileText,
+  ChevronUp, ChevronDown,
 } from 'lucide-react'
+
+const MAX_LINES = 20
+const DEFAULT_BLANK_LINE = () => ({ account_id: '', debit_amount: '', credit_amount: '', side: null })
 
 // ── Account type → default side ──────────────────────────────────
 
@@ -166,16 +170,17 @@ function AccountSearch({ value, accounts, onChange, lineIdx }) {
 //  MODAL
 // ════════════════════════════════════════════════════════════════
 
-export default function JournalEntryModal({ onClose, onSaved }) {
+export default function JournalEntryModal({ fy: propFY, entryId, onClose, onSaved }) {
   const { profile } = useAuth()
   const toast = useToast()
 
   const today     = new Date().toISOString().slice(0, 10)
-  const currentFY = getFY()
+  const currentFY = propFY || getFY()
 
   const [accounts, setAccounts] = useState([])
   const [saving,   setSaving]   = useState(false)
   const [ready,    setReady]    = useState(false)
+  const [isEditing, setIsEditing] = useState(!!entryId)
 
   const [header, setHeader] = useState({
     entry_number:   '',
@@ -187,16 +192,43 @@ export default function JournalEntryModal({ onClose, onSaved }) {
   })
 
   // Lines: side = 'debit' | 'credit' | null  (set when account is picked)
-  const [lines, setLines] = useState([
-    { account_id: '', debit_amount: '', credit_amount: '', side: null },
-    { account_id: '', debit_amount: '', credit_amount: '', side: null },
-  ])
+  const [lines, setLines] = useState(Array.from({ length: 5 }, DEFAULT_BLANK_LINE))
+  const [currentLine, setCurrentLine] = useState(0)
+  const lineRefs    = useRef([])
+  const linesBodyRef = useRef(null)
 
+  // Fetch accounts and existing entry (if editing)
   useEffect(() => {
-    getChartOfAccounts(true)
-      .then(all => { setAccounts(getPostableAccountsWithPath(all)); setReady(true) })
+    Promise.all([
+      getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))),
+      entryId ? getJournalEntryWithLines(entryId) : null,
+    ])
+      .then(([_, entry]) => {
+        if (entry) {
+          // Pre-populate form with existing entry
+          setHeader({
+            entry_number: entry.entry_number,
+            entry_date: entry.entry_date,
+            financial_year: entry.financial_year,
+            voucher_type: entry.voucher_type,
+            narration: entry.narration || '',
+            reference_no: entry.reference_no || '',
+          })
+          const mapped = entry.journal_entry_lines.map(l => ({
+            account_id: l.account_id,
+            debit_amount: l.debit_amount || '',
+            credit_amount: l.credit_amount || '',
+            side: l.debit_amount > 0 ? 'debit' : l.credit_amount > 0 ? 'credit' : null,
+          }))
+          // Pad to at least 5 lines
+          while (mapped.length < 5) mapped.push(DEFAULT_BLANK_LINE())
+          setLines(mapped)
+          setCurrentLine(0)
+        }
+        setReady(true)
+      })
       .catch(() => setReady(true))
-  }, [])
+  }, [entryId])
 
   useEffect(() => {
     nextEntryNumber(header.financial_year, header.voucher_type)
@@ -222,12 +254,27 @@ export default function JournalEntryModal({ onClose, onSaved }) {
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l))
   }
 
+  // Navigate to a line (circular) and scroll it into view
+  const goToLine = useCallback((idx, total) => {
+    const n = total ?? lines.length
+    const target = ((idx % n) + n) % n
+    setCurrentLine(target)
+    setTimeout(() => {
+      lineRefs.current[target]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 40)
+  }, [lines.length])
+
   function addLine() {
-    setLines(ls => [...ls, { account_id: '', debit_amount: '', credit_amount: '', side: null }])
+    if (lines.length >= MAX_LINES) { toast(`Maximum ${MAX_LINES} lines allowed.`, 'error'); return }
+    const newIdx = lines.length
+    setLines(ls => [...ls, DEFAULT_BLANK_LINE()])
+    goToLine(newIdx, newIdx + 1)
   }
+
   function removeLine(i) {
     if (lines.length <= 2) return
     setLines(ls => ls.filter((_, idx) => idx !== i))
+    setCurrentLine(prev => Math.min(prev, lines.length - 2))
   }
 
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit_amount)  || 0), 0)
@@ -253,12 +300,14 @@ export default function JournalEntryModal({ onClose, onSaved }) {
     if (!balanced) { toast(`Entry not balanced — difference ₹${diff.toFixed(2)}`, 'error'); return }
     setSaving(true)
     try {
-      const je = await createJournalEntry(header, validLines, profile?.email || 'user')
+      const je = isEditing
+        ? await updateJournalEntry(entryId, header, validLines, profile?.email || 'user')
+        : await createJournalEntry(header, validLines, profile?.email || 'user')
       if (andPost) {
         await postJournalEntry(je.id, profile?.email || 'user')
-        toast('Entry saved and posted!', 'success')
+        toast(`Entry ${isEditing ? 'updated' : 'saved'} and posted!`, 'success')
       } else {
-        toast('Entry saved as draft.', 'success')
+        toast(`Entry ${isEditing ? 'updated' : 'saved'} as draft.`, 'success')
       }
       onSaved?.()
       onClose()
@@ -324,7 +373,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>
-              New {header.voucher_type} Entry
+              {isEditing ? 'Edit' : 'New'} {header.voucher_type} Entry
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
               {ready ? header.entry_number || 'Auto-numbered' : 'Loading…'}
@@ -474,20 +523,40 @@ export default function JournalEntryModal({ onClose, onSaved }) {
 
           {/* RIGHT: Transaction Lines */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-              <div>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Transaction Lines</p>
                 <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '2px 0 0' }}>
                   Tab/Enter to confirm account → cursor jumps to Debit or Credit automatically
                 </p>
               </div>
-              <button onClick={addLine}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                <PlusCircle size={12} /> Add Line <span style={{ opacity: 0.55, fontSize: 9, marginLeft: 2 }}>Alt+N</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {/* Prev / counter / Next */}
+                <button
+                  onClick={() => goToLine(currentLine - 1)}
+                  title="Previous line"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'var(--table-header-bg)', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-2)' }}>
+                  <ChevronUp size={14} />
+                </button>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', minWidth: 62, textAlign: 'center' }}>
+                  Line {currentLine + 1} / {lines.length}
+                </span>
+                <button
+                  onClick={() => goToLine(currentLine + 1)}
+                  title="Next line"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'var(--table-header-bg)', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-2)' }}>
+                  <ChevronDown size={14} />
+                </button>
+                {/* Add Line */}
+                <button onClick={addLine} disabled={lines.length >= MAX_LINES}
+                  title={lines.length >= MAX_LINES ? `Max ${MAX_LINES} lines` : 'Add line (Alt+N)'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: lines.length >= MAX_LINES ? 'var(--table-header-bg)' : '#dbeafe', color: lines.length >= MAX_LINES ? 'var(--text-3)' : '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: lines.length >= MAX_LINES ? 'not-allowed' : 'pointer', opacity: lines.length >= MAX_LINES ? 0.55 : 1 }}>
+                  <PlusCircle size={12} /> Add Line <span style={{ opacity: 0.55, fontSize: 9, marginLeft: 2 }}>Alt+N</span>
+                </button>
+              </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+            <div ref={linesBodyRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 380 }}>
                 <thead style={{ background: 'var(--table-header-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
@@ -502,9 +571,13 @@ export default function JournalEntryModal({ onClose, onSaved }) {
                   {lines.map((line, i) => {
                     const debitDisabled  = line.side === 'credit'
                     const creditDisabled = line.side === 'debit'
+                    const isActive = i === currentLine
                     return (
-                      <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
-                        <td style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
+                      <tr key={i}
+                        ref={el => { lineRefs.current[i] = el }}
+                        onClick={() => setCurrentLine(i)}
+                        style={{ background: isActive ? 'var(--sidebar-item-active-bg)' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', outline: isActive ? `2px solid var(--accent)` : 'none', outlineOffset: -2, cursor: 'default' }}>
+                        <td style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: isActive ? 'var(--accent)' : 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
                         <td style={{ padding: '4px 6px', minWidth: 180 }}>
                           <AccountSearch
                             value={line.account_id}
@@ -551,9 +624,9 @@ export default function JournalEntryModal({ onClose, onSaved }) {
                         </td>
                         <td style={{ padding: '4px 6px', textAlign: 'center' }}>
                           <button onClick={() => removeLine(i)} disabled={lines.length <= 2}
-                            style={{ padding: 4, background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.2 : 0.6, display: 'flex', alignItems: 'center', transition: 'opacity 0.15s' }}
+                            style={{ padding: 4, background: 'none', border: 'none', cursor: lines.length <= 2 ? 'not-allowed' : 'pointer', color: '#b91c1c', opacity: lines.length <= 2 ? 0.18 : 0.55, display: 'flex', alignItems: 'center', transition: 'opacity 0.15s' }}
                             onMouseEnter={e => { if (lines.length > 2) e.currentTarget.style.opacity = '1' }}
-                            onMouseLeave={e => { if (lines.length > 2) e.currentTarget.style.opacity = '0.6' }}>
+                            onMouseLeave={e => { if (lines.length > 2) e.currentTarget.style.opacity = '0.55' }}>
                             <Minus size={13} />
                           </button>
                         </td>
@@ -591,7 +664,7 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           background: 'var(--table-header-bg)',
         }}>
           <div style={{ flex: 1, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            {[['Ctrl+S','Draft'],['Ctrl+↵','Post'],['Alt+N','Add Line'],['Esc','Close']].map(([k, l]) => (
+            {[['Ctrl+S','Draft'],['Ctrl+↵','Post'],['Alt+N','Add Line'],['↑↓','Navigate'],['Esc','Close']].map(([k, l]) => (
               <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-3)' }}>
                 <kbd style={{ padding: '1px 6px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 4, fontSize: 9, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-2)' }}>{k}</kbd>
                 {l}
@@ -604,11 +677,13 @@ export default function JournalEntryModal({ onClose, onSaved }) {
           </button>
           <button onClick={() => handleSave(false)} disabled={saving}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', background: 'var(--card-bg)', border: `1.5px solid ${VCOL.text}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: VCOL.text, transition: 'border-color 0.25s, color 0.25s' }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Draft
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            {isEditing ? 'Update Draft' : 'Save Draft'}
           </button>
           <button onClick={() => handleSave(true)} disabled={saving || !balanced}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 22px', background: balanced ? VCOL.text : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: balanced ? 'pointer' : 'not-allowed', transition: 'background 0.25s', boxShadow: balanced ? `0 4px 12px ${VCOL.text}44` : 'none' }}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckSquare size={13} />} Save &amp; Post
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <CheckSquare size={13} />}
+            {isEditing ? 'Update & Post' : 'Save & Post'}
           </button>
         </div>
       </div>
