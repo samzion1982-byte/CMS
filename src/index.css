@@ -567,6 +567,12 @@ html { zoom: 0.95; }
     transition: background 0.2s ease, color 0.2s ease;
   }
 
+  button, [role="button"] {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 99px; }

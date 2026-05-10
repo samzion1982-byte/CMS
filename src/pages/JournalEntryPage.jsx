@@ -717,7 +717,7 @@ function JournalEntryForm({ entryId }) {
         <div className="card" style={{ padding: '18px 20px' }}>
           <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 14px' }}>Narration &amp; Summary</p>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Narration / Description</label>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Narration</label>
             <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} disabled={formReadOnly} rows={3} placeholder="Describe the transaction…"
               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'none', boxSizing: 'border-box' }} />
           </div>

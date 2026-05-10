@@ -18,7 +18,7 @@ const T = {
     divider: 'rgba(255,255,255,0.15)',
     accent:  '#d4a017',
     accentL: 'rgba(212,160,23,0.18)',
-    drop: { bg:'#ffffff', text:'#071428', sub:'#6b7280', border:'#e5e7eb', hov:'#f5f8ff' },
+    drop: { bg:'#eef3ff', text:'#071428', sub:'#6b7280', border:'#c7d5f5', hov:'#dde8ff' },
   },
   ocean: {
     bg:      'linear-gradient(135deg, #021717 0%, #042f2e 16%, #0a5c57 33%, #0d7a73 50%, #0a5c57 66%, #042f2e 83%, #021717 100%)',
@@ -29,7 +29,7 @@ const T = {
     divider: 'rgba(255,255,255,0.15)',
     accent:  '#2dd4bf',
     accentL: 'rgba(45,212,191,0.18)',
-    drop: { bg:'#ffffff', text:'#042f2e', sub:'#6b7280', border:'#ccfbf1', hov:'#f0fdfa' },
+    drop: { bg:'#e6faf8', text:'#042f2e', sub:'#4a8a80', border:'#a7e8e0', hov:'#ccf5f0' },
   },
   midnight: {
     bg:      'linear-gradient(135deg, #050810 0%, #08102a 16%, #111840 33%, #151e52 50%, #111840 66%, #08102a 83%, #050810 100%)',
@@ -51,7 +51,7 @@ const T = {
     divider: 'rgba(255,255,255,0.15)',
     accent:  '#d4a017',
     accentL: 'rgba(212,160,23,0.18)',
-    drop: { bg:'#ffffff', text:'#071a0f', sub:'#6b7280', border:'#e5e7eb', hov:'#f0fdf4' },
+    drop: { bg:'#e8f8ee', text:'#071a0f', sub:'#4a7a58', border:'#b0dfc0', hov:'#cceedd' },
   },
   crimson: {
     bg:      'linear-gradient(135deg, #140308 0%, #280610 16%, #5c1026 33%, #6e1230 50%, #5c1026 66%, #280610 83%, #140308 100%)',
@@ -62,7 +62,7 @@ const T = {
     divider: 'rgba(255,255,255,0.15)',
     accent:  '#d4a017',
     accentL: 'rgba(212,160,23,0.18)',
-    drop: { bg:'#ffffff', text:'#140308', sub:'#6b7280', border:'#e5e7eb', hov:'#fff5f7' },
+    drop: { bg:'#fdeef2', text:'#140308', sub:'#8a4a5a', border:'#f0c0cc', hov:'#fbd5dd' },
   },
   slate: {
     bg:      'linear-gradient(135deg, #010409 0%, #0d1117 16%, #161b22 33%, #1c2128 50%, #161b22 66%, #0d1117 83%, #010409 100%)',
@@ -154,7 +154,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
         <div style={{
           width: 44, height: 44, borderRadius: '50%', position: 'relative',
           flexShrink: 0,
-          animation: 'avatarFill 18s linear infinite',
+          animation: 'avatarFill 6s linear infinite',
           boxShadow: 'inset -4px -4px 8px rgba(0,0,0,0.22), inset 3px 3px 6px rgba(255,255,255,0.55), 0 6px 18px rgba(0,0,0,0.38)',
         }}>
           {/* Gradient sheen — sphere highlight */}
@@ -185,13 +185,15 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
 
       {/* Dropdown — rendered in the natural DOM flow so no clipping */}
       {open && (
-        <div style={{
+        <div className="user-dropdown" style={{
           position: 'fixed',
           top: HEADER_H + 8,
           right: 16,
           width: 290,
           maxHeight: 'calc(100vh - 110px)',
           overflowY: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
           background: g.drop.bg,
           border: `1px solid ${g.drop.border}`,
           borderRadius: 16,
@@ -207,7 +209,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
               <div style={{
                 width: 46, height: 46, borderRadius: '50%', position: 'relative',
                 flexShrink: 0,
-                animation: 'avatarFill 18s linear infinite',
+                animation: 'avatarFill 6s linear infinite',
                 boxShadow: 'inset -4px -4px 8px rgba(0,0,0,0.22), inset 3px 3px 6px rgba(255,255,255,0.55), 0 6px 18px rgba(0,0,0,0.38)',
               }}>
                 <div style={{
@@ -238,9 +240,9 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
-                color: g.drop.text, background: g.drop.hov,
+                color: g.drop.text, background: g.accentL,
                 padding: '5px 12px', borderRadius: 6,
-                border: `1px solid ${g.drop.border}`,
+                border: `1px solid ${g.accent}55`,
                 fontFamily: 'var(--font-ui)',
               }}>
                 ★ {roleLabel}
@@ -265,6 +267,28 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
               </button>
             </div>
           </div>
+
+          {/* Edit Device Info */}
+          {DEVICE_EDIT_ROLES.includes(profile?.role) && (
+            <button
+              onClick={() => { setOpen(false); onEditDevice?.() }}
+              onMouseEnter={e => e.currentTarget.style.background = g.drop.hov}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '13px 18px',
+                background: 'none', border: 'none',
+                borderBottom: `1px solid ${g.drop.border}`,
+                color: g.drop.text, cursor: 'pointer',
+                fontSize: 13, fontWeight: 600,
+                fontFamily: 'var(--font-ui)',
+                transition: 'background 0.15s',
+              }}
+            >
+              <Edit size={15} />
+              Edit Device Info
+            </button>
+          )}
 
           {/* Theme picker */}
           <div style={{ padding: '14px 18px', borderBottom: `1px solid ${g.drop.border}` }}>
@@ -338,28 +362,6 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
             </div>
           </div>
 
-          {/* Edit Device Info — super_admin & admin1 only */}
-          {DEVICE_EDIT_ROLES.includes(profile?.role) && (
-            <button
-              onClick={() => { setOpen(false); onEditDevice?.() }}
-              onMouseEnter={e => e.currentTarget.style.background = g.drop.hov}
-              onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                width: '100%', padding: '13px 18px',
-                background: 'none', border: 'none',
-                borderBottom: `1px solid ${g.drop.border}`,
-                color: g.drop.text, cursor: 'pointer',
-                fontSize: 13, fontWeight: 600,
-                fontFamily: 'var(--font-ui)',
-                transition: 'background 0.15s',
-              }}
-            >
-              <Edit size={15} />
-              Edit Device Info
-            </button>
-          )}
-
         </div>
       )}
     </div>
@@ -371,6 +373,15 @@ export default function Header({ onEditDevice }) {
   const { profile, signOut } = useAuth()
   const { theme, setTheme, font, setFont } = useTheme()
   const [church, setChurch]  = useState(null)
+  const [avatarDisplayName, setAvatarDisplayName] = useState(() => localStorage.getItem('avatar_display_name') || '')
+
+  useEffect(() => {
+    function onAvatarUpdated() {
+      setAvatarDisplayName(localStorage.getItem('avatar_display_name') || '')
+    }
+    window.addEventListener('avatar-updated', onAvatarUpdated)
+    return () => window.removeEventListener('avatar-updated', onAvatarUpdated)
+  }, [])
   const [licenseStatus, setLicenseStatus] = useState(null)
   const [licenseInfo, setLicenseInfo] = useState(null)
   const [licenseOpen, setLicenseOpen] = useState(false)
@@ -460,7 +471,9 @@ export default function Header({ onEditDevice }) {
     loadLicense()
   }, [church?.auth_code])
 
-  const ini       = initials(profile?.full_name || '')
+  const ini       = avatarDisplayName
+    ? avatarDisplayName.trim().slice(0, 3).toUpperCase()
+    : initials(profile?.full_name || '').slice(0, 3)
   const firstName = profile?.full_name?.split(' ')[0] || 'User'
   const roleLabel = ROLE_LABELS[profile?.role] || profile?.role || ''
   const g         = T[theme] || T.royal
@@ -675,6 +688,7 @@ export default function Header({ onEditDevice }) {
       </header>
 
       <style>{`
+        .user-dropdown::-webkit-scrollbar { display: none; }
         @keyframes dropDown {
           from { opacity: 0; transform: translateY(-6px) scale(0.98); }
           to   { opacity: 1; transform: translateY(0)   scale(1); }
@@ -718,12 +732,14 @@ export default function Header({ onEditDevice }) {
           50% { transform: scale(1.2); opacity: 0.55; }
         }
         @keyframes avatarFill {
-          0%   { background-color: #fca5a5; }
-          20%  { background-color: #fdba74; }
-          40%  { background-color: #86efac; }
-          60%  { background-color: #93c5fd; }
-          80%  { background-color: #d8b4fe; }
-          100% { background-color: #fca5a5; }
+          0%   { background-color: hsl(0,   90%, 65%); }
+          14%  { background-color: hsl(40,  95%, 60%); }
+          28%  { background-color: hsl(80,  80%, 55%); }
+          42%  { background-color: hsl(150, 75%, 50%); }
+          57%  { background-color: hsl(200, 90%, 58%); }
+          71%  { background-color: hsl(240, 80%, 68%); }
+          85%  { background-color: hsl(290, 80%, 65%); }
+          100% { background-color: hsl(0,   90%, 65%); }
         }
       `}</style>
     </>

@@ -12,7 +12,20 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:cdn.jsdelivr.net)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(node scripts/update-tamil-verses.cjs)"
+      "Bash(node scripts/update-tamil-verses.cjs)",
+      "Bash(git restore *)",
+      "Bash(sed -n '50,70p' \"c:/Projects/Church-CMS-React/src/pages/AnnouncementsPage.jsx\")",
+      "Bash(sed -n '255,275p' \"c:/Projects/Church-CMS-React/src/pages/DeletedMembersPage.jsx\")",
+      "Bash(sed -n '100,115p' \"c:/Projects/Church-CMS-React/src/pages/AnnouncementsLogPage.jsx\")",
+      "Bash(sed -n '160,175p' \"c:/Projects/Church-CMS-React/src/pages/LoginLogsPage.jsx\")",
+      "Bash(sed -n '90,105p' \"c:/Projects/Church-CMS-React/src/pages/WhatsAppReceiptLogPage.jsx\")",
+      "Bash(sed -n '94,100p' \"c:/Projects/Church-CMS-React/src/pages/WhatsAppReceiptLogPage.jsx\")",
+      "Bash(sed -n '303,310p' \"c:/Projects/Church-CMS-React/src/pages/UsersPage.jsx\")",
+      "Bash(sed -n '1,15p' \"c:/Projects/Church-CMS-React/src/pages/ChurchSetupPage.jsx\")",
+      "Bash(sed -n '1,15p' \"c:/Projects/Church-CMS-React/src/pages/UsersPage.jsx\")",
+      "Bash(sed -n '1,18p' \"c:/Projects/Church-CMS-React/src/pages/ReceiptsPage.jsx\")",
+      "Bash(sed -n '1,16p' \"c:/Projects/Church-CMS-React/src/pages/LoginLogsPage.jsx\")",
+      "Bash(sed -n '1,14p' \"c:/Projects/Church-CMS-React/src/pages/DashboardPage.jsx\")"
     ]
   }
 }

@@ -18,7 +18,7 @@ export default function AppLayout({ children }) {
   const [isEditMode,      setIsEditMode]      = useState(false)
   const [pendingInfo,     setPendingInfo]     = useState(null)
   const [savingDevice,    setSavingDevice]    = useState(false)
-  const [deviceForm,      setDeviceForm]      = useState({ userName: '', orgName: '', area: '', city: '' })
+  const [deviceForm,      setDeviceForm]      = useState({ userName: '', orgName: '', area: '', city: '', avatarName: '' })
 
   // ── New-device detection on mount ──────────────────────────────
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function AppLayout({ children }) {
         const info = JSON.parse(raw)
         if (!info.userId) return false
         setPendingInfo(info)
-        setDeviceForm(info.prefill || { userName: '', orgName: '', area: '', city: '' })
+        setDeviceForm({ ...(info.prefill || { userName: '', orgName: '', area: '', city: '' }), avatarName: '' })
         setIsEditMode(false)
         setShowDeviceSetup(true)
         return true
@@ -52,10 +52,11 @@ export default function AppLayout({ children }) {
     const loc      = existing?.location || ''
     const idx      = loc.lastIndexOf(', ')
     setDeviceForm({
-      userName: existing?.user_name || '',
-      orgName:  existing?.org_name  || '',
-      area:     idx !== -1 ? loc.slice(0, idx) : '',
-      city:     idx !== -1 ? loc.slice(idx + 2) : loc,
+      userName:   existing?.user_name || '',
+      orgName:    existing?.org_name  || '',
+      area:       idx !== -1 ? loc.slice(0, idx) : '',
+      city:       idx !== -1 ? loc.slice(idx + 2) : loc,
+      avatarName: localStorage.getItem('avatar_display_name') || '',
     })
     setPendingInfo({ deviceId: devId, userId: user?.id })
     setIsEditMode(true)
@@ -83,6 +84,12 @@ export default function AppLayout({ children }) {
         })
       }
     } catch (e) { console.error(e) }
+    if (deviceForm.avatarName?.trim()) {
+      localStorage.setItem('avatar_display_name', deviceForm.avatarName.trim())
+    } else {
+      localStorage.removeItem('avatar_display_name')
+    }
+    window.dispatchEvent(new CustomEvent('avatar-updated'))
     sessionStorage.removeItem(DEVICE_PENDING_KEY)
     setShowDeviceSetup(false)
     setIsEditMode(false)
@@ -143,10 +150,11 @@ export default function AppLayout({ children }) {
 
             <div style={{ padding: '16px 22px' }}>
               {[
-                { label: 'YOUR NAME',    key: 'userName', required: true  },
-                { label: 'ORGANISATION / ROLE', key: 'orgName',  required: false },
-                { label: 'AREA',         key: 'area',     required: false },
-                { label: 'CITY',         key: 'city',     required: true  },
+                { label: 'YOUR NAME',           key: 'userName',   required: true,  hint: null },
+                { label: 'ORGANISATION / ROLE', key: 'orgName',    required: false, hint: null },
+                { label: 'AREA',                key: 'area',       required: false, hint: null },
+                { label: 'CITY',                key: 'city',       required: true,  hint: null },
+                { label: 'AVATAR NAME',         key: 'avatarName', required: false, hint: 'Initials shown in the avatar circle — leave blank to use your account name' },
               ].map(f => (
                 <div key={f.key} style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', color: '#60a5fa', marginBottom: 6 }}>
@@ -157,6 +165,7 @@ export default function AppLayout({ children }) {
                     value={deviceForm[f.key]}
                     onChange={e => setDeviceForm(v => ({ ...v, [f.key]: e.target.value }))}
                   />
+                  {f.hint && <p style={{ fontSize: 9, color: '#475569', margin: '5px 0 0', letterSpacing: '0.04em' }}>{f.hint}</p>}
                 </div>
               ))}
             </div>
