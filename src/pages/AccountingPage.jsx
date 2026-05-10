@@ -17,7 +17,7 @@ import {
   BookOpen, Settings, TrendingUp, TrendingDown, Scale, IndianRupee,
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
   BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
-  ChevronDown, Landmark, Lock, Loader2,
+  ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight, Layers,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -54,24 +54,23 @@ function QuickBtn({ icon: Icon, label, desc, onClick, color = '#2563eb' }) {
       onClick={onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
+      className="no-lift"
       style={{
         display: 'flex', alignItems: 'center', gap: 14,
         width: '100%', padding: '12px 16px',
-        background: hov ? `${color}10` : 'transparent',
-        border: `1px solid ${hov ? color + '40' : 'var(--card-border)'}`,
+        background: hov ? 'var(--text-1)' : 'transparent',
+        border: '1px solid var(--card-border)',
         borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-        transition: 'all 0.15s ease',
-        transform: hov ? 'translateX(3px)' : 'none',
       }}
     >
-      <div style={{ width: 36, height: 36, borderRadius: 9, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={17} color={color} />
+      <div style={{ width: 36, height: 36, borderRadius: 9, background: hov ? 'rgba(255,255,255,0.12)' : `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={17} color={hov ? '#fff' : color} />
       </div>
       <div style={{ flex: 1 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>{label}</p>
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{desc}</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: hov ? '#fff' : 'var(--text-1)', margin: 0 }}>{label}</p>
+        <p style={{ fontSize: 11, color: hov ? 'rgba(255,255,255,0.6)' : 'var(--text-3)', margin: 0 }}>{desc}</p>
       </div>
-      <ChevronRight size={14} color="var(--text-3)" />
+      <ChevronRight size={14} color={hov ? '#fff' : 'var(--text-3)'} />
     </button>
   )
 }
@@ -222,7 +221,6 @@ function EntrySystemSetupModal({ onLocked }) {
                     flex: 1, minWidth: 200, padding: '18px 20px', borderRadius: 12, cursor: 'pointer',
                     border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`,
                     background: active ? 'var(--sidebar-item-active-bg)' : 'var(--card-bg)',
-                    transition: 'all 0.15s',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -484,12 +482,6 @@ export default function AccountingPage() {
             <RefreshCw size={15} />
           </button>
 
-          <button
-            onClick={() => setShowNewEntry(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}
-          >
-            <PlusCircle size={15} /> New Entry
-          </button>
 
           <button
             onClick={() => navigate('/accounting/settings')}
@@ -547,8 +539,8 @@ export default function AccountingPage() {
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
               <FileText size={28} style={{ opacity: 0.3, marginBottom: 8 }} />
               <p style={{ fontSize: 13, margin: 0 }}>No entries yet for FY {fy}</p>
-              <button onClick={() => setShowNewEntry(true)} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                Create first entry
+              <button onClick={() => navigate('/accounting/journal-entries')} style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                Go to Journal Entries
               </button>
             </div>
           ) : (
@@ -565,9 +557,9 @@ export default function AccountingPage() {
                   {entries.map((e, i) => (
                     <tr key={e.id}
                       onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
-                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}
-                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)'; ev.currentTarget.style.boxShadow = 'inset 3px 0 0 var(--accent)' }}
-                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'; ev.currentTarget.style.boxShadow = 'none' }}
+                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
+                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
+                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}
                     >
                       <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                       <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
@@ -593,50 +585,48 @@ export default function AccountingPage() {
         {/* Right — Quick Actions + COA Summary */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Quick Actions */}
+          {/* Quick Entries */}
           <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <BarChart2 size={15} color="#7c3aed" />
-              </div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Actions</p>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <PlusCircle size={14} color="#16a34a" />
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Entries</p>
             </div>
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <QuickBtn icon={IndianRupee}   label="Receipt Voucher"      desc="Quick guided receipt entry (cash/bank)"  onClick={() => navigate('/accounting/receipt-voucher')} color="#16a34a" />
-              <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => setShowNewEntry(true)}   color="#2563eb" />
-              <QuickBtn icon={BookMarked}    label="Chart of Accounts"   desc="Manage account heads for the church"     onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
-              <QuickBtn icon={ClipboardList} label="Ledger"              desc="View transactions for any account"       onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />
-              <QuickBtn icon={Scale}         label="Trial Balance"       desc="Verify total debits = total credits"     onClick={() => navigate('/accounting/trial-balance')}        color="#c2410c" />
-              <QuickBtn icon={BarChart2}     label="Financial Statements" desc="Receipts &amp; Payments, I&amp;E, Balance Sheet" onClick={() => navigate('/accounting/statements')}         color="#0891b2" />
-              <QuickBtn icon={List}          label="GL Reports"          desc="Day Book &amp; Account-wise Summary"     onClick={() => navigate('/accounting/gl-reports')}          color="#065f46" />
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <QuickBtn icon={IndianRupee}    label="Receipt Voucher" desc="Money received — cash or bank" onClick={() => navigate('/accounting/receipt-voucher')} color="#16a34a" />
+              <QuickBtn icon={CreditCard}     label="Payment Voucher" desc="Money paid out — cash or bank"  onClick={() => navigate('/accounting/payment-voucher')} color="#dc2626" />
+              <QuickBtn icon={ArrowLeftRight} label="Contra Entry"    desc="Cash ↔ bank transfers"          onClick={() => navigate('/accounting/contra-voucher')} color="#7c3aed" />
+              <QuickBtn icon={FileText}       label="Journal Entry"   desc="General double-entry posting"   onClick={() => navigate('/accounting/journal-voucher')} color="#0891b2" />
             </div>
           </div>
 
-          {/* COA Summary */}
+          {/* Statements */}
           <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <BookOpen size={15} color="#16a34a" />
-                </div>
-                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Accounts</p>
-              </div>
-              <button onClick={() => navigate('/accounting/chart-of-accounts')} style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>Manage</button>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <BarChart2 size={14} color="#0891b2" />
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Statements</p>
             </div>
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(t => (
-                <TypeSummaryCard key={t} type={t} count={typeCounts[t] || 0} loading={L} />
-              ))}
-              <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', margin: '4px 0 0' }}>
-                {L ? '' : `${accounts.length} active accounts total`}
-              </p>
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <QuickBtn icon={BarChart2}     label="Financial Statements" desc="R&P, I&E, Balance Sheet"          onClick={() => navigate('/accounting/statements')}           color="#0891b2" />
+              <QuickBtn icon={Scale}         label="Trial Balance"        desc="Verify debits = credits"          onClick={() => navigate('/accounting/trial-balance')}        color="#7c3aed" />
+              <QuickBtn icon={ClipboardList} label="Ledger"               desc="Account-wise transactions"        onClick={() => navigate('/accounting/ledger')}               color="#2563eb" />
+              <QuickBtn icon={List}          label="GL Reports"           desc="Day Book & account summary"       onClick={() => navigate('/accounting/gl-reports')}           color="#065f46" />
+            </div>
+          </div>
+
+          {/* Master Setup */}
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Layers size={14} color="#64748b" />
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Master Setup</p>
+            </div>
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <QuickBtn icon={BookOpen} label="Chart of Accounts" desc="View & manage account hierarchy" onClick={() => navigate('/accounting/chart-of-accounts')} color="#475569" />
             </div>
           </div>
 
         </div>
       </div>
 
-      {showNewEntry && <JournalEntryModal fy={fy} onClose={() => setShowNewEntry(false)} onSaved={load} />}
     </div>
   )
 }

@@ -39,6 +39,9 @@ import SimpleAccountsManagePage   from './pages/SimpleAccountsManagePage'
 import SimpleReportsPage          from './pages/SimpleReportsPage'
 import SimpleAccountsSettingsPage from './pages/SimpleAccountsSettingsPage'
 import ReceiptVoucherPage         from './pages/ReceiptVoucherPage'
+import PaymentVoucherPage         from './pages/PaymentVoucherPage'
+import ContraVoucherPage          from './pages/ContraVoucherPage'
+import JournalVoucherPage         from './pages/JournalVoucherPage'
 
 console.log('📱 App component rendering')
 
@@ -376,6 +379,9 @@ function AppRoutes() {
       <Route path="/accounting/bank-accounts"   element={<PrivateRoute><AppLayout><BankAccountsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/gl-reports"     element={<PrivateRoute><AppLayout><AccountingReportsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/receipt-voucher" element={<PrivateRoute><AppLayout><ReceiptVoucherPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/payment-voucher" element={<PrivateRoute><AppLayout><PaymentVoucherPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/contra-voucher"  element={<PrivateRoute><AppLayout><ContraVoucherPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/journal-voucher" element={<PrivateRoute><AppLayout><JournalVoucherPage /></AppLayout></PrivateRoute>} />
 
       {/* ── Simple Accounts Module ── */}
       <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />

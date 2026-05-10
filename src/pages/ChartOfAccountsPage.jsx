@@ -11,9 +11,10 @@ import {
   getChartOfAccounts, buildCOATree, createAccount, updateAccount, deleteAccount,
   TYPE_COLOR, displayAccountType, getFY, fyDateRange,
 } from '../lib/accountingLib'
+import { supabase } from '../lib/supabase'
 import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
-  BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText,
+  BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -25,37 +26,71 @@ const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
 // ── Single tree node ──────────────────────────────────────────────
 
-function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting }) {
+function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting,
+                    dragId, dropId, dropPos, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const [open, setOpen] = useState(depth < 2) // L1 and L2 open by default
   const hasChildren = node.children?.length > 0
   const c = TYPE_COLOR[node.account_type] || { bg: '#f1f5f9', text: '#475569' }
 
-  // Visual config per level
   const isL1 = node.level === 1
   const isL2 = node.level === 2
   const isL3 = node.level === 3
   const isL4 = node.level === 4
+  const isDragging  = dragId === node.id
+  const isDropOver  = dropId === node.id
 
   const indent = depth * 28
 
+  const rowBg = isL1 ? c.bg + '44' : isL2 ? 'rgba(0,0,0,0.012)' : 'transparent'
+
   return (
     <div>
+      {/* ── Drop indicator: BEFORE ───────────────────────────── */}
+      {isDropOver && dropPos === 'before' && (
+        <div style={{ height: 2, background: 'var(--accent)', margin: `0 0 0 ${indent + 16}px`, borderRadius: 2 }} />
+      )}
+
       {/* ── Row ─────────────────────────────────────────────── */}
       <div
+        draggable={!isL1}
+        onDragStart={e => {
+          if (isL1) { e.preventDefault(); return }
+          e.dataTransfer.effectAllowed = 'move'
+          onDragStart(node)
+        }}
+        onDragOver={e => {
+          e.preventDefault(); e.stopPropagation()
+          const rect = e.currentTarget.getBoundingClientRect()
+          const y = e.clientY - rect.top
+          const h = rect.height
+          onDragOver(node, y < h * 0.25 ? 'before' : y > h * 0.75 ? 'after' : 'on')
+        }}
+        onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(node) }}
+        onDragEnd={onDragEnd}
         style={{
           display: 'flex', alignItems: 'center',
           padding: isL1 ? '12px 16px' : isL2 ? '9px 16px' : '7px 16px',
           paddingLeft: indent + 16,
-          background: isL1
-            ? c.bg + '44'
-            : isL2 ? 'rgba(0,0,0,0.012)' : 'transparent',
-          borderBottom: '1px solid var(--card-border)',
+          background: isDropOver && dropPos === 'on'
+            ? 'var(--accent-subtle)'
+            : rowBg,
+          borderBottom: isDropOver && dropPos === 'after'
+            ? '2px solid var(--accent)'
+            : '1px solid var(--card-border)',
           gap: 8,
-          transition: 'background 0.12s',
+          opacity: isDragging ? 0.4 : 1,
+          transition: 'opacity 0.12s',
+          outline: isDropOver && dropPos === 'on' ? '2px solid var(--accent)' : 'none',
+          outlineOffset: -2,
         }}
-        onMouseEnter={e => { if (!isL1) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = isL1 ? c.bg + '44' : isL2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}
+        onMouseEnter={e => { if (!isL1 && dropId !== node.id) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
+        onMouseLeave={e => { if (!isL1 && dropId !== node.id) e.currentTarget.style.background = rowBg }}
       >
+        {/* Drag handle */}
+        {!isL1 && (
+          <GripVertical size={13} style={{ color: 'var(--text-3)', flexShrink: 0, cursor: 'grab', opacity: 0.5 }} />
+        )}
+
         {/* Expand / leaf icon */}
         <button
           onClick={() => hasChildren && setOpen(o => !o)}
@@ -86,7 +121,11 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
         </span>
 
         {/* Level badge */}
-        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: c.bg, color: c.text, letterSpacing: '0.06em', flexShrink: 0 }}>
+        <span
+          style={{ fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: c.bg, color: c.text, letterSpacing: '0.05em', flexShrink: 0, cursor: 'default' }}
+          onMouseEnter={e => { e.currentTarget.style.background = c.text; e.currentTarget.style.color = '#fff' }}
+          onMouseLeave={e => { e.currentTarget.style.background = c.bg; e.currentTarget.style.color = c.text }}
+        >
           {LEVEL_LABEL[node.level]}
         </span>
 
@@ -144,6 +183,13 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting 
               onEdit={onEdit}
               onDelete={onDelete}
               deleting={deleting}
+              dragId={dragId}
+              dropId={dropId}
+              dropPos={dropPos}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onDragEnd={onDragEnd}
             />
           ))}
         </div>
@@ -299,6 +345,12 @@ export default function ChartOfAccountsPage() {
   const [search,      setSearch]      = useState('')
   const [showNewEntry, setShowNewEntry] = useState(false)
 
+  // ── Drag-and-drop state ────────────────────────────────────────
+  const [dragNode, setDragNode] = useState(null)
+  const [dragId,   setDragId]   = useState(null)
+  const [dropId,   setDropId]   = useState(null)
+  const [dropPos,  setDropPos]  = useState(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -345,6 +397,129 @@ export default function ChartOfAccountsPage() {
     l2: accounts.filter(a => a.level === 2).length,
     l3: accounts.filter(a => a.level === 3).length,
     l4: accounts.filter(a => a.level === 4).length,
+  }
+
+  // ── Excel Export ───────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false)
+
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Church CMS'
+      wb.created = new Date()
+
+      const ws = wb.addWorksheet('Chart of Accounts', {
+        views: [{ state: 'frozen', ySplit: 4 }],
+        pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1 },
+      })
+
+      ws.columns = [
+        { key: 'seq',   width: 5  },
+        { key: 'level', width: 18 },
+        { key: 'type',  width: 14 },
+        { key: 'name',  width: 52 },
+        { key: 'post',  width: 10 },
+      ]
+
+      // Title
+      ws.mergeCells('A1:E1')
+      const title = ws.getCell('A1')
+      title.value = 'Chart of Accounts'
+      title.font  = { bold: true, size: 16, color: { argb: 'FF1E3A5F' } }
+      title.alignment = { horizontal: 'center', vertical: 'middle' }
+      ws.getRow(1).height = 38
+
+      // Date
+      ws.mergeCells('A2:E2')
+      const sub = ws.getCell('A2')
+      sub.value = `Exported on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`
+      sub.font  = { size: 10, italic: true, color: { argb: 'FF64748B' } }
+      sub.alignment = { horizontal: 'center' }
+      ws.getRow(2).height = 18
+
+      // Spacer
+      ws.getRow(3).height = 6
+
+      // Header
+      const hdr = ws.getRow(4)
+      hdr.values = ['#', 'Level', 'Type', 'Account Name', 'Postable']
+      hdr.height = 22
+      hdr.eachCell(cell => {
+        cell.font      = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell.border    = { bottom: { style: 'medium', color: { argb: 'FFFFFFFF' } } }
+      })
+      ws.getCell('D4').alignment = { horizontal: 'left', vertical: 'middle' }
+
+      // Type colour palette
+      const TYPE_BG   = { Asset: 'FFE0F2FE', Liability: 'FFFEE2E2', Equity: 'FFDCFCE7', Income: 'FFDCFCE7', Expense: 'FFFFF7ED' }
+      const TYPE_FONT = { Asset: 'FF1D4ED8', Liability: 'FF991B1B', Equity: 'FF166534', Income: 'FF166534', Expense: 'FF9A3412' }
+      const LEVEL_LABEL = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger', 4: 'Sub-Ledger' }
+
+      let rowIdx = 5, seq = 0
+
+      function addNode(node, depth) {
+        seq++
+        const indent = '    '.repeat(depth)
+        const row = ws.getRow(rowIdx++)
+        row.values = [seq, LEVEL_LABEL[node.level] || '', node.account_type || '', indent + node.name, node.is_postable ? '✓' : '']
+        row.height = node.level === 1 ? 22 : node.level === 2 ? 20 : 18
+
+        if (node.level === 1) {
+          const bg   = TYPE_BG[node.account_type]   || 'FFF1F5F9'
+          const font = TYPE_FONT[node.account_type] || 'FF1E293B'
+          row.eachCell(cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+            cell.font = { bold: true, size: 11, color: { argb: font } }
+          })
+        } else if (node.level === 2) {
+          row.eachCell(cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
+            cell.font = { bold: true, size: 10, color: { argb: 'FF334155' } }
+          })
+        } else {
+          row.eachCell(cell => {
+            cell.font = { size: 10, color: { argb: 'FF475569' } }
+          })
+        }
+
+        row.eachCell(cell => {
+          cell.border    = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } }
+          cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        })
+        row.getCell(4).alignment = { vertical: 'middle', horizontal: 'left' }
+
+        for (const child of (node.children || [])) addNode(child, depth + 1)
+      }
+
+      for (const root of tree) addNode(root, 0)
+
+      // Footer total
+      rowIdx++
+      ws.mergeCells(`A${rowIdx}:E${rowIdx}`)
+      const footer = ws.getCell(`A${rowIdx}`)
+      footer.value = `Total: ${accounts.length} accounts`
+      footer.font  = { italic: true, size: 9, color: { argb: 'FF94A3B8' } }
+      footer.alignment = { horizontal: 'right' }
+
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob   = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url    = URL.createObjectURL(blob)
+      const a      = document.createElement('a')
+      a.href       = url
+      a.download   = `Chart-of-Accounts-${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast('Exported successfully', 'success')
+    } catch (e) {
+      toast('Export failed: ' + e.message, 'error')
+    }
+    setExporting(false)
   }
 
   // ── Handlers ──────────────────────────────────────────────────
@@ -413,6 +588,87 @@ export default function ChartOfAccountsPage() {
     setModal({ mode: 'add', node: null, parentNode: null })
   }
 
+  // ── Drag-and-drop handlers ─────────────────────────────────────
+
+  function getAllDescendants(nodeId, allAccs) {
+    const kids = allAccs.filter(a => a.parent_id === nodeId)
+    return kids.reduce((acc, k) => acc.concat(k, getAllDescendants(k.id, allAccs)), [])
+  }
+
+  function handleDragStart(node) { setDragNode(node); setDragId(node.id) }
+
+  function handleDragOver(node, pos) {
+    if (node.id === dragId) return
+    setDropId(node.id); setDropPos(pos)
+  }
+
+  function handleDragEnd() {
+    setDragNode(null); setDragId(null); setDropId(null); setDropPos(null)
+  }
+
+  async function handleDrop(targetNode) {
+    if (!dragNode || !targetNode || dragNode.id === targetNode.id) { handleDragEnd(); return }
+
+    // Prevent dropping onto own descendant
+    function isDesc(ancestorId, nodeId) {
+      const n = accounts.find(a => a.id === nodeId)
+      if (!n?.parent_id) return false
+      if (n.parent_id === ancestorId) return true
+      return isDesc(ancestorId, n.parent_id)
+    }
+    if (isDesc(dragNode.id, targetNode.id)) {
+      toast('Cannot move an account into its own descendant', 'error')
+      handleDragEnd(); return
+    }
+
+    try {
+      if (dropPos === 'on') {
+        // Reparent dragNode under targetNode
+        const newLevel  = targetNode.level + 1
+        const levelDiff = newLevel - dragNode.level
+        await updateAccount(dragNode.id, {
+          parent_id:    targetNode.id,
+          level:        newLevel,
+          account_type: targetNode.account_type,
+          is_postable:  newLevel >= 3,
+        }, profile.email)
+        if (levelDiff !== 0) {
+          const descs = getAllDescendants(dragNode.id, accounts)
+          for (const d of descs)
+            await supabase.from('chart_of_accounts').update({ level: d.level + levelDiff }).eq('id', d.id)
+        }
+      } else {
+        // Reorder among targetNode's siblings (also handles cross-parent moves)
+        const newParentId = targetNode.parent_id
+        const newLevel    = targetNode.level
+        const levelDiff   = newLevel - dragNode.level
+        const siblings = accounts
+          .filter(a => a.parent_id === newParentId && a.id !== dragNode.id)
+          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        const idx = siblings.findIndex(a => a.id === targetNode.id)
+        siblings.splice(dropPos === 'before' ? idx : idx + 1, 0, dragNode)
+        for (let i = 0; i < siblings.length; i++) {
+          if (siblings[i].id === dragNode.id) {
+            await updateAccount(dragNode.id, {
+              parent_id: newParentId, level: newLevel, sort_order: i * 10,
+              account_type: targetNode.account_type, is_postable: newLevel >= 3,
+            }, profile.email)
+          } else {
+            await supabase.from('chart_of_accounts').update({ sort_order: i * 10 }).eq('id', siblings[i].id)
+          }
+        }
+        if (levelDiff !== 0) {
+          const descs = getAllDescendants(dragNode.id, accounts)
+          for (const d of descs)
+            await supabase.from('chart_of_accounts').update({ level: d.level + levelDiff }).eq('id', d.id)
+        }
+      }
+      toast('Account moved', 'success')
+      load()
+    } catch (e) { toast(e.message, 'error') }
+    handleDragEnd()
+  }
+
   return (
     <div className="page-container">
 
@@ -429,10 +685,17 @@ export default function ChartOfAccountsPage() {
             <p className="page-subtitle">Manage account hierarchy — Main Account → Group → Ledger</p>
           </div>
         </div>
-        <button onClick={handleAddMainAccount}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}>
-          <Plus size={15} /> Add Main Account
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={exportExcel} disabled={exporting || loading}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#16a34a', border: '1.5px solid #16a34a', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading ? 0.6 : 1 }}>
+            {exporting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Download size={14} />}
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
+          <button onClick={handleAddMainAccount}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}>
+            <Plus size={15} /> Add Main Account
+          </button>
+        </div>
       </div>
 
       {/* Summary + Search bar */}
@@ -514,6 +777,13 @@ export default function ChartOfAccountsPage() {
               onEdit={handleEdit}
               onDelete={handleDelete}
               deleting={deleting}
+              dragId={dragId}
+              dropId={dropId}
+              dropPos={dropPos}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
             />
           ))}
         </div>

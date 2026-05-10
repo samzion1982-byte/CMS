@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
-import { supabase } from '../lib/supabase'
 import {
   getFY, fmtAmt,
   getChartOfAccounts, getPostableAccountsWithPath,
   nextEntryNumber, getAccountingSettings,
-  createJournalEntry, postJournalEntry,
+  createJournalEntry, updateJournalEntry, postJournalEntry,
+  getJournalEntryWithLines,
   TYPE_COLOR,
 } from '../lib/accountingLib'
 import {
@@ -16,7 +16,14 @@ import {
 } from 'lucide-react'
 
 // strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
-function norm(s) { return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() }
+function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
+function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
+function matchAcct(name, q) {
+  if (!q) return true
+  const nl = name.toLowerCase(), qn = norm(q), nc = compact(name), qc = compact(q)
+  if (nl.includes(q) || norm(name).includes(qn) || nc.includes(qc)) return true
+  return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
+}
 
 // ── Typeahead account picker ──────────────────────────────────────
 function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
@@ -33,9 +40,9 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
     const q = query.trim().toLowerCase()
     const qn = norm(q)
     if (!q) return accounts.slice(0, 15)
-    return accounts.filter(a =>
-      a.name.toLowerCase().includes(q) || norm(a.name).includes(qn)
-    ).slice(0, 12)
+    const matched = accounts.filter(a => matchAcct(a.name, q))
+    matched.sort((a, b) => (compact(a.name).startsWith(compact(q)) ? 0 : 1) - (compact(b.name).startsWith(compact(q)) ? 0 : 1))
+    return matched.slice(0, 15)
   }, [query, open, accounts])
 
   function onFocus() { saved.current = value; setQuery(''); setOpen(true); setHi(0) }
@@ -83,11 +90,58 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
 
 const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', amount: '' })
 
-// mask last 4 of account number
-function maskAccNo(no) {
-  if (!no) return ''
-  const s = String(no).replace(/\s/g, '')
-  return s.length > 4 ? '•••• ' + s.slice(-4) : s
+function AccCard({ label, iconNode, iconBg, iconBgHov = 'rgba(255,255,255,0.12)', onClick }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <button onClick={onClick} className="no-lift"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--card-border)', background: hov ? 'var(--text-1)' : 'var(--card-bg)', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+      <div style={{ width: 28, height: 28, borderRadius: 7, background: hov ? iconBgHov : iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {iconNode(hov)}
+      </div>
+      <div style={{ flex: 1, fontSize: 12, fontWeight: 600, color: hov ? '#fff' : 'var(--text-1)' }}>{label}</div>
+      <ChevronRight size={13} color={hov ? 'rgba(255,255,255,0.6)' : 'var(--text-3)'} />
+    </button>
+  )
+}
+
+function Step1CashOrBank({ onChoose }) {
+  const [hovCash, setHovCash] = useState(false)
+  const [hovBank, setHovBank] = useState(false)
+  const card = hov => ({
+    padding: '28px 16px', borderRadius: 14, border: '2px solid var(--card-border)',
+    background: hov ? 'var(--text-1)' : 'var(--card-bg)',
+    cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+  })
+  return (
+    <div className="card" style={{ padding: '28px 24px' }}>
+      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 24, textAlign: 'center' }}>
+        How was this receipt received?
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 480, margin: '0 auto' }}>
+        <button onClick={() => onChoose('cash')} className="no-lift" style={card(hovCash)}
+          onMouseEnter={() => setHovCash(true)} onMouseLeave={() => setHovCash(false)}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: hovCash ? 'rgba(255,255,255,0.12)' : 'rgba(22,163,74,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Banknote size={26} color={hovCash ? '#fff' : '#16a34a'} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: hovCash ? '#fff' : 'var(--text-1)', marginBottom: 4 }}>Cash</div>
+            <div style={{ fontSize: 11, color: hovCash ? 'rgba(255,255,255,0.6)' : 'var(--text-3)' }}>Cash in hand / petty cash</div>
+          </div>
+        </button>
+        <button onClick={() => onChoose('bank')} className="no-lift" style={card(hovBank)}
+          onMouseEnter={() => setHovBank(true)} onMouseLeave={() => setHovBank(false)}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: hovBank ? 'rgba(255,255,255,0.12)' : 'rgba(37,99,235,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Landmark size={26} color={hovBank ? '#fff' : '#2563eb'} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: hovBank ? '#fff' : 'var(--text-1)', marginBottom: 4 }}>Bank</div>
+            <div style={{ fontSize: 11, color: hovBank ? 'rgba(255,255,255,0.6)' : 'var(--text-3)' }}>Cheque / transfer / UPI</div>
+          </div>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ── Main Page ─────────────────────────────────────────────────────
@@ -95,10 +149,11 @@ export default function ReceiptVoucherPage() {
   const { user }  = useAuth()
   const navigate  = useNavigate()
   const toast     = useToast()
+  const [searchParams] = useSearchParams()
+  const editId = searchParams.get('edit') || null   // set when editing existing entry
 
   // ── Data
   const [allCoa,       setAllCoa]       = useState([])
-  const [bankAccounts, setBankAccounts] = useState([])
   const [receiptNo,    setReceiptNo]    = useState('')
   const [loaded,       setLoaded]       = useState(false)
 
@@ -113,7 +168,6 @@ export default function ReceiptVoucherPage() {
   const [receiptType,  setReceiptType]  = useState('')   // 'cash' | 'bank'
   const [debitCoaId,   setDebitCoaId]   = useState('')   // COA account id for the debit line
   const [debitLabel,   setDebitLabel]   = useState('')   // display label
-  const [needCoaLink,  setNeedCoaLink]  = useState(false) // bank account has no coa_account_id
 
   // ── Credit entries
   const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
@@ -131,9 +185,10 @@ export default function ReceiptVoucherPage() {
     return filtered.length > 0 ? filtered : assetAccounts
   }, [assetAccounts])
 
-  const bankCoaAccounts = useMemo(() =>
-    assetAccounts.filter(a => /bank/i.test(a.name)),
-  [assetAccounts])
+  const bankCoaAccounts = useMemo(() => {
+    const parentIds = new Set(allCoa.map(a => a.parent_id).filter(Boolean))
+    return assetAccounts.filter(a => /bank/i.test(a.name) && !parentIds.has(a.id))
+  }, [assetAccounts, allCoa])
 
   const creditAccounts = useMemo(() => getPostableAccountsWithPath(allCoa), [allCoa])
 
@@ -142,16 +197,32 @@ export default function ReceiptVoucherPage() {
   const busy    = saving || posting
 
   useEffect(() => {
-    Promise.all([
-      getChartOfAccounts(true),
-      getAccountingSettings(),
-      supabase.from('bank_accounts').select('*').eq('is_active', true).order('sort_order').order('created_at'),
-    ]).then(async ([coa, s, { data: banks }]) => {
+    const promises = [getChartOfAccounts(true), getAccountingSettings()]
+    if (editId) promises.push(getJournalEntryWithLines(editId))
+    Promise.all(promises).then(async ([coa, s, existingEntry]) => {
       setAllCoa(coa)
-      setBankAccounts(banks || [])
-      const fy  = getFY(new Date().toISOString().slice(0, 10))
-      const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
-      setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
+      if (editId && existingEntry) {
+        // Pre-populate from existing entry
+        setReceiptNo(existingEntry.entry_number)
+        setEntryDate(existingEntry.entry_date || new Date().toISOString().slice(0, 10))
+        setRefNo(existingEntry.reference_no || '')
+        const debitLine  = existingEntry.journal_entry_lines?.find(l => Number(l.debit_amount) > 0)
+        const creditLines = existingEntry.journal_entry_lines?.filter(l => Number(l.credit_amount) > 0) || []
+        if (debitLine) {
+          setDebitCoaId(debitLine.account_id)
+          setDebitLabel(debitLine.chart_of_accounts?.name || '')
+          setReceivedFrom(debitLine.description || '')
+          const acctName = debitLine.chart_of_accounts?.name || ''
+          setReceiptType(/bank/i.test(acctName) ? 'bank' : 'cash')
+        }
+        setLines(creditLines.map(l => ({ _key: crypto.randomUUID(), account_id: l.account_id, amount: String(l.credit_amount) })))
+        setLineNarration(existingEntry.narration || creditLines[0]?.description || '')
+        setStep(3)
+      } else {
+        const fy  = getFY(new Date().toISOString().slice(0, 10))
+        const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
+        setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
+      }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
@@ -161,35 +232,24 @@ export default function ReceiptVoucherPage() {
     setReceiptType(type)
     setDebitCoaId('')
     setDebitLabel('')
-    setNeedCoaLink(false)
     setStep(2)
   }
 
   function chooseCashAccount(acc) {
     setDebitCoaId(acc.id)
     setDebitLabel(acc.name)
-    setNeedCoaLink(false)
     setStep(3)
   }
 
-  function chooseBankAccount(bank) {
-    if (bank.coa_account_id) {
-      setDebitCoaId(bank.coa_account_id)
-      setDebitLabel(`${bank.bank_name} — ${maskAccNo(bank.account_number)}`)
-      setNeedCoaLink(false)
-      setStep(3)
-    } else {
-      // Bank account not linked to COA — need user to pick the COA account
-      setDebitLabel(`${bank.bank_name} — ${maskAccNo(bank.account_number)}`)
-      setDebitCoaId('')
-      setNeedCoaLink(true)
-      setStep(3)
-    }
+  function chooseBankAccount(acc) {
+    setDebitCoaId(acc.id)
+    setDebitLabel(acc.name)
+    setStep(3)
   }
 
   function goBack() {
-    if (step === 3) { setStep(2); setNeedCoaLink(false) }
-    else if (step === 2) { setStep(1) }
+    if (step === 3) setStep(2)
+    else if (step === 2) setStep(1)
   }
 
   // ── Credit line helpers ───────────────────────────────────────
@@ -213,9 +273,15 @@ export default function ReceiptVoucherPage() {
         { account_id: debitCoaId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
         ...validLines.map(l => ({ account_id: l.account_id, debit_amount: 0, credit_amount: parseFloat(l.amount), description: lineNarration || null })),
       ]
-      const je = await createJournalEntry(entry, jLines, user?.email || 'system')
+      let je
+      if (editId) {
+        je = await updateJournalEntry(editId, entry, jLines, user?.email || 'system')
+        toast(`${receiptNo} updated`, 'success')
+      } else {
+        je = await createJournalEntry(entry, jLines, user?.email || 'system')
+      }
       if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast(`${receiptNo} posted`, 'success') }
-      else         { toast(`${receiptNo} saved as draft`, 'success') }
+      else if (!editId) { toast(`${receiptNo} saved as draft`, 'success') }
       navigate('/accounting/journal-entries')
     } catch (err) { toast(err.message || 'Failed to save', 'error'); setSt(false) }
   }
@@ -237,7 +303,7 @@ export default function ReceiptVoucherPage() {
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1 }}>
-          <h1 className="page-title" style={{ marginBottom: 1 }}>Receipt Voucher</h1>
+          <h1 className="page-title" style={{ marginBottom: 1 }}>{editId ? 'Edit Receipt Voucher' : 'Receipt Voucher'}</h1>
         </div>
         <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '4px 10px', borderRadius: 6 }}>
           {receiptNo}
@@ -290,54 +356,7 @@ export default function ReceiptVoucherPage() {
 
       {/* ══ STEP 1: Cash or Bank ══ */}
       {step === 1 && (
-        <div className="card" style={{ padding: '28px 24px' }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 24, textAlign: 'center' }}>
-            How was this receipt received?
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 480, margin: '0 auto' }}>
-            {/* Cash button */}
-            <button onClick={() => chooseType('cash')}
-              style={{
-                padding: '28px 16px', borderRadius: 14,
-                border: '2px solid var(--card-border)',
-                background: 'var(--card-bg)', cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-                transition: 'border-color 0.15s, background 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#16a34a'; e.currentTarget.style.background = 'rgba(22,163,74,0.05)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
-            >
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(22,163,74,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Banknote size={26} color="#16a34a" />
-              </div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Cash</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Cash in hand / petty cash</div>
-              </div>
-            </button>
-
-            {/* Bank button */}
-            <button onClick={() => chooseType('bank')}
-              style={{
-                padding: '28px 16px', borderRadius: 14,
-                border: '2px solid var(--card-border)',
-                background: 'var(--card-bg)', cursor: 'pointer',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-                transition: 'border-color 0.15s, background 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.background = 'rgba(37,99,235,0.05)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
-            >
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(37,99,235,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Landmark size={26} color="#2563eb" />
-              </div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Bank</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Cheque / transfer / UPI</div>
-              </div>
-            </button>
-          </div>
-        </div>
+        <Step1CashOrBank onChoose={chooseType} />
       )}
 
       {/* ══ STEP 2: Pick account ══ */}
@@ -362,26 +381,9 @@ export default function ReceiptVoucherPage() {
                 </p>
               )}
               {cashAccounts.map(acc => (
-                <button key={acc.id} onClick={() => chooseCashAccount(acc)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    padding: '14px 16px', borderRadius: 10,
-                    border: '1.5px solid var(--card-border)',
-                    background: 'var(--card-bg)', cursor: 'pointer', textAlign: 'left',
-                    transition: 'border-color 0.15s, background 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#16a34a'; e.currentTarget.style.background = 'rgba(22,163,74,0.05)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
-                >
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(22,163,74,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Banknote size={18} color="#16a34a" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{acc.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{acc.path}</div>
-                  </div>
-                  <ChevronRight size={16} color="var(--text-3)" />
-                </button>
+                <AccCard key={acc.id} label={acc.name} iconBg="rgba(22,163,74,0.1)"
+                  iconNode={hov => <Banknote size={14} color={hov ? '#fff' : '#16a34a'} />}
+                  onClick={() => chooseCashAccount(acc)} />
               ))}
             </div>
           )}
@@ -389,38 +391,15 @@ export default function ReceiptVoucherPage() {
           {/* BANK accounts */}
           {receiptType === 'bank' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {bankAccounts.length === 0 && (
+              {bankCoaAccounts.length === 0 && (
                 <p style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: 20 }}>
-                  No bank accounts found. Add one in Accounting → Bank Accounts.
+                  No bank accounts found in Chart of Accounts. Add an account with "Bank" in the name.
                 </p>
               )}
-              {bankAccounts.map(bank => (
-                <button key={bank.id} onClick={() => chooseBankAccount(bank)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 14,
-                    padding: '14px 16px', borderRadius: 10,
-                    border: '1.5px solid var(--card-border)',
-                    background: 'var(--card-bg)', cursor: 'pointer', textAlign: 'left',
-                    transition: 'border-color 0.15s, background 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#2563eb'; e.currentTarget.style.background = 'rgba(37,99,235,0.05)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.background = 'var(--card-bg)' }}
-                >
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(37,99,235,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Landmark size={18} color="#2563eb" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{bank.bank_name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2, fontFamily: 'monospace', letterSpacing: '0.05em' }}>
-                      A/c: {maskAccNo(bank.account_number)}
-                    </div>
-                    {bank.branch && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{bank.branch}</div>}
-                  </div>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', background: 'var(--page-bg)', padding: '2px 8px', borderRadius: 6, marginRight: 6 }}>
-                    {bank.account_type}
-                  </span>
-                  <ChevronRight size={16} color="var(--text-3)" />
-                </button>
+              {bankCoaAccounts.map(acc => (
+                <AccCard key={acc.id} label={acc.name} iconBg="rgba(37,99,235,0.1)"
+                  iconNode={hov => <Landmark size={14} color={hov ? '#fff' : '#2563eb'} />}
+                  onClick={() => chooseBankAccount(acc)} />
               ))}
             </div>
           )}
@@ -463,21 +442,6 @@ export default function ReceiptVoucherPage() {
               <Pencil size={11} /> Change
             </button>
           </div>
-
-          {/* If bank account has no COA link, ask user to pick */}
-          {needCoaLink && (
-            <div className="card" style={{ marginBottom: 14, padding: '14px 18px', borderLeft: '3px solid #f59e0b' }}>
-              <p style={{ fontSize: 12, color: '#92400e', fontWeight: 600, marginBottom: 8 }}>
-                This bank account is not linked to a Chart of Accounts entry. Please select the matching account:
-              </p>
-              <AccountPicker
-                value={debitCoaId}
-                accounts={bankCoaAccounts.length > 0 ? bankCoaAccounts : assetAccounts}
-                onChange={id => setDebitCoaId(id)}
-                placeholder="Select the bank's COA account…"
-              />
-            </div>
-          )}
 
           {/* Credit entries table */}
           <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>

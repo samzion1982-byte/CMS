@@ -472,31 +472,51 @@ async function updateBalanceCache(lines, fy) {
 // ── Ledger ────────────────────────────────────────────────────────
 
 export async function getLedger(accountId, from, to) {
-  const { data: lines, error } = await supabase
-    .from('journal_entry_lines')
-    .select(`
-      debit_amount, credit_amount, description,
-      journal_entries!inner(id, entry_number, entry_date, voucher_type, narration, is_posted, financial_year)
-    `)
-    .eq('account_id', accountId)
-    .eq('journal_entries.is_posted', true)
-    .eq('journal_entries.is_deleted', false)
-    .gte('journal_entries.entry_date', from)
-    .lte('journal_entries.entry_date', to)
-    .order('journal_entries.entry_date', { ascending: true })
+  // Step 1: fetch posted, non-deleted entries within the date range
+  const { data: entries, error: e1 } = await supabase
+    .from('journal_entries')
+    .select('id, entry_number, entry_date, voucher_type, narration')
+    .eq('is_posted', true)
+    .eq('is_deleted', false)
+    .gte('entry_date', from)
+    .lte('entry_date', to)
+    .order('entry_date', { ascending: true })
 
-  if (error) throw error
+  if (e1) throw e1
+  if (!entries?.length) return []
+
+  const entryIds = entries.map(e => e.id)
+  const entryMap = Object.fromEntries(entries.map(e => [e.id, e]))
+
+  // Step 2: fetch lines for this account within those entries
+  const { data: lines, error: e2 } = await supabase
+    .from('journal_entry_lines')
+    .select('journal_entry_id, debit_amount, credit_amount, description')
+    .eq('account_id', accountId)
+    .in('journal_entry_id', entryIds)
+
+  if (e2) throw e2
+
+  // Sort lines by parent entry date, then entry_number for ties
+  const sorted = (lines || []).sort((a, b) => {
+    const ea = entryMap[a.journal_entry_id] || {}
+    const eb = entryMap[b.journal_entry_id] || {}
+    if (ea.entry_date < eb.entry_date) return -1
+    if (ea.entry_date > eb.entry_date) return  1
+    return (ea.entry_number || '').localeCompare(eb.entry_number || '')
+  })
 
   let runningBalance = 0
-  return (lines || []).map(l => {
-    const dr = Number(l.debit_amount || 0)
+  return sorted.map(l => {
+    const e  = entryMap[l.journal_entry_id] || {}
+    const dr = Number(l.debit_amount  || 0)
     const cr = Number(l.credit_amount || 0)
     runningBalance += dr - cr
     return {
-      date:            l.journal_entries.entry_date,
-      entry_number:    l.journal_entries.entry_number,
-      voucher_type:    l.journal_entries.voucher_type,
-      narration:       l.description || l.journal_entries.narration,
+      date:            e.entry_date,
+      entry_number:    e.entry_number,
+      voucher_type:    e.voucher_type,
+      narration:       l.description || e.narration,
       debit:           dr,
       credit:          cr,
       running_balance: runningBalance,

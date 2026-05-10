@@ -367,7 +367,7 @@ export default function AccountingSettingsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
 
-  const [pageUnlocked, setPageUnlocked] = useState(() => !!sessionStorage.getItem('ac_settings_unlocked'))
+  const [pageUnlocked, setPageUnlocked] = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
   const [churchId,    setChurchId]    = useState(null)
@@ -391,8 +391,6 @@ export default function AccountingSettingsPage() {
   // Report
   const [reportSubtitle, setReportSubtitle] = useState('')
 
-  // Journal Entry Defaults
-  const [defaultVoucher,  setDefaultVoucher]  = useState('Receipt')
   const [autoPost,        setAutoPost]        = useState(false)
   const [prefixes, setPrefixes] = useState({
     prefix_receipt: 'RV', prefix_payment: 'PV', prefix_journal: 'JV',
@@ -442,7 +440,6 @@ export default function AccountingSettingsPage() {
       setNumberFormat(data.accounting_number_format || 'indian')
       setDateFormat(data.accounting_date_format || 'DD-MM-YYYY')
       setReportSubtitle(data.accounting_report_subtitle || '')
-      setDefaultVoucher(data.accounting_default_voucher || 'Receipt')
       setAutoPost(!!data.accounting_auto_post)
       setPrefixes({
         prefix_receipt: data.accounting_prefix_receipt || 'RV',
@@ -544,7 +541,6 @@ export default function AccountingSettingsPage() {
       accounting_number_format:     numberFormat,
       accounting_date_format:       dateFormat,
       accounting_report_subtitle:   reportSubtitle || null,
-      accounting_default_voucher:   defaultVoucher,
       accounting_auto_post:         autoPost,
       accounting_prefix_receipt:    prefixes.prefix_receipt || 'RV',
       accounting_prefix_payment:    prefixes.prefix_payment || 'PV',
@@ -600,10 +596,7 @@ export default function AccountingSettingsPage() {
 
   if (!pageUnlocked) return (
     <div className="page-container">
-      <SettingsLockScreen onUnlock={() => {
-        sessionStorage.setItem('ac_settings_unlocked', '1')
-        setPageUnlocked(true)
-      }} />
+      <SettingsLockScreen onUnlock={() => setPageUnlocked(true)} />
     </div>
   )
 
@@ -800,17 +793,8 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 4. Journal Entry Defaults ────────────────────────────── */}
-      <SectionCard icon={Receipt} title="Journal Entry Defaults" subtitle="Pre-fill settings when creating a new journal entry.">
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-          <div>
-            <FL>Default Voucher Type</FL>
-            <select value={defaultVoucher} onChange={e => setDefaultVoucher(e.target.value)} style={{ ...INPUT_STYLE }}>
-              {VOUCHER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-        </div>
+      {/* ── 4. Voucher Settings ───────────────────────────────────── */}
+      <SectionCard icon={Receipt} title="Voucher Settings" subtitle="Configure entry number prefixes and posting behaviour.">
 
         {/* Entry number prefixes */}
         <div style={{ marginBottom: 16 }}>

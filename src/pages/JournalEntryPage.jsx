@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -36,6 +36,7 @@ function VBadge({ type }) {
 export default function JournalEntryPage() {
   const navigate = useNavigate()
   const { id: routeId } = useParams()
+  const [searchParams] = useSearchParams()
   const [checked,    setChecked]    = useState(false)
   const [needsSetup, setNeedsSetup] = useState(false)
 
@@ -55,6 +56,9 @@ export default function JournalEntryPage() {
 
   if (needsSetup) return <EntrySetupPrompt />
 
+  if (routeId === 'new') {
+    return <JournalEntryForm entryId={null} defaultVoucherType={searchParams.get('type') || 'Journal'} />
+  }
   if (routeId) {
     return <JournalEntryForm entryId={routeId} />
   }
@@ -336,9 +340,9 @@ function JournalEntryList() {
                 <tbody>
                   {filtered.map((e, i) => (
                     <tr key={e.id} onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
-                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}
-                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)'; ev.currentTarget.style.boxShadow = 'inset 3px 0 0 var(--accent)' }}
-                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'; ev.currentTarget.style.boxShadow = 'none' }}
+                      style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
+                      onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
+                      onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}
                     >
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
@@ -380,7 +384,7 @@ function JournalEntryList() {
                             </>
                           ) : (
                             <>
-                              <button onClick={ev => { ev.stopPropagation(); navigate(`/accounting/journal-entries/${e.id}`) }}
+                              <button onClick={ev => { ev.stopPropagation(); e.voucher_type === 'Receipt' ? navigate(`/accounting/receipt-voucher?edit=${e.id}`) : e.voucher_type === 'Payment' ? navigate(`/accounting/payment-voucher?edit=${e.id}`) : e.voucher_type === 'Contra' ? navigate(`/accounting/contra-voucher?edit=${e.id}`) : e.voucher_type === 'Journal' ? navigate(`/accounting/journal-voucher?edit=${e.id}`) : navigate(`/accounting/journal-entries/${e.id}`) }}
                                 style={{ padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
                               <button onClick={async ev => { ev.stopPropagation(); try { await postJournalEntry(e.id, profile?.email || 'admin'); toast('Posted!', 'success'); load() } catch(err){toast(err.message,'error')} }}
                                 style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Post</button>
@@ -421,7 +425,7 @@ function JournalEntryList() {
 //  FORM (New / Edit)
 // ════════════════════════════════════════════════════════════════
 
-function JournalEntryForm({ entryId }) {
+function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
@@ -447,7 +451,7 @@ function JournalEntryForm({ entryId }) {
     entry_number:  '',
     entry_date:    today,
     financial_year: currentFY,
-    voucher_type:  'Receipt',
+    voucher_type:  defaultVoucherType,
     narration:     '',
     reference_no:  '',
   })
@@ -675,7 +679,7 @@ function JournalEntryForm({ entryId }) {
             const active = header.voucher_type === t
             return (
               <button key={t} onClick={() => sh('voucher_type', t)}
-                style={{ padding: '7px 18px', borderRadius: 99, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `2px solid ${active ? vc.text : 'var(--card-border)'}`, background: active ? vc.bg : 'var(--card-bg)', color: active ? vc.text : 'var(--text-2)', transition: 'all 0.15s' }}>
+                style={{ padding: '7px 18px', borderRadius: 99, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `2px solid ${active ? vc.text : 'var(--card-border)'}`, background: active ? vc.bg : 'var(--card-bg)', color: active ? vc.text : 'var(--text-2)' }}>
                 {t}
               </button>
             )
