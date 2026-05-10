@@ -9,13 +9,13 @@ import {
   createJournalEntry, postJournalEntry,
   TYPE_COLOR,
 } from '../lib/accountingLib'
-import { PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft } from 'lucide-react'
+import { PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft, CheckCircle2 } from 'lucide-react'
 
 // ── Typeahead account picker ──────────────────────────────────────
 function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
-  const [query,  setQuery]  = useState('')
-  const [open,   setOpen]   = useState(false)
-  const [hi,     setHi]     = useState(0)
+  const [query, setQuery] = useState('')
+  const [open,  setOpen]  = useState(false)
+  const [hi,    setHi]    = useState(0)
   const saved = useRef(value)
 
   const selected    = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
@@ -26,8 +26,7 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
     const q = query.trim().toLowerCase()
     if (!q) return accounts.slice(0, 15)
     return accounts.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      (a.path || '').toLowerCase().includes(q)
+      a.name.toLowerCase().includes(q) || (a.path || '').toLowerCase().includes(q)
     ).slice(0, 12)
   }, [query, open, accounts])
 
@@ -36,10 +35,10 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
   function pick(a)   { saved.current = a.id; onChange(a.id); setOpen(false) }
 
   function onKey(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape') { setOpen(false) }
-    else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
+    if (e.key === 'ArrowDown')             { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
+    else if (e.key === 'ArrowUp')          { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    else if (e.key === 'Escape')           { setOpen(false) }
+    else if (e.key === 'Enter' && open)    { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
   }
 
   return (
@@ -48,12 +47,8 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
         className="field-input"
         value={open ? query : displayName}
         onChange={e => { setQuery(e.target.value); setHi(0) }}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        onKeyDown={onKey}
-        placeholder={placeholder}
-        disabled={disabled}
-        autoComplete="off"
+        onFocus={onFocus} onBlur={onBlur} onKeyDown={onKey}
+        placeholder={placeholder} disabled={disabled} autoComplete="off"
       />
       {open && filtered.length > 0 && (
         <div style={{
@@ -69,9 +64,7 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
               borderBottom: '1px solid var(--card-border)',
             }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-              {a.path && a.path !== a.name && (
-                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{a.path}</div>
-              )}
+              {a.path && a.path !== a.name && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{a.path}</div>}
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, marginTop: 2,
                 background: TYPE_COLOR[a.account_type]?.bg, color: TYPE_COLOR[a.account_type]?.text,
@@ -86,27 +79,6 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
 }
 
 const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', description: '', amount: '' })
-
-// ── Column header ─────────────────────────────────────────────────
-const COL = '1fr 150px 150px 32px'
-function ColHead({ children, align = 'left', color }) {
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-      textTransform: 'uppercase', color: color || 'var(--text-3)',
-      textAlign: align, display: 'block',
-    }}>{children}</span>
-  )
-}
-
-// ── Read-only amount cell ─────────────────────────────────────────
-function AmtCell({ value, color = 'var(--text-1)' }) {
-  return (
-    <div style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 14, color, paddingRight: 4 }}>
-      {value > 0 ? fmtAmt(value) : <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>—</span>}
-    </div>
-  )
-}
 
 // ── Main Page ─────────────────────────────────────────────────────
 export default function ReceiptVoucherPage() {
@@ -129,11 +101,10 @@ export default function ReceiptVoucherPage() {
   const assetAccounts  = useMemo(() => getPostableAccountsWithPath(allAccounts).filter(a => a.account_type === 'Asset'), [allAccounts])
   const creditAccounts = useMemo(() => getPostableAccountsWithPath(allAccounts), [allAccounts])
 
-  // Total of all credit lines = automatically becomes the debit to cash/bank
-  const total   = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
-  const isValid = cashBankId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
-
-  const cashBankAccount = useMemo(() => assetAccounts.find(a => a.id === cashBankId), [assetAccounts, cashBankId])
+  const total          = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
+  const isValid        = cashBankId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
+  const cashBankAcc    = useMemo(() => assetAccounts.find(a => a.id === cashBankId), [assetAccounts, cashBankId])
+  const balanced       = total > 0  // debit === credit always by design
 
   useEffect(() => {
     Promise.all([getChartOfAccounts(true), getAccountingSettings()])
@@ -149,8 +120,8 @@ export default function ReceiptVoucherPage() {
   }, [])
 
   function updateLine(idx, field, val) { setLines(ls => ls.map((l, i) => i === idx ? { ...l, [field]: val } : l)) }
-  function addLine()        { setLines(ls => [...ls, blankLine()]) }
-  function removeLine(idx)  { setLines(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls) }
+  function addLine()       { setLines(ls => [...ls, blankLine()]) }
+  function removeLine(idx) { setLines(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls) }
 
   async function handleSave(andPost = false) {
     if (!isValid) return
@@ -169,7 +140,7 @@ export default function ReceiptVoucherPage() {
       ]
       const je = await createJournalEntry(entry, jLines, user?.email || 'system')
       if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast.success(`${receiptNo} posted`) }
-      else { toast.success(`${receiptNo} saved as draft`) }
+      else         { toast.success(`${receiptNo} saved as draft`) }
       navigate('/accounting/journal-entries')
     } catch (err) { toast.error(err.message || 'Failed to save'); setSt(false) }
   }
@@ -183,21 +154,19 @@ export default function ReceiptVoucherPage() {
   const busy = saving || posting
 
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div style={{ maxWidth: 820, margin: '0 auto' }}>
 
-      {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+      {/* ── Page header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
         <button onClick={() => navigate(-1)} className="nav-item"
           style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center' }}>
           <ArrowLeft size={16} />
         </button>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 className="page-title" style={{ marginBottom: 2 }}>Receipt Voucher</h1>
           <p className="page-subtitle">Record money received into cash or bank</p>
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)' }}>
-          {receiptNo}
-        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)' }}>{receiptNo}</div>
       </div>
 
       {/* ── Voucher metadata ── */}
@@ -222,144 +191,127 @@ export default function ReceiptVoucherPage() {
         </div>
       </div>
 
-      {/* ── Ledger table ── */}
-      <div className="card" style={{ marginBottom: 20, overflow: 'hidden' }}>
+      {/* ── Two-column layout: Cash/Bank | Credit entries ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 14, alignItems: 'start', marginBottom: 20 }}>
 
-        {/* Table column headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: COL, gap: 0, padding: '10px 20px 8px', background: 'var(--page-bg)', borderBottom: '2px solid var(--card-border)' }}>
-          <ColHead>Account</ColHead>
-          <ColHead align="right" color="#dc2626">Debit (₹)</ColHead>
-          <ColHead align="right" color="#16a34a">Credit (₹)</ColHead>
-          <span />
-        </div>
+        {/* LEFT — Cash / Bank card (DEBIT side) */}
+        <div className="card" style={{ padding: '18px 20px', position: 'sticky', top: 80 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#dc2626', marginBottom: 10 }}>
+            Debit — Received Into
+          </div>
 
-        {/* ── DEBIT ROW: Cash / Bank (step 1) ── */}
-        <div style={{ borderBottom: '1px solid var(--card-border)', background: 'rgba(220,38,38,0.03)' }}>
-          <div style={{ padding: '6px 20px 4px', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#dc2626' }}>
-            Received Into — Cash / Bank Account
+          {/* Account picker */}
+          <AccountPicker
+            value={cashBankId}
+            accounts={assetAccounts}
+            onChange={setCashBankId}
+            placeholder="Cash or bank account…"
+            disabled={busy}
+          />
+          {cashBankAcc && (
+            <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 5 }}>{cashBankAcc.path}</div>
+          )}
+
+          {/* Divider */}
+          <div style={{ borderTop: '1px solid var(--card-border)', margin: '16px 0 12px' }} />
+
+          {/* Auto-debit amount display */}
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>
+            Debit Amount
+            <span style={{ marginLeft: 6, fontSize: 9, color: '#94a3b8', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+              (auto-calculated)
+            </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: COL, gap: 8, padding: '4px 20px 12px', alignItems: 'center' }}>
-            <AccountPicker
-              value={cashBankId}
-              accounts={assetAccounts}
-              onChange={setCashBankId}
-              placeholder="Select cash or bank account…"
-              disabled={busy}
-            />
-            {/* Debit: auto-calculated — blank when no credits yet */}
-            <div style={{
-              textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 15,
-              color: total > 0 ? '#dc2626' : 'var(--text-3)',
-              paddingRight: 4,
-              borderBottom: total > 0 ? '2px solid #dc262640' : '2px dashed var(--card-border)',
-              paddingBottom: 2,
-            }}>
-              {total > 0 ? fmtAmt(total) : ''}
-            </div>
-            {/* Credit: not applicable */}
-            <div style={{ textAlign: 'right', color: 'var(--text-3)', fontSize: 12, paddingRight: 4 }}>—</div>
-            <div />
+
+          <div style={{
+            padding: '14px 16px', borderRadius: 10,
+            background: balanced ? 'rgba(220,38,38,0.06)' : 'var(--page-bg)',
+            border: `2px ${balanced ? 'solid #dc262630' : 'dashed var(--card-border)'}`,
+            textAlign: 'center',
+            transition: 'all 0.25s ease',
+          }}>
+            {balanced ? (
+              <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 22, color: '#dc2626', letterSpacing: '0.02em' }}>
+                {fmtAmt(total)}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
+                Enter credit amounts →
+              </div>
+            )}
           </div>
-          {cashBankAccount && (
-            <div style={{ padding: '0 20px 8px', fontSize: 10, color: 'var(--text-3)' }}>
-              {cashBankAccount.path}
+
+          {/* Balance indicator */}
+          {balanced && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)' }}>
+              <CheckCircle2 size={14} color="#16a34a" />
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a' }}>Entry Balanced</span>
             </div>
           )}
         </div>
 
-        {/* ── CREDIT ROWS (step 2) ── */}
-        <div style={{ borderBottom: '1px solid var(--card-border)' }}>
-          <div style={{ padding: '6px 20px 4px', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#16a34a' }}>
+        {/* RIGHT — Credit entries */}
+        <div className="card" style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#16a34a', marginBottom: 12 }}>
             Credit Entries — Income / Other Accounts
           </div>
 
+          {/* Column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 6 }}>
+            {['#', 'Account', 'Description', 'Amount (₹)', ''].map(h => (
+              <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
+            ))}
+          </div>
+
+          {/* Credit lines */}
           {lines.map((line, idx) => (
-            <div key={line._key} style={{ display: 'grid', gridTemplateColumns: COL, gap: 8, padding: '4px 20px', alignItems: 'center', borderTop: idx > 0 ? '1px solid var(--card-border)' : 'none' }}>
-              {/* Account + description stacked in account column */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, minWidth: 16, textAlign: 'right', flexShrink: 0 }}>{idx + 1}</span>
-                <AccountPicker
-                  value={line.account_id}
-                  accounts={creditAccounts}
-                  onChange={id => updateLine(idx, 'account_id', id)}
-                  placeholder="Select account…"
-                  disabled={busy}
-                />
-                <input
-                  className="field-input"
-                  placeholder="Description"
-                  value={line.description}
-                  onChange={e => updateLine(idx, 'description', e.target.value)}
-                  disabled={busy}
-                  style={{ width: 140, flexShrink: 0 }}
-                />
-              </div>
-
-              {/* Debit: not applicable for credit entries */}
-              <div style={{ textAlign: 'right', color: 'var(--text-3)', fontSize: 12, paddingRight: 4 }}>—</div>
-
-              {/* Credit: amount input */}
-              <input
-                className="field-input"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={line.amount}
-                onChange={e => updateLine(idx, 'amount', e.target.value)}
+            <div key={line._key}
+              style={{ display: 'grid', gridTemplateColumns: '20px 1fr 130px 110px 30px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, textAlign: 'right' }}>{idx + 1}</span>
+              <AccountPicker
+                value={line.account_id}
+                accounts={creditAccounts}
+                onChange={id => updateLine(idx, 'account_id', id)}
+                placeholder="Select account…"
                 disabled={busy}
-                style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}
               />
-
-              <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy}
-                className="nav-item"
-                style={{
-                  background: 'none', border: 'none', padding: 4, borderRadius: 6,
+              <input className="field-input" placeholder="Description"
+                value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)} disabled={busy} />
+              <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
+                value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
+                disabled={busy}
+                style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }} />
+              <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
+                style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center',
                   cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
-                  color: lines.length === 1 ? 'var(--text-3)' : '#dc2626',
-                  display: 'flex', alignItems: 'center',
-                }}>
+                  color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
                 <Trash2 size={14} />
               </button>
             </div>
           ))}
 
-          <div style={{ padding: '8px 20px 12px' }}>
+          {/* Add line + running total */}
+          <div style={{ display: 'flex', alignItems: 'center', marginTop: 10, gap: 12 }}>
             <button onClick={addLine} disabled={busy}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '6px 14px', borderRadius: 8,
-                border: '1.5px dashed var(--card-border)',
-                background: 'transparent', color: 'var(--accent)',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
+                border: '1.5px dashed var(--card-border)', background: 'transparent',
+                color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
               <PlusCircle size={13} /> Add Line
             </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+                Total Credit
+              </span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 18, color: total > 0 ? '#16a34a' : 'var(--text-3)' }}>
+                {total > 0 ? fmtAmt(total) : '—'}
+              </span>
+            </div>
           </div>
-        </div>
-
-        {/* ── TOTAL row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: COL, gap: 8, padding: '12px 20px', background: 'var(--page-bg)' }}>
-          <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-2)', alignSelf: 'center' }}>
-            Total
-            {total > 0 && (
-              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: '#16a34a' }}>✓ Balanced</span>
-            )}
-          </span>
-          {/* Total Debit */}
-          <div style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 900, fontSize: 16, color: total > 0 ? '#dc2626' : 'var(--text-3)', paddingRight: 4 }}>
-            {total > 0 ? fmtAmt(total) : '—'}
-          </div>
-          {/* Total Credit */}
-          <div style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 900, fontSize: 16, color: total > 0 ? '#16a34a' : 'var(--text-3)', paddingRight: 4 }}>
-            {total > 0 ? fmtAmt(total) : '—'}
-          </div>
-          <div />
         </div>
       </div>
 
       {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <button onClick={() => handleSave(false)} disabled={!isValid || busy} className="btn btn-secondary"
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Save size={14} />}
