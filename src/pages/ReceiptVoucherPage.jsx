@@ -81,7 +81,7 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
   )
 }
 
-const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', description: '', amount: '' })
+const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', amount: '' })
 
 // mask last 4 of account number
 function maskAccNo(no) {
@@ -106,7 +106,6 @@ export default function ReceiptVoucherPage() {
   const [entryDate,    setEntryDate]    = useState(() => new Date().toISOString().slice(0, 10))
   const [receivedFrom, setReceivedFrom] = useState('')
   const [refNo,        setRefNo]        = useState('')
-  const [narration,    setNarration]    = useState('')
 
   // ── Wizard state
   // step: 1 = cash/bank choice  2 = pick account  3 = credit entries
@@ -117,7 +116,8 @@ export default function ReceiptVoucherPage() {
   const [needCoaLink,  setNeedCoaLink]  = useState(false) // bank account has no coa_account_id
 
   // ── Credit entries
-  const [lines, setLines] = useState(() => [blankLine(), blankLine()])
+  const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
+  const [lineNarration, setLineNarration] = useState('')
 
   // ── Save state
   const [saving,  setSaving]  = useState(false)
@@ -207,11 +207,11 @@ export default function ReceiptVoucherPage() {
       const validLines = lines.filter(l => l.account_id && parseFloat(l.amount) > 0)
       const entry = {
         entry_number: receiptNo, entry_date: entryDate, financial_year: fy,
-        voucher_type: 'Receipt', narration: narration || null, reference_no: refNo || null,
+        voucher_type: 'Receipt', narration: lineNarration || null, reference_no: refNo || null,
       }
       const jLines = [
         { account_id: debitCoaId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
-        ...validLines.map(l => ({ account_id: l.account_id, debit_amount: 0, credit_amount: parseFloat(l.amount), description: l.description || null })),
+        ...validLines.map(l => ({ account_id: l.account_id, debit_amount: 0, credit_amount: parseFloat(l.amount), description: lineNarration || null })),
       ]
       const je = await createJournalEntry(entry, jLines, user?.email || 'system')
       if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast(`${receiptNo} posted`, 'success') }
@@ -246,7 +246,7 @@ export default function ReceiptVoucherPage() {
 
       {/* Voucher meta row */}
       <div className="card" style={{ marginBottom: 20, padding: '14px 18px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', gap: '10px 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr', gap: '10px 16px' }}>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Date *</label>
             <input className="field-input" type="date" value={entryDate}
@@ -261,11 +261,6 @@ export default function ReceiptVoucherPage() {
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Reference No</label>
             <input className="field-input" placeholder="Cheque / UPI ref."
               value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
-          </div>
-          <div>
-            <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Narration</label>
-            <input className="field-input" placeholder="Brief description"
-              value={narration} onChange={e => setNarration(e.target.value)} disabled={busy} />
           </div>
         </div>
       </div>
@@ -492,34 +487,28 @@ export default function ReceiptVoucherPage() {
 
             {/* Column headers */}
             <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 8 }}>
-              {['#', 'Account / Description', 'Amount (₹)', ''].map(h => (
+              {['#', 'Account', 'Amount (₹)', ''].map(h => (
                 <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
               ))}
             </div>
 
             {lines.map((line, idx) => (
               <div key={line._key}
-                style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 12, alignItems: 'start' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700, textAlign: 'center', paddingTop: 10 }}>{idx + 1}</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <AccountPicker
-                    value={line.account_id}
-                    accounts={creditAccounts}
-                    onChange={id => updateLine(idx, 'account_id', id)}
-                    placeholder="Select account…"
-                    disabled={busy}
-                  />
-                  <input className="field-input" placeholder="Description (optional)"
-                    value={line.description} onChange={e => updateLine(idx, 'description', e.target.value)}
-                    disabled={busy}
-                    style={{ fontSize: 12, height: 30 }} />
-                </div>
+                style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 700, textAlign: 'center' }}>{idx + 1}</span>
+                <AccountPicker
+                  value={line.account_id}
+                  accounts={creditAccounts}
+                  onChange={id => updateLine(idx, 'account_id', id)}
+                  placeholder="Select account…"
+                  disabled={busy}
+                />
                 <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
                   value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
                   disabled={busy}
-                  style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a', fontSize: 15, paddingTop: 6 }} />
+                  style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a', fontSize: 15 }} />
                 <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
-                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', marginTop: 6, width: 'auto',
+                  style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', width: 'auto',
                     cursor: lines.length === 1 ? 'not-allowed' : 'pointer',
                     color: lines.length === 1 ? 'var(--text-3)' : '#dc2626' }}>
                   <Trash2 size={15} />
@@ -541,6 +530,14 @@ export default function ReceiptVoucherPage() {
                   {total > 0 ? fmtAmt(total) : '—'}
                 </span>
               </div>
+            </div>
+
+            {/* Single narration for all entries */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--card-border)' }}>
+              <label className="field-label" style={{ display: 'block', marginBottom: 5 }}>Narration</label>
+              <input className="field-input" placeholder="Particulars / narration for this receipt"
+                value={lineNarration} onChange={e => setLineNarration(e.target.value)}
+                disabled={busy} />
             </div>
           </div>
 
