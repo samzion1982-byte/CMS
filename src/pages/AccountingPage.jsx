@@ -602,6 +602,7 @@ export default function AccountingPage() {
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Actions</p>
             </div>
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <QuickBtn icon={IndianRupee}   label="Receipt Voucher"      desc="Quick guided receipt entry (cash/bank)"  onClick={() => navigate('/accounting/receipt-voucher')} color="#16a34a" />
               <QuickBtn icon={PlusCircle}    label="New Journal Entry"    desc="Record a receipt, payment or journal"    onClick={() => setShowNewEntry(true)}   color="#2563eb" />
               <QuickBtn icon={BookMarked}    label="Chart of Accounts"   desc="Manage account heads for the church"     onClick={() => navigate('/accounting/chart-of-accounts')}   color="#16a34a" />
               <QuickBtn icon={ClipboardList} label="Ledger"              desc="View transactions for any account"       onClick={() => navigate('/accounting/ledger')}               color="#7c3aed" />

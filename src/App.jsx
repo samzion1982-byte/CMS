@@ -38,6 +38,7 @@ import SimpleCategoriesPage       from './pages/SimpleCategoriesPage'
 import SimpleAccountsManagePage   from './pages/SimpleAccountsManagePage'
 import SimpleReportsPage          from './pages/SimpleReportsPage'
 import SimpleAccountsSettingsPage from './pages/SimpleAccountsSettingsPage'
+import ReceiptVoucherPage         from './pages/ReceiptVoucherPage'
 
 console.log('📱 App component rendering')
 
@@ -248,6 +249,24 @@ function PublicRoute({ children }) {
 
 // 🛣️ Routes
 function AppRoutes() {
+  // Global Enter-key navigation: pressing Enter on any text input advances to the next focusable element
+  useEffect(() => {
+    function handleEnter(e) {
+      if (e.key !== 'Enter' || e.defaultPrevented) return
+      const el = e.target
+      if (el.tagName !== 'INPUT') return
+      if (el.type === 'submit' || el.type === 'button' || el.type === 'checkbox' || el.type === 'radio') return
+      e.preventDefault()
+      const all = Array.from(
+        document.querySelectorAll('input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')
+      ).filter(n => n.tabIndex !== -1 && n.offsetParent !== null)
+      const idx = all.indexOf(el)
+      if (idx !== -1 && idx < all.length - 1) all[idx + 1].focus()
+    }
+    document.addEventListener('keydown', handleEnter)
+    return () => document.removeEventListener('keydown', handleEnter)
+  }, [])
+
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
@@ -356,6 +375,7 @@ function AppRoutes() {
       <Route path="/accounting/settings"         element={<PrivateRoute><AppLayout><AccountingSettingsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/bank-accounts"   element={<PrivateRoute><AppLayout><BankAccountsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/gl-reports"     element={<PrivateRoute><AppLayout><AccountingReportsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/receipt-voucher" element={<PrivateRoute><AppLayout><ReceiptVoucherPage /></AppLayout></PrivateRoute>} />
 
       {/* ── Simple Accounts Module ── */}
       <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />

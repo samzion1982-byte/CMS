@@ -849,14 +849,15 @@ html { zoom: 0.95; }
     color: var(--text-1);
     background: var(--input-bg);
     font-family: inherit;
-    transition: border-color 0.15s, border-width 0.12s;
+    transition: border-color 0.15s, border-width 0.12s, background 0.15s, box-shadow 0.15s;
     width: 100%;
     outline: none;
   }
   .field-input:focus {
     border-color: var(--input-focus-border);
-    border-width: 2.5px;
-    box-shadow: none;
+    border-width: 2px;
+    background: var(--accent-subtle);
+    box-shadow: 0 0 0 3px var(--input-focus-ring);
   }
   .field-input:disabled { opacity: 0.55; cursor: not-allowed; }
 
