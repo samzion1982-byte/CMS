@@ -32,6 +32,12 @@ import TrialBalancePage       from './pages/TrialBalancePage'
 import FinancialStatementsPage from './pages/FinancialStatementsPage'
 import BankAccountsPage        from './pages/BankAccountsPage'
 import AccountingReportsPage   from './pages/AccountingReportsPage'
+import SimpleAccountsDashboard    from './pages/SimpleAccountsDashboard'
+import SimpleTransactionsPage     from './pages/SimpleTransactionsPage'
+import SimpleCategoriesPage       from './pages/SimpleCategoriesPage'
+import SimpleAccountsManagePage   from './pages/SimpleAccountsManagePage'
+import SimpleReportsPage          from './pages/SimpleReportsPage'
+import SimpleAccountsSettingsPage from './pages/SimpleAccountsSettingsPage'
 
 console.log('📱 App component rendering')
 
@@ -350,6 +356,14 @@ function AppRoutes() {
       <Route path="/accounting/settings"         element={<PrivateRoute><AppLayout><AccountingSettingsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/bank-accounts"   element={<PrivateRoute><AppLayout><BankAccountsPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/gl-reports"     element={<PrivateRoute><AppLayout><AccountingReportsPage /></AppLayout></PrivateRoute>} />
+
+      {/* ── Simple Accounts Module ── */}
+      <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />
+      <Route path="/simple-accounts/transactions" element={<PrivateRoute><AppLayout><SimpleTransactionsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/simple-accounts/categories"   element={<PrivateRoute><AppLayout><SimpleCategoriesPage /></AppLayout></PrivateRoute>} />
+      <Route path="/simple-accounts/accounts"     element={<PrivateRoute><AppLayout><SimpleAccountsManagePage /></AppLayout></PrivateRoute>} />
+      <Route path="/simple-accounts/reports"      element={<PrivateRoute><AppLayout><SimpleReportsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/simple-accounts/settings"     element={<PrivateRoute><AppLayout><SimpleAccountsSettingsPage /></AppLayout></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

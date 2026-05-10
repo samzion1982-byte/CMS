@@ -213,6 +213,7 @@ export default function ChurchSetupPage() {
     setSaving(false)
     if (err) { toast('Save failed: ' + err.message, 'error'); return }
     toast('Church details saved.', 'success')
+    window.dispatchEvent(new CustomEvent('church-settings-updated'))
     loadChurch()
   }
 
@@ -348,7 +349,7 @@ export default function ChurchSetupPage() {
 
           {/* ── LEFT: main church cards ── */}
           <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:24}}>
-          {/* IDENTITY */}
+          {/* IDENTITY + LOCATION */}
         <div className="card p-6">
           <p className="form-section form-section-blue">Church identity</p>
           <div className="flex gap-6">
@@ -431,11 +432,7 @@ export default function ChurchSetupPage() {
               </button>
             </div>
           </div>
-        </div>
-
-        {/* ADDRESS */}
-        <div className="card p-6">
-          <p className="form-section form-section-blue">Location</p>
+          <p className="form-section form-section-blue" style={{marginTop:20}}>Location</p>
           <div className="space-y-3">
             <div className="field-group">
               <label className="field-label">Street address</label>
@@ -458,6 +455,108 @@ export default function ChurchSetupPage() {
           </div>
         </div>
 
+
+        {/* OFFICE BEARERS */}
+        <div className="card p-6">
+          <p className="form-section form-section-blue" style={{color:'var(--accent)',borderColor:'var(--accent-ring)'}}>Key Office Bearers</p>
+          <div className="space-y-4">
+            {[
+              { role: 'Presbyter / Pastor', nameKey: 'presbyter_name', waKey: 'presbyter_whatsapp' },
+              { role: 'Secretary',           nameKey: 'secretary_name', waKey: 'secretary_whatsapp' },
+              { role: 'Treasurer',           nameKey: 'treasurer_name', waKey: 'treasurer_whatsapp' },
+              { role: 'Admin 1',             nameKey: 'admin1_name',    waKey: 'admin1_whatsapp'    },
+            ].map(({ role, nameKey, waKey }) => (
+              <div key={nameKey}>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{role}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="field-group">
+                    <label className="field-label">Name</label>
+                    <input className="field-input" value={form[nameKey]} onChange={e=>s(nameKey,e.target.value)} placeholder={`${role} name`}/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">WhatsApp Number</label>
+                    <input className="field-input" value={form[waKey]} onChange={e=>s(waKey,e.target.value)} placeholder="+91XXXXXXXXXX"/>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ACCOUNTS MODULE */}
+        <div className="card p-6">
+          <p className="form-section form-section-blue" style={{color:'#16a34a',borderColor:'#86efac'}}>Accounts Module</p>
+          {(() => {
+            const masterOn = !!(church?.accounting_enabled || church?.simple_accounting_enabled)
+            const mode     = church?.accounting_enabled ? 'advanced' : 'simple'
+            const OPTS = [
+              { key: 'simple',   emoji: '💰', title: 'Simple Accounts',   desc: 'Easy cash-book — no accounting knowledge needed. Track money in and out with plain English.' },
+              { key: 'advanced', emoji: '📊', title: 'Advanced Accounts',  desc: 'Full double-entry bookkeeping. Chart of accounts, journal entries, trial balance and financial statements.' },
+            ]
+            return (
+              <>
+                {/* Master on/off row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: masterOn ? '#f0fdf4' : '#f8fafc', borderRadius: 10, border: `1.5px solid ${masterOn ? '#86efac' : '#e2e8f0'}`, marginBottom: masterOn ? 10 : 0 }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: masterOn ? '#16a34a' : '#64748b', margin: '0 0 2px' }}>
+                      {masterOn ? `Accounts Enabled — ${mode === 'simple' ? 'Simple' : 'Advanced'}` : 'Accounts Disabled'}
+                    </p>
+                    <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                      {masterOn ? 'Visible in the sidebar under Finance' : 'Enable to track church income and expenses'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const newOn   = !masterOn
+                      const updates = newOn
+                        ? { simple_accounting_enabled: true,  accounting_enabled: false }
+                        : { simple_accounting_enabled: false, accounting_enabled: false }
+                      const { error } = await supabase.from('churches').update(updates).eq('id', church.id)
+                      if (error) { toast('Failed: ' + error.message, 'error'); return }
+                      setChurch(c => ({ ...c, ...updates }))
+                      toast(newOn ? 'Accounts module enabled.' : 'Accounts module disabled.', 'success')
+                      window.dispatchEvent(new CustomEvent('church-settings-updated'))
+                    }}
+                    style={{ width: 48, height: 26, borderRadius: 99, border: 'none', cursor: 'pointer', background: masterOn ? '#16a34a' : '#d1d5db', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
+                  >
+                    <span style={{ position: 'absolute', top: 3, left: masterOn ? 24 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
+                  </button>
+                </div>
+
+                {/* Mode selector — visible only when accounts are on */}
+                {masterOn && (
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {OPTS.map(opt => {
+                      const active = mode === opt.key
+                      return (
+                        <button key={opt.key}
+                          onClick={async () => {
+                            if (mode === opt.key) return
+                            const updates = opt.key === 'advanced'
+                              ? { accounting_enabled: true,  simple_accounting_enabled: false }
+                              : { accounting_enabled: false, simple_accounting_enabled: true  }
+                            const { error } = await supabase.from('churches').update(updates).eq('id', church.id)
+                            if (error) { toast('Failed: ' + error.message, 'error'); return }
+                            setChurch(c => ({ ...c, ...updates }))
+                            toast(`Switched to ${opt.title}.`, 'success')
+                            window.dispatchEvent(new CustomEvent('church-settings-updated'))
+                          }}
+                          style={{ flex: 1, display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `2px solid ${active ? '#2563eb' : '#e2e8f0'}`, background: active ? '#eff6ff' : '#f8fafc', cursor: mode === opt.key ? 'default' : 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+                        >
+                          <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{opt.emoji}</span>
+                          <div>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: active ? '#2563eb' : '#374151', margin: '0 0 3px' }}>{opt.title}</p>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, lineHeight: 1.45 }}>{opt.desc}</p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </div>
 
         {/* WHATSAPP */}
         <div className="card p-6">
@@ -509,39 +608,9 @@ export default function ChurchSetupPage() {
           </div>
         </div>
 
-        {/* OFFICE BEARERS */}
-        <div className="card p-6">
-          <p className="form-section form-section-blue" style={{color:'var(--accent)',borderColor:'var(--accent-ring)'}}>Key Office Bearers</p>
-          <div className="space-y-4">
-            {[
-              { role: 'Presbyter / Pastor', nameKey: 'presbyter_name', waKey: 'presbyter_whatsapp' },
-              { role: 'Secretary',           nameKey: 'secretary_name', waKey: 'secretary_whatsapp' },
-              { role: 'Treasurer',           nameKey: 'treasurer_name', waKey: 'treasurer_whatsapp' },
-              { role: 'Admin 1',             nameKey: 'admin1_name',    waKey: 'admin1_whatsapp'    },
-            ].map(({ role, nameKey, waKey }) => (
-              <div key={nameKey}>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{role}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="field-group">
-                    <label className="field-label">Name</label>
-                    <input className="field-input" value={form[nameKey]} onChange={e=>s(nameKey,e.target.value)} placeholder={`${role} name`}/>
-                  </div>
-                  <div className="field-group">
-                    <label className="field-label">WhatsApp Number</label>
-                    <input className="field-input" value={form[waKey]} onChange={e=>s(waKey,e.target.value)} placeholder="+91XXXXXXXXXX"/>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-            {/* ZONAL AREAS */}
-            <ZonesPanel profile={profile} toast={toast} />
-
-            {/* PAYMENTS */}
+            {/* RECEIPTS & PAYMENTS */}
             <div className="card p-6">
-              <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Payments</p>
+              <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Receipts & Payments</p>
               <div className="space-y-5">
 
                 {/* Receipt date mode */}
@@ -563,6 +632,28 @@ export default function ChurchSetupPage() {
                     {form.receipt_date_mode === 'fixed'
                       ? 'New receipts pre-fill with the last saved receipt\'s date. The field flashes yellow until you change it.'
                       : "New receipts always start with today's date."}</p>
+                </div>
+
+                {/* WhatsApp receipt mode */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">WhatsApp receipt</p>
+                  <div style={{display:'flex',gap:8}}>
+                    {[['instant','Instant on save'],['batch','Batch send later']].map(([val,label])=>(
+                      <button key={val} onClick={()=>s('whatsapp_receipt_mode',val)}
+                        style={{flex:1,padding:'8px 0',borderRadius:8,border:'1.5px solid',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',
+                          borderColor: form.whatsapp_receipt_mode===val ? '#15803d' : '#e2e8f0',
+                          background:  form.whatsapp_receipt_mode===val ? '#f0fdf4' : '#f8fafc',
+                          color:       form.whatsapp_receipt_mode===val ? '#15803d' : '#64748b',
+                        }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {form.whatsapp_receipt_mode === 'instant'
+                      ? 'WhatsApp receipt is sent immediately when a payment is confirmed.'
+                      : 'Receipts are queued — send them in bulk from the Receipts page.'}
+                  </p>
                 </div>
 
                 {/* Site URL */}
@@ -591,65 +682,11 @@ export default function ChurchSetupPage() {
                   </div>
                 </div>
 
-                {/* Accounting Module */}
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Accounting Module</p>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: church?.accounting_enabled ? '#f0fdf4' : '#f8fafc', borderRadius: 10, border: `1.5px solid ${church?.accounting_enabled ? '#86efac' : '#e2e8f0'}` }}>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: church?.accounting_enabled ? '#16a34a' : '#64748b', margin: '0 0 2px' }}>
-                        {church?.accounting_enabled ? 'Accounting Enabled' : 'Accounting Disabled'}
-                      </p>
-                      <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
-                        {church?.accounting_enabled ? 'Double-entry accounts active — Finance → Accounts' : 'Enable to use the built-in double-entry accounting module'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const newVal = !church?.accounting_enabled
-                        const { error } = await supabase.from('churches').update({ accounting_enabled: newVal }).eq('id', church.id)
-                        if (error) { toast('Failed to update: ' + error.message, 'error'); return }
-                        setChurch(c => ({ ...c, accounting_enabled: newVal }))
-                        toast(newVal ? 'Accounting module enabled.' : 'Accounting module disabled.', 'success')
-                      }}
-                      style={{
-                        width: 48, height: 26, borderRadius: 99, border: 'none', cursor: 'pointer',
-                        background: church?.accounting_enabled ? '#16a34a' : '#d1d5db',
-                        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-                      }}
-                    >
-                      <span style={{
-                        position: 'absolute', top: 3, left: church?.accounting_enabled ? 24 : 3,
-                        width: 20, height: 20, borderRadius: '50%', background: '#fff',
-                        transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-                      }} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* WhatsApp receipt mode */}
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">WhatsApp receipt</p>
-                  <div style={{display:'flex',gap:8}}>
-                    {[['instant','Instant on save'],['batch','Batch send later']].map(([val,label])=>(
-                      <button key={val} onClick={()=>s('whatsapp_receipt_mode',val)}
-                        style={{flex:1,padding:'8px 0',borderRadius:8,border:'1.5px solid',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',
-                          borderColor: form.whatsapp_receipt_mode===val ? '#15803d' : '#e2e8f0',
-                          background:  form.whatsapp_receipt_mode===val ? '#f0fdf4' : '#f8fafc',
-                          color:       form.whatsapp_receipt_mode===val ? '#15803d' : '#64748b',
-                        }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-slate-400 mt-2">
-                    {form.whatsapp_receipt_mode === 'instant'
-                      ? 'WhatsApp receipt is sent immediately when a payment is confirmed.'
-                      : 'Receipts are queued — send them in bulk from the Receipts page.'}
-                  </p>
-                </div>
-
               </div>
             </div>
+
+            {/* ZONAL AREAS */}
+            <ZonesPanel profile={profile} toast={toast} />
 
             {/* PAYMENT CATEGORIES */}
             <PaymentCategoriesPanel profile={profile} toast={toast} />

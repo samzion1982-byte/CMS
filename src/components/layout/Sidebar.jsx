@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -6,6 +6,7 @@ import { Menu, ChevronLeft,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
+  PiggyBank, Tag, List, Settings, Wallet,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -21,6 +22,7 @@ const NAV = [
     { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
     { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Accounts',          path: '/accounting',        icon: Landmark,    accountingOnly: true },
+    { label: 'Simple Accounts',   path: '/simple-accounts',   icon: Wallet,      simpleOnly: true },
     { label: 'Reports',           path: '/reports',           icon: BarChart3   },
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
@@ -43,12 +45,21 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
   const isSuperAdmin = profile?.role === 'super_admin'
   const isAdmin      = ['super_admin', 'admin', 'admin1'].includes(profile?.role)
 
-  const [accountingEnabled, setAccountingEnabled] = useState(false)
-  useEffect(() => {
-    supabase.from('churches').select('accounting_enabled').limit(1).single()
-      .then(({ data }) => setAccountingEnabled(!!data?.accounting_enabled))
+  const [accountingEnabled,       setAccountingEnabled]       = useState(false)
+  const [simpleAccountingEnabled, setSimpleAccountingEnabled] = useState(false)
+  const loadFlags = useCallback(() => {
+    supabase.from('churches').select('accounting_enabled, simple_accounting_enabled').limit(1).single()
+      .then(({ data }) => {
+        setAccountingEnabled(!!data?.accounting_enabled)
+        setSimpleAccountingEnabled(!!data?.simple_accounting_enabled)
+      })
       .catch(() => {})
-  }, [location.pathname])
+  }, [])
+  useEffect(() => { loadFlags() }, [location.pathname, loadFlags])
+  useEffect(() => {
+    window.addEventListener('church-settings-updated', loadFlags)
+    return () => window.removeEventListener('church-settings-updated', loadFlags)
+  }, [loadFlags])
 
   return (
     <aside style={{
@@ -104,6 +115,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
               {group.items.map(item => {
                 if (item.superOnly && !isSuperAdmin) return null
                 if (item.accountingOnly && !accountingEnabled) return null
+                if (item.simpleOnly    && !simpleAccountingEnabled) return null
                 const isActive = location.pathname === item.path ||
                   location.pathname.startsWith(item.path + '/')
                 return (
