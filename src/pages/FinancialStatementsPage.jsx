@@ -107,7 +107,10 @@ function CellPair({ cell }) {
 
 function ReceiptsPayments({ data }) {
   const leftRows = [
-    { label: 'Opening Balance (Cash & Bank)', amount: data.openingBalance, bold: true },
+    { label: 'Opening Balance', bold: true },
+    { label: 'Cash in Hand',  amount: data.cashOpeningBalance, indent: true },
+    { label: 'Cash at Bank',  amount: data.bankOpeningBalance, indent: true },
+    { label: 'Total Opening', amount: data.openingBalance, bold: true },
     { label: '' },
     { label: 'RECEIPTS', bold: true, muted: true },
     ...data.receipts.map(r => ({ label: r.name, amount: r.amount, indent: true })),
@@ -122,7 +125,10 @@ function ReceiptsPayments({ data }) {
     { label: '' },
     { label: 'Total Payments', amount: data.totalPayments, bold: true },
     { label: '' },
-    { label: 'Closing Balance (Cash & Bank)', amount: data.closingBalance, bold: true },
+    { label: 'Closing Balance', bold: true },
+    { label: 'Cash in Hand',  amount: data.cashClosingBalance, indent: true },
+    { label: 'Cash at Bank',  amount: data.bankClosingBalance, indent: true },
+    { label: 'Total Closing', amount: data.closingBalance, bold: true },
   ]
 
   const leftTotal  = data.openingBalance + data.totalReceipts
@@ -137,7 +143,8 @@ function ReceiptsPayments({ data }) {
         rightLabel="Cr  —  Payments"
       />
       <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
-        Receipts grouped by income category · Payments grouped by expense category
+        Receipts grouped by income category · Payments grouped by expense category ·
+        Opening balance from Chart of Accounts settings
       </p>
     </div>
   )
