@@ -38,17 +38,18 @@ const inputStyle = {
   outline: 'none', boxSizing: 'border-box',
 }
 
-export default function SimpleAddTransactionModal({ initialType = 'income', editTxn = null, defaultAccountId = null, currency = '₹', onClose, onSaved }) {
+export default function SimpleAddTransactionModal({ initialType = 'income', editTxn = null, cloneTxn = null, defaultAccountId = null, currency = '₹', onClose, onSaved }) {
   const { profile } = useAuth()
   const toast = useToast()
 
-  const [type,       setType]       = useState(editTxn?.txn_type || initialType)
-  const [amount,     setAmount]     = useState(editTxn ? String(editTxn.amount) : '')
+  const src = editTxn || cloneTxn  // source for pre-filling fields
+  const [type,       setType]       = useState(src?.txn_type || initialType)
+  const [amount,     setAmount]     = useState(src ? String(src.amount) : '')
   const [date,       setDate]       = useState(editTxn?.txn_date || todayISO())
-  const [categoryId, setCategoryId] = useState(editTxn?.category_id || '')
-  const [accountId,  setAccountId]  = useState(editTxn?.account_id || defaultAccountId || '')
-  const [toAcctId,   setToAcctId]   = useState(editTxn?.to_account_id || '')
-  const [desc,       setDesc]       = useState(editTxn?.description || '')
+  const [categoryId, setCategoryId] = useState(src?.category_id || '')
+  const [accountId,  setAccountId]  = useState(src?.account_id || defaultAccountId || '')
+  const [toAcctId,   setToAcctId]   = useState(src?.to_account_id || '')
+  const [desc,       setDesc]       = useState(src?.description || '')
   const [refNo,      setRefNo]      = useState(editTxn?.reference_no || '')
   const [saving,     setSaving]     = useState(false)
 
@@ -68,7 +69,13 @@ export default function SimpleAddTransactionModal({ initialType = 'income', edit
     if (!editTxn) setCategoryId('')
   }, [type]) // eslint-disable-line
 
-  const cats = categories.filter(c => c.type === type)
+  const typeCats   = categories.filter(c => c.type === type)
+  const catParents = typeCats.filter(c => !c.parent_id)
+  const catByParent = {}
+  typeCats.filter(c => c.parent_id).forEach(c => {
+    if (!catByParent[c.parent_id]) catByParent[c.parent_id] = []
+    catByParent[c.parent_id].push(c)
+  })
 
   async function handleSave() {
     const amt = parseFloat(amount)
@@ -116,7 +123,7 @@ export default function SimpleAddTransactionModal({ initialType = 'income', edit
             <cfg.icon size={18} color={cfg.color} />
           </div>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-1)', margin: 0, flex: 1 }}>
-            {editTxn ? 'Edit Transaction' : 'Add Transaction'}
+            {editTxn ? 'Edit Transaction' : cloneTxn ? 'Clone Transaction' : 'Add Transaction'}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, borderRadius: 6, display: 'flex' }}>
             <X size={18} />
@@ -124,7 +131,7 @@ export default function SimpleAddTransactionModal({ initialType = 'income', edit
         </div>
 
         {/* Type toggle */}
-        {!editTxn && (
+        {(!editTxn) && (
           <div style={{ padding: '14px 20px 0', display: 'flex', gap: 8 }}>
             {Object.entries(TYPE_CONFIG).map(([key, c]) => {
               const active = type === key
@@ -174,7 +181,13 @@ export default function SimpleAddTransactionModal({ initialType = 'income', edit
               <Input label="Category" hint="optional">
                 <select value={categoryId} onChange={e => setCategoryId(e.target.value)} style={{ ...inputStyle, appearance: 'auto' }}>
                   <option value="">— Select —</option>
-                  {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {catParents.map(p =>
+                    catByParent[p.id]?.length
+                      ? <optgroup key={p.id} label={p.name}>
+                          {catByParent[p.id].map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
+                        </optgroup>
+                      : <option key={p.id} value={p.id}>{p.name}</option>
+                  )}
                 </select>
               </Input>
             )}
@@ -234,7 +247,7 @@ export default function SimpleAddTransactionModal({ initialType = 'income', edit
           <button onClick={handleSave} disabled={saving}
             style={{ flex: 2, height: 42, background: saving ? '#9ca3af' : cfg.color, color: '#fff', border: 'none', borderRadius: 9, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
             {saving ? <Loader2 size={15} style={{ animation: 'spin .7s linear infinite' }} /> : <cfg.icon size={15} />}
-            {saving ? 'Saving…' : (editTxn ? 'Update' : `Save ${cfg.label}`)}
+            {saving ? 'Saving…' : editTxn ? 'Update' : cloneTxn ? `Clone ${cfg.label}` : `Save ${cfg.label}`}
           </button>
         </div>
 

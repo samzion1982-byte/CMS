@@ -8,8 +8,8 @@ const ALT_ROW_BG = 'EEF3FA'
 const INNER_CLR  = 'C5CEE0'
 const OUTER_CLR  = '1E3A5F'
 
-const innerThin  = { style: 'thin',   color: { argb: INNER_CLR } }
-const outerMed   = { style: 'medium', color: { argb: OUTER_CLR } }
+const innerThin  = { style: 'thin',  color: { argb: INNER_CLR } }
+const outerMed   = { style: 'thick', color: { argb: OUTER_CLR } }
 
 function cellBorder(isTop, isBottom, isLeft, isRight) {
   return {

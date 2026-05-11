@@ -978,6 +978,12 @@ html { zoom: 0.95; }
 .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
 .hover-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
 
+/* Simple Accounts module — suppress shimmer sweep and lift, keep hover feedback */
+.simple-accounts-scope button::before { display: none !important; }
+.simple-accounts-scope button { transition: filter 0.1s ease !important; transform: none !important; }
+.simple-accounts-scope button:hover:not(:disabled) { filter: brightness(0.88) !important; }
+.simple-accounts-scope button:active:not(:disabled) { filter: brightness(0.78) !important; transform: none !important; }
+
 .transition-fast   { transition: all 0.15s ease; }
 .transition-normal { transition: all 0.3s ease; }
 
@@ -1114,3 +1120,8 @@ html { zoom: 0.95; }
 @media (max-width: 768px) {
   .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* Hide browser-native password reveal button (Edge/Chrome) so custom toggle is the only one shown */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display: none; }
+input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; }

@@ -3,12 +3,13 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Wallet, Plus, Pencil, Trash2, Check, X, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Wallet, Plus, Pencil, Trash2, Check, X, Loader2, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getSimpleAccounts, createSimpleAccount, updateSimpleAccount, deactivateSimpleAccount,
-  getAllAccountBalances, getSimpleSettings, fmtAmt, fmtDate,
+  getAllAccountBalances, getSimpleSettings, currentFiscalStartYear, fmtAmt, fmtDate,
 } from '../lib/simpleAccountsLib'
 
 const inputStyle = {
@@ -27,15 +28,86 @@ function typeConfig(type) {
   return ACCT_TYPES.find(t => t.value === type) || ACCT_TYPES[2]
 }
 
-const BLANK = { name: '', account_type: 'cash', opening_balance: '', opening_date: '' }
+const BLANK = { name: '', account_type: 'cash', opening_balance: '', opening_date: '', account_number: '' }
+
+// FormRow MUST be defined outside the page component to avoid remount-on-every-keystroke
+function FormRow({ form, setForm, saving, onSave, onCancel }) {
+  return (
+    <div style={{ background: 'var(--sidebar-item-active-bg)', padding: '16px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div style={{ flex: '2 1 160px' }}>
+        <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account Name *</label>
+        <input
+          autoFocus
+          value={form.name}
+          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+          placeholder="e.g. Main Cash Box, State Bank"
+          style={{ ...inputStyle, width: '100%' }}
+          onKeyDown={e => e.key === 'Enter' && onSave()}
+        />
+      </div>
+      <div style={{ flex: '1 1 120px' }}>
+        <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Type</label>
+        <select value={form.account_type} onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))} style={{ ...inputStyle, width: '100%' }}>
+          {ACCT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+      </div>
+      <div style={{ flex: '1 1 120px' }}>
+        <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Opening Balance</label>
+        <input
+          type="number" min="0" step="0.01"
+          value={form.opening_balance}
+          onChange={e => setForm(f => ({ ...f, opening_balance: e.target.value }))}
+          onKeyDown={e => e.key === 'Enter' && onSave()}
+          placeholder="0.00"
+          style={{ ...inputStyle, width: '100%' }}
+        />
+      </div>
+      <div style={{ flex: '1 1 130px' }}>
+        <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>As of Date</label>
+        <input
+          type="date"
+          value={form.opening_date}
+          onChange={e => setForm(f => ({ ...f, opening_date: e.target.value }))}
+          onKeyDown={e => e.key === 'Enter' && onSave()}
+          style={{ ...inputStyle, width: '100%' }}
+        />
+      </div>
+      {form.account_type === 'bank' && (
+        <div style={{ flex: '1 1 150px' }}>
+          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account Number</label>
+          <input
+            value={form.account_number}
+            onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && onSave()}
+            placeholder="e.g. 0123456789"
+            style={{ ...inputStyle, width: '100%' }}
+          />
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, paddingBottom: 1 }}>
+        <button onClick={onSave} disabled={saving}
+          style={{ height: 38, padding: '0 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {saving ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <Check size={13} />}
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button onClick={onCancel}
+          style={{ height: 38, padding: '0 10px', background: 'none', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center' }}>
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function SimpleAccountsManagePage() {
   const { profile } = useAuth()
-  const toast = useToast()
+  const toast    = useToast()
+  const navigate = useNavigate()
 
   const [accounts,  setAccounts]  = useState([])
   const [balances,  setBalances]  = useState({})
   const [currency,  setCurrency]  = useState('₹')
+  const [fyDate,    setFyDate]    = useState('')
   const [loading,   setLoading]   = useState(true)
   const [showAdd,   setShowAdd]   = useState(false)
   const [editId,    setEditId]    = useState(null)
@@ -48,6 +120,9 @@ export default function SimpleAccountsManagePage() {
     try {
       const [settings, accts] = await Promise.all([getSimpleSettings(), getSimpleAccounts()])
       setCurrency(settings.currency)
+      const fyYear = currentFiscalStartYear(settings.fiscalMonth)
+      const fyMM   = String(settings.fiscalMonth).padStart(2, '0')
+      setFyDate(`${fyYear}-${fyMM}-01`)
       setAccounts(accts)
       setBalances(await getAllAccountBalances(accts))
     } catch (e) {
@@ -65,12 +140,19 @@ export default function SimpleAccountsManagePage() {
       account_type:    acct.account_type,
       opening_balance: String(acct.opening_balance || ''),
       opening_date:    acct.opening_date || '',
+      account_number:  acct.account_number || '',
     })
     setShowAdd(false)
   }
 
   function startAdd() {
     setShowAdd(true)
+    setEditId(null)
+    setForm({ ...BLANK, opening_date: fyDate })
+  }
+
+  function cancelForm() {
+    setShowAdd(false)
     setEditId(null)
     setForm(BLANK)
   }
@@ -85,6 +167,8 @@ export default function SimpleAccountsManagePage() {
         opening_balance: parseFloat(form.opening_balance) || 0,
         opening_date:    form.opening_date || null,
       }
+      const acctNum = form.account_type === 'bank' ? form.account_number.trim() : ''
+      if (acctNum) payload.account_number = acctNum
       if (editId) {
         await updateSimpleAccount(editId, payload, profile?.email)
         toast('Account updated', 'success')
@@ -113,54 +197,20 @@ export default function SimpleAccountsManagePage() {
     }
   }
 
-  function FormRow() {
-    return (
-      <div style={{ background: 'var(--sidebar-item-active-bg)', padding: '16px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ flex: '2 1 160px' }}>
-          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account Name *</label>
-          <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            placeholder="e.g. Main Cash Box, State Bank" style={{ ...inputStyle, width: '100%' }}
-            onKeyDown={e => e.key === 'Enter' && handleSave()} />
-        </div>
-        <div style={{ flex: '1 1 120px' }}>
-          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Type</label>
-          <select value={form.account_type} onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))} style={{ ...inputStyle, width: '100%' }}>
-            {ACCT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: '1 1 120px' }}>
-          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Opening Balance</label>
-          <input type="number" min="0" step="0.01" value={form.opening_balance}
-            onChange={e => setForm(f => ({ ...f, opening_balance: e.target.value }))}
-            placeholder="0.00" style={{ ...inputStyle, width: '100%' }} />
-        </div>
-        <div style={{ flex: '1 1 130px' }}>
-          <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>As of Date</label>
-          <input type="date" value={form.opening_date} onChange={e => setForm(f => ({ ...f, opening_date: e.target.value }))} style={{ ...inputStyle, width: '100%' }} />
-        </div>
-        <div style={{ display: 'flex', gap: 6, paddingBottom: 1 }}>
-          <button onClick={handleSave} disabled={saving}
-            style={{ height: 38, padding: '0 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {saving ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <Check size={13} />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button onClick={() => { setShowAdd(false); setEditId(null) }}
-            style={{ height: 38, padding: '0 10px', background: 'none', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center' }}>
-            <X size={14} />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="page-container">
+    <div className="page-container simple-accounts-scope">
       <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Wallet size={20} style={{ color: 'var(--accent)' }} /> Accounts
-          </h1>
-          <p className="page-subtitle">Manage your cash, bank and other money accounts</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+            style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)' }}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Wallet size={20} style={{ color: 'var(--accent)' }} /> Accounts
+            </h1>
+            <p className="page-subtitle">Manage your cash, bank and other money accounts</p>
+          </div>
         </div>
         <button onClick={startAdd} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           <Plus size={14} /> Add Account
@@ -169,10 +219,12 @@ export default function SimpleAccountsManagePage() {
 
       <div className="card" style={{ overflow: 'hidden' }}>
         {/* Add form at top */}
-        {showAdd && <FormRow />}
+        {showAdd && (
+          <FormRow form={form} setForm={setForm} saving={saving} onSave={handleSave} onCancel={cancelForm} />
+        )}
 
         {/* Table header */}
-        <div style={{ background: 'var(--table-header-bg)', padding: '9px 20px', display: 'grid', gridTemplateColumns: '1fr 100px 130px 130px 130px 80px', gap: 12, borderBottom: '1px solid var(--card-border)' }}>
+        <div style={{ background: 'var(--table-header-bg)', padding: '9px 20px', display: 'grid', gridTemplateColumns: '1fr 100px 140px 130px 140px 80px', gap: 12, borderBottom: '1px solid var(--card-border)' }}>
           {['Account Name', 'Type', 'Opening Balance', 'As of Date', 'Current Balance', ''].map(h => (
             <span key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)' }}>{h}</span>
           ))}
@@ -183,9 +235,12 @@ export default function SimpleAccountsManagePage() {
           : accounts.length === 0
           ? (
             <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
-              <Wallet size={32} style={{ opacity: 0.2, marginBottom: 12 }} />
-              <p style={{ fontSize: 14, fontWeight: 600, margin: '0 0 16px', color: 'var(--text-2)' }}>No accounts yet</p>
-              <button onClick={startAdd} style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Add Account</button>
+              <Wallet size={32} style={{ opacity: 0.2, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
+              <p style={{ fontSize: 14, fontWeight: 600, margin: '0 0 6px', color: 'var(--text-2)' }}>No accounts yet</p>
+              <p style={{ fontSize: 12, margin: '0 0 18px', color: 'var(--text-3)' }}>Add Cash, Bank, and Petty Cash accounts to start tracking balances</p>
+              <button onClick={startAdd} style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                + Add Account
+              </button>
             </div>
           )
           : accounts.map(acct => {
@@ -194,14 +249,21 @@ export default function SimpleAccountsManagePage() {
             const isEdit  = editId === acct.id
             return (
               <div key={acct.id}>
-                {isEdit && <FormRow />}
+                {isEdit && (
+                  <FormRow form={form} setForm={setForm} saving={saving} onSave={handleSave} onCancel={cancelForm} />
+                )}
                 {!isEdit && (
-                  <div style={{ padding: '12px 20px', display: 'grid', gridTemplateColumns: '1fr 100px 130px 130px 130px 80px', gap: 12, alignItems: 'center', borderBottom: '1px solid var(--card-border)' }}>
+                  <div style={{ padding: '12px 20px', display: 'grid', gridTemplateColumns: '1fr 100px 140px 130px 140px 80px', gap: 12, alignItems: 'center', borderBottom: '1px solid var(--card-border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 8, background: cfg.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Wallet size={14} color={cfg.color} />
                       </div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>{acct.name}</span>
+                      <div>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>{acct.name}</span>
+                        {acct.account_number && (
+                          <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace', marginTop: 1 }}>A/c: {acct.account_number}</div>
+                        )}
+                      </div>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: cfg.bg, color: cfg.color, display: 'inline-flex', width: 'fit-content' }}>
                       {cfg.label}
@@ -210,10 +272,12 @@ export default function SimpleAccountsManagePage() {
                     <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{acct.opening_date ? fmtDate(acct.opening_date) : '—'}</span>
                     <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: balance >= 0 ? cfg.color : '#dc2626' }}>{fmtAmt(balance, currency)}</span>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={() => startEdit(acct)} title="Edit" style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+                      <button onClick={() => startEdit(acct)} title="Edit"
+                        style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
                         <Pencil size={12} />
                       </button>
-                      <button onClick={() => setDeleteId(acct.id)} title="Remove" style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
+                      <button onClick={() => setDeleteId(acct.id)} title="Remove"
+                        style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
                         <Trash2 size={12} />
                       </button>
                     </div>

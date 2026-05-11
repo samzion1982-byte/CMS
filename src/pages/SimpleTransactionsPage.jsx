@@ -3,24 +3,20 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, TrendingDown, ArrowLeftRight, Pencil, Trash2, Plus, RefreshCw, Search, X } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowLeftRight, Pencil, Trash2, Plus, RefreshCw, Search, X, ArrowLeft, Copy, ChevronUp, ChevronDown, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getSimpleTransactions, deleteSimpleTransaction,
   getSimpleCategories, getSimpleAccounts, getSimpleSettings,
-  fmtAmt, fmtDate, todayISO,
+  fmtAmt, fmtDate, todayISO, txnLabel,
 } from '../lib/simpleAccountsLib'
+import { exportToExcel } from '../lib/exportExcel'
 import SimpleAddTransactionModal from '../components/simple-accounts/SimpleAddTransactionModal'
 
-const TYPE_CONFIG = {
-  income:   { label: 'Money In',  color: '#16a34a', bg: '#dcfce7', icon: TrendingUp },
-  expense:  { label: 'Money Out', color: '#dc2626', bg: '#fee2e2', icon: TrendingDown },
-  transfer: { label: 'Transfer',  color: '#2563eb', bg: '#dbeafe', icon: ArrowLeftRight },
-}
-
-function TypeBadge({ type }) {
-  const c = TYPE_CONFIG[type] || TYPE_CONFIG.expense
+function TypeBadge({ txn }) {
+  const c = txnLabel(txn)
   return (
     <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: c.bg, color: c.color, whiteSpace: 'nowrap' }}>
       {c.label}
@@ -33,18 +29,32 @@ const inputStyle = {
   borderRadius: 7, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none',
 }
 
+function SortIcon({ col, sortCol, sortDir }) {
+  if (sortCol !== col) return <ChevronDown size={11} style={{ opacity: 0.3, marginLeft: 3 }} />
+  return sortDir === 'asc'
+    ? <ChevronUp   size={11} style={{ marginLeft: 3, color: 'var(--accent)' }} />
+    : <ChevronDown size={11} style={{ marginLeft: 3, color: 'var(--accent)' }} />
+}
+
 export default function SimpleTransactionsPage() {
   const { profile } = useAuth()
-  const toast = useToast()
+  const toast    = useToast()
+  const navigate = useNavigate()
 
-  const [txns,       setTxns]       = useState([])
-  const [categories, setCategories] = useState([])
-  const [accounts,   setAccounts]   = useState([])
-  const [currency,   setCurrency]   = useState('₹')
-  const [loading,    setLoading]    = useState(true)
+  const [txns,        setTxns]        = useState([])
+  const [categories,  setCategories]  = useState([])
+  const [accounts,    setAccounts]    = useState([])
+  const [currency,    setCurrency]    = useState('₹')
+  const [dateFormat,  setDateFormat]  = useState('DD-MM-YYYY')
+  const [numberFormat,setNumberFormat]= useState('indian')
+  const [loading,     setLoading]     = useState(true)
   const [deleteId,   setDeleteId]   = useState(null)
-  const [modal,      setModal]      = useState(null)  // null | 'add-income' | 'add-expense' | 'add-transfer' | txn object
+  const [modal,      setModal]      = useState(null)   // null | 'add-income' | 'add-expense' | 'add-transfer' | txn (edit)
+  const [cloneModal, setCloneModal] = useState(null)   // txn object to clone
   const [search,     setSearch]     = useState('')
+  const [sortCol,    setSortCol]    = useState('date')
+  const [sortDir,    setSortDir]    = useState('desc')
+  const [exporting,  setExporting]  = useState(false)
 
   // Filters
   const [filterType,     setFilterType]     = useState('')
@@ -58,6 +68,8 @@ export default function SimpleTransactionsPage() {
     try {
       const [settings, cats, accts] = await Promise.all([getSimpleSettings(), getSimpleCategories(), getSimpleAccounts()])
       setCurrency(settings.currency)
+      setDateFormat(settings.dateFormat    || 'DD-MM-YYYY')
+      setNumberFormat(settings.numberFormat || 'indian')
       setCategories(cats)
       setAccounts(accts)
 
@@ -93,9 +105,14 @@ export default function SimpleTransactionsPage() {
     setFilterFrom(''); setFilterTo(''); setSearch('')
   }
 
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir(col === 'date' ? 'desc' : 'desc') }
+  }
+
   const hasFilters = filterType || filterCategory || filterAccount || filterFrom || filterTo || search
 
-  const visible = txns.filter(t => {
+  const filtered = txns.filter(t => {
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -106,18 +123,82 @@ export default function SimpleTransactionsPage() {
     )
   })
 
+  const visible = [...filtered].sort((a, b) => {
+    let cmp = 0
+    if (sortCol === 'date')   cmp = a.txn_date.localeCompare(b.txn_date)
+    if (sortCol === 'amount') cmp = Number(a.amount) - Number(b.amount)
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
   const totalIncome  = visible.filter(t => t.txn_type === 'income') .reduce((s, t) => s + Number(t.amount), 0)
   const totalExpense = visible.filter(t => t.txn_type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
 
+  async function handleExport() {
+    if (!visible.length) { toast('No transactions to export', 'error'); return }
+    setExporting(true)
+    try {
+      const locale = numberFormat === 'international' ? 'en-US' : 'en-IN'
+      const fmtNum = n => currency + Number(n).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const columns = [
+        { header: 'Date',        key: 'date',     align: 'left'  },
+        { header: 'Type',        key: 'type',     align: 'left'  },
+        { header: 'Description', key: 'desc',     align: 'left'  },
+        { header: 'Category',    key: 'category', align: 'left'  },
+        { header: 'Account',     key: 'account',  align: 'left'  },
+        { header: 'Ref No.',     key: 'ref',      align: 'left'  },
+        { header: `Amount (${currency})`, key: 'amount', align: 'right' },
+      ]
+      const rows = visible.map(t => {
+        const lbl       = txnLabel(t)
+        const acctLabel = t.txn_type === 'transfer'
+          ? `${t.account?.name || '?'} → ${t.to_account?.name || '?'}`
+          : (t.account?.name || '')
+        const signed = lbl.sign === '+' ? Number(t.amount) : lbl.sign === '−' ? -Number(t.amount) : Number(t.amount)
+        return {
+          date:     fmtDate(t.txn_date, dateFormat),
+          type:     lbl.label,
+          desc:     t.description || '',
+          category: t.category?.name || '',
+          account:  acctLabel,
+          ref:      t.ref_no || t.reference_no || '',
+          amount:   fmtNum(signed),
+        }
+      })
+      const netTotal = visible.reduce((s, t) => {
+        const lbl = txnLabel(t)
+        if (lbl.sign === '+') return s + Number(t.amount)
+        if (lbl.sign === '−') return s - Number(t.amount)
+        return s
+      }, 0)
+      rows.push({ date: '', type: '', desc: '', category: '', account: '', ref: 'NET TOTAL', amount: fmtNum(netTotal) })
+      await exportToExcel(columns, rows, 'Transactions', `transactions-${todayISO().replace(/-/g,'')}.xlsx`)
+      toast(`Exported ${visible.length} transactions`, 'success')
+    } catch (e) {
+      toast('Export failed: ' + e.message, 'error')
+    }
+    setExporting(false)
+  }
+
   return (
-    <div className="page-container">
+    <div className="page-container simple-accounts-scope">
       {/* Header */}
       <div className="page-header">
-        <div>
-          <h1 className="page-title">All Transactions</h1>
-          <p className="page-subtitle">Complete record of all income and expenses</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+            style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0 }}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <h1 className="page-title">All Transactions</h1>
+            <p className="page-subtitle">Complete record of all income and expenses</p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleExport} disabled={exporting} className="action-btn"
+            style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1 }}>
+            {exporting ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={13} />}
+            {exporting ? 'Exporting…' : 'Excel Export'}
+          </button>
           <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <RefreshCw size={15} />
           </button>
@@ -178,9 +259,9 @@ export default function SimpleTransactionsPage() {
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
           {[
             { label: `${visible.length} transactions`, color: 'var(--text-2)', bg: 'var(--card-bg)' },
-            { label: `Income: ${fmtAmt(totalIncome, currency)}`, color: '#16a34a', bg: '#dcfce7' },
-            { label: `Expenses: ${fmtAmt(totalExpense, currency)}`, color: '#dc2626', bg: '#fee2e2' },
-            { label: `Balance: ${fmtAmt(totalIncome - totalExpense, currency)}`, color: totalIncome >= totalExpense ? '#2563eb' : '#dc2626', bg: '#f3e8ff' },
+            { label: `Income: ${fmtAmt(totalIncome, currency, numberFormat)}`, color: '#16a34a', bg: '#dcfce7' },
+            { label: `Expenses: ${fmtAmt(totalExpense, currency, numberFormat)}`, color: '#dc2626', bg: '#fee2e2' },
+            { label: `Balance: ${fmtAmt(totalIncome - totalExpense, currency, numberFormat)}`, color: totalIncome >= totalExpense ? '#2563eb' : '#dc2626', bg: '#f3e8ff' },
           ].map(({ label, color, bg }) => (
             <span key={label} style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 99, background: bg, color, border: '1px solid var(--card-border)' }}>{label}</span>
           ))}
@@ -210,37 +291,49 @@ export default function SimpleTransactionsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--table-header-bg)' }}>
-                  {['Date', 'Type', 'Description', 'Category', 'Account', 'Amount', ''].map(h => (
-                    <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: h === 'Amount' ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th onClick={() => toggleSort('date')}
+                    style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'left', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}>
+                    Date <SortIcon col="date" sortCol={sortCol} sortDir={sortDir} />
+                  </th>
+                  {['Type', 'Description', 'Category', 'Account'].map(h => (
+                    <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
+                  <th onClick={() => toggleSort('amount')}
+                    style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'right', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}>
+                    Amount <SortIcon col="amount" sortCol={sortCol} sortDir={sortDir} />
+                  </th>
+                  <th style={{ padding: '9px 14px' }} />
                 </tr>
               </thead>
               <tbody>
                 {visible.map((t, i) => {
-                  const cfg   = TYPE_CONFIG[t.txn_type] || TYPE_CONFIG.expense
-                  const sign  = t.txn_type === 'income' ? '+' : t.txn_type === 'transfer' ? '' : '−'
+                  const lbl = txnLabel(t)
                   const acctLabel = t.txn_type === 'transfer'
                     ? `${t.account?.name || '?'} → ${t.to_account?.name || '?'}`
                     : (t.account?.name || '—')
                   return (
                     <tr key={t.id}
                       style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', borderBottom: '1px solid var(--card-border)' }}>
-                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{fmtDate(t.txn_date)}</td>
-                      <td style={{ padding: '10px 14px' }}><TypeBadge type={t.txn_type} /></td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{fmtDate(t.txn_date, dateFormat)}</td>
+                      <td style={{ padding: '10px 14px' }}><TypeBadge txn={t} /></td>
                       <td style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-1)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.description || '—'}
                         {t.reference_no && <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 6 }}>#{t.reference_no}</span>}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)' }}>{t.category?.name || '—'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{acctLabel}</td>
-                      <td style={{ padding: '10px 14px', fontSize: 14, fontWeight: 700, color: cfg.color, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                        {sign}{fmtAmt(t.amount, currency)}
+                      <td style={{ padding: '10px 14px', fontSize: 14, fontWeight: 700, color: lbl.color, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {lbl.sign}{fmtAmt(t.amount, currency, numberFormat)}
                       </td>
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => setModal(t)} title="Edit"
                             style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
                             <Pencil size={12} />
+                          </button>
+                          <button onClick={() => setCloneModal(t)} title="Clone / Duplicate"
+                            style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+                            <Copy size={12} />
                           </button>
                           <button onClick={() => setDeleteId(t.id)} title="Delete"
                             style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
@@ -275,6 +368,16 @@ export default function SimpleTransactionsPage() {
         />
       )}
 
+      {/* Clone modal */}
+      {cloneModal && (
+        <SimpleAddTransactionModal
+          cloneTxn={cloneModal}
+          currency={currency}
+          onClose={() => setCloneModal(null)}
+          onSaved={load}
+        />
+      )}
+
       {/* Delete confirm */}
       {deleteId && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -283,7 +386,9 @@ export default function SimpleTransactionsPage() {
               <Trash2 size={22} color="#dc2626" />
             </div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 8px' }}>Delete Transaction?</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 24px', lineHeight: 1.5 }}>This will remove the transaction. This cannot be undone.</p>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 24px', lineHeight: 1.5 }}>
+              This will remove the transaction from all reports. The entry is hidden, not permanently deleted.
+            </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setDeleteId(null)} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
               <button onClick={() => handleDelete(deleteId)} style={{ flex: 1, height: 40, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
