@@ -19,8 +19,12 @@ import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
   Settings, Zap, Eye, Clock, User, ShieldAlert, RotateCcw, ShieldOff, Lock,
+  FileSpreadsheet, Printer, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
+import VoucherPrint from '../components/accounting/VoucherPrint'
+import { exportToExcel } from '../lib/exportExcel'
+import { getChurch } from '../lib/supabase'
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -218,8 +222,10 @@ function JournalEntryList() {
   const [filterType,  setFilterType]  = useState('')
   const [filterPost,  setFilterPost]  = useState('')
   const [showTrash,   setShowTrash]   = useState(false)
-  const [permDeleteEntry, setPermDeleteEntry] = useState(null) // entry to permanently delete
+  const [permDeleteEntry, setPermDeleteEntry] = useState(null)
   const [fyOpen,      setFyOpen]      = useState(false)
+  const [page,        setPage]        = useState(0)
+  const PAGE_SIZE = 25
   const FYS = fyOptions()
 
   const load = useCallback(async () => {
@@ -244,8 +250,28 @@ function JournalEntryList() {
     return e.entry_number.toLowerCase().includes(q) || (e.narration || '').toLowerCase().includes(q)
   })
 
+  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE)
+  const pageEntries = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  // Reset to page 0 whenever filters change
+  useEffect(() => { setPage(0) }, [search, filterType, filterPost, showTrash, fy])
+
   const totalDebit  = filtered.reduce((s, e) => s + Number(e.total_debit  || 0), 0)
   const totalCredit = filtered.reduce((s, e) => s + Number(e.total_credit || 0), 0)
+
+  function doExport() {
+    const rows = filtered.map(e => ({
+      'Entry #':   e.entry_number,
+      'Date':      e.entry_date,
+      'Type':      e.voucher_type,
+      'Narration': e.narration || '',
+      'Ref No':    e.reference_no || '',
+      'Debit (₹)':  Number(e.total_debit  || 0),
+      'Credit (₹)': Number(e.total_credit || 0),
+      'Status':    e.is_posted ? 'Posted' : 'Draft',
+    }))
+    exportToExcel(rows, `JournalEntries_FY${fy}`)
+  }
 
   return (
     <div className="page-container">
@@ -275,6 +301,16 @@ function JournalEntryList() {
               </div>
             )}
           </div>
+          {!loading && filtered.length > 0 && (
+            <>
+              <button onClick={doExport} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <FileSpreadsheet size={14} /> Export
+              </button>
+              <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                <Printer size={14} /> Print
+              </button>
+            </>
+          )}
           <button onClick={() => setShowNewEntry(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <Plus size={15} /> New Entry
           </button>
@@ -338,7 +374,7 @@ function JournalEntryList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((e, i) => (
+                  {pageEntries.map((e, i) => (
                     <tr key={e.id} onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
                       style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
                       onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
@@ -415,6 +451,32 @@ function JournalEntryList() {
           </>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, padding: '10px 16px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+              style={{ padding: '5px 10px', border: '1.5px solid var(--card-border)', borderRadius: 7, background: 'var(--card-bg)', cursor: page === 0 ? 'not-allowed' : 'pointer', color: page === 0 ? 'var(--text-3)' : 'var(--text-1)', display: 'flex', alignItems: 'center' }}>
+              <ChevronLeft size={14} />
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i).filter(i => Math.abs(i - page) <= 2).map(i => (
+              <button key={i} onClick={() => setPage(i)}
+                style={{ padding: '5px 10px', border: '1.5px solid var(--card-border)', borderRadius: 7, background: i === page ? 'var(--accent)' : 'var(--card-bg)', color: i === page ? '#fff' : 'var(--text-1)', fontSize: 12, fontWeight: i === page ? 700 : 400, cursor: 'pointer' }}>
+                {i + 1}
+              </button>
+            ))}
+            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+              style={{ padding: '5px 10px', border: '1.5px solid var(--card-border)', borderRadius: 7, background: 'var(--card-bg)', cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer', color: page >= totalPages - 1 ? 'var(--text-3)' : 'var(--text-1)', display: 'flex', alignItems: 'center' }}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
       {permDeleteEntry && <PermanentDeleteModal entry={permDeleteEntry} onClose={() => setPermDeleteEntry(null)} onDeleted={load} />}
     </div>
@@ -440,6 +502,8 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const [isPosted,      setIsPosted]      = useState(false)
   const [editingPosted, setEditingPosted] = useState(false)
   const [auditLog,      setAuditLog]      = useState([])
+  const [showPrint,     setShowPrint]     = useState(false)
+  const [church,        setChurch]        = useState(null)
 
   const dateInputRef = useRef(null)
   // stable refs for keyboard handlers — always point to latest functions
@@ -463,6 +527,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
 
   useEffect(() => {
     getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
+    getChurch().then(setChurch).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -630,6 +695,12 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {entryId && (
+            <button onClick={() => setShowPrint(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+              <Printer size={14} /> Print
+            </button>
+          )}
           {isPosted && !editingPosted && (
             <button onClick={() => {
               if (!window.confirm('This entry is posted. Editing it will update financial records and is logged. Continue?')) return
@@ -868,6 +939,34 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
           ))}
         </div>
       )}
+
+      <VoucherPrint
+        open={showPrint} onClose={() => setShowPrint(false)}
+        church={church}
+        voucherType={header.voucher_type}
+        voucherNo={header.entry_number}
+        date={header.entry_date}
+        refNo={header.reference_no}
+        narration={header.narration}
+        party={
+          header.voucher_type === 'Payment'
+            ? lines.find(l => parseFloat(l.credit_amount) > 0)?.description || ''
+            : header.voucher_type === 'Receipt'
+            ? lines.find(l => parseFloat(l.debit_amount) > 0)?.description || ''
+            : ''
+        }
+        rows={[
+          ...lines.filter(l => parseFloat(l.debit_amount) > 0).map(l => ({
+            label: `Dr: ${accounts.find(a => a.id === l.account_id)?.name || l.account_id}`,
+            amount: parseFloat(l.debit_amount),
+          })),
+          ...lines.filter(l => parseFloat(l.credit_amount) > 0).map(l => ({
+            label: `Cr: ${accounts.find(a => a.id === l.account_id)?.name || l.account_id}`,
+            amount: parseFloat(l.credit_amount),
+          })),
+        ]}
+        totalAmount={totalDebit}
+      />
 
       {/* Audit Log */}
       {entryId && auditLog.length > 0 && (

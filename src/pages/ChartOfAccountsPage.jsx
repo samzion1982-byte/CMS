@@ -26,7 +26,7 @@ const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
 // ── Single tree node ──────────────────────────────────────────────
 
-function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting,
+function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleActive, deleting,
                     dragId, dropId, dropPos, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const [open, setOpen] = useState(depth < 2) // L1 and L2 open by default
   const hasChildren = node.children?.length > 0
@@ -149,6 +149,17 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting,
             </button>
           )}
 
+          {/* Active/Inactive toggle (L3/L4 only) */}
+          {(isL3 || isL4) && (
+            <button
+              onClick={() => onToggleActive(node)}
+              title={node.is_active !== false ? 'Mark Inactive' : 'Mark Active'}
+              style={{ padding: '3px 8px', background: node.is_active !== false ? '#f1f5f9' : '#dcfce7', color: node.is_active !== false ? '#64748b' : '#16a34a', border: 'none', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+            >
+              {node.is_active !== false ? 'Active' : 'Activate'}
+            </button>
+          )}
+
           {/* Edit (all levels) */}
           <button
             onClick={() => onEdit(node)}
@@ -182,6 +193,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, deleting,
               onAdd={onAdd}
               onEdit={onEdit}
               onDelete={onDelete}
+              onToggleActive={onToggleActive}
               deleting={deleting}
               dragId={dragId}
               dropId={dropId}
@@ -544,6 +556,16 @@ export default function ChartOfAccountsPage() {
     setDeleting(null)
   }
 
+  async function handleToggleActive(node) {
+    const newVal = node.is_active === false ? true : false
+    try {
+      const { error } = await supabase.from('chart_of_accounts').update({ is_active: newVal }).eq('id', node.id)
+      if (error) throw error
+      toast(`"${node.name}" marked ${newVal ? 'Active' : 'Inactive'}.`, 'success')
+      load()
+    } catch (e) { toast(e.message, 'error') }
+  }
+
   async function handleSave(form, level) {
     if (!form.name.trim()) { toast('Name is required', 'error'); return }
     setSaving(true)
@@ -776,6 +798,7 @@ export default function ChartOfAccountsPage() {
               onAdd={handleAdd}
               onEdit={handleEdit}
               onDelete={handleDelete}
+              onToggleActive={handleToggleActive}
               deleting={deleting}
               dragId={dragId}
               dropId={dropId}

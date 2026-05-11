@@ -1,20 +1,58 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
 import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, tagLoginWithDevice } from '../lib/loginLogs'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function LoginPage() {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
   const navigate    = useNavigate()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
+  const [inputErr, setInputErr] = useState(false)
+  const [status,   setStatus]   = useState('')   // '' | 'authenticating' | 'welcome'
   const [church,   setChurch]   = useState(null)
+
+  const orbParticles = useMemo(() => {
+    const palette = [
+      { fill: 'rgba(59,130,246,0.85)',  glow: '0 0 14px 5px rgba(59,130,246,0.45)' },
+      { fill: 'rgba(96,165,250,0.75)',  glow: '0 0 12px 4px rgba(96,165,250,0.40)' },
+      { fill: 'rgba(34,211,238,0.75)',  glow: '0 0 16px 5px rgba(34,211,238,0.40)' },
+      { fill: 'rgba(139,92,246,0.70)',  glow: '0 0 14px 5px rgba(139,92,246,0.38)' },
+      { fill: 'rgba(224,242,254,0.65)', glow: '0 0 10px 3px rgba(255,255,255,0.30)' },
+    ]
+    return [...Array(45)].map((_, i) => {
+      const c    = palette[Math.floor(Math.random() * palette.length)]
+      const size = 3 + Math.random() * 11
+      return {
+        id: i,
+        left:              `${Math.random() * 100}%`,
+        width:             `${size}px`,
+        height:            `${size}px`,
+        animationDelay:    `${Math.random() * 18}s`,
+        animationDuration: `${12 + Math.random() * 14}s`,
+        background:        c.fill,
+        boxShadow:         c.glow,
+      }
+    })
+  }, [])
+
+  const starParticles = useMemo(() =>
+    [...Array(30)].map((_, i) => ({
+      id: i,
+      left: `${Math.random() * 100}%`,
+      top:  `${Math.random() * 100}%`,
+      width: `${1 + Math.random() * 2}px`,
+      height: `${1 + Math.random() * 2}px`,
+      animationDelay: `${Math.random() * 5}s`,
+      animationDuration: `${2 + Math.random() * 3}s`
+    })), []
+  )
 
   useEffect(() => {
     if (session) navigate('/dashboard')  // already logged in — redirect immediately
@@ -25,7 +63,9 @@ export default function LoginPage() {
   const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
+    setStatus('authenticating')
     setError('')
+    sessionStorage.setItem('login_welcome', '1')  // flag checked by PublicRoute to delay redirect
 
     try {
       const devId = getOrCreateDeviceId()
@@ -41,9 +81,13 @@ export default function LoginPage() {
 
       if (err) {
         sessionStorage.removeItem('device_setup_pending')
+        sessionStorage.removeItem('login_welcome')
         setError(err.message)
+        setInputErr(true)
+        setStatus('')
         setLoading(false)
       } else {
+        setStatus('welcome')
         const uid = authData?.user?.id
 
         if (knownByDevice) {
@@ -78,7 +122,10 @@ export default function LoginPage() {
       }
     } catch (ex) {
       sessionStorage.removeItem('device_setup_pending')
+      sessionStorage.removeItem('login_welcome')
       setError('Login failed. Please try again.')
+      setInputErr(true)
+      setStatus('')
       setLoading(false)
     }
   }
@@ -106,64 +153,102 @@ export default function LoginPage() {
           justify-content: center;
           padding: 24px;
           font-family: 'Inter', sans-serif;
-          background: linear-gradient(135deg, #0a0e2a 0%, #0f1438 30%, #1a1f4a 60%, #0f1438 100%);
+          background: #010409;
           position: relative;
           overflow: hidden;
         }
 
-        /* Animated gradient background */
+        /* Deep animated colour blobs */
         .animated-bg {
           position: absolute;
           inset: 0;
-          background: 
-            radial-gradient(circle at 20% 30%, rgba(37,99,235,0.15) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(96,165,250,0.12) 0%, transparent 50%),
-            radial-gradient(circle at 40% 50%, rgba(59,130,246,0.08) 0%, transparent 60%);
-          animation: bgPulse 6s ease-in-out infinite;
+          background:
+            radial-gradient(ellipse 60% 50% at 15% 20%, rgba(37,99,235,0.22) 0%, transparent 70%),
+            radial-gradient(ellipse 50% 40% at 85% 80%, rgba(139,92,246,0.18) 0%, transparent 70%),
+            radial-gradient(ellipse 70% 60% at 50% 50%, rgba(10,14,42,0.95)   0%, transparent 100%);
+          animation: bgShift 10s ease-in-out infinite alternate;
         }
-        @keyframes bgPulse {
-          0%, 100% { opacity: 0.6; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.05); }
+        @keyframes bgShift {
+          0%   { opacity: 0.7; filter: hue-rotate(0deg);   transform: scale(1); }
+          50%  { opacity: 1;   filter: hue-rotate(15deg);  transform: scale(1.08); }
+          100% { opacity: 0.8; filter: hue-rotate(-10deg); transform: scale(1); }
         }
 
-        /* Aurora effect */
+        /* Secondary blob that drifts independently */
+        .bg-blob2 {
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(ellipse 45% 35% at 75% 25%, rgba(34,211,238,0.10) 0%, transparent 70%),
+            radial-gradient(ellipse 55% 45% at 25% 75%, rgba(59,130,246,0.12)  0%, transparent 70%);
+          animation: blobDrift 14s ease-in-out infinite alternate;
+          pointer-events: none;
+        }
+        @keyframes blobDrift {
+          0%   { transform: translate(0, 0)   scale(1); }
+          50%  { transform: translate(4%, 3%) scale(1.06); }
+          100% { transform: translate(-3%, 2%) scale(0.97); }
+        }
+
+        /* Sweeping light rays */
+        .ray {
+          position: absolute;
+          top: -20%;
+          width: 1.5px;
+          height: 140%;
+          background: linear-gradient(to bottom, transparent 0%, rgba(96,165,250,0.12) 40%, rgba(96,165,250,0.08) 60%, transparent 100%);
+          transform-origin: top center;
+          pointer-events: none;
+        }
+        .ray-1 { left: 25%; transform: rotate(-18deg); animation: raySweep 18s ease-in-out infinite; }
+        .ray-2 { left: 55%; transform: rotate(12deg);  animation: raySweep 24s ease-in-out infinite reverse; opacity: 0.6; }
+        .ray-3 { left: 75%; transform: rotate(-8deg);  animation: raySweep 20s ease-in-out infinite 4s; opacity: 0.4; }
+        @keyframes raySweep {
+          0%, 100% { opacity: 0; transform: rotate(var(--r, -18deg)) translateX(0px); }
+          20%      { opacity: 1; }
+          50%      { transform: rotate(var(--r, -18deg)) translateX(30px); opacity: 0.9; }
+          80%      { opacity: 0.7; }
+        }
+
+        /* Aurora effect — enhanced */
         .aurora {
           position: absolute;
           top: -50%;
           left: -50%;
           width: 200%;
           height: 200%;
-          background: linear-gradient(45deg, 
-            rgba(37,99,235,0.05) 0%, 
-            rgba(96,165,250,0.08) 25%, 
-            rgba(59,130,246,0.05) 50%, 
-            rgba(37,99,235,0.08) 75%, 
-            rgba(96,165,250,0.05) 100%);
-          animation: auroraMove 15s ease-in-out infinite;
+          background: conic-gradient(from 180deg at 50% 50%,
+            rgba(37,99,235,0.06)  0deg,
+            rgba(139,92,246,0.10) 90deg,
+            rgba(34,211,238,0.07) 180deg,
+            rgba(37,99,235,0.06)  270deg,
+            rgba(139,92,246,0.08) 360deg);
+          animation: auroraMove 20s ease-in-out infinite;
           pointer-events: none;
         }
         @keyframes auroraMove {
-          0% { transform: translate(0%, 0%) rotate(0deg); }
-          33% { transform: translate(5%, 3%) rotate(2deg); }
-          66% { transform: translate(-3%, 5%) rotate(-2deg); }
-          100% { transform: translate(0%, 0%) rotate(0deg); }
+          0%   { transform: translate(0%,   0%)  rotate(0deg);  opacity: 0.5; }
+          33%  { transform: translate(4%,   3%)  rotate(3deg);  opacity: 0.9; }
+          66%  { transform: translate(-3%,  5%)  rotate(-2deg); opacity: 0.6; }
+          100% { transform: translate(0%,   0%)  rotate(0deg);  opacity: 0.5; }
         }
 
-        /* Snow falling - original */
-        .snow {
+        /* Rising glowing orbs */
+        .orb {
           position: absolute;
-          top: -10px;
-          background: white;
+          top: 0;
           border-radius: 50%;
           pointer-events: none;
-          opacity: 0.8;
-          animation: snowFall linear infinite;
+          animation: riseOrb linear infinite;
         }
-        @keyframes snowFall {
-          0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
-          10% { opacity: 0.8; }
-          90% { opacity: 0.6; }
-          100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+        @keyframes riseOrb {
+          0%   { transform: translateY(115vh) translateX(0px);   opacity: 0; }
+          7%   { opacity: 1; }
+          28%  { transform: translateY(82vh)  translateX(20px); }
+          52%  { transform: translateY(50vh)  translateX(-16px); }
+          76%  { transform: translateY(20vh)  translateX(14px); }
+          93%  { opacity: 0.7; }
+          100% { transform: translateY(-8vh)  translateX(0px);  opacity: 0; }
         }
 
         /* Stars */
@@ -207,7 +292,7 @@ export default function LoginPage() {
 
         .card {
           position: relative;
-          background: linear-gradient(180deg, rgba(15,20,56,0.94) 0%, rgba(10,14,42,0.96) 100%);
+          background: linear-gradient(180deg, rgba(8,12,36,0.96) 0%, rgba(3,5,18,0.98) 100%);
           backdrop-filter: blur(2px);
           border-radius: 22px;
           padding: 28px 30px 24px;
@@ -358,8 +443,8 @@ export default function LoginPage() {
           width: 100%;
           height: 48px;
           padding: 0 16px;
-          background: rgba(10,14,42,0.8);
-          border: 1px solid rgba(59,130,246,0.25);
+          background: rgba(4,6,20,0.85);
+          border: 1px solid rgba(59,130,246,0.22);
           border-radius: 10px;
           font-size: 14px;
           color: #e2e8f0;
@@ -370,7 +455,7 @@ export default function LoginPage() {
         .f-input::placeholder { color: #334155; }
         .f-input:focus {
           border-color: #3b82f6;
-          background: rgba(10,14,42,1);
+          background: rgba(4,6,20,1);
           box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
         }
 
@@ -451,6 +536,135 @@ export default function LoginPage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
 
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          15%       { transform: translateX(-7px); }
+          30%       { transform: translateX(7px); }
+          45%       { transform: translateX(-5px); }
+          60%       { transform: translateX(5px); }
+          75%       { transform: translateX(-3px); }
+          90%       { transform: translateX(3px); }
+        }
+        .form-shake { animation: shake 0.5s ease; }
+
+        .f-input-error {
+          border-color: rgba(239,68,68,0.6) !important;
+          box-shadow: 0 0 0 3px rgba(239,68,68,0.12) !important;
+        }
+
+        @keyframes btnPulse {
+          0%, 100% { box-shadow: 0 4px 14px rgba(37,99,235,0.4); }
+          50%       { box-shadow: 0 4px 22px rgba(59,130,246,0.7); }
+        }
+        .btn-submit:not(:disabled) { animation: btnPulse 2.5s ease-in-out infinite; }
+        .btn-submit:hover:not(:disabled),
+        .btn-submit:active:not(:disabled) { animation: none; }
+
+        .forgot-link {
+          display: block;
+          text-align: right;
+          font-size: 11px;
+          color: #60a5fa;
+          text-decoration: none;
+          margin-top: -8px;
+          margin-bottom: 16px;
+          opacity: 0.75;
+          transition: opacity 0.2s;
+          cursor: pointer;
+          background: none;
+          border: none;
+          font-family: inherit;
+          padding: 0;
+        }
+        .forgot-link:hover { opacity: 1; text-decoration: underline; }
+
+        /* Status overlay */
+        .status-overlay {
+          position: absolute;
+          inset: 0;
+          border-radius: 22px;
+          background: rgba(3,5,18,0.95);
+          backdrop-filter: blur(6px);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 20px;
+          z-index: 30;
+          animation: fadeIn 0.25s ease;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+
+        .status-ring {
+          width: 56px; height: 56px;
+          border: 3px solid rgba(59,130,246,0.15);
+          border-top-color: #3b82f6;
+          border-radius: 50%;
+          animation: spin 0.85s linear infinite;
+        }
+
+        .status-check {
+          color: #22c55e;
+          filter: drop-shadow(0 0 10px rgba(34,197,94,0.5));
+          animation: checkPop 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.4) both;
+        }
+        @keyframes checkPop {
+          from { opacity: 0; transform: scale(0.4); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+
+        .praise-label {
+          font-family: 'Sora', sans-serif;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          background: linear-gradient(135deg, #ffd700, #daa520, #ffd700);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: goldenShimmer 2s ease infinite;
+          margin-bottom: 4px;
+        }
+
+        .status-msg {
+          font-family: 'Sora', sans-serif;
+          font-size: 17px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          color: #e2e8f0;
+        }
+        .status-msg.welcome { color: #86efac; }
+
+        .welcome-name {
+          font-family: 'Sora', sans-serif;
+          font-size: 22px;
+          font-weight: 800;
+          color: #ffffff;
+          letter-spacing: 0.5px;
+          margin-top: 2px;
+          text-align: center;
+          max-width: 320px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .status-dots::after {
+          content: '';
+          animation: dots 1.4s steps(4, end) infinite;
+        }
+        @keyframes dots {
+          0%   { content: ''; }
+          25%  { content: '.'; }
+          50%  { content: '..'; }
+          75%, 100% { content: '...'; }
+        }
+
         @media (max-width: 550px) {
           .card { padding: 28px 24px 26px; }
           .church-name { font-size: 18px; letter-spacing: 1px; }
@@ -461,37 +675,33 @@ export default function LoginPage() {
 
       <div className="login-page">
         <div className="animated-bg"/>
+        <div className="bg-blob2"/>
+        <div className="ray ray-1"/>
+        <div className="ray ray-2"/>
+        <div className="ray ray-3"/>
         <div className="aurora"/>
-        
-        {/* Snow falling - kept original */}
-        {[...Array(60)].map((_, i) => (
+
+        {/* Rising glowing orbs */}
+        {orbParticles.map(o => (
           <div
-            key={i}
-            className="snow"
+            key={o.id}
+            className="orb"
             style={{
-              left: `${Math.random() * 100}%`,
-              width: `${2 + Math.random() * 6}px`,
-              height: `${2 + Math.random() * 6}px`,
-              animationDelay: `${Math.random() * 15}s`,
-              animationDuration: `${5 + Math.random() * 8}s`,
-              opacity: 0.4 + Math.random() * 0.5,
-              background: `rgba(255, 255, 255, ${0.4 + Math.random() * 0.6})`
+              left: o.left, width: o.width, height: o.height,
+              background: o.background, boxShadow: o.boxShadow,
+              animationDelay: o.animationDelay, animationDuration: o.animationDuration,
             }}
           />
         ))}
-        
-        {/* Stars */}
-        {[...Array(30)].map((_, i) => (
+
+        {/* Stars - memoized */}
+        {starParticles.map(s => (
           <div
-            key={`star-${i}`}
+            key={`star-${s.id}`}
             className="star"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              width: `${1 + Math.random() * 2}px`,
-              height: `${1 + Math.random() * 2}px`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${2 + Math.random() * 3}s`
+              left: s.left, top: s.top, width: s.width, height: s.height,
+              animationDelay: s.animationDelay, animationDuration: s.animationDuration
             }}
           />
         ))}
@@ -499,6 +709,27 @@ export default function LoginPage() {
         <div className="card-wrap">
           <div className="card-border"/>
           <div className="card">
+
+            {/* Status overlay — shown during auth and on success */}
+            {status && (
+              <div className="status-overlay">
+                {status === 'authenticating' ? (
+                  <>
+                    <div className="status-ring"/>
+                    <p className="status-msg">Authenticating<span className="status-dots"/></p>
+                  </>
+                ) : (
+                  <>
+                    <p className="praise-label">✦ Praise the Lord ✦</p>
+                    <CheckCircle2 size={52} className="status-check"/>
+                    <p className="status-msg welcome">Welcome back!</p>
+                    <p className="welcome-name">
+                      {profile?.full_name || email.split('@')[0]}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Bible verse */}
             <div className="verse-top">
@@ -544,15 +775,15 @@ export default function LoginPage() {
             </div>
 
             {/* Login Form */}
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className={error ? 'form-shake' : ''} key={error}>
               <div className="f-group">
                 <label className="f-label">EMAIL</label>
                 <input
-                  className="f-input"
+                  className={`f-input${inputErr ? ' f-input-error' : ''}`}
                   type="email"
                   placeholder="you@church.org"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => { setEmail(e.target.value); setInputErr(false); setError(''); }}
                   required
                   autoFocus
                   autoComplete="username"
@@ -563,11 +794,12 @@ export default function LoginPage() {
                 <label className="f-label">PASSWORD</label>
                 <div className="pw-wrap">
                   <input
-                    className="f-input f-input-pw"
+                    className={`f-input f-input-pw${inputErr ? ' f-input-error' : ''}`}
                     type={showPw ? 'text' : 'password'}
                     placeholder="Enter your password"
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={e => { setPassword(e.target.value); setInputErr(false); setError(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSubmit(e); } }}
                     required
                     autoComplete="current-password"
                   />
@@ -584,6 +816,14 @@ export default function LoginPage() {
                   )}
                 </div>
               </div>
+
+              <button
+                type="button"
+                className="forgot-link"
+                onClick={() => alert('Please contact your administrator to reset your password.')}
+              >
+                Forgot password?
+              </button>
 
               {error && <div className="f-error">⚠ {error}</div>}
 

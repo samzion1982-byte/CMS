@@ -255,7 +255,26 @@ export async function getAccountingSettings() {
   return data || {}
 }
 
+async function checkPeriodLock(entryDate) {
+  const { data } = await supabase.from('churches').select('accounting_period_lock_date').limit(1).single()
+  const lockDate = data?.accounting_period_lock_date
+  if (lockDate && entryDate && entryDate <= lockDate) {
+    throw new Error(`Entry date (${entryDate}) is on or before the period lock date (${lockDate}). Go to Accounting → Settings to change the lock date.`)
+  }
+}
+
+function validateLines(lines) {
+  for (const l of lines) {
+    const dr = Number(l.debit_amount  || 0)
+    const cr = Number(l.credit_amount || 0)
+    if (dr < 0 || cr < 0) throw new Error('Line amounts cannot be negative.')
+    if (dr === 0 && cr === 0) throw new Error('Each line must have a non-zero amount.')
+  }
+}
+
 export async function createJournalEntry(entry, lines, performedBy) {
+  await checkPeriodLock(entry.entry_date)
+  validateLines(lines)
   const totalDebit  = lines.reduce((s, l) => s + Number(l.debit_amount  || 0), 0)
   const totalCredit = lines.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
 
@@ -287,6 +306,8 @@ export async function createJournalEntry(entry, lines, performedBy) {
 }
 
 export async function updateJournalEntry(id, entry, lines, performedBy) {
+  await checkPeriodLock(entry.entry_date)
+  validateLines(lines)
   const { data: old } = await supabase.from('journal_entries').select('*').eq('id', id).single()
   if (old?.is_posted) throw new Error('Cannot edit a posted entry.')
 
@@ -472,7 +493,28 @@ async function updateBalanceCache(lines, fy) {
 // ── Ledger ────────────────────────────────────────────────────────
 
 export async function getLedger(accountId, from, to) {
-  // Step 1: fetch posted, non-deleted entries within the date range
+  // Opening balance: all posted transactions for this account BEFORE `from`
+  const { data: prevEntries } = await supabase
+    .from('journal_entries')
+    .select('id')
+    .eq('is_posted', true)
+    .eq('is_deleted', false)
+    .lt('entry_date', from)
+
+  let openingBalance = 0
+  if (prevEntries?.length) {
+    const prevIds = prevEntries.map(e => e.id)
+    const { data: prevLines } = await supabase
+      .from('journal_entry_lines')
+      .select('debit_amount, credit_amount')
+      .eq('account_id', accountId)
+      .in('journal_entry_id', prevIds)
+    for (const l of prevLines || []) {
+      openingBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
+    }
+  }
+
+  // Step 1: posted, non-deleted entries within the date range
   const { data: entries, error: e1 } = await supabase
     .from('journal_entries')
     .select('id, entry_number, entry_date, voucher_type, narration')
@@ -483,45 +525,105 @@ export async function getLedger(accountId, from, to) {
     .order('entry_date', { ascending: true })
 
   if (e1) throw e1
-  if (!entries?.length) return []
 
-  const entryIds = entries.map(e => e.id)
-  const entryMap = Object.fromEntries(entries.map(e => [e.id, e]))
+  // Step 2: lines for this account within those entries
+  let sorted = []
+  if (entries?.length) {
+    const entryIds = entries.map(e => e.id)
+    const entryMap = Object.fromEntries(entries.map(e => [e.id, e]))
+    const { data: lines, error: e2 } = await supabase
+      .from('journal_entry_lines')
+      .select('journal_entry_id, debit_amount, credit_amount, description')
+      .eq('account_id', accountId)
+      .in('journal_entry_id', entryIds)
+    if (e2) throw e2
+    sorted = (lines || []).sort((a, b) => {
+      const ea = entryMap[a.journal_entry_id] || {}
+      const eb = entryMap[b.journal_entry_id] || {}
+      if (ea.entry_date < eb.entry_date) return -1
+      if (ea.entry_date > eb.entry_date) return  1
+      return (ea.entry_number || '').localeCompare(eb.entry_number || '')
+    })
+    let runningBalance = openingBalance
+    const periodRows = sorted.map(l => {
+      const e  = entryMap[l.journal_entry_id] || {}
+      const dr = Number(l.debit_amount  || 0)
+      const cr = Number(l.credit_amount || 0)
+      runningBalance += dr - cr
+      return { date: e.entry_date, entry_number: e.entry_number, voucher_type: e.voucher_type, narration: l.description || e.narration, debit: dr, credit: cr, running_balance: runningBalance }
+    })
+    return [
+      { date: null, entry_number: null, voucher_type: null, narration: 'Opening Balance', debit: openingBalance >= 0 ? openingBalance : 0, credit: openingBalance < 0 ? Math.abs(openingBalance) : 0, running_balance: openingBalance, isOpening: true },
+      ...periodRows,
+    ]
+  }
 
-  // Step 2: fetch lines for this account within those entries
-  const { data: lines, error: e2 } = await supabase
+  return [
+    { date: null, entry_number: null, voucher_type: null, narration: 'Opening Balance', debit: openingBalance >= 0 ? openingBalance : 0, credit: openingBalance < 0 ? Math.abs(openingBalance) : 0, running_balance: openingBalance, isOpening: true },
+  ]
+}
+
+// ── Narration suggestions ─────────────────────────────────────────
+
+// ── Designated Funds ─────────────────────────────────────────────
+export async function getFunds(activeOnly = true) {
+  let q = supabase.from('funds').select('*').order('name')
+  if (activeOnly) q = q.eq('is_active', true)
+  const { data } = await q
+  return data || []
+}
+
+export async function getFundReport(fy) {
+  const funds = await getFunds(false)
+  if (funds.length === 0) return []
+
+  const { data: lines } = await supabase
     .from('journal_entry_lines')
-    .select('journal_entry_id, debit_amount, credit_amount, description')
-    .eq('account_id', accountId)
-    .in('journal_entry_id', entryIds)
+    .select(`
+      debit_amount, credit_amount,
+      journal_entries!inner(fund_id, financial_year, is_posted, is_deleted),
+      chart_of_accounts!inner(account_type)
+    `)
+    .eq('journal_entries.is_posted', true)
+    .eq('journal_entries.is_deleted', false)
+    .eq('journal_entries.financial_year', fy)
+    .not('journal_entries.fund_id', 'is', null)
 
-  if (e2) throw e2
+  const totals = {}
+  for (const l of lines || []) {
+    const fid  = l.journal_entries?.fund_id
+    const type = l.chart_of_accounts?.account_type
+    if (!fid) continue
+    if (!totals[fid]) totals[fid] = { income: 0, expenses: 0 }
+    if (type === 'Income')  totals[fid].income   += (Number(l.credit_amount) - Number(l.debit_amount))
+    if (type === 'Expense') totals[fid].expenses += (Number(l.debit_amount)  - Number(l.credit_amount))
+  }
 
-  // Sort lines by parent entry date, then entry_number for ties
-  const sorted = (lines || []).sort((a, b) => {
-    const ea = entryMap[a.journal_entry_id] || {}
-    const eb = entryMap[b.journal_entry_id] || {}
-    if (ea.entry_date < eb.entry_date) return -1
-    if (ea.entry_date > eb.entry_date) return  1
-    return (ea.entry_number || '').localeCompare(eb.entry_number || '')
-  })
+  return funds.map(f => ({
+    ...f,
+    income:   totals[f.id]?.income   || 0,
+    expenses: totals[f.id]?.expenses || 0,
+    net:      (totals[f.id]?.income  || 0) - (totals[f.id]?.expenses || 0),
+  }))
+}
 
-  let runningBalance = 0
-  return sorted.map(l => {
-    const e  = entryMap[l.journal_entry_id] || {}
-    const dr = Number(l.debit_amount  || 0)
-    const cr = Number(l.credit_amount || 0)
-    runningBalance += dr - cr
-    return {
-      date:            e.entry_date,
-      entry_number:    e.entry_number,
-      voucher_type:    e.voucher_type,
-      narration:       l.description || e.narration,
-      debit:           dr,
-      credit:          cr,
-      running_balance: runningBalance,
-    }
-  })
+export async function getRecentNarrations(limit = 30) {
+  const { data } = await supabase
+    .from('journal_entries')
+    .select('narration')
+    .not('narration', 'is', null)
+    .neq('narration', '')
+    .order('created_at', { ascending: false })
+    .limit(200)
+  if (!data) return []
+  const seen = new Set()
+  const unique = []
+  for (const row of data) {
+    const n = row.narration.trim()
+    if (n && !seen.has(n)) { seen.add(n); unique.push(n) }
+    if (unique.length >= limit) break
+  }
+  return unique
 }
 
 // ── Trial Balance ─────────────────────────────────────────────────

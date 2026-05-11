@@ -2,30 +2,37 @@
    LedgerPage.jsx — Account Ledger View
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer } from 'lucide-react'
+import DatePresets from '../components/accounting/DatePresets'
 
 export default function LedgerPage() {
-  const navigate  = useNavigate()
-  const toast     = useToast()
+  const navigate     = useNavigate()
+  const toast        = useToast()
+  const [searchParams] = useSearchParams()
 
   const today = new Date().toISOString().slice(0, 10)
   const fy    = getFY()
-  const { from: fyFrom, to: fyTo } = fyDateRange(fy)
+  const { from: fyFrom } = fyDateRange(fy)
+
+  const initAccountId = searchParams.get('accountId') || ''
+  const initFrom      = searchParams.get('from') || fyFrom
+  const initTo        = searchParams.get('to')   || today
 
   const [accounts,   setAccounts]   = useState([])
-  const [accountId,  setAccountId]  = useState('')
-  const [dateFrom,   setDateFrom]   = useState(fyFrom)
-  const [dateTo,     setDateTo]     = useState(today)
+  const [accountId,  setAccountId]  = useState(initAccountId)
+  const [dateFrom,   setDateFrom]   = useState(initFrom)
+  const [dateTo,     setDateTo]     = useState(initTo)
   const [lines,      setLines]      = useState([])
   const [loading,    setLoading]    = useState(false)
   const [generated,  setGenerated]  = useState(false)
   const [church,     setChurch]     = useState(null)
+  const autoGenDone  = useRef(false)
 
   useEffect(() => {
     getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
@@ -45,8 +52,17 @@ export default function LedgerPage() {
     setLoading(false)
   }, [accountId, dateFrom, dateTo, toast])
 
-  const totalDebit  = lines.reduce((s, l) => s + l.debit,  0)
-  const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
+  // Auto-generate when navigating from financial statements with a pre-selected account
+  useEffect(() => {
+    if (!autoGenDone.current && accounts.length > 0 && initAccountId) {
+      autoGenDone.current = true
+      generate()
+    }
+  }, [accounts]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const periodLines = lines.filter(l => !l.isOpening)
+  const totalDebit  = periodLines.reduce((s, l) => s + l.debit,  0)
+  const totalCredit = periodLines.reduce((s, l) => s + l.credit, 0)
   const closingBal  = lines.length > 0 ? lines[lines.length - 1].running_balance : 0
 
   function doExport() {
@@ -90,6 +106,11 @@ export default function LedgerPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Date presets */}
+      <div style={{ marginBottom: 8 }}>
+        <DatePresets onSelect={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
 
       {/* Filter bar */}
@@ -188,15 +209,18 @@ export default function LedgerPage() {
                 </thead>
                 <tbody>
                   {lines.map((l, i) => (
-                    <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                    <tr key={i} style={{ background: l.isOpening ? 'rgba(37,99,235,0.05)' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
                       <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                        {new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {l.isOpening ? '—' : new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number || '—'}</td>
                       <td style={{ padding: '9px 14px' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{l.voucher_type}</span>
+                        {l.voucher_type
+                          ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{l.voucher_type}</span>
+                          : l.isOpening ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#dbeafe', color: '#2563eb' }}>Opening</span>
+                          : null}
                       </td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || '—'}</td>
+                      <td style={{ padding: '9px 14px', fontSize: 12, color: l.isOpening ? '#2563eb' : 'var(--text-2)', fontWeight: l.isOpening ? 700 : 400, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || '—'}</td>
                       <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.debit > 0 ? '#2563eb' : 'var(--text-3)' }}>{l.debit > 0 ? fmtAmt(l.debit) : '—'}</td>
                       <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.credit > 0 ? '#16a34a' : 'var(--text-3)' }}>{l.credit > 0 ? fmtAmt(l.credit) : '—'}</td>
                       <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: l.running_balance >= 0 ? '#2563eb' : '#b91c1c' }}>

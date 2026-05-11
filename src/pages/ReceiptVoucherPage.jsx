@@ -12,8 +12,12 @@ import {
 } from '../lib/accountingLib'
 import {
   PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
-  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil,
+  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer,
 } from 'lucide-react'
+import NarrationInput from '../components/accounting/NarrationInput'
+import VoucherPrint from '../components/accounting/VoucherPrint'
+import { getChurch } from '../lib/supabase'
+import { getFunds } from '../lib/accountingLib'
 
 // strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
@@ -173,6 +177,11 @@ export default function ReceiptVoucherPage() {
   const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
   const [lineNarration, setLineNarration] = useState('')
 
+  const [church,     setChurch]    = useState(null)
+  const [showPrint,  setShowPrint] = useState(false)
+  const [funds,  setFunds]  = useState([])
+  const [fundId, setFundId] = useState('')
+
   // ── Save state
   const [saving,  setSaving]  = useState(false)
   const [posting, setPosting] = useState(false)
@@ -196,6 +205,9 @@ export default function ReceiptVoucherPage() {
   const isValid = debitCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
   const busy    = saving || posting
 
+  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
+  useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
+
   useEffect(() => {
     const promises = [getChartOfAccounts(true), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
@@ -217,6 +229,7 @@ export default function ReceiptVoucherPage() {
         }
         setLines(creditLines.map(l => ({ _key: crypto.randomUUID(), account_id: l.account_id, amount: String(l.credit_amount) })))
         setLineNarration(existingEntry.narration || creditLines[0]?.description || '')
+        if (existingEntry.fund_id) setFundId(existingEntry.fund_id)
         setStep(3)
       } else {
         const fy  = getFY(new Date().toISOString().slice(0, 10))
@@ -268,6 +281,7 @@ export default function ReceiptVoucherPage() {
       const entry = {
         entry_number: receiptNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Receipt', narration: lineNarration || null, reference_no: refNo || null,
+        fund_id: fundId || null,
       }
       const jLines = [
         { account_id: debitCoaId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
@@ -308,6 +322,10 @@ export default function ReceiptVoucherPage() {
         <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '4px 10px', borderRadius: 6 }}>
           {receiptNo}
         </div>
+        <button onClick={() => setShowPrint(true)} title="Print voucher"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
+          <Printer size={14} /> Print
+        </button>
       </div>
 
       {/* Voucher meta row */}
@@ -329,6 +347,17 @@ export default function ReceiptVoucherPage() {
               value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
           </div>
         </div>
+        {funds.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
+            <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
+              style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
+              <option value="">— None (General) —</option>
+              {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
+          </div>
+        )}
       </div>
 
       {/* ══ STEP PROGRESS ══ */}
@@ -499,8 +528,8 @@ export default function ReceiptVoucherPage() {
             {/* Single narration for all entries */}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--card-border)' }}>
               <label className="field-label" style={{ display: 'block', marginBottom: 5 }}>Narration</label>
-              <input className="field-input" placeholder="Particulars / narration for this receipt"
-                value={lineNarration} onChange={e => setLineNarration(e.target.value)}
+              <NarrationInput placeholder="Particulars / narration for this receipt"
+                value={lineNarration} onChange={setLineNarration}
                 disabled={busy} />
             </div>
           </div>
@@ -521,6 +550,24 @@ export default function ReceiptVoucherPage() {
         </>
       )}
 
+      <VoucherPrint
+        open={showPrint} onClose={() => setShowPrint(false)}
+        church={church}
+        voucherType="Receipt"
+        voucherNo={receiptNo}
+        date={entryDate}
+        refNo={refNo}
+        narration={lineNarration}
+        party={receivedFrom}
+        rows={[
+          { label: `Dr: ${debitLabel}`, amount: total, bold: true },
+          ...lines.filter(l => l.account_id && parseFloat(l.amount) > 0).map(l => ({
+            label: `Cr: ${creditAccounts.find(a => a.id === l.account_id)?.name || l.account_id}`,
+            amount: parseFloat(l.amount),
+          })),
+        ]}
+        totalAmount={total}
+      />
     </div>
   )
 }

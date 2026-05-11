@@ -19,7 +19,7 @@ import {
 import { getChurch } from '../lib/supabase'
 import {
   BarChart2, ArrowLeft, Loader2, Printer, ChevronDown,
-  RefreshCw, CheckCircle, XCircle, Calendar,
+  RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink,
 } from 'lucide-react'
 
 // DD-MM-YYYY display format for ISO date strings
@@ -47,7 +47,7 @@ const TH = {
 const TD = { padding: '8px 16px', fontSize: 13, color: 'var(--text-1)', verticalAlign: 'middle' }
 
 // Two-column table used for both R&P and I&E
-function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel }) {
+function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
   const maxLen = Math.max(leftRows.length, rightRows.length)
   const rows   = Array.from({ length: maxLen }, (_, i) => ({ l: leftRows[i] || null, r: rightRows[i] || null }))
 
@@ -63,17 +63,25 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
-              <CellPair cell={row.l} />
-              <td style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: row.r?.bold ? 700 : 400, paddingLeft: row.r?.indent ? 36 : 16, color: row.r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: row.r?.italic ? 'italic' : 'normal' }}>
-                {row.r?.label || ''}
-              </td>
-              <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: row.r?.bold ? 700 : 400, color: 'var(--text-1)' }}>
-                {row.r?.amount !== undefined ? fmtAmt(row.r.amount) : ''}
-              </td>
-            </tr>
-          ))}
+          {rows.map((row, i) => {
+            const rClickable = !!(row.r?.accountId && navigate)
+            return (
+              <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
+                <CellPair cell={row.l} navigate={navigate} dateFrom={dateFrom} dateTo={dateTo} />
+                <td
+                  style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: row.r?.bold ? 700 : 400, paddingLeft: row.r?.indent ? 36 : 16, color: row.r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: row.r?.italic ? 'italic' : 'normal', cursor: rClickable ? 'pointer' : 'inherit', textDecoration: rClickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+                  onClick={rClickable ? () => navigate(`/accounting/ledger?accountId=${row.r.accountId}&from=${dateFrom}&to=${dateTo}`) : undefined}
+                  title={rClickable ? 'View Ledger' : undefined}
+                >
+                  {row.r?.label || ''}
+                  {rClickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
+                </td>
+                <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: row.r?.bold ? 700 : 400, color: 'var(--text-1)' }}>
+                  {row.r?.amount !== undefined ? fmtAmt(row.r.amount) : ''}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
         <tfoot>
           <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
@@ -88,11 +96,17 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
   )
 }
 
-function CellPair({ cell }) {
+function CellPair({ cell, navigate, dateFrom, dateTo }) {
+  const clickable = !!(cell?.accountId && navigate)
   return (
     <>
-      <td style={{ ...TD, fontWeight: cell?.bold ? 700 : 400, paddingLeft: cell?.indent ? 36 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal' }}>
+      <td
+        style={{ ...TD, fontWeight: cell?.bold ? 700 : 400, paddingLeft: cell?.indent ? 36 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: clickable ? 'pointer' : 'inherit', textDecoration: clickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+        onClick={clickable ? () => navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`) : undefined}
+        title={clickable ? 'View Ledger' : undefined}
+      >
         {cell?.label || ''}
+        {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
       </td>
       <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: cell?.bold ? 700 : 400, color: 'var(--text-1)' }}>
         {cell?.amount !== undefined ? fmtAmt(cell.amount) : ''}
@@ -154,7 +168,7 @@ function ReceiptsPayments({ data }) {
 //  Income & Expenditure Account
 // ════════════════════════════════════════════════════════════════
 
-function IncomeExpenditure({ data, showZero }) {
+function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   const surplus   = data.surplus
   const isDeficit = surplus < 0
 
@@ -164,7 +178,7 @@ function IncomeExpenditure({ data, showZero }) {
   const leftRows = [
     { label: 'EXPENDITURE', bold: true, muted: true },
     { label: '' },
-    ...expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    ...expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true, accountId: a.id })),
     { label: '' },
     { label: 'Total Expenditure', amount: data.totalExpenses, bold: true },
     { label: '' },
@@ -174,7 +188,7 @@ function IncomeExpenditure({ data, showZero }) {
   const rightRows = [
     { label: 'INCOME', bold: true, muted: true },
     { label: '' },
-    ...income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
     { label: '' },
     { label: 'Total Income', amount: data.totalIncome, bold: true },
     { label: '' },
@@ -191,6 +205,7 @@ function IncomeExpenditure({ data, showZero }) {
         leftTotal={leftTotal} rightTotal={rightTotal}
         leftLabel="Dr  —  Expenditure"
         rightLabel="Cr  —  Income"
+        navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <div style={{ marginTop: 14, padding: '12px 20px', borderRadius: 10, background: isDeficit ? '#fff5f5' : '#f0fdf4', border: `1.5px solid ${isDeficit ? '#fca5a5' : '#86efac'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
         {isDeficit ? <XCircle size={20} color="#b91c1c" /> : <CheckCircle size={20} color="#16a34a" />}
@@ -213,7 +228,7 @@ function IncomeExpenditure({ data, showZero }) {
 //  Balance Sheet
 // ════════════════════════════════════════════════════════════════
 
-function BalanceSheet({ data, showZero }) {
+function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
   const isBalanced = Math.abs(data.totalAssets - (data.totalLiabilities + data.totalCorpus)) < 0.01
 
   const filterAccts = (list, getAmt) =>
@@ -226,20 +241,20 @@ function BalanceSheet({ data, showZero }) {
   const leftRows = [
     { label: 'CORPUS / GENERAL FUND', bold: true, muted: true },
     { label: '' },
-    ...corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
     { label: data.surplus >= 0 ? 'Add: Surplus for the year' : 'Less: Deficit for the year', amount: Math.abs(data.surplus), indent: true, italic: true },
     { label: 'Total Corpus Fund', amount: data.totalCorpus, bold: true },
     { label: '' },
     { label: 'LIABILITIES', bold: true, muted: true },
     { label: '' },
-    ...liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true })),
+    ...liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
     { label: 'Total Liabilities', amount: data.totalLiabilities, bold: true },
   ]
 
   const rightRows = [
     { label: 'ASSETS', bold: true, muted: true },
     { label: '' },
-    ...assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true })),
+    ...assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true, accountId: a.id })),
     { label: '' },
     { label: 'Total Assets', amount: data.totalAssets, bold: true },
   ]
@@ -254,6 +269,7 @@ function BalanceSheet({ data, showZero }) {
         leftTotal={leftTotal} rightTotal={rightTotal}
         leftLabel="Corpus Fund & Liabilities"
         rightLabel="Assets"
+        navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <div style={{ marginTop: 14, padding: '12px 20px', borderRadius: 10, background: isBalanced ? '#f0fdf4' : '#fff5f5', border: `1.5px solid ${isBalanced ? '#86efac' : '#fca5a5'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
         {isBalanced ? <CheckCircle size={20} color="#16a34a" /> : <XCircle size={20} color="#b91c1c" />}
@@ -495,8 +511,8 @@ export default function FinancialStatementsPage() {
           </div>
 
           {tab === 'rp' && rp && <ReceiptsPayments data={rp} />}
-          {tab === 'ie' && ie && <IncomeExpenditure data={ie} showZero={showZero} />}
-          {tab === 'bs' && bs && <BalanceSheet data={bs} showZero={showZero} />}
+          {tab === 'ie' && ie && <IncomeExpenditure data={ie} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
+          {tab === 'bs' && bs && <BalanceSheet data={bs} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
         </div>
       )}
 

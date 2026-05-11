@@ -2,7 +2,7 @@
    AccountingReportsPage.jsx — Day Book, Account Summary & GL Reports
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
@@ -14,7 +14,7 @@ import {
 import {
   ArrowLeft, BookOpen, Calendar, Filter, Download,
   TrendingUp, TrendingDown, BarChart2, Loader2,
-  ChevronDown, FileText, Search, X, Scale,
+  ChevronDown, ChevronRight, FileText, Search, X, Scale,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ export default function AccountingReportsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
 
-  const [tab, setTab] = useState('daybook') // 'daybook' | 'account-summary'
+  const [tab, setTab] = useState('daybook') // 'daybook' | 'account-summary' | 'group-report'
 
   const today = new Date().toISOString().slice(0, 10)
   const monthStart = today.slice(0, 8) + '01'
@@ -67,6 +67,10 @@ export default function AccountingReportsPage() {
   const [allAccounts, setAllAccounts] = useState([])
   const [balances,    setBalances]    = useState([])
   const [acLoading,   setAcLoading]   = useState(false)
+
+  // ── Group Report state ────────────────────────────────────────
+  const [grpExpanded, setGrpExpanded] = useState(new Set())
+  const [grShowZero,  setGrShowZero]  = useState(false)
 
   const FYS = fyOptions()
   const AC_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
@@ -106,7 +110,7 @@ export default function AccountingReportsPage() {
     setAcLoading(false)
   }, [fy, toast])
 
-  useEffect(() => { if (tab === 'account-summary') loadAccountSummary() }, [tab, loadAccountSummary])
+  useEffect(() => { if (tab === 'account-summary' || tab === 'group-report') loadAccountSummary() }, [tab, loadAccountSummary])
 
   // ── Expand row to show entry lines ────────────────────────────
   async function toggleLines(entry) {
@@ -155,6 +159,134 @@ export default function AccountingReportsPage() {
     return acc
   }, {})
 
+  // ── Group Report computed data ────────────────────────────────
+  const childrenMap = useMemo(() => {
+    const m = {}
+    allAccounts.forEach(a => {
+      const k = a.parent_id || '__ROOT__'
+      if (!m[k]) m[k] = []
+      m[k].push(a)
+    })
+    return m
+  }, [allAccounts])
+
+  const grAllGroupIds = useMemo(
+    () => allAccounts.filter(a => (childrenMap[a.id] || []).length > 0).map(a => a.id),
+    [allAccounts, childrenMap]
+  )
+
+  const grRows = useMemo(() => {
+    if (!allAccounts.length) return []
+    const lbm = Object.fromEntries(balances.map(b => [b.account_id, b]))
+
+    function leafNet(a) {
+      const b = lbm[a.id]
+      const dr = Number(b?.total_debit || 0), cr = Number(b?.total_credit || 0)
+      const op = Number(b?.opening_balance || a.opening_balance || 0)
+      return ['Asset', 'Expense'].includes(a.account_type) ? op + dr - cr : op + cr - dr
+    }
+    function netBal(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? leafNet(a) : ch.reduce((s, c) => s + netBal(c), 0)
+    }
+    function totDr(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? Number(lbm[a.id]?.total_debit || 0) : ch.reduce((s, c) => s + totDr(c), 0)
+    }
+    function totCr(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? Number(lbm[a.id]?.total_credit || 0) : ch.reduce((s, c) => s + totCr(c), 0)
+    }
+
+    // Collect all leaf descendants of an account list
+    function getLeaves(accounts) {
+      const out = []
+      accounts.forEach(a => {
+        const ch = childrenMap[a.id] || []
+        if (ch.length === 0) out.push(a)
+        else out.push(...getLeaves(ch))
+      })
+      return out
+    }
+
+    // Identify cash & bank leaf accounts under Assets
+    const assetRoots = allAccounts.filter(a => a.account_type === 'Asset' && !a.parent_id)
+    const assetLeaves = getLeaves(assetRoots)
+    const bankLeaves = assetLeaves.filter(a => /bank/i.test(a.name)).sort((a, b) => a.name.localeCompare(b.name))
+    const cashLeaves = assetLeaves.filter(a => /cash|hand|petty/i.test(a.name) && !/bank/i.test(a.name)).sort((a, b) => a.name.localeCompare(b.name))
+    const cbIds = new Set([...bankLeaves, ...cashLeaves].map(a => a.id))
+
+    // Does an account (or any descendant) have non-cash/bank content?
+    function hasOtherContent(a) {
+      const ch = childrenMap[a.id] || []
+      if (ch.length === 0) return !cbIds.has(a.id)
+      return ch.some(c => hasOtherContent(c))
+    }
+
+    function sortedBy(arr) {
+      return [...arr].sort((a, b) => {
+        const ag = (childrenMap[a.id] || []).length > 0
+        const bg = (childrenMap[b.id] || []).length > 0
+        if (ag !== bg) return ag ? -1 : 1
+        return (a.code || a.name).localeCompare(b.code || b.name)
+      })
+    }
+
+    // Flatten hierarchy, skipping accounts already in dedicated cash/bank sections
+    function flatten(accounts, depth) {
+      const rows = []
+      sortedBy(accounts).forEach(a => {
+        const ch = childrenMap[a.id] || []
+        const isGroup = ch.length > 0
+        if (!isGroup && cbIds.has(a.id)) return        // shown in dedicated section
+        if (isGroup && !hasOtherContent(a)) return     // all children are cash/bank
+        const net = netBal(a), dr = totDr(a), cr = totCr(a)
+        if (!grShowZero && net === 0 && dr === 0 && cr === 0) return
+        rows.push({ ...a, depth, isGroup, net, totalDr: dr, totalCr: cr })
+        if (isGroup && grpExpanded.has(a.id)) rows.push(...flatten(ch, depth + 1))
+      })
+      return rows
+    }
+
+    // Build leaf rows for a cash/bank section
+    function cbSection(leaves, label, colorKey) {
+      const out = []
+      const sRows = []
+      leaves.forEach(l => {
+        const net = leafNet(l), dr = Number(lbm[l.id]?.total_debit || 0), cr = Number(lbm[l.id]?.total_credit || 0)
+        if (!grShowZero && net === 0 && dr === 0 && cr === 0) return
+        sRows.push({ ...l, depth: 0, isGroup: false, net, totalDr: dr, totalCr: cr })
+      })
+      if (sRows.length === 0 && !grShowZero) return out
+      const totNet = sRows.reduce((s, r) => s + r.net, 0)
+      const totD   = sRows.reduce((s, r) => s + r.totalDr, 0)
+      const totC   = sRows.reduce((s, r) => s + r.totalCr, 0)
+      out.push({ isCashBankHeader: true, label, colorKey, net: totNet, totalDr: totD, totalCr: totC })
+      out.push(...sRows)
+      return out
+    }
+
+    const rows = []
+    AC_TYPES.forEach(type => {
+      const roots = allAccounts.filter(a => a.account_type === type && !a.parent_id)
+      if (roots.length === 0) return
+      const typeNet = roots.reduce((s, r) => s + netBal(r), 0)
+      const typeDr  = roots.reduce((s, r) => s + totDr(r), 0)
+      const typeCr  = roots.reduce((s, r) => s + totCr(r), 0)
+      if (!grShowZero && typeNet === 0 && typeDr === 0 && typeCr === 0) return
+      rows.push({ isTypeHeader: true, type, net: typeNet, totalDr: typeDr, totalCr: typeCr })
+
+      if (type === 'Asset') {
+        rows.push(...cbSection(bankLeaves, 'Bank Accounts', 'bank'))
+        rows.push(...cbSection(cashLeaves, 'Cash Accounts', 'cash'))
+        rows.push(...flatten(roots, 0))  // remaining non-CB assets
+      } else {
+        rows.push(...flatten(roots, 0))
+      }
+    })
+    return rows
+  }, [allAccounts, balances, childrenMap, grpExpanded, grShowZero])
+
   const TYPE_COLOR_MAP = {
     Asset:     { bg: '#dbeafe', text: '#1d4ed8' },
     Liability: { bg: '#fee2e2', text: '#b91c1c' },
@@ -182,6 +314,7 @@ export default function AccountingReportsPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <TabBtn active={tab === 'daybook'}        onClick={() => setTab('daybook')}>Day Book</TabBtn>
           <TabBtn active={tab === 'account-summary'} onClick={() => setTab('account-summary')}>Account Summary</TabBtn>
+          <TabBtn active={tab === 'group-report'}   onClick={() => setTab('group-report')}>Group Report</TabBtn>
         </div>
       </div>
 
@@ -423,6 +556,151 @@ export default function AccountingReportsPage() {
                 )
               })}
             </>
+          )}
+        </>
+      )}
+
+      {/* ══════════ GROUP REPORT TAB ════════════════════════════════ */}
+      {tab === 'group-report' && (
+        <>
+          {/* Controls */}
+          <div className="card" style={{ padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                FY {fy} <ChevronDown size={13} />
+              </button>
+              {fyOpen && (
+                <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
+                  {FYS.map(f => (
+                    <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>FY {f}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => setGrpExpanded(new Set(grAllGroupIds))}
+              style={{ padding: '6px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+              Expand All
+            </button>
+            <button onClick={() => setGrpExpanded(new Set())}
+              style={{ padding: '6px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+              Collapse All
+            </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)', cursor: 'pointer', marginLeft: 'auto' }}>
+              <input type="checkbox" checked={grShowZero} onChange={e => setGrShowZero(e.target.checked)} />
+              Show zero-balance accounts
+            </label>
+          </div>
+
+          {acLoading ? (
+            <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
+              <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accounts…
+            </div>
+          ) : grRows.length === 0 ? (
+            <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
+              <Scale size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
+              <p style={{ margin: 0, fontSize: 13 }}>No account balances for FY {fy}</p>
+            </div>
+          ) : (
+            <div className="card" style={{ overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ background: 'var(--table-header-bg)' }}>
+                  <tr>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account / Group</th>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'right', width: 130 }}>Debit</th>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'right', width: 130 }}>Credit</th>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'right', width: 150 }}>Net Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grRows.map((row, i) => {
+                    if (row.isCashBankHeader) {
+                      const isBank = row.colorKey === 'bank'
+                      const hdrColor = isBank ? '#2563eb' : '#16a34a'
+                      const hdrBg    = isBank ? 'rgba(37,99,235,0.07)' : 'rgba(22,163,74,0.07)'
+                      return (
+                        <tr key={'cbh-' + row.label} style={{ background: hdrBg }}>
+                          <td colSpan={3} style={{ padding: '8px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: hdrColor }}>
+                            {row.label}
+                          </td>
+                          <td style={{ padding: '8px 16px', textAlign: 'right', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: hdrColor }}>
+                            {fmtAmt(Math.abs(row.net))}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    if (row.isTypeHeader) {
+                      const tc = TYPE_COLOR_MAP[row.type]
+                      return (
+                        <tr key={'th-' + row.type} style={{ background: tc.bg }}>
+                          <td colSpan={3} style={{ padding: '9px 16px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: tc.text }}>
+                            {displayAccountType(row.type)} Accounts
+                          </td>
+                          <td style={{ padding: '9px 16px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: tc.text }}>
+                            {fmtAmt(Math.abs(row.net))}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    if (row.isGroup) {
+                      const expanded = grpExpanded.has(row.id)
+                      return (
+                        <tr key={row.id}
+                          onClick={() => setGrpExpanded(prev => { const n = new Set(prev); n.has(row.id) ? n.delete(row.id) : n.add(row.id); return n })}
+                          style={{ cursor: 'pointer', background: 'rgba(0,0,0,0.025)', borderTop: '1px solid var(--card-border)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--sidebar-item-hover)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.025)'}
+                        >
+                          <td style={{ padding: '9px 14px', paddingLeft: 14 + row.depth * 20 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <ChevronRight size={13} color="var(--text-3)"
+                                style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{row.name}</span>
+                              {row.code && <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace' }}>{row.code}</span>}
+                            </div>
+                          </td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb' }}>
+                            {row.totalDr > 0 ? fmtAmt(row.totalDr) : '—'}
+                          </td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a' }}>
+                            {row.totalCr > 0 ? fmtAmt(row.totalCr) : '—'}
+                          </td>
+                          <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
+                            {fmtAmt(Math.abs(row.net))}
+                          </td>
+                        </tr>
+                      )
+                    }
+                    // Leaf account — click to open ledger
+                    return (
+                      <tr key={row.id}
+                        onClick={() => navigate(`/accounting/ledger?account=${row.id}`)}
+                        style={{ cursor: 'pointer', borderTop: '1px solid var(--card-border)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--sidebar-item-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '8px 14px', paddingLeft: 14 + row.depth * 20 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)', flexShrink: 0 }} />
+                            <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{row.name}</span>
+                            {row.code && <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace' }}>{row.code}</span>}
+                            <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 'auto', fontWeight: 600 }}>Ledger →</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb' }}>
+                          {row.totalDr > 0 ? fmtAmt(row.totalDr) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a' }}>
+                          {row.totalCr > 0 ? fmtAmt(row.totalCr) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-2)' }}>
+                          {fmtAmt(Math.abs(row.net))}{row.net < 0 ? ' (Cr)' : ''}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}

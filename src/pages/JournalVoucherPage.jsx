@@ -11,8 +11,12 @@ import {
 } from '../lib/accountingLib'
 import {
   Loader2, Save, CheckSquare, ArrowLeft, CheckCircle2,
-  Plus, Trash2, FileText,
+  Plus, Trash2, FileText, Printer,
 } from 'lucide-react'
+import NarrationInput from '../components/accounting/NarrationInput'
+import VoucherPrint from '../components/accounting/VoucherPrint'
+import { getChurch } from '../lib/supabase'
+import { getFunds } from '../lib/accountingLib'
 
 const ACCENT = '#0891b2'
 
@@ -149,6 +153,10 @@ export default function JournalVoucherPage() {
   const [debitLines,  setDebitLines]  = useState([newLine()])
   const [creditLines, setCreditLines] = useState([newLine()])
 
+  const [church,     setChurch]    = useState(null)
+  const [showPrint,  setShowPrint] = useState(false)
+  const [funds,   setFunds]   = useState([])
+  const [fundId,  setFundId]  = useState('')
   const [saving,  setSaving]  = useState(false)
   const [posting, setPosting] = useState(false)
 
@@ -163,6 +171,9 @@ export default function JournalVoucherPage() {
   const isValid = isBalanced && hasDebitAccounts && hasCreditAccounts
   const busy = saving || posting
 
+  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
+  useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
+
   useEffect(() => {
     const promises = [getChartOfAccounts(true), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
@@ -173,6 +184,7 @@ export default function JournalVoucherPage() {
         setEntryDate(existing.entry_date || new Date().toISOString().slice(0, 10))
         setRefNo(existing.reference_no || '')
         setNarration(existing.narration || '')
+        if (existing.fund_id) setFundId(existing.fund_id)
         const dLines = (existing.journal_entry_lines || []).filter(l => Number(l.debit_amount) > 0)
         const cLines = (existing.journal_entry_lines || []).filter(l => Number(l.credit_amount) > 0)
         if (dLines.length > 0) {
@@ -210,6 +222,7 @@ export default function JournalVoucherPage() {
       const entry = {
         entry_number: voucherNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Journal', narration: narration || null, reference_no: refNo || null,
+        fund_id: fundId || null,
       }
       const jLines = [
         ...debitLines.map(l => ({ account_id: l.accountId, debit_amount: parseFloat(l.amount), credit_amount: 0, description: narration || null })),
@@ -250,6 +263,10 @@ export default function JournalVoucherPage() {
         <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: ACCENT, background: '#e0f2fe', padding: '4px 10px', borderRadius: 6 }}>
           {voucherNo}
         </div>
+        <button onClick={() => setShowPrint(true)} title="Print voucher"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
+          <Printer size={14} /> Print
+        </button>
       </div>
 
       {/* Voucher meta */}
@@ -261,13 +278,24 @@ export default function JournalVoucherPage() {
           </div>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Narration</label>
-            <input className="field-input" placeholder="Description of this entry" value={narration} onChange={e => setNarration(e.target.value)} disabled={busy} />
+            <NarrationInput placeholder="Description of this entry" value={narration} onChange={setNarration} disabled={busy} />
           </div>
           <div>
             <label className="field-label" style={{ display: 'block', marginBottom: 4 }}>Reference No</label>
             <input className="field-input" placeholder="Voucher / cheque no" value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
           </div>
         </div>
+        {funds.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
+            <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
+              style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
+              <option value="">— None (General) —</option>
+              {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
+          </div>
+        )}
       </div>
 
       {/* Debit / Credit panels side-by-side */}
@@ -327,6 +355,26 @@ export default function JournalVoucherPage() {
         </div>
       </div>
 
+      <VoucherPrint
+        open={showPrint} onClose={() => setShowPrint(false)}
+        church={church}
+        voucherType="Journal"
+        voucherNo={voucherNo}
+        date={entryDate}
+        refNo={refNo}
+        narration={narration}
+        rows={[
+          ...debitLines.filter(l => l.accountId && parseFloat(l.amount) > 0).map(l => ({
+            label: `Dr: ${l.accountName || accounts.find(a => a.id === l.accountId)?.name || l.accountId}`,
+            amount: parseFloat(l.amount),
+          })),
+          ...creditLines.filter(l => l.accountId && parseFloat(l.amount) > 0).map(l => ({
+            label: `Cr: ${l.accountName || accounts.find(a => a.id === l.accountId)?.name || l.accountId}`,
+            amount: parseFloat(l.amount),
+          })),
+        ]}
+        totalAmount={totalDebit}
+      />
     </div>
   )
 }

@@ -18,6 +18,7 @@ import {
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
   BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
   ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight, Layers,
+  Copy, Archive, CheckSquare, BarChart, Target,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -620,7 +621,24 @@ export default function AccountingPage() {
               <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Master Setup</p>
             </div>
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <QuickBtn icon={BookOpen} label="Chart of Accounts" desc="View & manage account hierarchy" onClick={() => navigate('/accounting/chart-of-accounts')} color="#475569" />
+              <QuickBtn icon={BookOpen} label="Chart of Accounts"  desc="View & manage account hierarchy"    onClick={() => navigate('/accounting/chart-of-accounts')} color="#475569" />
+              <QuickBtn icon={Scale}    label="Opening Balances"   desc="Set account balances at FY start"   onClick={() => navigate('/accounting/opening-balances')}  color="#0891b2" />
+              <QuickBtn icon={Copy}     label="Journal Templates"  desc="Save & reuse recurring entries"     onClick={() => navigate('/accounting/templates')}          color="#7c3aed" />
+              <QuickBtn icon={Wallet}   label="Designated Funds"   desc="Building, Benevolence & other funds" onClick={() => navigate('/accounting/funds')}              color="#c2410c" />
+            </div>
+          </div>
+
+          {/* Year-End & Reconciliation */}
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Archive size={14} color="#c2410c" />
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Year-End &amp; Analysis</p>
+            </div>
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <QuickBtn icon={Archive}     label="Year-End Closing"     desc="Post closing entries to Corpus Fund"  onClick={() => navigate('/accounting/year-end-closing')}    color="#c2410c" />
+              <QuickBtn icon={CheckSquare} label="Bank Reconciliation"  desc="Match entries against bank statement"  onClick={() => navigate('/accounting/bank-reconciliation')} color="#0891b2" />
+              <QuickBtn icon={BarChart}    label="Budget vs Actual"     desc="Compare budgets to real spending"      onClick={() => navigate('/accounting/budget-vs-actual')}    color="#16a34a" />
+              <QuickBtn icon={Target}     label="Fund Report"          desc="Balances per designated fund"          onClick={() => navigate('/accounting/fund-report')}         color="#7c3aed" />
             </div>
           </div>
 

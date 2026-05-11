@@ -11,8 +11,12 @@ import {
 } from '../lib/accountingLib'
 import {
   PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
-  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil,
+  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer,
 } from 'lucide-react'
+import NarrationInput from '../components/accounting/NarrationInput'
+import VoucherPrint from '../components/accounting/VoucherPrint'
+import { getChurch } from '../lib/supabase'
+import { getFunds } from '../lib/accountingLib'
 
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
@@ -141,6 +145,10 @@ export default function PaymentVoucherPage() {
   const [creditLabel,   setCreditLabel]   = useState('')
   const [lines,         setLines]         = useState(() => [blankLine(), blankLine()])
   const [lineNarration, setLineNarration] = useState('')
+  const [church,        setChurch]        = useState(null)
+  const [showPrint,     setShowPrint]     = useState(false)
+  const [funds,         setFunds]         = useState([])
+  const [fundId,        setFundId]        = useState('')
   const [saving,        setSaving]        = useState(false)
   const [posting,       setPosting]       = useState(false)
 
@@ -158,6 +166,9 @@ export default function PaymentVoucherPage() {
   const total   = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
   const isValid = creditCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
   const busy    = saving || posting
+
+  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
+  useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
 
   useEffect(() => {
     const promises = [getChartOfAccounts(true), getAccountingSettings()]
@@ -178,6 +189,7 @@ export default function PaymentVoucherPage() {
         }
         setLines(debitLines.map(l => ({ _key: crypto.randomUUID(), account_id: l.account_id, amount: String(l.debit_amount) })))
         setLineNarration(existing.narration || debitLines[0]?.description || '')
+        if (existing.fund_id) setFundId(existing.fund_id)
         setStep(3)
       } else {
         const fy  = getFY(new Date().toISOString().slice(0, 10))
@@ -206,6 +218,7 @@ export default function PaymentVoucherPage() {
       const entry = {
         entry_number: voucherNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Payment', narration: lineNarration || null, reference_no: refNo || null,
+        fund_id: fundId || null,
       }
       const jLines = [
         { account_id: creditCoaId, debit_amount: 0, credit_amount: total, description: paidTo || null },
@@ -247,6 +260,10 @@ export default function PaymentVoucherPage() {
         <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: accentColor, background: '#fee2e2', padding: '4px 10px', borderRadius: 6 }}>
           {voucherNo}
         </div>
+        <button onClick={() => setShowPrint(true)} title="Print voucher"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
+          <Printer size={14} /> Print
+        </button>
       </div>
 
       {/* Voucher meta */}
@@ -265,6 +282,17 @@ export default function PaymentVoucherPage() {
             <input className="field-input" placeholder="Cheque / txn no" value={refNo} onChange={e => setRefNo(e.target.value)} disabled={busy} />
           </div>
         </div>
+        {funds.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
+            <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
+              style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
+              <option value="">— None (General) —</option>
+              {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
+          </div>
+        )}
       </div>
 
       {/* Step progress */}
@@ -368,7 +396,7 @@ export default function PaymentVoucherPage() {
             {/* Narration */}
             <div style={{ marginTop: 16, borderTop: '1px solid var(--card-border)', paddingTop: 14 }}>
               <label className="field-label" style={{ display: 'block', marginBottom: 5 }}>Narration</label>
-              <input className="field-input" placeholder="Narration for this payment…" value={lineNarration} onChange={e => setLineNarration(e.target.value)} disabled={busy} />
+              <NarrationInput placeholder="Narration for this payment…" value={lineNarration} onChange={setLineNarration} disabled={busy} />
             </div>
           </div>
 
@@ -395,6 +423,24 @@ export default function PaymentVoucherPage() {
           </div>
         </>
       )}
+      <VoucherPrint
+        open={showPrint} onClose={() => setShowPrint(false)}
+        church={church}
+        voucherType="Payment"
+        voucherNo={voucherNo}
+        date={entryDate}
+        refNo={refNo}
+        narration={lineNarration}
+        party={paidTo}
+        rows={[
+          ...lines.filter(l => l.account_id && parseFloat(l.amount) > 0).map(l => ({
+            label: `Dr: ${debitAccounts.find(a => a.id === l.account_id)?.name || l.account_id}`,
+            amount: parseFloat(l.amount),
+          })),
+          { label: `Cr: ${creditLabel}`, amount: total, bold: true },
+        ]}
+        totalAmount={total}
+      />
     </div>
   )
 }

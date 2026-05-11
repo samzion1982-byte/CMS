@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { Menu, ChevronLeft,
+import { ChevronLeft, ChevronRight,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
@@ -161,7 +161,7 @@ function CollapseBtn({ collapsed, onToggle }) {
         flexShrink: 0,
       }}
     >
-      {collapsed ? <Menu size={12} /> : <ChevronLeft size={12} />}
+      {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
     </button>
   )
 }

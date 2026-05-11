@@ -9,6 +9,7 @@ import { getTrialBalance, getFY, fyOptions, fmtAmt, TYPE_COLOR, displayAccountTy
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 import { Scale, ArrowLeft, Loader2, FileSpreadsheet, Printer, ChevronDown } from 'lucide-react'
+import DatePresets from '../components/accounting/DatePresets'
 
 export default function TrialBalancePage() {
   const navigate = useNavigate()
@@ -74,6 +75,11 @@ export default function TrialBalancePage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Date presets */}
+      <div style={{ marginBottom: 8 }}>
+        <DatePresets onSelect={() => {}} />
       </div>
 
       {/* Controls */}

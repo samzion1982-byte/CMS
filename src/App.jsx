@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
 import { supabase, getChurch, LICENSE_CSV, VENDOR } from './lib/supabase'
@@ -42,6 +42,13 @@ import ReceiptVoucherPage         from './pages/ReceiptVoucherPage'
 import PaymentVoucherPage         from './pages/PaymentVoucherPage'
 import ContraVoucherPage          from './pages/ContraVoucherPage'
 import JournalVoucherPage         from './pages/JournalVoucherPage'
+import OpeningBalancesPage        from './pages/OpeningBalancesPage'
+import FundsPage                  from './pages/FundsPage'
+import FundReportPage             from './pages/FundReportPage'
+import JournalTemplatesPage       from './pages/JournalTemplatesPage'
+import YearEndClosingPage         from './pages/YearEndClosingPage'
+import BankReconciliationPage     from './pages/BankReconciliationPage'
+import BudgetVsActualPage         from './pages/BudgetVsActualPage'
 
 console.log('📱 App component rendering')
 
@@ -221,31 +228,40 @@ function PrivateRoute({ children }) {
 // 🌐 Public Route
 function PublicRoute({ children }) {
   const { session, loading } = useAuth()
+  const [canRedirect, setCanRedirect] = useState(false)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    if (!session) {
+      setCanRedirect(false)
+      clearTimeout(timerRef.current)
+      return
+    }
+    if (sessionStorage.getItem('login_welcome')) {
+      // Just logged in — hold redirect so "Welcome back" animation is visible
+      timerRef.current = setTimeout(() => {
+        sessionStorage.removeItem('login_welcome')
+        setCanRedirect(true)
+      }, 3000)
+    } else {
+      // Already had a session (e.g. navigated back to /login while logged in)
+      setCanRedirect(true)
+    }
+    return () => clearTimeout(timerRef.current)
+  }, [session])
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
         <div className="text-center">
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              border: '3px solid #e2e8f0',
-              borderTopColor: '#2563eb',
-              borderRadius: '50%',
-              animation: 'spin .7s linear infinite',
-              margin: '0 auto 12px',
-            }}
-          />
+          <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#2563eb', borderRadius:'50%', animation:'spin .7s linear infinite', margin:'0 auto 12px' }} />
           <p className="text-sm text-slate-500">Loading...</p>
         </div>
       </div>
     )
   }
 
-  if (session) {
-    return <Navigate to="/dashboard" replace />
-  }
+  if (session && canRedirect) return <Navigate to="/dashboard" replace />
 
   return children
 }
@@ -382,6 +398,13 @@ function AppRoutes() {
       <Route path="/accounting/payment-voucher" element={<PrivateRoute><AppLayout><PaymentVoucherPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/contra-voucher"  element={<PrivateRoute><AppLayout><ContraVoucherPage /></AppLayout></PrivateRoute>} />
       <Route path="/accounting/journal-voucher" element={<PrivateRoute><AppLayout><JournalVoucherPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/opening-balances"   element={<PrivateRoute><AppLayout><OpeningBalancesPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/templates"          element={<PrivateRoute><AppLayout><JournalTemplatesPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/year-end-closing"   element={<PrivateRoute><AppLayout><YearEndClosingPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/bank-reconciliation" element={<PrivateRoute><AppLayout><BankReconciliationPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/budget-vs-actual"   element={<PrivateRoute><AppLayout><BudgetVsActualPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/funds"              element={<PrivateRoute><AppLayout><FundsPage /></AppLayout></PrivateRoute>} />
+      <Route path="/accounting/fund-report"        element={<PrivateRoute><AppLayout><FundReportPage /></AppLayout></PrivateRoute>} />
 
       {/* ── Simple Accounts Module ── */}
       <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />
