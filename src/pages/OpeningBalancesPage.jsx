@@ -9,7 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getFY, fyOptions, fyDateRange, fmtAmt,
-  getChartOfAccounts, getPostableAccountsWithPath,
+  getChartOfAccounts, getPostableAccounts, getPostableAccountsWithPath,
   TYPE_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
@@ -64,6 +64,19 @@ export default function OpeningBalancesPage() {
           }
         }
       }
+
+      // Pre-populate from COA opening_balance field for accounts not yet in the journal entry
+      const postable2 = getPostableAccounts(all)
+      for (const a of postable2) {
+        if (!map[a.id] && Number(a.opening_balance)) {
+          const amt = String(Math.abs(Number(a.opening_balance)))
+          const drTypes = ['Asset', 'Expense']
+          map[a.id] = drTypes.includes(a.account_type)
+            ? { debit: amt, credit: '' }
+            : { debit: '', credit: amt }
+        }
+      }
+
       setBalances(map)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
@@ -164,12 +177,12 @@ export default function OpeningBalancesPage() {
     return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
       // Level-2 group accounts for this type
       const level2 = allAccounts
-        .filter(a => a.account_type === type && a.account_level === 2)
+        .filter(a => a.account_type === type && a.level === 2)
         .sort((a, b) => a.name.localeCompare(b.name))
 
       // Postable accounts for this type
       const postable = allAccounts
-        .filter(a => a.account_type === type && (a.account_level === 3 || a.account_level === 4))
+        .filter(a => a.account_type === type && (a.level === 3 || a.level === 4))
 
       const level2Ids = new Set(level2.map(g => g.id))
 
