@@ -91,13 +91,13 @@ export default function OpeningBalancesPage() {
     }))
   }
 
-  const totalDebit  = accounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
-  const totalCredit = accounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
+  const totalDebit  = leafAccounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
+  const totalCredit = leafAccounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
   const diff = Math.abs(totalDebit - totalCredit)
   const balanced = diff < 0.01
 
   async function handleSave() {
-    const lines = accounts
+    const lines = leafAccounts
       .filter(a => parseFloat(balances[a.id]?.debit) > 0 || parseFloat(balances[a.id]?.credit) > 0)
       .map(a => ({
         account_id:    a.id,
@@ -154,8 +154,8 @@ export default function OpeningBalancesPage() {
   }
 
   const equityAccounts = useMemo(
-    () => accounts.filter(a => a.account_type === 'Equity'),
-    [accounts]
+    () => leafAccounts.filter(a => a.account_type === 'Equity'),
+    [leafAccounts]
   )
 
   function handleAutoBalance() {
@@ -173,30 +173,40 @@ export default function OpeningBalancesPage() {
     })
   }
 
-  const grouped = useMemo(() => {
-    return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
-      // Level-2 group accounts for this type
-      const level2 = allAccounts
-        .filter(a => a.account_type === type && a.level === 2)
-        .sort((a, b) => a.name.localeCompare(b.name))
+  // Leaf accounts = accounts with no children (actual posting accounts)
+  const leafAccounts = useMemo(() => {
+    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
+    return allAccounts.filter(a => a.level >= 3 && !parentIds.has(a.id))
+  }, [allAccounts])
 
-      // Postable accounts for this type
-      const postable = allAccounts
-        .filter(a => a.account_type === type && (a.level === 3 || a.level === 4))
+  const grouped = useMemo(() => {
+    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
+
+    return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
+      const ofType = allAccounts.filter(a => a.account_type === type)
+
+      // Level-2 groups
+      const level2 = ofType.filter(a => a.level === 2).sort((a, b) => a.name.localeCompare(b.name))
+
+      // Level-3 accounts with their level-4 children
+      const level3 = ofType.filter(a => a.level === 3).sort((a, b) => a.name.localeCompare(b.name))
+      const level4 = ofType.filter(a => a.level === 4).sort((a, b) => a.name.localeCompare(b.name))
+
+      const level3Nodes = level3.map(a => ({
+        ...a,
+        isGroup: parentIds.has(a.id),
+        children: level4.filter(c => c.parent_id === a.id).sort((a, b) => a.name.localeCompare(b.name)),
+      }))
 
       const level2Ids = new Set(level2.map(g => g.id))
 
       const groups = level2.map(g => ({
         ...g,
-        leaves: postable
-          .filter(a => a.parent_id === g.id)
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      })).filter(g => g.leaves.length > 0)
+        items: level3Nodes.filter(a => a.parent_id === g.id),
+      })).filter(g => g.items.length > 0)
 
-      // Postable accounts not under any level-2 group
-      const ungrouped = postable
-        .filter(a => !level2Ids.has(a.parent_id))
-        .sort((a, b) => a.name.localeCompare(b.name))
+      // level-3 nodes not under any level-2 (edge case)
+      const ungrouped = level3Nodes.filter(a => !level2Ids.has(a.parent_id))
 
       return { type, groups, ungrouped }
     }).filter(({ groups, ungrouped }) => groups.length > 0 || ungrouped.length > 0)
@@ -301,18 +311,29 @@ export default function OpeningBalancesPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {grouped.map(({ type, groups, ungrouped }) => {
             const c = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
-            const allLeaves = [...groups.flatMap(g => g.leaves), ...ungrouped]
-            const typeDr = allLeaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
-            const typeCr = allLeaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
 
-            function renderLeaf(a, i) {
+            // Sum all leaf balances under an array of accounts recursively
+            function leafSum(items, field) {
+              let s = 0
+              for (const a of items) {
+                if (a.isGroup) s += leafSum(a.children, field)
+                else s += parseFloat(balances[a.id]?.[field]) || 0
+              }
+              return s
+            }
+
+            const allItems = [...groups.flatMap(g => g.items), ...ungrouped]
+            const typeDr = leafSum(allItems, 'debit')
+            const typeCr = leafSum(allItems, 'credit')
+
+            // Render an editable leaf row (level-3 without children, or level-4)
+            function renderLeaf(a, indent) {
               const b     = balances[a.id] || { debit: '', credit: '' }
               const hasDr = parseFloat(b.debit)  > 0
               const hasCr = parseFloat(b.credit) > 0
-              const rowBg = i % 2 === 0 ? 'transparent' : c.bg + '28'
               return (
-                <tr key={a.id} style={{ background: rowBg, borderTop: `1px solid ${c.text}12` }}>
-                  <td style={{ padding: '7px 16px 7px 36px', fontSize: 13, color: 'var(--text-1)', fontWeight: (hasDr || hasCr) ? 600 : 400 }}>
+                <tr key={a.id} style={{ borderTop: `1px solid ${c.text}12` }}>
+                  <td style={{ padding: `7px 16px 7px ${indent}px`, fontSize: 13, color: 'var(--text-1)', fontWeight: (hasDr || hasCr) ? 600 : 400 }}>
                     {a.name}
                   </td>
                   <td style={{ padding: '5px 10px', width: 180 }}>
@@ -330,6 +351,34 @@ export default function OpeningBalancesPage() {
                     />
                   </td>
                 </tr>
+              )
+            }
+
+            // Render a level-3 item: either a sub-group row (with L4 children) or a leaf row
+            function renderL3(item) {
+              if (!item.isGroup) return renderLeaf(item, 32)
+              const isCollapsed = collapsedGroups.has(item.id)
+              const sDr = leafSum(item.children, 'debit')
+              const sCr = leafSum(item.children, 'credit')
+              return (
+                <React.Fragment key={item.id}>
+                  <tr onClick={() => toggleGroup(item.id)}
+                    style={{ cursor: 'pointer', background: c.bg + '40', borderTop: `1px solid ${c.text}15` }}>
+                    <td style={{ padding: '7px 16px 7px 32px', fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <ChevronRight size={13} style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s', color: c.text }} />
+                        {item.name}
+                      </span>
+                    </td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb', fontWeight: 600 }}>
+                      {sDr > 0 ? fmtAmt(sDr) : ''}
+                    </td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
+                      {sCr > 0 ? fmtAmt(sCr) : ''}
+                    </td>
+                  </tr>
+                  {!isCollapsed && item.children.map(ch => renderLeaf(ch, 52))}
+                </React.Fragment>
               )
             }
 
@@ -358,13 +407,13 @@ export default function OpeningBalancesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Level-2 group rows with their leaf children */}
                     {groups.map(g => {
                       const isCollapsed = collapsedGroups.has(g.id)
-                      const gDr = g.leaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
-                      const gCr = g.leaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
+                      const gDr = leafSum(g.items, 'debit')
+                      const gCr = leafSum(g.items, 'credit')
                       return (
                         <React.Fragment key={g.id}>
+                          {/* Level-2 group row */}
                           <tr onClick={() => toggleGroup(g.id)}
                             style={{ cursor: 'pointer', background: c.bg + '70', borderTop: `1.5px solid ${c.text}20` }}>
                             <td style={{ padding: '8px 16px', fontSize: 12, fontWeight: 700, color: c.text }}>
@@ -380,12 +429,12 @@ export default function OpeningBalancesPage() {
                               {gCr > 0 ? fmtAmt(gCr) : ''}
                             </td>
                           </tr>
-                          {!isCollapsed && g.leaves.map((a, i) => renderLeaf(a, i))}
+                          {/* Level-3 items (sub-group or leaf) */}
+                          {!isCollapsed && g.items.map(item => renderL3(item))}
                         </React.Fragment>
                       )
                     })}
-                    {/* Ungrouped postable accounts (no level-2 parent) */}
-                    {ungrouped.map((a, i) => renderLeaf(a, i))}
+                    {ungrouped.map(item => renderL3(item))}
                   </tbody>
                 </table>
               </div>
