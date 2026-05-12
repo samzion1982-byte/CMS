@@ -220,22 +220,18 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
 
   const [form, setForm] = useState(() => isEdit
     ? {
-        name:                 node.name,
-        account_type:         node.account_type,
-        description:          node.description || '',
-        is_active:            node.is_active !== false,
-        opening_balance:      node.opening_balance || '',
-        opening_balance_date: node.opening_balance_date || '',
-        sort_order:           node.sort_order || 0,
+        name:         node.name,
+        account_type: node.account_type,
+        description:  node.description || '',
+        is_active:    node.is_active !== false,
+        sort_order:   node.sort_order || 0,
       }
     : {
-        name:                 '',
-        account_type:         parentNode?.account_type || 'Asset',
-        description:          '',
-        is_active:            true,
-        opening_balance:      '',
-        opening_balance_date: fyStart,
-        sort_order:           0,
+        name:         '',
+        account_type: parentNode?.account_type || 'Asset',
+        description:  '',
+        is_active:    true,
+        sort_order:   0,
       }
   )
 
@@ -301,21 +297,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
               style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Opening balance — for ledgers (L3) and sub-ledgers (L4) */}
-          {thisLevel >= 3 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Opening Balance (₹)</label>
-                <input type="number" value={form.opening_balance} onChange={e => s('opening_balance', e.target.value)} placeholder="0.00"
-                  style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>As of Date</label>
-                <input type="date" value={form.opening_balance_date} onChange={e => s('opening_balance_date', e.target.value)}
-                  style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-            </div>
-          )}
+
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input type="checkbox" id="is_active_modal" checked={form.is_active} onChange={e => s('is_active', e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: c.text }} />
@@ -582,8 +564,6 @@ export default function ChartOfAccountsPage() {
         account_type:         form.account_type,
         description:          form.description || null,
         is_active:            form.is_active,
-        opening_balance:      level >= 3 ? (Number(form.opening_balance) || 0) : 0,
-        opening_balance_date: level >= 3 ? (form.opening_balance_date || null) : null,
         sort_order:           Number(form.sort_order) || 0,
         level,
         is_postable:          level >= 3,

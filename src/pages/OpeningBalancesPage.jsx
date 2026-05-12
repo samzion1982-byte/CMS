@@ -156,6 +156,8 @@ export default function OpeningBalancesPage() {
       if (!groups[t]) groups[t] = []
       groups[t].push(a)
     })
+    // Sort each group by name
+    Object.values(groups).forEach(g => g.sort((a, b) => a.name.localeCompare(b.name)))
     return groups
   }, [accounts])
 
@@ -255,63 +257,83 @@ export default function OpeningBalancesPage() {
           <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accounts…
         </div>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: 'var(--table-header-bg)' }}>
-              <tr>
-                <th style={{ ...LABEL.TH }}>Account Name</th>
-                <th style={{ ...LABEL.TH, width: 80 }}>Type</th>
-                <th style={{ ...LABEL.TH, textAlign: 'right', width: 160, color: '#2563eb' }}>Debit (₹)</th>
-                <th style={{ ...LABEL.TH, textAlign: 'right', width: 160, color: '#16a34a' }}>Credit (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
-                const group = grouped[type] || []
-                if (!group.length) return null
-                const c = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
-                return [
-                  <tr key={`${type}-header`} style={{ background: c.bg + '55' }}>
-                    <td colSpan={4} style={{ padding: '7px 14px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: c.text }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
+            const group = grouped[type] || []
+            if (!group.length) return null
+            const c  = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
+            const grpDr = group.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
+            const grpCr = group.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
+            return (
+              <div key={type} className="card" style={{ overflow: 'hidden', border: `1.5px solid ${c.text}30` }}>
+                {/* Group header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: c.bg, borderBottom: `1.5px solid ${c.text}25` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: c.text }} />
+                    <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: c.text }}>
                       {displayAccountType(type)}
-                    </td>
-                  </tr>,
-                  ...group.map((a, i) => {
-                    const b = balances[a.id] || { debit: '', credit: '' }
-                    return (
-                      <tr key={a.id} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
-                        <td style={{ padding: '7px 14px', fontSize: 13, color: 'var(--text-1)' }}>{a.name}</td>
-                        <td style={{ padding: '7px 14px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
-                        </td>
-                        <td style={{ padding: '5px 10px' }}>
-                          <input type="number" min="0" step="0.01" placeholder="0.00"
-                            value={b.debit}
-                            onChange={e => setBalance(a.id, 'debit', e.target.value)}
-                            style={{ width: '100%', height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(b.debit) > 0 ? '#dbeafe22' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box' }}
-                          />
-                        </td>
-                        <td style={{ padding: '5px 10px' }}>
-                          <input type="number" min="0" step="0.01" placeholder="0.00"
-                            value={b.credit}
-                            onChange={e => setBalance(a.id, 'credit', e.target.value)}
-                            style={{ width: '100%', height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(b.credit) > 0 ? '#dcfce722' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box' }}
-                          />
-                        </td>
-                      </tr>
-                    )
-                  }),
-                ]
-              })}
-            </tbody>
-            <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
-              <tr>
-                <td colSpan={2} style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>GRAND TOTAL</td>
-                <td style={{ padding: '10px 14px', fontSize: 14, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
-                <td style={{ padding: '10px 14px', fontSize: 14, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
-              </tr>
-            </tfoot>
-          </table>
+                    </span>
+                    <span style={{ fontSize: 11, color: c.text + 'aa', fontWeight: 500 }}>— {group.length} account{group.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 24 }}>
+                    {grpDr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#2563eb' }}>Dr {fmtAmt(grpDr)}</span>}
+                    {grpCr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}>Cr {fmtAmt(grpCr)}</span>}
+                  </div>
+                </div>
+                {/* Group rows */}
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: c.bg + '55' }}>
+                      <th style={{ ...LABEL.TH }}>Account Name</th>
+                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#2563eb' }}>Debit (₹)</th>
+                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#16a34a' }}>Credit (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.map((a, i) => {
+                      const b     = balances[a.id] || { debit: '', credit: '' }
+                      const hasDr = parseFloat(b.debit)  > 0
+                      const hasCr = parseFloat(b.credit) > 0
+                      const rowBg = i % 2 === 0 ? 'transparent' : c.bg + '28'
+                      return (
+                        <tr key={a.id} style={{ background: rowBg, borderTop: `1px solid ${c.text}15` }}>
+                          <td style={{ padding: '8px 16px', fontSize: 13, color: 'var(--text-1)', fontWeight: (hasDr || hasCr) ? 600 : 400 }}>
+                            {a.name}
+                          </td>
+                          <td style={{ padding: '5px 10px', width: 180 }}>
+                            <input type="number" min="0" step="0.01" placeholder="0.00"
+                              value={b.debit}
+                              onChange={e => setBalance(a.id, 'debit', e.target.value)}
+                              style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasDr ? '#93c5fd' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasDr ? '#eff6ff' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box', fontWeight: hasDr ? 700 : 400 }}
+                            />
+                          </td>
+                          <td style={{ padding: '5px 10px', width: 180 }}>
+                            <input type="number" min="0" step="0.01" placeholder="0.00"
+                              value={b.credit}
+                              onChange={e => setBalance(a.id, 'credit', e.target.value)}
+                              style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasCr ? '#86efac' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasCr ? '#f0fdf4' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box', fontWeight: hasCr ? 700 : 400 }}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })}
+
+          {/* Grand total */}
+          <div className="card" style={{ padding: '12px 18px', display: 'flex', justifyContent: 'flex-end', gap: 32, borderTop: '2px solid var(--card-border)' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', marginBottom: 2 }}>Grand Total Debit</div>
+              <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb' }}>{fmtAmt(totalDebit)}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#16a34a', marginBottom: 2 }}>Grand Total Credit</div>
+              <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'monospace', color: '#16a34a' }}>{fmtAmt(totalCredit)}</div>
+            </div>
+          </div>
         </div>
       )}
     </div>
