@@ -3,7 +3,7 @@
    Creates Journal entries with voucher_type = 'Opening Balance'
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -14,7 +14,7 @@ import {
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import {
-  ArrowLeft, Loader2, Save, Scale, ChevronDown, Info,
+  ArrowLeft, Loader2, Save, Scale, ChevronDown, ChevronRight, Info,
 } from 'lucide-react'
 
 const LABEL = { TH: { padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' } }
@@ -24,11 +24,13 @@ export default function OpeningBalancesPage() {
   const toast    = useToast()
   const { profile } = useAuth()
 
-  const [fy,            setFy]            = useState(getFY())
-  const [fyOpen,        setFyOpen]        = useState(false)
-  const [accounts,      setAccounts]      = useState([])
-  const [balances,      setBalances]      = useState({})   // { [accountId]: { debit, credit } }
-  const [autoEquityId,  setAutoEquityId]  = useState('')
+  const [fy,              setFy]            = useState(getFY())
+  const [fyOpen,          setFyOpen]        = useState(false)
+  const [allAccounts,     setAllAccounts]   = useState([])
+  const [accounts,        setAccounts]      = useState([])   // postable (level 3/4) only
+  const [balances,        setBalances]      = useState({})   // { [accountId]: { debit, credit } }
+  const [autoEquityId,    setAutoEquityId]  = useState('')
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
   const FYS = fyOptions()
@@ -39,6 +41,7 @@ export default function OpeningBalancesPage() {
     setLoading(true)
     try {
       const all = await getChartOfAccounts(false)
+      setAllAccounts(all)
       const postable = getPostableAccountsWithPath(all)
       setAccounts(postable)
 
@@ -149,17 +152,42 @@ export default function OpeningBalancesPage() {
     setBalance(autoEquityId, dr > 0 ? 'debit'  : 'credit', '')
   }
 
-  const grouped = useMemo(() => {
-    const groups = {}
-    accounts.forEach(a => {
-      const t = a.account_type
-      if (!groups[t]) groups[t] = []
-      groups[t].push(a)
+  function toggleGroup(id) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
     })
-    // Sort each group by name
-    Object.values(groups).forEach(g => g.sort((a, b) => a.name.localeCompare(b.name)))
-    return groups
-  }, [accounts])
+  }
+
+  const grouped = useMemo(() => {
+    return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
+      // Level-2 group accounts for this type
+      const level2 = allAccounts
+        .filter(a => a.account_type === type && a.level === 2)
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      // Postable accounts for this type
+      const postable = allAccounts
+        .filter(a => a.account_type === type && (a.level === 3 || a.level === 4))
+
+      const level2Ids = new Set(level2.map(g => g.id))
+
+      const groups = level2.map(g => ({
+        ...g,
+        leaves: postable
+          .filter(a => a.parent_id === g.id)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      })).filter(g => g.leaves.length > 0)
+
+      // Postable accounts not under any level-2 group
+      const ungrouped = postable
+        .filter(a => !level2Ids.has(a.parent_id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      return { type, groups, ungrouped }
+    }).filter(({ groups, ungrouped }) => groups.length > 0 || ungrouped.length > 0)
+  }, [allAccounts])
 
   return (
     <div className="page-container">
@@ -258,29 +286,56 @@ export default function OpeningBalancesPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
-            const group = grouped[type] || []
-            if (!group.length) return null
-            const c  = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
-            const grpDr = group.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
-            const grpCr = group.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
+          {grouped.map(({ type, groups, ungrouped }) => {
+            const c = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
+            const allLeaves = [...groups.flatMap(g => g.leaves), ...ungrouped]
+            const typeDr = allLeaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
+            const typeCr = allLeaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
+
+            function renderLeaf(a, i) {
+              const b     = balances[a.id] || { debit: '', credit: '' }
+              const hasDr = parseFloat(b.debit)  > 0
+              const hasCr = parseFloat(b.credit) > 0
+              const rowBg = i % 2 === 0 ? 'transparent' : c.bg + '28'
+              return (
+                <tr key={a.id} style={{ background: rowBg, borderTop: `1px solid ${c.text}12` }}>
+                  <td style={{ padding: '7px 16px 7px 36px', fontSize: 13, color: 'var(--text-1)', fontWeight: (hasDr || hasCr) ? 600 : 400 }}>
+                    {a.name}
+                  </td>
+                  <td style={{ padding: '5px 10px', width: 180 }}>
+                    <input type="number" min="0" step="0.01" placeholder="0.00"
+                      value={b.debit}
+                      onChange={e => setBalance(a.id, 'debit', e.target.value)}
+                      style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasDr ? '#93c5fd' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasDr ? '#eff6ff' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box', fontWeight: hasDr ? 700 : 400 }}
+                    />
+                  </td>
+                  <td style={{ padding: '5px 10px', width: 180 }}>
+                    <input type="number" min="0" step="0.01" placeholder="0.00"
+                      value={b.credit}
+                      onChange={e => setBalance(a.id, 'credit', e.target.value)}
+                      style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasCr ? '#86efac' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasCr ? '#f0fdf4' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box', fontWeight: hasCr ? 700 : 400 }}
+                    />
+                  </td>
+                </tr>
+              )
+            }
+
             return (
               <div key={type} className="card" style={{ overflow: 'hidden', border: `1.5px solid ${c.text}30` }}>
-                {/* Group header */}
+                {/* Type header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: c.bg, borderBottom: `1.5px solid ${c.text}25` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: c.text }} />
                     <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: c.text }}>
                       {displayAccountType(type)}
                     </span>
-                    <span style={{ fontSize: 11, color: c.text + 'aa', fontWeight: 500 }}>— {group.length} account{group.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 24 }}>
-                    {grpDr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#2563eb' }}>Dr {fmtAmt(grpDr)}</span>}
-                    {grpCr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}>Cr {fmtAmt(grpCr)}</span>}
+                    {typeDr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#2563eb' }}>Dr {fmtAmt(typeDr)}</span>}
+                    {typeCr > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}>Cr {fmtAmt(typeCr)}</span>}
                   </div>
                 </div>
-                {/* Group rows */}
+
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: c.bg + '55' }}>
@@ -290,33 +345,34 @@ export default function OpeningBalancesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {group.map((a, i) => {
-                      const b     = balances[a.id] || { debit: '', credit: '' }
-                      const hasDr = parseFloat(b.debit)  > 0
-                      const hasCr = parseFloat(b.credit) > 0
-                      const rowBg = i % 2 === 0 ? 'transparent' : c.bg + '28'
+                    {/* Level-2 group rows with their leaf children */}
+                    {groups.map(g => {
+                      const isCollapsed = collapsedGroups.has(g.id)
+                      const gDr = g.leaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
+                      const gCr = g.leaves.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
                       return (
-                        <tr key={a.id} style={{ background: rowBg, borderTop: `1px solid ${c.text}15` }}>
-                          <td style={{ padding: '8px 16px', fontSize: 13, color: 'var(--text-1)', fontWeight: (hasDr || hasCr) ? 600 : 400 }}>
-                            {a.name}
-                          </td>
-                          <td style={{ padding: '5px 10px', width: 180 }}>
-                            <input type="number" min="0" step="0.01" placeholder="0.00"
-                              value={b.debit}
-                              onChange={e => setBalance(a.id, 'debit', e.target.value)}
-                              style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasDr ? '#93c5fd' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasDr ? '#eff6ff' : 'var(--input-bg)', color: '#2563eb', outline: 'none', boxSizing: 'border-box', fontWeight: hasDr ? 700 : 400 }}
-                            />
-                          </td>
-                          <td style={{ padding: '5px 10px', width: 180 }}>
-                            <input type="number" min="0" step="0.01" placeholder="0.00"
-                              value={b.credit}
-                              onChange={e => setBalance(a.id, 'credit', e.target.value)}
-                              style={{ width: '100%', height: 32, padding: '0 10px', border: `1.5px solid ${hasCr ? '#86efac' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: hasCr ? '#f0fdf4' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box', fontWeight: hasCr ? 700 : 400 }}
-                            />
-                          </td>
-                        </tr>
+                        <React.Fragment key={g.id}>
+                          <tr onClick={() => toggleGroup(g.id)}
+                            style={{ cursor: 'pointer', background: c.bg + '70', borderTop: `1.5px solid ${c.text}20` }}>
+                            <td style={{ padding: '8px 16px', fontSize: 12, fontWeight: 700, color: c.text }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                <ChevronRight size={13} style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s', color: c.text }} />
+                                {g.name}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb', fontWeight: 600 }}>
+                              {gDr > 0 ? fmtAmt(gDr) : ''}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
+                              {gCr > 0 ? fmtAmt(gCr) : ''}
+                            </td>
+                          </tr>
+                          {!isCollapsed && g.leaves.map((a, i) => renderLeaf(a, i))}
+                        </React.Fragment>
                       )
                     })}
+                    {/* Ungrouped postable accounts (no level-2 parent) */}
+                    {ungrouped.map((a, i) => renderLeaf(a, i))}
                   </tbody>
                 </table>
               </div>
