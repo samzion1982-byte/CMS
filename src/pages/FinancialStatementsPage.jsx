@@ -18,7 +18,7 @@ import {
 } from '../lib/accountingLib'
 import { getChurch } from '../lib/supabase'
 import {
-  BarChart2, ArrowLeft, Loader2, Printer, ChevronDown,
+  BarChart2, ArrowLeft, Loader2, Printer, ChevronDown, ChevronRight,
   RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink,
 } from 'lucide-react'
 
@@ -68,17 +68,33 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
             return (
               <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
                 <CellPair cell={row.l} navigate={navigate} dateFrom={dateFrom} dateTo={dateTo} />
-                <td
-                  style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: row.r?.bold ? 700 : 400, paddingLeft: row.r?.indent ? 36 : 16, color: row.r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: row.r?.italic ? 'italic' : 'normal', cursor: rClickable ? 'pointer' : 'inherit', textDecoration: rClickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
-                  onClick={rClickable ? () => navigate(`/accounting/ledger?accountId=${row.r.accountId}&from=${dateFrom}&to=${dateTo}`) : undefined}
-                  title={rClickable ? 'View Ledger' : undefined}
-                >
-                  {row.r?.label || ''}
-                  {rClickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
-                </td>
-                <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: row.r?.bold ? 700 : 400, color: 'var(--text-1)' }}>
-                  {row.r?.amount !== undefined ? fmtAmt(row.r.amount) : ''}
-                </td>
+                {(() => {
+                  const r = row.r
+                  const rIsGroup   = !!r?.isGroup
+                  const rClickable = !!(r?.accountId && navigate) && !rIsGroup
+                  function rClick() {
+                    if (rIsGroup) { r.onToggle?.(); return }
+                    if (rClickable) navigate(`/accounting/ledger?accountId=${r.accountId}&from=${dateFrom}&to=${dateTo}`)
+                  }
+                  return (
+                    <>
+                      <td
+                        style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: (r?.bold || rIsGroup) ? 700 : 400, paddingLeft: r?.indent ? 40 : 16, color: r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: r?.italic ? 'italic' : 'normal', cursor: (rIsGroup || rClickable) ? 'pointer' : 'inherit', textDecoration: rClickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+                        onClick={rClick}
+                        title={rClickable ? 'View Ledger' : rIsGroup ? (r.isExpanded ? 'Collapse' : 'Expand') : undefined}
+                      >
+                        {rIsGroup && (
+                          <ChevronRight size={12} style={{ marginRight: 4, display: 'inline-block', verticalAlign: 'middle', color: 'var(--text-3)', transform: r.isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                        )}
+                        {r?.label || ''}
+                        {rClickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
+                      </td>
+                      <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: (r?.bold || rIsGroup) ? 700 : 400, color: 'var(--text-1)' }}>
+                        {r?.amount !== undefined ? fmtAmt(r.amount) : ''}
+                      </td>
+                    </>
+                  )
+                })()}
               </tr>
             )
           })}
@@ -98,17 +114,25 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
 
 function CellPair({ cell, navigate, dateFrom, dateTo }) {
   const clickable = !!(cell?.accountId && navigate)
+  const isGroup   = !!cell?.isGroup
+  function handleClick() {
+    if (isGroup) { cell.onToggle?.(); return }
+    if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
+  }
   return (
     <>
       <td
-        style={{ ...TD, fontWeight: cell?.bold ? 700 : 400, paddingLeft: cell?.indent ? 36 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: clickable ? 'pointer' : 'inherit', textDecoration: clickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
-        onClick={clickable ? () => navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`) : undefined}
-        title={clickable ? 'View Ledger' : undefined}
+        style={{ ...TD, fontWeight: (cell?.bold || isGroup) ? 700 : 400, paddingLeft: cell?.indent ? 40 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'inherit', textDecoration: clickable && !isGroup ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+        onClick={handleClick}
+        title={clickable && !isGroup ? 'View Ledger' : isGroup ? (cell.isExpanded ? 'Collapse' : 'Expand') : undefined}
       >
+        {isGroup && (
+          <ChevronRight size={12} style={{ marginRight: 4, display: 'inline-block', verticalAlign: 'middle', color: 'var(--text-3)', transform: cell.isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+        )}
         {cell?.label || ''}
-        {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
+        {clickable && !isGroup && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
       </td>
-      <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: cell?.bold ? 700 : 400, color: 'var(--text-1)' }}>
+      <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: (cell?.bold || isGroup) ? 700 : 400, color: 'var(--text-1)' }}>
         {cell?.amount !== undefined ? fmtAmt(cell.amount) : ''}
       </td>
     </>
@@ -169,16 +193,52 @@ function ReceiptsPayments({ data }) {
 // ════════════════════════════════════════════════════════════════
 
 function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
+  const [expanded, setExpanded] = useState(new Set())
   const surplus   = data.surplus
   const isDeficit = surplus < 0
 
-  const expenses = showZero ? data.expenses : data.expenses.filter(a => Math.abs(a.total_debit - a.total_credit) >= 0.01)
-  const income   = showZero ? data.income   : data.income.filter(a => Math.abs(a.total_credit - a.total_debit) >= 0.01)
+  function toggleGroup(id) {
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  function buildHierRows(accounts, getAmt) {
+    const rel    = accounts.filter(a => (a.account_level || 0) >= 3)
+    const allIds = new Set(rel.map(a => a.id))
+    const childrenOf = {}
+    for (const a of rel) {
+      if (a.parent_id && allIds.has(a.parent_id)) {
+        if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
+        childrenOf[a.parent_id].push(a)
+      }
+    }
+    const groupIds = new Set(Object.keys(childrenOf))
+    const topLevel = rel.filter(a => !allIds.has(a.parent_id))
+    const rows = []
+    for (const acct of topLevel) {
+      if (groupIds.has(acct.id)) {
+        const children = (childrenOf[acct.id] || []).filter(c => showZero || Math.abs(getAmt(c)) >= 0.01)
+        const groupTotal = children.reduce((s, c) => s + getAmt(c), 0)
+        if (!showZero && Math.abs(groupTotal) < 0.01) continue
+        const isExp = expanded.has(acct.id)
+        rows.push({ label: acct.name, amount: Math.max(0, groupTotal), bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id) })
+        if (isExp) {
+          for (const c of children) {
+            rows.push({ label: c.name, amount: Math.max(0, getAmt(c)), indent: true, accountId: c.id })
+          }
+        }
+      } else {
+        const amt = getAmt(acct)
+        if (!showZero && Math.abs(amt) < 0.01) continue
+        rows.push({ label: acct.name, amount: Math.max(0, amt), indent: true, accountId: acct.id })
+      }
+    }
+    return rows
+  }
 
   const leftRows = [
     { label: 'EXPENDITURE', bold: true, muted: true },
     { label: '' },
-    ...expenses.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true, accountId: a.id })),
+    ...buildHierRows(data.expenses, a => a.total_debit - a.total_credit),
     { label: '' },
     { label: 'Total Expenditure', amount: data.totalExpenses, bold: true },
     { label: '' },
@@ -188,7 +248,7 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   const rightRows = [
     { label: 'INCOME', bold: true, muted: true },
     { label: '' },
-    ...income.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
+    ...buildHierRows(data.income, a => a.total_credit - a.total_debit),
     { label: '' },
     { label: 'Total Income', amount: data.totalIncome, bold: true },
     { label: '' },
@@ -229,44 +289,76 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
 // ════════════════════════════════════════════════════════════════
 
 function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
+  const [expanded, setExpanded] = useState(new Set())
+
+  function toggleGroup(id) {
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+
+  // Build hierarchical rows from a flat account list.
+  // Only shows level 3+ accounts; groups those that have children within the list.
+  function buildHierRows(accounts, getAmt) {
+    const rel    = accounts.filter(a => (a.account_level || 0) >= 3)
+    const allIds = new Set(rel.map(a => a.id))
+    const childrenOf = {}
+    for (const a of rel) {
+      if (a.parent_id && allIds.has(a.parent_id)) {
+        if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
+        childrenOf[a.parent_id].push(a)
+      }
+    }
+    const groupIds = new Set(Object.keys(childrenOf))
+    const topLevel = rel.filter(a => !allIds.has(a.parent_id))
+    const rows = []
+    for (const acct of topLevel) {
+      if (groupIds.has(acct.id)) {
+        const children = (childrenOf[acct.id] || []).filter(c => showZero || Math.abs(getAmt(c)) >= 0.01)
+        const groupTotal = children.reduce((s, c) => s + getAmt(c), 0)
+        if (!showZero && Math.abs(groupTotal) < 0.01) continue
+        const isExp = expanded.has(acct.id)
+        rows.push({ label: acct.name, amount: Math.max(0, groupTotal), bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id) })
+        if (isExp) {
+          for (const c of children) {
+            rows.push({ label: c.name, amount: Math.max(0, getAmt(c)), indent: true, accountId: c.id })
+          }
+        }
+      } else {
+        const amt = getAmt(acct)
+        if (!showZero && Math.abs(amt) < 0.01) continue
+        rows.push({ label: acct.name, amount: Math.max(0, amt), indent: true, accountId: acct.id })
+      }
+    }
+    return rows
+  }
+
   const isBalanced = Math.abs(data.totalAssets - (data.totalLiabilities + data.totalCorpus)) < 0.01
-
-  const filterAccts = (list, getAmt) =>
-    showZero ? list : list.filter(a => Math.abs(getAmt(a)) >= 0.01)
-
-  const corpus      = filterAccts(data.corpus,      a => a.total_credit - a.total_debit)
-  const liabilities = filterAccts(data.liabilities, a => a.total_credit - a.total_debit)
-  const assets      = filterAccts(data.assets,      a => a.total_debit  - a.total_credit)
 
   const leftRows = [
     { label: 'CORPUS / GENERAL FUND', bold: true, muted: true },
     { label: '' },
-    ...corpus.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
+    ...buildHierRows(data.corpus, a => a.total_credit - a.total_debit),
     { label: data.surplus >= 0 ? 'Add: Surplus for the year' : 'Less: Deficit for the year', amount: Math.abs(data.surplus), indent: true, italic: true },
     { label: 'Total Corpus Fund', amount: data.totalCorpus, bold: true },
     { label: '' },
     { label: 'LIABILITIES', bold: true, muted: true },
     { label: '' },
-    ...liabilities.map(a => ({ label: a.name, amount: Math.max(0, a.total_credit - a.total_debit), indent: true, accountId: a.id })),
+    ...buildHierRows(data.liabilities, a => a.total_credit - a.total_debit),
     { label: 'Total Liabilities', amount: data.totalLiabilities, bold: true },
   ]
 
   const rightRows = [
     { label: 'ASSETS', bold: true, muted: true },
     { label: '' },
-    ...assets.map(a => ({ label: a.name, amount: Math.max(0, a.total_debit - a.total_credit), indent: true, accountId: a.id })),
+    ...buildHierRows(data.assets, a => a.total_debit - a.total_credit),
     { label: '' },
     { label: 'Total Assets', amount: data.totalAssets, bold: true },
   ]
-
-  const leftTotal  = data.totalCorpus + data.totalLiabilities
-  const rightTotal = data.totalAssets
 
   return (
     <div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
-        leftTotal={leftTotal} rightTotal={rightTotal}
+        leftTotal={data.totalCorpus + data.totalLiabilities} rightTotal={data.totalAssets}
         leftLabel="Corpus Fund & Liabilities"
         rightLabel="Assets"
         navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}

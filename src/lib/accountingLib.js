@@ -828,8 +828,22 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         }
       }
       if (!classified) cashPayments += Number(entry.total_credit || 0)
+
+    } else if (entry.voucher_type === 'Contra') {
+      // Contra = cash ↔ bank transfer; update the cash/bank split without adding to groups
+      for (const l of lines) {
+        if (l.chart_of_accounts?.account_type !== 'Asset') continue
+        const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
+        if (t === 'cash') {
+          if (Number(l.debit_amount)  > 0) cashReceipts += Number(l.debit_amount)
+          if (Number(l.credit_amount) > 0) cashPayments += Number(l.credit_amount)
+        } else if (t === 'bank') {
+          if (Number(l.debit_amount)  > 0) bankReceipts += Number(l.debit_amount)
+          if (Number(l.credit_amount) > 0) bankPayments += Number(l.credit_amount)
+        }
+      }
     }
-    // Opening, Contra, Journal entries excluded from period R&P body
+    // Opening Balance, Journal entries excluded from period R&P body
   }
 
   const receipts = Object.entries(receiptGroups)
