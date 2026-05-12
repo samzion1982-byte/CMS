@@ -126,7 +126,7 @@ export function buildCOATree(accounts) {
 
 // Postable accounts for journal entry dropdowns (level 3 ledgers + level 4 sub-ledgers)
 export function getPostableAccounts(accounts) {
-  return accounts.filter(a => a.is_postable !== false && (a.level === 3 || a.level === 4))
+  return accounts.filter(a => a.is_postable !== false && (a.account_level === 3 || a.account_level === 4))
 }
 
 // Build breadcrumb path for an account: "Assets > Current Assets > Cash in Hand"

@@ -164,12 +164,12 @@ export default function OpeningBalancesPage() {
     return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
       // Level-2 group accounts for this type
       const level2 = allAccounts
-        .filter(a => a.account_type === type && a.level === 2)
+        .filter(a => a.account_type === type && a.account_level === 2)
         .sort((a, b) => a.name.localeCompare(b.name))
 
       // Postable accounts for this type
       const postable = allAccounts
-        .filter(a => a.account_type === type && (a.level === 3 || a.level === 4))
+        .filter(a => a.account_type === type && (a.account_level === 3 || a.account_level === 4))
 
       const level2Ids = new Set(level2.map(g => g.id))
 
