@@ -24,10 +24,11 @@ export default function OpeningBalancesPage() {
   const toast    = useToast()
   const { profile } = useAuth()
 
-  const [fy,       setFy]       = useState(getFY())
-  const [fyOpen,   setFyOpen]   = useState(false)
-  const [accounts, setAccounts] = useState([])
-  const [balances, setBalances] = useState({})   // { [accountId]: { debit, credit } }
+  const [fy,            setFy]            = useState(getFY())
+  const [fyOpen,        setFyOpen]        = useState(false)
+  const [accounts,      setAccounts]      = useState([])
+  const [balances,      setBalances]      = useState({})   // { [accountId]: { debit, credit } }
+  const [autoEquityId,  setAutoEquityId]  = useState('')
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
   const FYS = fyOptions()
@@ -136,6 +137,18 @@ export default function OpeningBalancesPage() {
     setSaving(false)
   }
 
+  const equityAccounts = useMemo(
+    () => accounts.filter(a => a.account_type === 'Equity'),
+    [accounts]
+  )
+
+  function handleAutoBalance() {
+    if (!autoEquityId) return
+    const dr = totalDebit - totalCredit
+    setBalance(autoEquityId, dr > 0 ? 'credit' : 'debit', Math.abs(dr).toFixed(2))
+    setBalance(autoEquityId, dr > 0 ? 'debit'  : 'credit', '')
+  }
+
   const grouped = useMemo(() => {
     const groups = {}
     accounts.forEach(a => {
@@ -213,6 +226,27 @@ export default function OpeningBalancesPage() {
             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#16a34a', margin: '0 0 3px' }}>Total Credit</p>
             <p style={{ fontSize: 17, fontWeight: 800, fontFamily: 'monospace', color: '#16a34a', margin: 0 }}>{fmtAmt(totalCredit)}</p>
           </div>
+        </div>
+      )}
+
+      {/* Auto-balance strip — shown only when unbalanced */}
+      {!loading && !balanced && equityAccounts.length > 0 && (
+        <div style={{ marginBottom: 16, padding: '12px 18px', background: '#fff7ed', border: '1.5px solid #fdba74', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+            Auto-balance {fmtAmt(diff)} →
+          </span>
+          <select value={autoEquityId} onChange={e => setAutoEquityId(e.target.value)}
+            style={{ flex: 1, minWidth: 200, maxWidth: 320, height: 34, padding: '0 10px', border: '1.5px solid #fdba74', borderRadius: 7, fontSize: 13, background: '#fff', color: 'var(--text-1)' }}>
+            <option value="">Select Corpus / Equity account…</option>
+            {equityAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button onClick={handleAutoBalance} disabled={!autoEquityId}
+            style={{ padding: '7px 16px', background: autoEquityId ? '#c2410c' : '#e5e7eb', color: autoEquityId ? '#fff' : '#9ca3af', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: autoEquityId ? 'pointer' : 'not-allowed' }}>
+            Auto-balance
+          </button>
+          <span style={{ fontSize: 11, color: '#b45309' }}>
+            This will {totalDebit > totalCredit ? 'credit' : 'debit'} the selected account with {fmtAmt(diff)} to make the entry balance.
+          </span>
         </div>
       )}
 

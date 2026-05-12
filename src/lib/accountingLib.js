@@ -514,6 +514,28 @@ export async function getLedger(accountId, from, to) {
     }
   }
 
+  // Include COA opening_balance if no Opening Balance journal entry exists for this account
+  // (COA field is the legacy one-time setup method; OB journal entries are the new method)
+  const { data: coa } = await supabase
+    .from('chart_of_accounts')
+    .select('opening_balance, opening_balance_date')
+    .eq('id', accountId)
+    .single()
+  if (coa && Number(coa.opening_balance)) {
+    const { data: obEntries } = await supabase
+      .from('journal_entries')
+      .select('journal_entry_lines!inner(account_id)')
+      .eq('voucher_type', 'Opening Balance')
+      .eq('is_posted', true)
+      .eq('is_deleted', false)
+      .eq('journal_entry_lines.account_id', accountId)
+      .limit(1)
+    if (!obEntries?.length) {
+      const obDate = coa.opening_balance_date || from
+      if (obDate <= from) openingBalance += Number(coa.opening_balance)
+    }
+  }
+
   // Step 1: posted, non-deleted entries within the date range
   const { data: entries, error: e1 } = await supabase
     .from('journal_entries')
