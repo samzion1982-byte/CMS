@@ -707,16 +707,20 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
   const cashRe = /cash|hand|petty/i
   const bankRe = /bank/i
   const assetType = {}   // coa_id → 'cash' | 'bank' | 'other'
+  const acctName  = {}   // coa_id → display name
+  const acctBal   = {}   // coa_id → running closing balance
   let cashCoaOB = 0, bankCoaOB = 0
 
   for (const a of assetAccts || []) {
     const t = cashRe.test(a.name) ? 'cash' : bankRe.test(a.name) ? 'bank' : 'other'
     assetType[a.id] = t
+    acctName[a.id]  = a.name
     const obDate = a.opening_balance_date || from
     if (obDate <= dateFrom) {
       const amt = Number(a.opening_balance) || 0
       if (t === 'cash') cashCoaOB += amt
       if (t === 'bank') bankCoaOB += amt
+      if (t === 'cash' || t === 'bank') acctBal[a.id] = (acctBal[a.id] || 0) + amt
     }
   }
 
@@ -750,6 +754,9 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         } else if (t === 'bank') {
           if (e.voucher_type === 'Receipt') bankOB += Number(l.debit_amount  || 0)
           if (e.voucher_type === 'Payment') bankOB -= Number(l.credit_amount || 0)
+        }
+        if ((t === 'cash' || t === 'bank') && ['Receipt', 'Payment', 'Contra'].includes(e.voucher_type)) {
+          acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
         }
       }
     }
@@ -800,8 +807,8 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.debit_amount) > 0) {
           const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
-          if (t === 'cash')       { cashReceipts += Number(l.debit_amount); classified = true }
-          else if (t === 'bank')  { bankReceipts += Number(l.debit_amount); classified = true }
+          if (t === 'cash')       { cashReceipts += Number(l.debit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
+          else if (t === 'bank')  { bankReceipts += Number(l.debit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
         }
       }
       if (!classified) cashReceipts += Number(entry.total_debit || 0)
@@ -823,8 +830,8 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.credit_amount) > 0) {
           const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
-          if (t === 'cash')       { cashPayments += Number(l.credit_amount); classified = true }
-          else if (t === 'bank')  { bankPayments += Number(l.credit_amount); classified = true }
+          if (t === 'cash')       { cashPayments += Number(l.credit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
+          else if (t === 'bank')  { bankPayments += Number(l.credit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
         }
       }
       if (!classified) cashPayments += Number(entry.total_credit || 0)
@@ -835,11 +842,11 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         if (l.chart_of_accounts?.account_type !== 'Asset') continue
         const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
         if (t === 'cash') {
-          if (Number(l.debit_amount)  > 0) cashReceipts += Number(l.debit_amount)
-          if (Number(l.credit_amount) > 0) cashPayments += Number(l.credit_amount)
+          if (Number(l.debit_amount)  > 0) { cashReceipts += Number(l.debit_amount);  acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
+          if (Number(l.credit_amount) > 0) { cashPayments += Number(l.credit_amount); acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
         } else if (t === 'bank') {
-          if (Number(l.debit_amount)  > 0) bankReceipts += Number(l.debit_amount)
-          if (Number(l.credit_amount) > 0) bankPayments += Number(l.credit_amount)
+          if (Number(l.debit_amount)  > 0) { bankReceipts += Number(l.debit_amount);  acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
+          if (Number(l.credit_amount) > 0) { bankPayments += Number(l.credit_amount); acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
         }
       }
     }
@@ -859,10 +866,18 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
   const bankClosingBalance = bankOpeningBalance + bankReceipts - bankPayments
   const closingBalance     = cashClosingBalance + bankClosingBalance
 
+  const cashAccounts = Object.keys(acctBal)
+    .filter(id => assetType[id] === 'cash' && Math.abs(acctBal[id]) >= 0.01)
+    .map(id => ({ id, name: acctName[id], balance: acctBal[id] }))
+  const bankAccounts = Object.keys(acctBal)
+    .filter(id => assetType[id] === 'bank' && Math.abs(acctBal[id]) >= 0.01)
+    .map(id => ({ id, name: acctName[id], balance: acctBal[id] }))
+
   return {
     openingBalance, cashOpeningBalance, bankOpeningBalance,
     receipts, payments, totalReceipts, totalPayments,
     closingBalance, cashClosingBalance, bankClosingBalance,
+    cashAccounts, bankAccounts,
   }
 }
 

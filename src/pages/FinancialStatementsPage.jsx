@@ -79,7 +79,7 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
                   return (
                     <>
                       <td
-                        style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: (r?.bold || rIsGroup) ? 700 : 400, paddingLeft: r?.indent ? 40 : 16, color: r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: r?.italic ? 'italic' : 'normal', cursor: (rIsGroup || rClickable) ? 'pointer' : 'inherit', textDecoration: rClickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+                        style={{ ...TD, borderLeft: '2px solid var(--card-border)', fontWeight: (r?.bold || rIsGroup) ? 700 : 400, paddingLeft: r?.indent2 ? 60 : (r?.indent && rIsGroup) ? 24 : r?.indent ? 40 : 16, color: r?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: r?.italic ? 'italic' : 'normal', cursor: (rIsGroup || rClickable) ? 'pointer' : 'inherit', textDecoration: rClickable ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
                         onClick={rClick}
                         title={rClickable ? 'View Ledger' : rIsGroup ? (r.isExpanded ? 'Collapse' : 'Expand') : undefined}
                       >
@@ -122,7 +122,7 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
   return (
     <>
       <td
-        style={{ ...TD, fontWeight: (cell?.bold || isGroup) ? 700 : 400, paddingLeft: cell?.indent ? 40 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'inherit', textDecoration: clickable && !isGroup ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+        style={{ ...TD, fontWeight: (cell?.bold || isGroup) ? 700 : 400, paddingLeft: cell?.indent2 ? 60 : (cell?.indent && isGroup) ? 24 : cell?.indent ? 40 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'inherit', textDecoration: clickable && !isGroup ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
         onClick={handleClick}
         title={clickable && !isGroup ? 'View Ledger' : isGroup ? (cell.isExpanded ? 'Collapse' : 'Expand') : undefined}
       >
@@ -143,11 +143,31 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
 //  Receipts & Payments Account
 // ════════════════════════════════════════════════════════════════
 
-function ReceiptsPayments({ data }) {
+function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
+  const [expanded, setExpanded] = useState(new Set())
+  function toggle(key) {
+    setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  }
+
+  const cashAccts = data.cashAccounts || []
+  const bankAccts = data.bankAccounts || []
+
+  function balanceGroupRows(key, label, total, accounts) {
+    if (accounts.length <= 1) {
+      const name = accounts.length === 1 ? accounts[0].name : label
+      return [{ label: name, amount: total, indent: true }]
+    }
+    const isExp = expanded.has(key)
+    return [
+      { label, amount: total, indent: true, isGroup: true, isExpanded: isExp, onToggle: () => toggle(key) },
+      ...(isExp ? accounts.map(a => ({ label: a.name, amount: a.balance, indent2: true, accountId: a.id })) : []),
+    ]
+  }
+
   const leftRows = [
     { label: 'Opening Balance', bold: true },
-    { label: 'Cash in Hand',  amount: data.cashOpeningBalance, indent: true },
-    { label: 'Cash at Bank',  amount: data.bankOpeningBalance, indent: true },
+    { label: 'Cash in Hand', amount: data.cashOpeningBalance, indent: true },
+    { label: 'Cash at Bank', amount: data.bankOpeningBalance, indent: true },
     { label: 'Total Opening', amount: data.openingBalance, bold: true },
     { label: '' },
     { label: 'RECEIPTS', bold: true, muted: true },
@@ -164,21 +184,20 @@ function ReceiptsPayments({ data }) {
     { label: 'Total Payments', amount: data.totalPayments, bold: true },
     { label: '' },
     { label: 'Closing Balance', bold: true },
-    { label: 'Cash in Hand',  amount: data.cashClosingBalance, indent: true },
-    { label: 'Cash at Bank',  amount: data.bankClosingBalance, indent: true },
+    ...balanceGroupRows('cash', 'Cash in Hand', data.cashClosingBalance, cashAccts),
+    ...balanceGroupRows('bank', 'Cash at Bank', data.bankClosingBalance, bankAccts),
     { label: 'Total Closing', amount: data.closingBalance, bold: true },
   ]
-
-  const leftTotal  = data.openingBalance + data.totalReceipts
-  const rightTotal = data.totalPayments  + data.closingBalance
 
   return (
     <div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
-        leftTotal={leftTotal} rightTotal={rightTotal}
+        leftTotal={data.openingBalance + data.totalReceipts}
+        rightTotal={data.totalPayments + data.closingBalance}
         leftLabel="Dr  —  Receipts"
         rightLabel="Cr  —  Payments"
+        navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
         Receipts grouped by income category · Payments grouped by expense category ·
@@ -602,7 +621,7 @@ export default function FinancialStatementsPage() {
             </p>
           </div>
 
-          {tab === 'rp' && rp && <ReceiptsPayments data={rp} />}
+          {tab === 'rp' && rp && <ReceiptsPayments data={rp} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
           {tab === 'ie' && ie && <IncomeExpenditure data={ie} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
           {tab === 'bs' && bs && <BalanceSheet data={bs} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
         </div>
