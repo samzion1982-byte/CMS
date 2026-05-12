@@ -91,6 +91,39 @@ export default function OpeningBalancesPage() {
     }))
   }
 
+  // Leaf accounts = accounts with no children (actual posting accounts)
+  const leafAccounts = useMemo(() => {
+    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
+    return allAccounts.filter(a => a.level >= 3 && !parentIds.has(a.id))
+  }, [allAccounts])
+
+  const grouped = useMemo(() => {
+    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
+
+    return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
+      const ofType = allAccounts.filter(a => a.account_type === type)
+
+      const level2 = ofType.filter(a => a.level === 2).sort((a, b) => a.name.localeCompare(b.name))
+      const level3 = ofType.filter(a => a.level === 3).sort((a, b) => a.name.localeCompare(b.name))
+      const level4 = ofType.filter(a => a.level === 4).sort((a, b) => a.name.localeCompare(b.name))
+
+      const level3Nodes = level3.map(a => ({
+        ...a,
+        isGroup: parentIds.has(a.id),
+        children: level4.filter(c => c.parent_id === a.id).sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+
+      const level2Ids = new Set(level2.map(g => g.id))
+      const groups = level2.map(g => ({
+        ...g,
+        items: level3Nodes.filter(a => a.parent_id === g.id),
+      })).filter(g => g.items.length > 0)
+
+      const ungrouped = level3Nodes.filter(a => !level2Ids.has(a.parent_id))
+      return { type, groups, ungrouped }
+    }).filter(({ groups, ungrouped }) => groups.length > 0 || ungrouped.length > 0)
+  }, [allAccounts])
+
   const totalDebit  = leafAccounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.debit)  || 0), 0)
   const totalCredit = leafAccounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
   const diff = Math.abs(totalDebit - totalCredit)
@@ -173,44 +206,6 @@ export default function OpeningBalancesPage() {
     })
   }
 
-  // Leaf accounts = accounts with no children (actual posting accounts)
-  const leafAccounts = useMemo(() => {
-    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
-    return allAccounts.filter(a => a.level >= 3 && !parentIds.has(a.id))
-  }, [allAccounts])
-
-  const grouped = useMemo(() => {
-    const parentIds = new Set(allAccounts.filter(a => a.parent_id).map(a => a.parent_id))
-
-    return ['Asset', 'Liability', 'Equity', 'Income', 'Expense'].map(type => {
-      const ofType = allAccounts.filter(a => a.account_type === type)
-
-      // Level-2 groups
-      const level2 = ofType.filter(a => a.level === 2).sort((a, b) => a.name.localeCompare(b.name))
-
-      // Level-3 accounts with their level-4 children
-      const level3 = ofType.filter(a => a.level === 3).sort((a, b) => a.name.localeCompare(b.name))
-      const level4 = ofType.filter(a => a.level === 4).sort((a, b) => a.name.localeCompare(b.name))
-
-      const level3Nodes = level3.map(a => ({
-        ...a,
-        isGroup: parentIds.has(a.id),
-        children: level4.filter(c => c.parent_id === a.id).sort((a, b) => a.name.localeCompare(b.name)),
-      }))
-
-      const level2Ids = new Set(level2.map(g => g.id))
-
-      const groups = level2.map(g => ({
-        ...g,
-        items: level3Nodes.filter(a => a.parent_id === g.id),
-      })).filter(g => g.items.length > 0)
-
-      // level-3 nodes not under any level-2 (edge case)
-      const ungrouped = level3Nodes.filter(a => !level2Ids.has(a.parent_id))
-
-      return { type, groups, ungrouped }
-    }).filter(({ groups, ungrouped }) => groups.length > 0 || ungrouped.length > 0)
-  }, [allAccounts])
 
   return (
     <div className="page-container">
