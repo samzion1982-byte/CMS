@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
@@ -265,8 +265,11 @@ function LedgerCard({ account, lines, dateFrom, dateTo }) {
 // ── Main page ─────────────────────────────────────────────────────
 export default function LedgerPage() {
   const navigate     = useNavigate()
+  const location     = useLocation()
   const toast        = useToast()
   const [searchParams] = useSearchParams()
+
+  const cameFromReport = !!location.state?.from
 
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
   const fy    = getFY()
@@ -370,12 +373,14 @@ export default function LedgerPage() {
               </button>
               <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-                <ArrowLeft size={15} />
-              </button>
-              <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Back</span>
-            </div>
+            {cameFromReport && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+                  <ArrowLeft size={15} />
+                </button>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Back</span>
+              </div>
+            )}
           </div>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>

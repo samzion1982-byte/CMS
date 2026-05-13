@@ -83,7 +83,7 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
                   const rClickable = !!(r?.accountId && navigate) && !rIsGroup
                   function rClick() {
                     if (rIsGroup) { r.onToggle?.(); return }
-                    if (rClickable) navigate(`/accounting/ledger?accountId=${r.accountId}&from=${dateFrom}&to=${dateTo}`)
+                    if (rClickable) navigate(`/accounting/ledger?accountId=${r.accountId}&from=${dateFrom}&to=${dateTo}`, { state: { from: 'report' } })
                   }
                   return (
                     <>
@@ -126,7 +126,7 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
   const isGroup   = !!cell?.isGroup
   function handleClick() {
     if (isGroup) { cell.onToggle?.(); return }
-    if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
+    if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`, { state: { from: 'report' } })
   }
   return (
     <>
@@ -167,7 +167,7 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
     const isGroup   = !!cell.isGroup
     function handleClick() {
       if (isGroup) { cell.onToggle?.(); return }
-      if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
+      if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`, { state: { from: 'report' } })
     }
 
     // Compensate paddingLeft for chevron width so text aligns with non-group rows

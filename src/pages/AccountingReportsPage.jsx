@@ -691,7 +691,7 @@ export default function AccountingReportsPage() {
                                 style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
                                 onMouseEnter={ev => ev.currentTarget.style.background = 'var(--sidebar-item-hover)'}
                                 onMouseLeave={ev => ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent'}
-                                onClick={() => navigate(`/accounting/ledger?account=${a.id}`)}
+                                onClick={() => navigate(`/accounting/ledger?account=${a.id}`, { state: { from: 'report' } })}
                               >
                                 <td style={{ padding: '9px 14px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-3)' }}>{a.code}</td>
                                 <td style={{ padding: '9px 14px', fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>
@@ -840,7 +840,7 @@ export default function AccountingReportsPage() {
                     // Leaf account — click to open ledger
                     return (
                       <tr key={row.id}
-                        onClick={() => navigate(`/accounting/ledger?account=${row.id}`)}
+                        onClick={() => navigate(`/accounting/ledger?account=${row.id}`, { state: { from: 'report' } })}
                         style={{ cursor: 'pointer', borderTop: '1px solid var(--card-border)' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--sidebar-item-hover)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
