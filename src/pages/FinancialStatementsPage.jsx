@@ -834,9 +834,14 @@ export default function FinancialStatementsPage() {
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <ArrowLeft size={15} />
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <ArrowLeft size={15} />
+            </button>
+            <button onClick={() => navigate('/accounting')} style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>
+              Accounts
+            </button>
+          </div>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <BarChart2 size={20} style={{ color: 'var(--accent)' }} /> Financial Statements

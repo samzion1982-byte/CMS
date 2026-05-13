@@ -314,10 +314,15 @@ export default function ReceiptVoucherPage() {
 
       {/* ══ ALWAYS VISIBLE: header + voucher details ══ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <button onClick={() => navigate(-1)} className="nav-item"
-          style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center', width: 'auto', flexShrink: 0 }}>
-          <ArrowLeft size={16} />
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button onClick={() => navigate(-1)} className="nav-item"
+            style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center', width: 'auto', flexShrink: 0 }}>
+            <ArrowLeft size={16} />
+          </button>
+          <button onClick={() => navigate('/accounting')} style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>
+            Accounts
+          </button>
+        </div>
         <div style={{ flex: 1 }}>
           <h1 className="page-title" style={{ marginBottom: 1 }}>{editId ? 'Edit Receipt Voucher' : 'Receipt Voucher'}</h1>
         </div>
