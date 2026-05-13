@@ -2,7 +2,7 @@
    LedgerPage.jsx — Account Ledger View (multi-account)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
@@ -11,23 +11,36 @@ import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
 
-// ── Account multi-select dropdown ────────────────────────────────
-function AccountSelector({ accounts, selectedIds, onChange }) {
+// ── Account multi-select dropdown (tree view) ─────────────────────
+function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
   const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
   const wrapRef = useRef(null)
   const types   = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
-  // Close on outside click
   useEffect(() => {
     function onDown(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
-  const filtered = query.trim()
-    ? accounts.filter(a => a.name.toLowerCase().includes(query.toLowerCase()))
-    : accounts
+  // Build id → children map once
+  const childrenOf = useMemo(() => {
+    const map = {}
+    allAccounts.forEach(a => {
+      if (!map[a.parent_id]) map[a.parent_id] = []
+      map[a.parent_id].push(a)
+    })
+    return map
+  }, [allAccounts])
+
+  const q = query.trim().toLowerCase()
+
+  // Does this node or any descendant match the search query?
+  function hasMatch(node) {
+    if (node.name.toLowerCase().includes(q)) return true
+    return (childrenOf[node.id] || []).some(hasMatch)
+  }
 
   function toggle(id) {
     const next = new Set(selectedIds)
@@ -35,19 +48,48 @@ function AccountSelector({ accounts, selectedIds, onChange }) {
     onChange(next)
   }
 
-  function toggleGroup(type) {
-    const group = filtered.filter(a => a.account_type === type)
-    const allSel = group.every(a => selectedIds.has(a.id))
-    const next = new Set(selectedIds)
-    group.forEach(a => allSel ? next.delete(a.id) : next.add(a.id))
-    onChange(next)
+  // Render one node + its children recursively
+  function renderNode(node, depth) {
+    if (q && !hasMatch(node)) return null
+    const children   = (childrenOf[node.id] || []).sort((a, b) => a.name.localeCompare(b.name))
+    const isPostable = postableIds.has(node.id)
+    const sel        = selectedIds.has(node.id)
+    const tc         = TYPE_COLOR[node.account_type] || { text: '#64748b' }
+    const indent     = 12 + depth * 18
+
+    return (
+      <div key={node.id}>
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          paddingLeft: indent, paddingRight: 12, paddingTop: 5, paddingBottom: 5,
+          cursor: isPostable ? 'pointer' : 'default',
+          background: sel ? tc.text + '12' : 'transparent',
+        }}
+          onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = sel ? tc.text + '12' : 'transparent' }}
+        >
+          {isPostable
+            ? <input type="checkbox" checked={sel} onChange={() => toggle(node.id)}
+                style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
+            : <span style={{ width: 14, flexShrink: 0 }} />
+          }
+          <span style={{
+            fontSize: isPostable ? 13 : 12,
+            color: isPostable ? (sel ? 'var(--text-1)' : 'var(--text-2)') : 'var(--text-3)',
+            fontWeight: isPostable ? (sel ? 600 : 400) : 600,
+          }}>
+            {node.name}
+          </span>
+        </label>
+        {children.map(child => renderNode(child, depth + 1))}
+      </div>
+    )
   }
 
-  // Label shown on the trigger button
   const triggerLabel = selectedIds.size === 0
     ? 'Select accounts…'
     : selectedIds.size === 1
-      ? accounts.find(a => a.id === [...selectedIds][0])?.name || '1 account'
+      ? allAccounts.find(a => a.id === [...selectedIds][0])?.name || '1 account'
       : `${selectedIds.size} accounts selected`
 
   return (
@@ -55,17 +97,13 @@ function AccountSelector({ accounts, selectedIds, onChange }) {
       <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account *</label>
 
       {/* Trigger */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ width: '100%', height: 36, padding: '0 10px', border: `1.5px solid ${open ? 'var(--accent)' : 'var(--card-border)'}`, borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: selectedIds.size ? 'var(--text-1)' : 'var(--text-3)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, outline: 'none' }}
-      >
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', height: 36, padding: '0 10px', border: `1.5px solid ${open ? 'var(--accent)' : 'var(--card-border)'}`, borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: selectedIds.size ? 'var(--text-1)' : 'var(--text-3)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, outline: 'none' }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {selectedIds.size > 0 && (
-            <span
-              onMouseDown={e => { e.stopPropagation(); onChange(new Set()) }}
-              style={{ display: 'flex', alignItems: 'center', color: 'var(--text-3)', padding: 2, borderRadius: 4 }}
-            >
+            <span onMouseDown={e => { e.stopPropagation(); onChange(new Set()) }}
+              style={{ display: 'flex', alignItems: 'center', color: 'var(--text-3)', padding: 2 }}>
               <X size={12} />
             </span>
           )}
@@ -75,63 +113,38 @@ function AccountSelector({ accounts, selectedIds, onChange }) {
         </span>
       </button>
 
-      {/* Dropdown panel */}
+      {/* Dropdown */}
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 400, marginTop: 4, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
 
           {/* Search */}
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
             <Search size={12} style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
-            <input
-              autoFocus
-              value={query} onChange={e => setQuery(e.target.value)}
+            <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
               placeholder="Search accounts…"
-              style={{ width: '100%', height: 30, padding: '0 8px 0 26px', border: '1px solid var(--card-border)', borderRadius: 6, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
-            />
+              style={{ width: '100%', height: 30, padding: '0 8px 0 26px', border: '1px solid var(--card-border)', borderRadius: 6, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Grouped checkboxes */}
-          <div style={{ maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+          {/* Tree grouped by type */}
+          <div style={{ maxHeight: 320, overflowY: 'auto', padding: '4px 0' }}>
             {types.map(type => {
-              const group = filtered.filter(a => a.account_type === type)
-              if (!group.length) return null
-              const allSel  = group.every(a => selectedIds.has(a.id))
-              const someSel = group.some(a => selectedIds.has(a.id))
-              const tc      = TYPE_COLOR[type] || { text: '#475569' }
+              const root = allAccounts.find(a => a.account_type === type && !a.parent_id)
+              if (!root) return null
+              const topLevel = (childrenOf[root.id] || []).sort((a, b) => a.name.localeCompare(b.name))
+              if (!topLevel.length) return null
+              if (q && !topLevel.some(hasMatch)) return null
+              const tc = TYPE_COLOR[type] || { text: '#475569' }
               return (
                 <div key={type}>
-                  {/* Group header row */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', background: tc.text + '0a' }}>
-                    <input type="checkbox" checked={allSel}
-                      ref={el => { if (el) el.indeterminate = someSel && !allSel }}
-                      onChange={() => toggleGroup(type)}
-                      style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: tc.text }}>
+                  <div style={{ padding: '6px 12px 4px', background: tc.text + '0a', borderTop: '1px solid var(--card-border)' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: tc.text }}>
                       {displayAccountType(type)}
                     </span>
-                  </label>
-
-                  {/* Account rows */}
-                  {group.map(a => {
-                    const sel = selectedIds.has(a.id)
-                    return (
-                      <label key={a.id}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 28px', cursor: 'pointer', background: sel ? tc.text + '0d' : 'transparent' }}
-                        onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = sel ? tc.text + '0d' : 'transparent' }}
-                      >
-                        <input type="checkbox" checked={sel} onChange={() => toggle(a.id)}
-                          style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
-                        <span style={{ fontSize: 13, color: sel ? 'var(--text-1)' : 'var(--text-2)', fontWeight: sel ? 600 : 400 }}>{a.name}</span>
-                      </label>
-                    )
-                  })}
+                  </div>
+                  {topLevel.map(node => renderNode(node, 0))}
                 </div>
               )
             })}
-            {filtered.length === 0 && (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', padding: '10px 14px' }}>No accounts match "{query}"</p>
-            )}
           </div>
         </div>
       )}
@@ -231,7 +244,8 @@ export default function LedgerPage() {
   const initFrom      = searchParams.get('from') || fyFrom
   const initTo        = searchParams.get('to')   || today
 
-  const [accounts,     setAccounts]     = useState([])
+  const [allAccounts,  setAllAccounts]  = useState([])
+  const [postable,     setPostable]     = useState([]) // postable accounts with path
   const [selectedIds,  setSelectedIds]  = useState(() => new Set(initAccountId ? [initAccountId] : []))
   const [dateFrom,     setDateFrom]     = useState(initFrom)
   const [dateTo,       setDateTo]       = useState(initTo)
@@ -241,8 +255,13 @@ export default function LedgerPage() {
   const [church,       setChurch]       = useState(null)
   const autoGenDone = useRef(false)
 
+  const postableIds = useMemo(() => new Set(postable.map(a => a.id)), [postable])
+
   useEffect(() => {
-    getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
+    getChartOfAccounts(true).then(all => {
+      setAllAccounts(all)
+      setPostable(getPostableAccountsWithPath(all))
+    }).catch(() => {})
     getChurch().then(setChurch).catch(() => {})
   }, [])
 
@@ -252,7 +271,7 @@ export default function LedgerPage() {
     try {
       const results = await Promise.all(
         [...selectedIds].map(async id => {
-          const account = accounts.find(a => a.id === id)
+          const account = allAccounts.find(a => a.id === id)
           const lines   = await getLedger(id, dateFrom, dateTo)
           return { account, lines }
         })
@@ -261,15 +280,15 @@ export default function LedgerPage() {
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [selectedIds, dateFrom, dateTo, accounts, toast])
+  }, [selectedIds, dateFrom, dateTo, allAccounts, toast])
 
   // Auto-generate when navigating here with a pre-selected account
   useEffect(() => {
-    if (!autoGenDone.current && accounts.length > 0 && initAccountId) {
+    if (!autoGenDone.current && allAccounts.length > 0 && initAccountId) {
       autoGenDone.current = true
       generate()
     }
-  }, [accounts]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allAccounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function doExport() {
     const rows = []
@@ -325,7 +344,7 @@ export default function LedgerPage() {
 
       {/* Filter bar — account dropdown + dates + generate */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', overflow: 'visible' }}>
-        <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
+        <AccountSelector allAccounts={allAccounts} postableIds={postableIds} selectedIds={selectedIds} onChange={setSelectedIds} />
         <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>From Date</label>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
