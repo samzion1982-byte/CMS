@@ -1027,9 +1027,21 @@ html { zoom: 0.95; }
    ═══════════════════════════════════════════════════════════════ */
 
 @media print {
-  .no-print { display: none !important; }
-  .card     { break-inside: avoid; page-break-inside: avoid; }
-  body      { background: white; padding: 0; margin: 0; color: #000; }
+  @page { size: A4 landscape; margin: 1cm 1.5cm; }
+  .no-print   { display: none !important; }
+  .card       { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; border-radius: 0 !important; }
+  body        { background: white; padding: 0; margin: 0; color: #000; }
+  .app-main   { margin: 0 !important; padding: 0 !important; }
+  #financial-print-area {
+    border: none !important; border-radius: 0 !important; box-shadow: none !important;
+    padding: 8px !important; background: #fff !important;
+  }
+  #financial-print-area table { border-collapse: collapse !important; }
+  #financial-print-area thead { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #financial-print-area tfoot { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #financial-print-area th    { font-size: 9px  !important; padding: 5px 8px !important; border: 0.5px solid #ccc !important; }
+  #financial-print-area td    { font-size: 11px !important; padding: 5px 8px !important; }
+  #financial-print-area tr    { page-break-inside: avoid; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

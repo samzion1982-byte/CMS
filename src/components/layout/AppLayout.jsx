@@ -107,9 +107,13 @@ export default function AppLayout({ children }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--page-bg)' }}>
-      <Header onEditDevice={openEditMode} />
-      <Sidebar collapsed={collapsed} sidebarW={sidebarW} onToggle={toggle} />
-      <main style={{
+      <div className="no-print" style={{ display: 'contents' }}>
+        <Header onEditDevice={openEditMode} />
+      </div>
+      <div className="no-print" style={{ display: 'contents' }}>
+        <Sidebar collapsed={collapsed} sidebarW={sidebarW} onToggle={toggle} />
+      </div>
+      <main className="app-main" style={{
         flex: 1,
         marginLeft: sidebarW,
         marginTop: HEADER_H,

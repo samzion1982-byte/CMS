@@ -323,7 +323,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
   return (
     <div>
       {allGroupKeys.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
           <button
             onClick={() => setExpanded(allExpanded ? new Set() : new Set(allGroupKeys))}
             style={{
@@ -346,7 +346,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
         rightLabel="Cr  —  Payments"
         navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
-      <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
+      <p className="no-print" style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
         Receipts &amp; Payments grouped by COA hierarchy · click ▶ to expand groups · click account to view ledger
       </p>
     </div>
@@ -574,6 +574,36 @@ export default function FinancialStatementsPage() {
     setToDate(to)
   }
 
+  function handlePrint() {
+    const style = document.createElement('style')
+    style.id = '__fin_print_css__'
+    style.textContent = `
+      @media print {
+        @page { size: A4 landscape; margin: 1cm 1.5cm; }
+        body * { visibility: hidden !important; }
+        #financial-print-area, #financial-print-area * { visibility: visible !important; }
+        #financial-print-area {
+          position: absolute !important; top: 0 !important; left: 0 !important;
+          right: 0 !important; padding: 20px !important;
+          border: none !important; border-radius: 0 !important;
+          background: #fff !important; box-shadow: none !important;
+        }
+        #financial-print-area .no-print { display: none !important; }
+        #financial-print-area table { border-collapse: collapse !important; width: 100% !important; }
+        #financial-print-area thead { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #financial-print-area tfoot { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #financial-print-area th  { font-size: 9px !important; padding: 5px 8px !important; border: 0.5px solid #ccc !important; }
+        #financial-print-area td  { font-size: 11px !important; padding: 5px 8px !important; }
+        #financial-print-area tr  { page-break-inside: avoid; }
+      }
+    `
+    document.head.appendChild(style)
+    window.addEventListener('afterprint', () => {
+      document.getElementById('__fin_print_css__')?.remove()
+    }, { once: true })
+    window.print()
+  }
+
   const generate = useCallback(async () => {
     const fd = rangeMode === 'custom' ? fromDate : null
     const td = rangeMode === 'custom' ? toDate   : null
@@ -605,7 +635,7 @@ export default function FinancialStatementsPage() {
     <div className="page-container">
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header">
+      <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <ArrowLeft size={15} />
@@ -644,7 +674,7 @@ export default function FinancialStatementsPage() {
           </button>
 
           {generated && (
-            <button onClick={() => window.print()}
+            <button onClick={handlePrint}
               style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
               <Printer size={14} /> Print
             </button>
@@ -653,7 +683,7 @@ export default function FinancialStatementsPage() {
       </div>
 
       {/* ── Date Range Picker ───────────────────────────────────── */}
-      <div className="card" style={{ padding: '12px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div className="card no-print" style={{ padding: '12px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <Calendar size={15} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Period</span>
 
@@ -711,7 +741,7 @@ export default function FinancialStatementsPage() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--table-header-bg)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
+      <div className="no-print" style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--table-header-bg)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{ padding: '8px 22px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: tab === t.id ? 700 : 500, background: tab === t.id ? 'var(--card-bg)' : 'transparent', color: tab === t.id ? 'var(--accent)' : 'var(--text-2)', boxShadow: tab === t.id ? '0 1px 4px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
@@ -749,7 +779,7 @@ export default function FinancialStatementsPage() {
 
       {/* ── Reports ─────────────────────────────────────────────── */}
       {generated && !loading && (
-        <div className="card" style={{ padding: 24 }}>
+        <div id="financial-print-area" className="card" style={{ padding: 24 }}>
           {/* Church header */}
           <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--card-border)' }}>
             <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>
