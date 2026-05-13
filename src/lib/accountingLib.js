@@ -890,8 +890,10 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
     for (const [id, amount] of Object.entries(amts)) {
       if (!(amount > 0)) continue
       const acct = coaById[id]
-      const parent = acct?.parent_id ? coaById[acct.parent_id] : null
-      const useParent = !!(parent && parent.level >= 2)
+      // Only group L4 sub-ledgers under their L3 ledger parent.
+      // L3 ledgers stay as top-level items (not folded into their L2 group).
+      const parent = (acct?.level === 4 && acct?.parent_id) ? coaById[acct.parent_id] : null
+      const useParent = !!(parent && parent.level === 3)
       const key = useParent ? parent.id : id
       const groupName = useParent ? parent.name : (acct?.name || id)
       if (!groups[key]) groups[key] = { name: groupName, total: 0, children: [], grouped: useParent }

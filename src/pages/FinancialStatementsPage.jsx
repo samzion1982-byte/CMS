@@ -140,13 +140,14 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  R&P Table — 6-column layout with inner / outer amount columns
+//  R&P Table — 6-column layout (3 per side: label | detail | amount)
+//  inner = expanded sub-item (dim)  outer = group total / standalone (bold)
 // ════════════════════════════════════════════════════════════════
 
 function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
   function renderSide(cell, isRight) {
     const sepBorder = isRight ? '2px solid var(--card-border)' : 'none'
-    if (!cell) return <><td style={{ borderLeft: sepBorder }} /><td /></>
+    if (!cell) return <><td style={{ borderLeft: sepBorder }} /><td /><td /></>
 
     const clickable = !!(cell.accountId && navigate) && !cell.isGroup
     const isGroup   = !!cell.isGroup
@@ -155,22 +156,12 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
       if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
     }
 
-    // Compensate paddingLeft for chevron width (16px) so text aligns with non-group rows
+    // Compensate paddingLeft for chevron width so text aligns with non-group rows
     const pl = cell.indent2
       ? (isGroup ? 36 : 52)
       : cell.indent
         ? (isGroup ? 16 : 32)
         : 14
-
-    // Show outer (total) if present, else inner (detail)
-    const amount    = cell.outer !== undefined ? cell.outer : cell.inner
-    const hasAmount = amount !== undefined
-    // Section totals: bold, no indent. Group totals: bold, indent. Items: normal
-    const isSectionTotal = cell.bold && !cell.indent
-    const isGroupTotal   = cell.bold && cell.indent
-    const amtWeight = isSectionTotal ? 800 : isGroupTotal ? 700 : 400
-    const amtSize   = isSectionTotal ? 14 : 13
-    const amtColor  = cell.indent2 ? 'var(--text-2)' : 'var(--text-1)'
 
     return (
       <>
@@ -188,8 +179,13 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
           {cell.label || ''}
           {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />}
         </td>
-        <td style={{ paddingRight: 16, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: amtSize, width: 160, fontWeight: amtWeight, color: hasAmount ? amtColor : 'transparent', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-          {hasAmount ? fmtAmt(amount) : ''}
+        {/* Detail column — expanded sub-items only (dim) */}
+        <td style={{ paddingRight: 8, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 12, width: 120, color: 'var(--text-3)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+          {cell.inner !== undefined ? fmtAmt(cell.inner) : ''}
+        </td>
+        {/* Amount column — standalone items, group totals, section totals (bold) */}
+        <td style={{ paddingRight: 16, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: cell.bold ? 14 : 13, width: 145, fontWeight: cell.bold ? 800 : 500, color: 'var(--text-1)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+          {cell.outer !== undefined ? fmtAmt(cell.outer) : ''}
         </td>
       </>
     )
@@ -202,9 +198,11 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         <thead style={{ background: 'var(--table-header-bg)' }}>
           <tr>
             <th style={TH}>{leftLabel}</th>
-            <th style={{ ...TH, width: 160, textAlign: 'right' }}>Amount</th>
+            <th style={{ ...TH, width: 120, textAlign: 'right' }}>Detail</th>
+            <th style={{ ...TH, width: 145, textAlign: 'right' }}>Amount</th>
             <th style={{ ...TH, borderLeft: '2px solid var(--card-border)' }}>{rightLabel}</th>
-            <th style={{ ...TH, width: 160, textAlign: 'right' }}>Amount</th>
+            <th style={{ ...TH, width: 120, textAlign: 'right' }}>Detail</th>
+            <th style={{ ...TH, width: 145, textAlign: 'right' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
@@ -227,8 +225,10 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         <tfoot>
           <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
             <td style={{ ...TD, fontWeight: 800, paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
+            <td />
             <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 15, paddingRight: 16 }}>{fmtAmt(leftTotal)}</td>
             <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)', paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
+            <td />
             <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 15, paddingRight: 16 }}>{fmtAmt(rightTotal)}</td>
           </tr>
         </tfoot>
@@ -269,7 +269,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
   function balRows(key, label, total, accounts) {
     if (accounts.length <= 1) {
       const name = accounts.length === 1 ? accounts[0].name : label
-      return [{ label: name, inner: total, indent: true, accountId: accounts[0]?.id }]
+      return [{ label: name, outer: total, indent: true, accountId: accounts[0]?.id }]
     }
     const isExp = expanded.has(key)
     if (!isExp) return [{ label, outer: total, indent: true, isGroup: true, isExpanded: false, onToggle: () => toggle(key) }]
@@ -283,7 +283,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
   // Receipt/payment group rows — drill-down when multiple child accounts
   function grpRows(prefix, item) {
     if (item.children.length === 0) {
-      return [{ label: item.name, inner: item.amount, indent: true, accountId: item.accountId }]
+      return [{ label: item.name, outer: item.amount, indent: true, accountId: item.accountId }]
     }
     const key = prefix + item.name
     const isExp = expanded.has(key)
