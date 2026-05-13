@@ -1,7 +1,7 @@
-﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   ChartOfAccountsPage.jsx â€” Drill-down Chart of Accounts
-   Main Account â†’ Account Group â†’ Ledger (3 levels)
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════════════════════════════════════════════════════
+   ChartOfAccountsPage.jsx — Drill-down Chart of Accounts
+   Main Account → Account Group → Ledger (3 levels)
+   ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -18,13 +18,13 @@ import {
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
-// â”€â”€ Level config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Level config ──────────────────────────────────────────────────
 
 const LEVEL_LABEL  = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger', 4: 'Sub-Ledger' }
 const LEVEL_NEXT   = { 1: 'Group', 2: 'Ledger', 3: 'Sub-Ledger' }
 const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
-// â”€â”€ Single tree node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Single tree node ──────────────────────────────────────────────
 
 function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleActive, deleting,
                     dragId, dropId, dropPos, onDragStart, onDragOver, onDrop, onDragEnd }) {
@@ -45,12 +45,12 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleA
 
   return (
     <div>
-      {/* â”€â”€ Drop indicator: BEFORE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Drop indicator: BEFORE ───────────────────────────── */}
       {isDropOver && dropPos === 'before' && (
         <div style={{ height: 2, background: 'var(--accent)', margin: `0 0 0 ${indent + 16}px`, borderRadius: 2 }} />
       )}
 
-      {/* â”€â”€ Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Row ─────────────────────────────────────────────── */}
       <div
         draggable={!isL1}
         onDragStart={e => {
@@ -138,7 +138,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleA
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          {/* Add child (L1â†’Group, L2â†’Ledger, L3â†’Sub-Ledger) */}
+          {/* Add child (L1→Group, L2→Ledger, L3→Sub-Ledger) */}
           {node.level < 4 && (
             <button
               onClick={() => onAdd(node)}
@@ -181,7 +181,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleA
         </div>
       </div>
 
-      {/* â”€â”€ Children â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Children ────────────────────────────────────────── */}
       {open && hasChildren && (
         <div>
           {node.children.map(child => (
@@ -210,7 +210,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleA
   )
 }
 
-// â”€â”€ Modal form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Modal form ────────────────────────────────────────────────────
 
 function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, saving }) {
   const isEdit = mode === 'edit'
@@ -274,7 +274,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
             />
           </div>
 
-          {/* Account type â€” only editable on L1, locked for children */}
+          {/* Account type — only editable on L1, locked for children */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account Type *</label>
             {(isEdit && node.level === 1) || (!isEdit && thisLevel === 1) ? (
@@ -313,7 +313,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
           <button onClick={() => onSave(form, thisLevel)} disabled={saving}
             style={{ padding: '8px 22px', background: c.text, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: saving ? 0.7 : 1 }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {saving ? 'Savingâ€¦' : (isEdit ? 'Update' : 'Create')}
+            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Create')}
           </button>
         </div>
       </div>
@@ -321,9 +321,9 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 //  MAIN PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 
 export default function ChartOfAccountsPage() {
   const { profile } = useAuth()
@@ -339,7 +339,7 @@ export default function ChartOfAccountsPage() {
   const [search,      setSearch]      = useState('')
   const [showNewEntry, setShowNewEntry] = useState(false)
 
-  // â”€â”€ Drag-and-drop state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Drag-and-drop state ────────────────────────────────────────
   const [dragNode, setDragNode] = useState(null)
   const [dragId,   setDragId]   = useState(null)
   const [dropId,   setDropId]   = useState(null)
@@ -359,7 +359,7 @@ export default function ChartOfAccountsPage() {
 
   useEffect(() => {
     function onKey(e) {
-      // + key (Shift+= on most keyboards) â€” capture phase so it fires even when search input is focused
+      // + key (Shift+= on most keyboards) — capture phase so it fires even when search input is focused
       if (e.key === '+' && !e.ctrlKey && !e.altKey) {
         e.preventDefault()
         setShowNewEntry(true)
@@ -369,7 +369,7 @@ export default function ChartOfAccountsPage() {
     return () => document.removeEventListener('keydown', onKey, true)
   }, [])
 
-  // â”€â”€ Filter tree by search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Filter tree by search ──────────────────────────────────────
   function filterTree(nodes, q) {
     if (!q) return nodes
     const lower = q.toLowerCase()
@@ -385,7 +385,7 @@ export default function ChartOfAccountsPage() {
 
   const displayTree = search ? filterTree(tree, search) : tree
 
-  // â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Stats ──────────────────────────────────────────────────────
   const totalCounts = {
     l1: accounts.filter(a => a.level === 1).length,
     l2: accounts.filter(a => a.level === 2).length,
@@ -393,7 +393,7 @@ export default function ChartOfAccountsPage() {
     l4: accounts.filter(a => a.level === 4).length,
   }
 
-  // â”€â”€ Excel Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Excel Export ───────────────────────────────────────────────
   const [exporting, setExporting] = useState(false)
 
   async function exportExcel() {
@@ -459,7 +459,7 @@ export default function ChartOfAccountsPage() {
         seq++
         const indent = '    '.repeat(depth)
         const row = ws.getRow(rowIdx++)
-        row.values = [seq, LEVEL_LABEL[node.level] || '', node.account_type || '', indent + node.name, node.is_postable ? 'âœ“' : '']
+        row.values = [seq, LEVEL_LABEL[node.level] || '', node.account_type || '', indent + node.name, node.is_postable ? '✓' : '']
         row.height = node.level === 1 ? 22 : node.level === 2 ? 20 : 18
 
         if (node.level === 1) {
@@ -516,7 +516,7 @@ export default function ChartOfAccountsPage() {
     setExporting(false)
   }
 
-  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Handlers ──────────────────────────────────────────────────
 
   function handleAdd(parentNode) {
     setModal({ mode: 'add', node: null, parentNode })
@@ -584,13 +584,13 @@ export default function ChartOfAccountsPage() {
     setSaving(false)
   }
 
-  // â”€â”€ Add a new top-level Main Account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Add a new top-level Main Account ──────────────────────────
 
   function handleAddMainAccount() {
     setModal({ mode: 'add', node: null, parentNode: null })
   }
 
-  // â”€â”€ Drag-and-drop handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Drag-and-drop handlers ─────────────────────────────────────
 
   function getAllDescendants(nodeId, allAccs) {
     const kids = allAccs.filter(a => a.parent_id === nodeId)
@@ -687,14 +687,14 @@ export default function ChartOfAccountsPage() {
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <BookOpen size={20} style={{ color: 'var(--accent)' }} /> Chart of Accounts
             </h1>
-            <p className="page-subtitle">Manage account hierarchy â€” Main Account â†’ Group â†’ Ledger</p>
+            <p className="page-subtitle">Manage account hierarchy — Main Account → Group → Ledger</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={exportExcel} disabled={exporting || loading}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#16a34a', border: '1.5px solid #16a34a', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading ? 0.6 : 1 }}>
             {exporting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Download size={14} />}
-            {exporting ? 'Exportingâ€¦' : 'Export Excel'}
+            {exporting ? 'Exporting…' : 'Export Excel'}
           </button>
           <button onClick={handleAddMainAccount}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}>
@@ -707,15 +707,15 @@ export default function ChartOfAccountsPage() {
       <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'stretch' }}>
         {/* Stats */}
         {[
-          { label: 'Main Accounts', count: totalCounts.l1, icon: 'ðŸ—‚ï¸' },
-          { label: 'Account Groups', count: totalCounts.l2, icon: 'ðŸ“' },
-          { label: 'Ledgers',        count: totalCounts.l3, icon: 'ðŸ“„' },
-          { label: 'Sub-Ledgers',    count: totalCounts.l4, icon: 'ðŸ“‹' },
+          { label: 'Main Accounts', count: totalCounts.l1, icon: '🗂️' },
+          { label: 'Account Groups', count: totalCounts.l2, icon: '📁' },
+          { label: 'Ledgers',        count: totalCounts.l3, icon: '📄' },
+          { label: 'Sub-Ledgers',    count: totalCounts.l4, icon: '📋' },
         ].map(s => (
           <div key={s.label} className="card" style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto' }}>
             <span style={{ fontSize: 22 }}>{s.icon}</span>
             <div>
-              <p style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-1)', margin: 0, lineHeight: 1 }}>{loading ? 'â€”' : s.count}</p>
+              <p style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-1)', margin: 0, lineHeight: 1 }}>{loading ? '—' : s.count}</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{s.label}</p>
             </div>
           </div>
@@ -725,10 +725,10 @@ export default function ChartOfAccountsPage() {
         <div style={{ flex: 1, minWidth: 220, position: 'relative', display: 'flex', alignItems: 'center' }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search accountsâ€¦"
+            placeholder="Search accounts…"
             style={{ width: '100%', height: 40, paddingLeft: 38, paddingRight: search ? 36 : 12, border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
           />
-          <span style={{ position: 'absolute', left: 12, color: 'var(--text-3)', pointerEvents: 'none' }}>ðŸ”</span>
+          <span style={{ position: 'absolute', left: 12, color: 'var(--text-3)', pointerEvents: 'none' }}>🔍</span>
           {search && (
             <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
               <X size={14} />
@@ -740,10 +740,10 @@ export default function ChartOfAccountsPage() {
       {/* Legend */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         {[
-          { icon: <FolderOpen size={13} />, label: 'Main Account â€” top-level grouping',  color: '#7c3aed' },
-          { icon: <Folder size={13} />,     label: 'Account Group â€” sub-category',       color: '#2563eb' },
-          { icon: <FileText size={13} />,   label: 'Ledger â€” postable account',          color: '#16a34a' },
-          { icon: <FileText size={11} />,   label: 'Sub-Ledger â€” detailed posting level', color: '#c2410c' },
+          { icon: <FolderOpen size={13} />, label: 'Main Account — top-level grouping',  color: '#7c3aed' },
+          { icon: <Folder size={13} />,     label: 'Account Group — sub-category',       color: '#2563eb' },
+          { icon: <FileText size={13} />,   label: 'Ledger — postable account',          color: '#16a34a' },
+          { icon: <FileText size={11} />,   label: 'Sub-Ledger — detailed posting level', color: '#c2410c' },
         ].map(l => (
           <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: l.color }}>
             {l.icon} <span style={{ color: 'var(--text-3)' }}>{l.label}</span>
@@ -755,7 +755,7 @@ export default function ChartOfAccountsPage() {
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
           <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-          Loading chart of accountsâ€¦
+          Loading chart of accounts…
         </div>
       ) : displayTree.length === 0 ? (
         <div className="card" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--text-3)' }}>

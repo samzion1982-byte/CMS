@@ -1,6 +1,6 @@
-﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   AccountingReportsPage.jsx â€” Day Book, Account Summary & GL Reports
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════════════════════════════════════════════════════
+   AccountingReportsPage.jsx — Day Book, Account Summary & GL Reports
+   ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { exportToExcel } from '../lib/exportExcel'
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ───────────────────────────────────────────────────────
 
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
@@ -41,9 +41,9 @@ function TabBtn({ active, onClick, children }) {
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 //  MAIN PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 
 export default function AccountingReportsPage() {
   const navigate = useNavigate()
@@ -54,7 +54,7 @@ export default function AccountingReportsPage() {
   const today = localISO(new Date())
   const monthStart = today.slice(0, 8) + '01'
 
-  // â”€â”€ Day Book state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Day Book state ────────────────────────────────────────────
   const [dbFrom,    setDbFrom]    = useState(monthStart)
   const [dbTo,      setDbTo]      = useState(today)
   const [dbType,    setDbType]    = useState('')
@@ -62,10 +62,10 @@ export default function AccountingReportsPage() {
   const [dbSearch,  setDbSearch]  = useState('')
   const [dbEntries, setDbEntries] = useState([])
   const [dbLoading, setDbLoading] = useState(false)
-  const [dbLines,   setDbLines]   = useState({}) // id â†’ lines[]
+  const [dbLines,   setDbLines]   = useState({}) // id → lines[]
   const [dbDateSort, setDbDateSort] = useState('desc') // 'asc' | 'desc'
 
-  // â”€â”€ Account Summary state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Account Summary state ─────────────────────────────────────
   const [fy,          setFy]          = useState(getFY())
   const [fyOpen,      setFyOpen]      = useState(false)
   const [acTypeFilter, setAcTypeFilter] = useState('')
@@ -73,14 +73,14 @@ export default function AccountingReportsPage() {
   const [balances,    setBalances]    = useState([])
   const [acLoading,   setAcLoading]   = useState(false)
 
-  // â”€â”€ Group Report state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Group Report state ────────────────────────────────────────
   const [grpExpanded, setGrpExpanded] = useState(new Set())
   const [grShowZero,  setGrShowZero]  = useState(false)
 
   const FYS = fyOptions()
   const AC_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
-  // â”€â”€ Load Day Book â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load Day Book ─────────────────────────────────────────────
   const loadDayBook = useCallback(async () => {
     if (!dbFrom || !dbTo) return
     setDbLoading(true)
@@ -99,7 +99,7 @@ export default function AccountingReportsPage() {
 
   useEffect(() => { if (tab === 'daybook') loadDayBook() }, [tab, loadDayBook])
 
-  // â”€â”€ Load Account Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load Account Summary ──────────────────────────────────────
   const loadAccountSummary = useCallback(async () => {
     setAcLoading(true)
     try {
@@ -120,7 +120,7 @@ export default function AccountingReportsPage() {
 
   useEffect(() => { if (tab === 'account-summary' || tab === 'group-report') loadAccountSummary() }, [tab, loadAccountSummary])
 
-  // â”€â”€ Expand row to show entry lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Expand row to show entry lines ────────────────────────────
   async function toggleLines(entry) {
     if (dbLines[entry.id]) {
       setDbLines(prev => { const n = { ...prev }; delete n[entry.id]; return n })
@@ -136,7 +136,7 @@ export default function AccountingReportsPage() {
     } catch (e) { toast(e.message, 'error') }
   }
 
-  // â”€â”€ Day Book filtered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Day Book filtered ─────────────────────────────────────────
   const dbFiltered = dbEntries.filter(e => {
     if (!dbSearch) return true
     const q = dbSearch.toLowerCase()
@@ -152,7 +152,7 @@ export default function AccountingReportsPage() {
       : (b.entry_date || '').localeCompare(a.entry_date || '')
   )
 
-  // â”€â”€ Account Summary filtered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Account Summary filtered ──────────────────────────────────
   const balMap = Object.fromEntries(balances.map(b => [b.account_id, b]))
 
   const acFiltered = allAccounts
@@ -173,7 +173,7 @@ export default function AccountingReportsPage() {
     return acc
   }, {})
 
-  // â”€â”€ Group Report computed data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Group Report computed data ────────────────────────────────
   const childrenMap = useMemo(() => {
     const m = {}
     allAccounts.forEach(a => {
@@ -301,7 +301,7 @@ export default function AccountingReportsPage() {
     return rows
   }, [allAccounts, balances, childrenMap, grpExpanded, grShowZero])
 
-  // â”€â”€ Export handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Export handlers ───────────────────────────────────────────
   async function doExportDayBook() {
     const cols = [
       { header: 'Date',        key: 'date',   align: 'left'  },
@@ -309,8 +309,8 @@ export default function AccountingReportsPage() {
       { header: 'Type',        key: 'type',   align: 'left'  },
       { header: 'Narration',   key: 'narr',   align: 'left'  },
       { header: 'Ref No',      key: 'ref',    align: 'left'  },
-      { header: 'Debit (â‚¹)',   key: 'debit',  align: 'right' },
-      { header: 'Credit (â‚¹)',  key: 'credit', align: 'right' },
+      { header: 'Debit (₹)',   key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',  key: 'credit', align: 'right' },
       { header: 'Status',      key: 'status', align: 'left'  },
     ]
     const rows = dbSorted.map(e => ({
@@ -333,10 +333,10 @@ export default function AccountingReportsPage() {
       { header: 'Code',             key: 'code',    align: 'left'   },
       { header: 'Account Name',     key: 'name',    align: 'left'   },
       { header: 'Level',            key: 'level',   align: 'center' },
-      { header: 'Opening (â‚¹)',      key: 'opening', align: 'right'  },
-      { header: 'Total Debit (â‚¹)',  key: 'debit',   align: 'right'  },
-      { header: 'Total Credit (â‚¹)', key: 'credit',  align: 'right'  },
-      { header: 'Net Balance (â‚¹)',  key: 'net',     align: 'right'  },
+      { header: 'Opening (₹)',      key: 'opening', align: 'right'  },
+      { header: 'Total Debit (₹)',  key: 'debit',   align: 'right'  },
+      { header: 'Total Credit (₹)', key: 'credit',  align: 'right'  },
+      { header: 'Net Balance (₹)',  key: 'net',     align: 'right'  },
     ]
     const rows = []
     AC_TYPES.forEach(type => {
@@ -386,9 +386,9 @@ export default function AccountingReportsPage() {
 
     const cols = [
       { header: 'Account / Group', key: 'name',   align: 'left'  },
-      { header: 'Debit (â‚¹)',       key: 'debit',  align: 'right' },
-      { header: 'Credit (â‚¹)',      key: 'credit', align: 'right' },
-      { header: 'Net Balance (â‚¹)', key: 'net',    align: 'right' },
+      { header: 'Debit (₹)',       key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',      key: 'credit', align: 'right' },
+      { header: 'Net Balance (₹)', key: 'net',    align: 'right' },
     ]
     const rows = []
 
@@ -404,7 +404,7 @@ export default function AccountingReportsPage() {
         const net = netBal(a), dr = totDr(a), cr = totCr(a)
         if (!grShowZero && net === 0 && dr === 0 && cr === 0) return
         const indent = '  '.repeat(depth)
-        const prefix = ch.length > 0 ? 'â–¸ ' : '  '
+        const prefix = ch.length > 0 ? '▸ ' : '  '
         rows.push({
           name:   indent + prefix + a.name,
           debit:  dr > 0 ? dr : '',
@@ -422,7 +422,7 @@ export default function AccountingReportsPage() {
       const typeDr  = roots.reduce((s, r) => s + totDr(r), 0)
       const typeCr  = roots.reduce((s, r) => s + totCr(r), 0)
       if (!grShowZero && typeNet === 0 && typeDr === 0 && typeCr === 0) return
-      rows.push({ name: `â”â” ${displayAccountType(type).toUpperCase()} ACCOUNTS â”â”`, debit: typeDr || '', credit: typeCr || '', net: Math.abs(typeNet) })
+      rows.push({ name: `━━ ${displayAccountType(type).toUpperCase()} ACCOUNTS ━━`, debit: typeDr || '', credit: typeCr || '', net: Math.abs(typeNet) })
       flattenAll(roots, 0)
       rows.push({ name: '', debit: '', credit: '', net: '' })
     })
@@ -441,7 +441,7 @@ export default function AccountingReportsPage() {
   return (
     <div className="page-container">
 
-      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -464,7 +464,7 @@ export default function AccountingReportsPage() {
         </div>
       </div>
 
-      {/* â•â•â•â•â•â•â•â•â•â• DAY BOOK TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ══════════ DAY BOOK TAB ═══════════════════════════════════ */}
       {tab === 'daybook' && (
         <>
           {/* Filter bar */}
@@ -492,7 +492,7 @@ export default function AccountingReportsPage() {
 
             <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
               <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
-              <input value={dbSearch} onChange={e => setDbSearch(e.target.value)} placeholder="Searchâ€¦"
+              <input value={dbSearch} onChange={e => setDbSearch(e.target.value)} placeholder="Search…"
                 style={{ width: '100%', paddingLeft: 30, paddingRight: 10, height: 34, border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
               {dbSearch && <button onClick={() => setDbSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={13} /></button>}
             </div>
@@ -510,7 +510,7 @@ export default function AccountingReportsPage() {
           {/* Day Book table */}
           <div className="card" style={{ overflow: 'hidden' }}>
             {dbLoading ? (
-              <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}><Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading day bookâ€¦</div>
+              <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}><Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading day book…</div>
             ) : dbFiltered.length === 0 ? (
               <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
                 <FileText size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
@@ -542,12 +542,12 @@ export default function AccountingReportsPage() {
                           onClick={() => toggleLines(e)}
                         >
                           <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {e.entry_date ? new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'â€”'}
+                            {e.entry_date ? new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                           </td>
                           <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                           <td style={{ padding: '9px 14px' }}><VBadge type={e.voucher_type} /></td>
-                          <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.narration || 'â€”'}</td>
-                          <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{e.reference_no || 'â€”'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.narration || '—'}</td>
+                          <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{e.reference_no || '—'}</td>
                           <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(e.total_debit)}</td>
                           <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(e.total_credit)}</td>
                           <td style={{ padding: '9px 14px' }}>
@@ -578,7 +578,7 @@ export default function AccountingReportsPage() {
                                         <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace', marginRight: 6 }}>{ln.chart_of_accounts?.code}</span>
                                         {ln.chart_of_accounts?.name}
                                       </td>
-                                      <td style={{ padding: '6px 14px', fontSize: 12, color: 'var(--text-3)', borderTop: '1px solid var(--card-border)' }}>{ln.description || 'â€”'}</td>
+                                      <td style={{ padding: '6px 14px', fontSize: 12, color: 'var(--text-3)', borderTop: '1px solid var(--card-border)' }}>{ln.description || '—'}</td>
                                       <td style={{ padding: '6px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb', borderTop: '1px solid var(--card-border)' }}>{ln.debit_amount > 0 ? fmtAmt(ln.debit_amount) : ''}</td>
                                       <td style={{ padding: '6px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a', borderTop: '1px solid var(--card-border)' }}>{ln.credit_amount > 0 ? fmtAmt(ln.credit_amount) : ''}</td>
                                     </tr>
@@ -594,13 +594,13 @@ export default function AccountingReportsPage() {
                   <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
                     <tr>
                       <td colSpan={5} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
-                        Total â€” {dbFiltered.length} {dbFiltered.length === 1 ? 'entry' : 'entries'}
+                        Total — {dbFiltered.length} {dbFiltered.length === 1 ? 'entry' : 'entries'}
                       </td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(dbTotalDebit)}</td>
                       <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(dbTotalCredit)}</td>
                       <td colSpan={2} style={{ padding: '10px 14px' }}>
                         {Math.abs(dbTotalDebit - dbTotalCredit) < 0.01
-                          ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>âœ“ Balanced</span>
+                          ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>✓ Balanced</span>
                           : <span style={{ fontSize: 11, fontWeight: 700, color: '#c2410c' }}>Diff: {fmtAmt(Math.abs(dbTotalDebit - dbTotalCredit))}</span>
                         }
                       </td>
@@ -613,7 +613,7 @@ export default function AccountingReportsPage() {
         </>
       )}
 
-      {/* â•â•â•â•â•â•â•â•â•â• ACCOUNT SUMMARY TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ══════════ ACCOUNT SUMMARY TAB ════════════════════════════ */}
       {tab === 'account-summary' && (
         <>
           {/* Controls */}
@@ -647,7 +647,7 @@ export default function AccountingReportsPage() {
 
           {acLoading ? (
             <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
-              <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading account balancesâ€¦
+              <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading account balances…
             </div>
           ) : acFiltered.length === 0 ? (
             <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
@@ -699,14 +699,14 @@ export default function AccountingReportsPage() {
                                   {a.name}
                                 </td>
                                 <td style={{ padding: '9px 14px', fontSize: 11, color: 'var(--text-3)' }}>L{a.level}</td>
-                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-2)' }}>{a.opening !== 0 ? fmtAmt(a.opening) : 'â€”'}</td>
-                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{a.total_debit > 0 ? fmtAmt(a.total_debit) : 'â€”'}</td>
-                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{a.total_credit > 0 ? fmtAmt(a.total_credit) : 'â€”'}</td>
+                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-2)' }}>{a.opening !== 0 ? fmtAmt(a.opening) : '—'}</td>
+                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{a.total_debit > 0 ? fmtAmt(a.total_debit) : '—'}</td>
+                                <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{a.total_credit > 0 ? fmtAmt(a.total_credit) : '—'}</td>
                                 <td style={{ padding: '9px 14px', fontSize: 13, fontFamily: 'monospace', textAlign: 'right', fontWeight: 700, color: net >= 0 ? 'var(--text-1)' : '#b91c1c' }}>
                                   {fmtAmt(Math.abs(net))}{net < 0 ? ' (Cr)' : ''}
                                 </td>
                                 <td style={{ padding: '9px 14px', fontSize: 11, color: 'var(--accent)' }}>
-                                  Ledger â†’
+                                  Ledger →
                                 </td>
                               </tr>
                             )
@@ -722,7 +722,7 @@ export default function AccountingReportsPage() {
         </>
       )}
 
-      {/* â•â•â•â•â•â•â•â•â•â• GROUP REPORT TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ══════════ GROUP REPORT TAB ════════════════════════════════ */}
       {tab === 'group-report' && (
         <>
           {/* Controls */}
@@ -760,7 +760,7 @@ export default function AccountingReportsPage() {
 
           {acLoading ? (
             <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
-              <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accountsâ€¦
+              <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accounts…
             </div>
           ) : grRows.length === 0 ? (
             <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
@@ -826,10 +826,10 @@ export default function AccountingReportsPage() {
                             </div>
                           </td>
                           <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb' }}>
-                            {row.totalDr > 0 ? fmtAmt(row.totalDr) : 'â€”'}
+                            {row.totalDr > 0 ? fmtAmt(row.totalDr) : '—'}
                           </td>
                           <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a' }}>
-                            {row.totalCr > 0 ? fmtAmt(row.totalCr) : 'â€”'}
+                            {row.totalCr > 0 ? fmtAmt(row.totalCr) : '—'}
                           </td>
                           <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
                             {fmtAmt(Math.abs(row.net))}
@@ -837,7 +837,7 @@ export default function AccountingReportsPage() {
                         </tr>
                       )
                     }
-                    // Leaf account â€” click to open ledger
+                    // Leaf account — click to open ledger
                     return (
                       <tr key={row.id}
                         onClick={() => navigate(`/accounting/ledger?accountId=${row.id}`, { state: { from: 'report' } })}
@@ -850,14 +850,14 @@ export default function AccountingReportsPage() {
                             <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--text-3)', flexShrink: 0 }} />
                             <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{row.name}</span>
                             {row.code && <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'monospace' }}>{row.code}</span>}
-                            <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 'auto', fontWeight: 600 }}>Ledger â†’</span>
+                            <span style={{ fontSize: 10, color: 'var(--accent)', marginLeft: 'auto', fontWeight: 600 }}>Ledger →</span>
                           </div>
                         </td>
                         <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#2563eb' }}>
-                          {row.totalDr > 0 ? fmtAmt(row.totalDr) : 'â€”'}
+                          {row.totalDr > 0 ? fmtAmt(row.totalDr) : '—'}
                         </td>
                         <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: '#16a34a' }}>
-                          {row.totalCr > 0 ? fmtAmt(row.totalCr) : 'â€”'}
+                          {row.totalCr > 0 ? fmtAmt(row.totalCr) : '—'}
                         </td>
                         <td style={{ padding: '8px 14px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-2)' }}>
                           {fmtAmt(Math.abs(row.net))}{row.net < 0 ? ' (Cr)' : ''}

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -29,7 +29,7 @@ function matchAcct(name, q) {
   return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
 }
 
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select accountâ€¦', disabled = false }) {
+function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
   const [query, setQuery] = useState('')
   const [open,  setOpen]  = useState(false)
   const [hi,    setHi]    = useState(0)
@@ -292,10 +292,10 @@ export default function PaymentVoucherPage() {
             <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
             <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
               style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
-              <option value="">â€” None (General) â€”</option>
+              <option value="">— None (General) —</option>
               {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
-            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>â—</span>}
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
           </div>
         )}
       </div>
@@ -309,7 +309,7 @@ export default function PaymentVoucherPage() {
         ].map((s, i) => (
           <div key={s.n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, background: step >= s.n ? accentColor : 'var(--card-border)', color: step >= s.n ? '#fff' : 'var(--text-3)', flexShrink: 0 }}>
-              {step > s.n ? 'âœ“' : s.n}
+              {step > s.n ? '✓' : s.n}
             </div>
             <span style={{ color: step >= s.n ? 'var(--text-1)' : 'var(--text-3)', fontWeight: step === s.n ? 700 : 400 }}>{s.label}</span>
             {i < 2 && <ChevronRight size={14} color="var(--text-3)" />}
@@ -355,13 +355,13 @@ export default function PaymentVoucherPage() {
               {paymentType === 'bank' ? <Landmark size={16} color={accentColor} /> : <Banknote size={16} color={accentColor} />}
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: accentColor, marginBottom: 2 }}>Credit â€” Paid From</div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: accentColor, marginBottom: 2 }}>Credit — Paid From</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{creditLabel}</div>
             </div>
             <div style={{ textAlign: 'right', marginRight: 12 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Credit Amount</div>
               <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 18, color: total > 0 ? accentColor : 'var(--text-3)' }}>
-                {total > 0 ? fmtAmt(total) : 'â€”'}
+                {total > 0 ? fmtAmt(total) : '—'}
               </div>
             </div>
             {total > 0 && <CheckCircle2 size={16} color="#16a34a" />}
@@ -378,7 +378,7 @@ export default function PaymentVoucherPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 8 }}>
               <div />
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)' }}>Account</div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'right' }}>Amount (â‚¹)</div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'right' }}>Amount (₹)</div>
               <div />
             </div>
             {lines.map((line, idx) => (
@@ -401,7 +401,7 @@ export default function PaymentVoucherPage() {
             {/* Narration */}
             <div style={{ marginTop: 16, borderTop: '1px solid var(--card-border)', paddingTop: 14 }}>
               <label className="field-label" style={{ display: 'block', marginBottom: 5 }}>Narration</label>
-              <NarrationInput placeholder="Narration for this paymentâ€¦" value={lineNarration} onChange={setLineNarration} disabled={busy} />
+              <NarrationInput placeholder="Narration for this payment…" value={lineNarration} onChange={setLineNarration} disabled={busy} />
             </div>
           </div>
 
@@ -410,7 +410,7 @@ export default function PaymentVoucherPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 3 }}>Total Payment</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 22, color: total > 0 ? accentColor : 'var(--text-3)' }}>{total > 0 ? fmtAmt(total) : 'â€”'}</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 22, color: total > 0 ? accentColor : 'var(--text-3)' }}>{total > 0 ? fmtAmt(total) : '—'}</div>
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => handleSave(false)} disabled={!isValid || busy}
