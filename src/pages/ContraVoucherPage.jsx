@@ -16,6 +16,8 @@ import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
 
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 function acctIsBank(name) { return /bank/i.test(name) }
 function acctBg(name)     { return acctIsBank(name) ? 'rgba(37,99,235,0.12)' : 'rgba(22,163,74,0.12)' }
 function acctColor(name)  { return acctIsBank(name) ? '#2563eb' : '#16a34a' }
@@ -149,7 +151,7 @@ export default function ContraVoucherPage() {
   const [allCoa,    setAllCoa]    = useState([])
   const [voucherNo, setVoucherNo] = useState('')
   const [loaded,    setLoaded]    = useState(false)
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [entryDate, setEntryDate] = useState(() => localISO(new Date()))
   const [refNo,     setRefNo]     = useState('')
   const [narration, setNarration] = useState('')
   const [fromId,    setFromId]    = useState('')
@@ -188,7 +190,7 @@ export default function ContraVoucherPage() {
       setAllCoa(coa)
       if (editId && existing) {
         setVoucherNo(existing.entry_number)
-        setEntryDate(existing.entry_date || new Date().toISOString().slice(0, 10))
+        setEntryDate(existing.entry_date || localISO(new Date()))
         setRefNo(existing.reference_no || '')
         setNarration(existing.narration || '')
         const debitLine  = existing.journal_entry_lines?.find(l => Number(l.debit_amount)  > 0)
@@ -197,7 +199,7 @@ export default function ContraVoucherPage() {
         if (creditLine) { setFromId(creditLine.account_id); setFromLabel(creditLine.chart_of_accounts?.name || '') }
         setAmount(String(existing.total_debit || ''))
       } else {
-        const fy  = getFY(new Date().toISOString().slice(0, 10))
+        const fy  = getFY()
         const pfx = { Contra: s.accounting_prefix_contra || 'CT' }
         setVoucherNo(await nextEntryNumber(fy, 'Contra', pfx))
       }

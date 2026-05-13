@@ -39,12 +39,13 @@ export default function ReportsPage() {
   const toast = useToast()
 
   const FYS = fyOptions()
-  const today = new Date()
+  const _today = new Date()
+  const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
   // Default: current FY start to today
   const currentFY = getFY()
   const [fyYear] = currentFY.split('-')
   const fyStart = `${fyYear}-04-01`
-  const fyEnd   = today.toISOString().slice(0, 10)
+  const fyEnd   = localISO(_today)
 
   const [filterFY,    setFilterFY]    = useState(currentFY)
   const [dateFrom,    setDateFrom]    = useState(fyStart)
@@ -137,7 +138,7 @@ export default function ReportsPage() {
     setGenerated(false)
     const [yr] = fy.split('-')
     setDateFrom(`${yr}-04-01`)
-    setDateTo(new Date().toISOString().slice(0, 10))
+    setDateTo(localISO(new Date()))
   }
 
   const colTotal = (mode) => breakup.reduce((s, r) => s + (r[mode] || 0), 0)

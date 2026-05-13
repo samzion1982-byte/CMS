@@ -18,6 +18,8 @@ import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 const ACCENT = '#0891b2'
 
 let _lineId = 0
@@ -146,7 +148,7 @@ export default function JournalVoucherPage() {
   const [allCoa,    setAllCoa]    = useState([])
   const [voucherNo, setVoucherNo] = useState('')
   const [loaded,    setLoaded]    = useState(false)
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [entryDate, setEntryDate] = useState(() => localISO(new Date()))
   const [refNo,     setRefNo]     = useState('')
   const [narration, setNarration] = useState('')
 
@@ -181,7 +183,7 @@ export default function JournalVoucherPage() {
       setAllCoa(coa)
       if (editId && existing) {
         setVoucherNo(existing.entry_number)
-        setEntryDate(existing.entry_date || new Date().toISOString().slice(0, 10))
+        setEntryDate(existing.entry_date || localISO(new Date()))
         setRefNo(existing.reference_no || '')
         setNarration(existing.narration || '')
         if (existing.fund_id) setFundId(existing.fund_id)
@@ -194,7 +196,7 @@ export default function JournalVoucherPage() {
           setCreditLines(cLines.map(l => ({ _id: ++_lineId, accountId: l.account_id, accountName: l.chart_of_accounts?.name || '', amount: String(l.credit_amount) })))
         }
       } else {
-        const fy  = getFY(new Date().toISOString().slice(0, 10))
+        const fy  = getFY()
         const pfx = { Journal: s.accounting_prefix_journal || 'JV' }
         setVoucherNo(await nextEntryNumber(fy, 'Journal', pfx))
       }

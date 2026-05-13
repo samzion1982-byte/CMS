@@ -19,6 +19,8 @@ import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 // strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
@@ -162,7 +164,7 @@ export default function ReceiptVoucherPage() {
   const [loaded,       setLoaded]       = useState(false)
 
   // ── Voucher header (always visible)
-  const [entryDate,    setEntryDate]    = useState(() => new Date().toISOString().slice(0, 10))
+  const [entryDate,    setEntryDate]    = useState(() => localISO(new Date()))
   const [receivedFrom, setReceivedFrom] = useState('')
   const [refNo,        setRefNo]        = useState('')
 
@@ -216,7 +218,7 @@ export default function ReceiptVoucherPage() {
       if (editId && existingEntry) {
         // Pre-populate from existing entry
         setReceiptNo(existingEntry.entry_number)
-        setEntryDate(existingEntry.entry_date || new Date().toISOString().slice(0, 10))
+        setEntryDate(existingEntry.entry_date || localISO(new Date()))
         setRefNo(existingEntry.reference_no || '')
         const debitLine  = existingEntry.journal_entry_lines?.find(l => Number(l.debit_amount) > 0)
         const creditLines = existingEntry.journal_entry_lines?.filter(l => Number(l.credit_amount) > 0) || []
@@ -232,7 +234,7 @@ export default function ReceiptVoucherPage() {
         if (existingEntry.fund_id) setFundId(existingEntry.fund_id)
         setStep(3)
       } else {
-        const fy  = getFY(new Date().toISOString().slice(0, 10))
+        const fy  = getFY()
         const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
         setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
       }

@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -492,7 +493,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const toast = useToast()
   const navigate = useNavigate()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISO(new Date())
   const currentFY = getFY()
 
   const [accounts, setAccounts]   = useState([])

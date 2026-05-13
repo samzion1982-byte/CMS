@@ -19,6 +19,8 @@ import {
 
 // ── Helpers ───────────────────────────────────────────────────────
 
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 function VBadge({ type }) {
   const c = VOUCHER_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
   return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text, whiteSpace: 'nowrap' }}>{type}</span>
@@ -47,7 +49,7 @@ export default function AccountingReportsPage() {
 
   const [tab, setTab] = useState('daybook') // 'daybook' | 'account-summary' | 'group-report'
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISO(new Date())
   const monthStart = today.slice(0, 8) + '01'
 
   // ── Day Book state ────────────────────────────────────────────

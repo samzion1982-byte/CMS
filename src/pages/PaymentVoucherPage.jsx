@@ -18,6 +18,8 @@ import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 function matchAcct(name, q) {
@@ -136,7 +138,7 @@ export default function PaymentVoucherPage() {
   const [allCoa,        setAllCoa]        = useState([])
   const [voucherNo,     setVoucherNo]     = useState('')
   const [loaded,        setLoaded]        = useState(false)
-  const [entryDate,     setEntryDate]     = useState(() => new Date().toISOString().slice(0, 10))
+  const [entryDate,     setEntryDate]     = useState(() => localISO(new Date()))
   const [paidTo,        setPaidTo]        = useState('')
   const [refNo,         setRefNo]         = useState('')
   const [step,          setStep]          = useState(1)
@@ -177,7 +179,7 @@ export default function PaymentVoucherPage() {
       setAllCoa(coa)
       if (editId && existing) {
         setVoucherNo(existing.entry_number)
-        setEntryDate(existing.entry_date || new Date().toISOString().slice(0, 10))
+        setEntryDate(existing.entry_date || localISO(new Date()))
         setRefNo(existing.reference_no || '')
         const creditLine = existing.journal_entry_lines?.find(l => Number(l.credit_amount) > 0)
         const debitLines = existing.journal_entry_lines?.filter(l => Number(l.debit_amount) > 0) || []
@@ -192,7 +194,7 @@ export default function PaymentVoucherPage() {
         if (existing.fund_id) setFundId(existing.fund_id)
         setStep(3)
       } else {
-        const fy  = getFY(new Date().toISOString().slice(0, 10))
+        const fy  = getFY()
         const pfx = { Payment: s.accounting_prefix_payment || 'PV' }
         setVoucherNo(await nextEntryNumber(fy, 'Payment', pfx))
       }

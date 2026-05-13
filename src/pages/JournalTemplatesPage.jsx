@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 
 const VOUCHER_OPTS = ['Journal', 'Receipt', 'Payment', 'Contra']
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
 // ── small helpers ────────────────────────────────────────────────
 function emptyLine() {
@@ -208,7 +209,7 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   const toast    = useToast()
   const { profile } = useAuth()
   const [fy,        setFy]        = useState(getFY())
-  const [date,      setDate]      = useState(new Date().toISOString().slice(0, 10))
+  const [date,      setDate]      = useState(localISO(new Date()))
   const [narration, setNarration] = useState(template.narration || '')
   const [saving,    setSaving]    = useState(false)
 

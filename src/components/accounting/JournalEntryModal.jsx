@@ -18,6 +18,7 @@ import {
 
 const MAX_LINES = 20
 const DEFAULT_BLANK_LINE = () => ({ account_id: '', debit_amount: '', credit_amount: '', side: null })
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
 // ── Account type → default side ──────────────────────────────────
 
@@ -174,7 +175,7 @@ export default function JournalEntryModal({ fy: propFY, entryId, onClose, onSave
   const { profile } = useAuth()
   const toast = useToast()
 
-  const today     = new Date().toISOString().slice(0, 10)
+  const today     = localISO(new Date())
   const currentFY = propFY || getFY()
 
   const [accounts, setAccounts] = useState([])
