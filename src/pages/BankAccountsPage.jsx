@@ -1,6 +1,6 @@
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   BankAccountsPage.jsx â€” Manage multiple church bank accounts
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════════════════════════════════════════════════════
+   BankAccountsPage.jsx — Manage multiple church bank accounts
+   ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -28,7 +28,7 @@ function FL({ children }) {
   )
 }
 
-// â”€â”€ Bank Account form modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Bank Account form modal ───────────────────────────────────────
 
 function BankModal({ editing, coaAccounts, onSave, onCancel }) {
   const isEdit = !!editing
@@ -161,7 +161,7 @@ function BankModal({ editing, coaAccounts, onSave, onCancel }) {
           <div>
             <FL>Link to Chart of Accounts (optional)</FL>
             <select value={coaAccountId} onChange={e => setCoaAccountId(e.target.value)} style={INPUT_STYLE}>
-              <option value="">â€” Not linked â€”</option>
+              <option value="">— Not linked —</option>
               {coaAccounts.map(a => <option key={a.id} value={a.id}>{a.path}</option>)}
             </select>
             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
@@ -173,7 +173,7 @@ function BankModal({ editing, coaAccounts, onSave, onCancel }) {
           <div>
             <FL>Notes (optional)</FL>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
-              rows={2} placeholder="Any additional informationâ€¦"
+              rows={2} placeholder="Any additional information…"
               style={{ ...INPUT_STYLE, height: 'auto', padding: '10px 12px', resize: 'vertical' }} />
           </div>
 
@@ -185,7 +185,7 @@ function BankModal({ editing, coaAccounts, onSave, onCancel }) {
             <button onClick={handleSave} disabled={!canSave || saving}
               style={{ flex: 2, height: 42, background: canSave ? 'var(--accent)' : '#e5e7eb', color: canSave ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: canSave ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {saving ? 'Savingâ€¦' : (isEdit ? 'Save Changes' : 'Add Bank Account')}
+              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Bank Account')}
             </button>
           </div>
         </div>
@@ -194,7 +194,7 @@ function BankModal({ editing, coaAccounts, onSave, onCancel }) {
   )
 }
 
-// â”€â”€ Account Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Account Card ──────────────────────────────────────────────────
 
 function AccountCard({ account, coaAccounts, onEdit, onDelete, onToggleActive }) {
   const [expanded, setExpanded] = useState(false)
@@ -227,8 +227,8 @@ function AccountCard({ account, coaAccounts, onEdit, onDelete, onToggleActive })
           </div>
           <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 4px' }}>{account.account_holder_name}</p>
           <p style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-3)', margin: 0, letterSpacing: '0.04em' }}>
-            Â·Â·Â·Â· {account.account_number.slice(-4)}
-            {account.branch && <span style={{ marginLeft: 12, fontFamily: 'inherit' }}>Â· {account.branch}</span>}
+            ···· {account.account_number.slice(-4)}
+            {account.branch && <span style={{ marginLeft: 12, fontFamily: 'inherit' }}>· {account.branch}</span>}
           </p>
         </div>
 
@@ -264,11 +264,11 @@ function AccountCard({ account, coaAccounts, onEdit, onDelete, onToggleActive })
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--card-border)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
           {[
             { label: 'Full Account No.', value: account.account_number },
-            { label: 'IFSC',             value: account.ifsc_code  || 'â€”' },
-            { label: 'SWIFT',            value: account.swift_code || 'â€”' },
-            { label: 'Branch',           value: account.branch     || 'â€”' },
-            { label: 'Opening Date',     value: account.opening_date || 'â€”' },
-            { label: 'GL Account',       value: linked?.path || 'â€” Not linked â€”' },
+            { label: 'IFSC',             value: account.ifsc_code  || '—' },
+            { label: 'SWIFT',            value: account.swift_code || '—' },
+            { label: 'Branch',           value: account.branch     || '—' },
+            { label: 'Opening Date',     value: account.opening_date || '—' },
+            { label: 'GL Account',       value: linked?.path || '— Not linked —' },
           ].map(({ label, value }) => (
             <div key={label}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 2px' }}>{label}</p>
@@ -287,9 +287,9 @@ function AccountCard({ account, coaAccounts, onEdit, onDelete, onToggleActive })
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 //  MAIN PAGE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════════
 
 export default function BankAccountsPage() {
   const navigate = useNavigate()
@@ -352,7 +352,7 @@ export default function BankAccountsPage() {
     <div className="page-container">
       <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
         <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-        Loading bank accountsâ€¦
+        Loading bank accounts…
       </div>
     </div>
   )
@@ -369,7 +369,7 @@ export default function BankAccountsPage() {
         />
       )}
 
-      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
@@ -379,7 +379,7 @@ export default function BankAccountsPage() {
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Building2 size={20} style={{ color: 'var(--accent)' }} /> Bank Accounts
             </h1>
-            <p className="page-subtitle">{accounts.filter(a => a.is_active).length} active accounts &nbsp;Â·&nbsp; Opening total: {fmtAmt(totalOpening)}</p>
+            <p className="page-subtitle">{accounts.filter(a => a.is_active).length} active accounts &nbsp;·&nbsp; Opening total: {fmtAmt(totalOpening)}</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -395,7 +395,7 @@ export default function BankAccountsPage() {
         </div>
       </div>
 
-      {/* â”€â”€ Summary cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Summary cards ──────────────────────────────────────── */}
       {accounts.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 20 }}>
           {['Savings','Current','Cash Credit','Fixed Deposit','Overdraft','Cash'].map(type => {
@@ -414,7 +414,7 @@ export default function BankAccountsPage() {
         </div>
       )}
 
-      {/* â”€â”€ Account list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Account list ──────────────────────────────────────── */}
       {visible.length === 0 ? (
         <div style={{ padding: '60px 24px', textAlign: 'center', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 12 }}>
           <Building2 size={36} style={{ color: 'var(--text-3)', display: 'block', margin: '0 auto 12px' }} />

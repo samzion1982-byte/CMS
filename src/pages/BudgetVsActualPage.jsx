@@ -1,8 +1,8 @@
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   BudgetVsActualPage.jsx â€” Budget entry & variance report
+/* ═══════════════════════════════════════════════════════════════
+   BudgetVsActualPage.jsx — Budget entry & variance report
    Uses budgets table (church_id, financial_year, account_id,
    budgeted_amount)
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -181,17 +181,17 @@ export default function BudgetVsActualPage() {
 
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loadingâ€¦
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading…
         </div>
       ) : tab === 'setup' ? (
-        /* â”€â”€â”€ Budget Setup Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ─── Budget Setup Tab ─────────────────────────────────── */
         <div className="card" style={{ overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: 'var(--table-header-bg)' }}>
               <tr>
                 <th style={{ ...LABEL_TH }}>Account Name</th>
                 <th style={{ ...LABEL_TH, width: 80 }}>Type</th>
-                <th style={{ ...LABEL_TH, textAlign: 'right', width: 180 }}>Budget Amount (â‚¹)</th>
+                <th style={{ ...LABEL_TH, textAlign: 'right', width: 180 }}>Budget Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -225,7 +225,7 @@ export default function BudgetVsActualPage() {
           </table>
         </div>
       ) : (
-        /* â”€â”€â”€ Report Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ─── Report Tab ───────────────────────────────────────── */
         <>
           {/* Summary cards */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -249,7 +249,7 @@ export default function BudgetVsActualPage() {
                     <div>
                       <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '0 0 3px' }}>{type === 'Expense' ? 'Over/Under' : 'Achieved'}</p>
                       <p style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: over ? '#dc2626' : '#16a34a', margin: 0 }}>
-                        {pct !== null ? `${pct}%` : 'â€”'}
+                        {pct !== null ? `${pct}%` : '—'}
                       </p>
                     </div>
                   </div>
@@ -264,9 +264,9 @@ export default function BudgetVsActualPage() {
                 <tr>
                   <th style={{ ...LABEL_TH }}>Account</th>
                   <th style={{ ...LABEL_TH, width: 80 }}>Type</th>
-                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Budget (â‚¹)</th>
-                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Actual (â‚¹)</th>
-                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Variance (â‚¹)</th>
+                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Budget (₹)</th>
+                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Actual (₹)</th>
+                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 150 }}>Variance (₹)</th>
                   <th style={{ ...LABEL_TH, textAlign: 'right', width: 90 }}>% Used</th>
                 </tr>
               </thead>
@@ -295,10 +295,10 @@ export default function BudgetVsActualPage() {
                             <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
                           </td>
                           <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-2)' }}>
-                            {budget > 0 ? fmtAmt(budget) : <span style={{ color: 'var(--text-3)' }}>â€”</span>}
+                            {budget > 0 ? fmtAmt(budget) : <span style={{ color: 'var(--text-3)' }}>—</span>}
                           </td>
                           <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: type === 'Income' ? '#16a34a' : '#dc2626', fontWeight: actual > 0 ? 600 : 400 }}>
-                            {actual > 0 ? fmtAmt(actual) : <span style={{ color: 'var(--text-3)' }}>â€”</span>}
+                            {actual > 0 ? fmtAmt(actual) : <span style={{ color: 'var(--text-3)' }}>—</span>}
                           </td>
                           <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: budget > 0 ? (variance >= 0 ? '#16a34a' : '#dc2626') : 'var(--text-3)', fontWeight: budget > 0 ? 600 : 400 }}>
                             {budget > 0 ? (
@@ -306,7 +306,7 @@ export default function BudgetVsActualPage() {
                                 {variance > 0 ? <TrendingUp size={11} /> : variance < 0 ? <TrendingDown size={11} /> : <Minus size={11} />}
                                 {fmtAmt(Math.abs(variance))}
                               </span>
-                            ) : 'â€”'}
+                            ) : '—'}
                           </td>
                           <td style={{ padding: '7px 14px', textAlign: 'right' }}>
                             {pct !== null ? (
@@ -318,7 +318,7 @@ export default function BudgetVsActualPage() {
                                   {pct}%
                                 </span>
                               </div>
-                            ) : <span style={{ fontSize: 11, color: 'var(--text-3)' }}>â€”</span>}
+                            ) : <span style={{ fontSize: 11, color: 'var(--text-3)' }}>—</span>}
                           </td>
                         </tr>
                       )
