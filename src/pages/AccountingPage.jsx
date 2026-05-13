@@ -75,7 +75,7 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontSize: 24, fontWeight: 900, color: '#16a34a', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+          : <p style={{ fontWeight: 900, color: '#16a34a', margin: 0, lineHeight: 1,
               transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(cashTotal)}</p>
         }
         {!loading && cashAccounts.length === 0
@@ -95,7 +95,7 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontSize: 24, fontWeight: 900, color: '#2563eb', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+          : <p style={{ fontWeight: 900, color: '#2563eb', margin: 0, lineHeight: 1,
               transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(bankTotal)}</p>
         }
         {!loading && bankAccounts.length === 0
@@ -116,7 +116,7 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontSize: 24, fontWeight: 900, color: '#7c3aed', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+          : <p style={{ fontWeight: 900, color: '#7c3aed', margin: 0, lineHeight: 1,
               transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(totalFunds)}</p>
         }
         <Detail
@@ -147,7 +147,7 @@ function MetricsBar({ totalIncome, totalExpenses, netIncome, fy, loading }) {
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
-          : <p style={{ fontSize: 22, fontWeight: 900, color: '#16a34a', margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(totalIncome)}</p>
+          : <p style={{ fontSize: 22, fontWeight: 900, color: '#16a34a', margin: 0, lineHeight: 1 }}>{fmtAmt(totalIncome)}</p>
         }
       </div>
       <div style={{ flex: 1, padding: '14px 22px', borderRight: '1px solid var(--card-border)' }}>
@@ -157,7 +157,7 @@ function MetricsBar({ totalIncome, totalExpenses, netIncome, fy, loading }) {
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
-          : <p style={{ fontSize: 22, fontWeight: 900, color: '#c2410c', margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(totalExpenses)}</p>
+          : <p style={{ fontSize: 22, fontWeight: 900, color: '#c2410c', margin: 0, lineHeight: 1 }}>{fmtAmt(totalExpenses)}</p>
         }
       </div>
       <div style={{ flex: 1, padding: '14px 22px', background: loading ? 'transparent' : surplus ? '#f0fdf4' : '#fff1f2' }}>
@@ -169,7 +169,7 @@ function MetricsBar({ totalIncome, totalExpenses, netIncome, fy, loading }) {
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
-          : <p style={{ fontSize: 22, fontWeight: 900, color: surplusColor, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(Math.abs(netIncome))}</p>
+          : <p style={{ fontSize: 22, fontWeight: 900, color: surplusColor, margin: 0, lineHeight: 1 }}>{fmtAmt(Math.abs(netIncome))}</p>
         }
       </div>
     </div>
