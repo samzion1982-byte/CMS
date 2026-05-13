@@ -835,16 +835,23 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         const cat = entry.narration || 'Other Receipts'
         receiptOther[cat] = (receiptOther[cat] || 0) + Number(entry.total_debit || 0)
       }
-      // Find which cash/bank was debited (for cash vs bank split)
-      let classified = false
+      // Find which cash/bank was debited (for cash vs bank split).
+      // Track classifiedDebit so any unclassified asset debit also flows into cash
+      // (prevents the "classified=true early-exit" bug that drops unclassified lines).
+      let classifiedDebit = 0
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.debit_amount) > 0) {
-          const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
-          if (t === 'cash')       { cashReceipts += Number(l.debit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
-          else if (t === 'bank')  { bankReceipts += Number(l.debit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount) }
+          const amt = Number(l.debit_amount)
+          const t   = classifyAcct(l.account_id, l.chart_of_accounts?.name)
+          if (t === 'cash')      { cashReceipts += amt; classifiedDebit += amt; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + amt }
+          else if (t === 'bank') { bankReceipts += amt; classifiedDebit += amt; acctBal[l.account_id] = (acctBal[l.account_id] || 0) + amt }
         }
       }
-      if (!classified) cashReceipts += Number(entry.total_debit || 0)
+      // Sum all asset debits in this entry; anything not cash/bank goes to cash catch-all
+      const totalAssetDebit = lines.reduce((s, l) => s + (l.chart_of_accounts?.account_type === 'Asset' && Number(l.debit_amount) > 0 ? Number(l.debit_amount) : 0), 0)
+      const unclassifiedDebit = totalAssetDebit - classifiedDebit
+      if (unclassifiedDebit > 0.001) cashReceipts += unclassifiedDebit
+      else if (totalAssetDebit < 0.001) cashReceipts += Number(entry.total_debit || 0) // no lines joined
 
     } else if (entry.voucher_type === 'Payment') {
       const expLines = lines.filter(l => l.chart_of_accounts?.account_type === 'Expense' && Number(l.debit_amount) > 0)
@@ -856,16 +863,20 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         const cat = entry.narration || 'Other Payments'
         paymentOther[cat] = (paymentOther[cat] || 0) + Number(entry.total_credit || 0)
       }
-      // Find which cash/bank was credited (for cash vs bank split)
-      let classified = false
+      // Find which cash/bank was credited (for cash vs bank split).
+      let classifiedCredit = 0
       for (const l of lines) {
         if (l.chart_of_accounts?.account_type === 'Asset' && Number(l.credit_amount) > 0) {
-          const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
-          if (t === 'cash')       { cashPayments += Number(l.credit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
-          else if (t === 'bank')  { bankPayments += Number(l.credit_amount); classified = true; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
+          const amt = Number(l.credit_amount)
+          const t   = classifyAcct(l.account_id, l.chart_of_accounts?.name)
+          if (t === 'cash')      { cashPayments += amt; classifiedCredit += amt; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - amt }
+          else if (t === 'bank') { bankPayments += amt; classifiedCredit += amt; acctBal[l.account_id] = (acctBal[l.account_id] || 0) - amt }
         }
       }
-      if (!classified) cashPayments += Number(entry.total_credit || 0)
+      const totalAssetCredit = lines.reduce((s, l) => s + (l.chart_of_accounts?.account_type === 'Asset' && Number(l.credit_amount) > 0 ? Number(l.credit_amount) : 0), 0)
+      const unclassifiedCredit = totalAssetCredit - classifiedCredit
+      if (unclassifiedCredit > 0.001) cashPayments += unclassifiedCredit
+      else if (totalAssetCredit < 0.001) cashPayments += Number(entry.total_credit || 0) // no lines joined
 
     } else if (entry.voucher_type === 'Contra') {
       // Contra = cash ↔ bank transfer; update the cash/bank split without adding to groups
