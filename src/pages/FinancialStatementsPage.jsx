@@ -158,16 +158,20 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
 
     // Compensate paddingLeft for chevron width so text aligns with non-group rows
     const pl = cell.indent2
-      ? (isGroup ? 36 : 52)
+      ? (isGroup ? 48 : 68)          // sub-items pushed further right
       : cell.indent
         ? (isGroup ? 16 : 32)
         : 14
 
+    // Left accent border on group header rows (left side only — right side keeps its divider)
+    const accentBorder = isGroup && cell.indent && !isRight
+    const labelBorderLeft = accentBorder ? '3px solid var(--accent)' : sepBorder
+
     return (
       <>
         <td
-          style={{ ...TD, borderLeft: sepBorder, paddingTop: 6, paddingBottom: 6,
-            fontWeight: cell.bold ? 700 : 400, paddingLeft: pl,
+          style={{ ...TD, borderLeft: labelBorderLeft, paddingTop: 6, paddingBottom: 6,
+            fontWeight: cell.bold ? 700 : 400, paddingLeft: accentBorder ? pl - 3 : pl,
             color: cell.muted ? 'var(--text-3)' : 'var(--text-1)',
             fontStyle: cell.italic ? 'italic' : 'normal',
             cursor: (isGroup || clickable) ? 'pointer' : 'default' }}
@@ -210,11 +214,17 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
             const l = leftRows[i]
             const r = rightRows[i]
             const isSectionTotal = (l?.bold && !l?.indent) || (r?.bold && !r?.indent)
-            const isGroupTotal   = (l?.bold && l?.indent)  || (r?.bold && r?.indent)
+            const isGroupTotal   = (l?.bold && l?.indent && !l?.isGroup) || (r?.bold && r?.indent && !r?.isGroup)
+            const isGroupHeader  = !!(l?.isGroup) || !!(r?.isGroup)
+            const isSubItem      = !!(l?.indent2) || !!(r?.indent2)
             return (
               <tr key={i} style={{
                 borderTop: isSectionTotal ? '1.5px solid var(--card-border)' : '1px solid rgba(0,0,0,0.04)',
-                background: isSectionTotal ? 'rgba(0,0,0,0.025)' : isGroupTotal ? 'rgba(0,0,0,0.015)' : 'transparent',
+                background: isSectionTotal ? 'var(--table-header-bg)'
+                  : isGroupTotal  ? 'rgba(79,70,229,0.10)'
+                  : isGroupHeader ? 'rgba(79,70,229,0.06)'
+                  : isSubItem     ? 'rgba(79,70,229,0.03)'
+                  : 'transparent',
               }}>
                 {renderSide(l || null, false)}
                 {renderSide(r || null, true)}
