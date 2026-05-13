@@ -390,37 +390,34 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   }
 
   function buildHierRows(accounts, getAmt) {
-    const rel    = accounts.filter(a => (a.level || 0) >= 3)
-    const allIds = new Set(rel.map(a => a.id))
+    const rel  = accounts.filter(a => (a.level || 0) >= 2)
+    const byId = {}
+    rel.forEach(a => { byId[a.id] = a })
     const childrenOf = {}
     for (const a of rel) {
-      if (a.parent_id && allIds.has(a.parent_id)) {
+      if (a.parent_id && byId[a.parent_id]) {
         if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
         childrenOf[a.parent_id].push(a)
       }
     }
-    const groupIds = new Set(Object.keys(childrenOf))
-    const topLevel = rel.filter(a => !allIds.has(a.parent_id))
-    const rows = []
-    for (const acct of topLevel) {
-      if (groupIds.has(acct.id)) {
-        const children = (childrenOf[acct.id] || []).filter(c => showZero || Math.abs(getAmt(c)) >= 0.01)
-        const groupTotal = children.reduce((s, c) => s + getAmt(c), 0)
-        if (!showZero && Math.abs(groupTotal) < 0.01) continue
-        const isExp = expanded.has(acct.id)
-        rows.push({ label: acct.name, amount: Math.max(0, groupTotal), bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id) })
-        if (isExp) {
-          for (const c of children) {
-            rows.push({ label: c.name, amount: Math.max(0, getAmt(c)), indent: true, accountId: c.id })
-          }
-        }
-      } else {
-        const amt = getAmt(acct)
-        if (!showZero && Math.abs(amt) < 0.01) continue
-        rows.push({ label: acct.name, amount: Math.max(0, amt), accountId: acct.id })
-      }
+    // Recursive sum: own entries + all descendants
+    function totalOf(acct) {
+      return getAmt(acct) + (childrenOf[acct.id] || []).reduce((s, c) => s + totalOf(c), 0)
     }
-    return rows
+    function renderNode(acct, depth) {
+      const kids  = childrenOf[acct.id] || []
+      const total = totalOf(acct)
+      if (!showZero && Math.abs(total) < 0.01) return []
+      if (kids.length === 0) {
+        return [{ label: acct.name, amount: total, accountId: acct.id, indent: depth > 0, indent2: depth > 1 }]
+      }
+      const isExp = expanded.has(acct.id)
+      return [
+        { label: acct.name, amount: total, bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id), indent: depth > 0, indent2: depth > 1 },
+        ...(isExp ? kids.flatMap(c => renderNode(c, depth + 1)) : []),
+      ]
+    }
+    return rel.filter(a => !byId[a.parent_id]).flatMap(a => renderNode(a, 0))
   }
 
   const leftRows = [
@@ -483,40 +480,34 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
-  // Build hierarchical rows from a flat account list.
-  // Only shows level 3+ accounts; groups those that have children within the list.
   function buildHierRows(accounts, getAmt) {
-    const rel    = accounts.filter(a => (a.level || 0) >= 3)
-    const allIds = new Set(rel.map(a => a.id))
+    const rel  = accounts.filter(a => (a.level || 0) >= 2)
+    const byId = {}
+    rel.forEach(a => { byId[a.id] = a })
     const childrenOf = {}
     for (const a of rel) {
-      if (a.parent_id && allIds.has(a.parent_id)) {
+      if (a.parent_id && byId[a.parent_id]) {
         if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
         childrenOf[a.parent_id].push(a)
       }
     }
-    const groupIds = new Set(Object.keys(childrenOf))
-    const topLevel = rel.filter(a => !allIds.has(a.parent_id))
-    const rows = []
-    for (const acct of topLevel) {
-      if (groupIds.has(acct.id)) {
-        const children = (childrenOf[acct.id] || []).filter(c => showZero || Math.abs(getAmt(c)) >= 0.01)
-        const groupTotal = children.reduce((s, c) => s + getAmt(c), 0)
-        if (!showZero && Math.abs(groupTotal) < 0.01) continue
-        const isExp = expanded.has(acct.id)
-        rows.push({ label: acct.name, amount: Math.max(0, groupTotal), bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id) })
-        if (isExp) {
-          for (const c of children) {
-            rows.push({ label: c.name, amount: Math.max(0, getAmt(c)), indent: true, accountId: c.id })
-          }
-        }
-      } else {
-        const amt = getAmt(acct)
-        if (!showZero && Math.abs(amt) < 0.01) continue
-        rows.push({ label: acct.name, amount: Math.max(0, amt), accountId: acct.id })
-      }
+    function totalOf(acct) {
+      return getAmt(acct) + (childrenOf[acct.id] || []).reduce((s, c) => s + totalOf(c), 0)
     }
-    return rows
+    function renderNode(acct, depth) {
+      const kids  = childrenOf[acct.id] || []
+      const total = totalOf(acct)
+      if (!showZero && Math.abs(total) < 0.01) return []
+      if (kids.length === 0) {
+        return [{ label: acct.name, amount: total, accountId: acct.id, indent: depth > 0, indent2: depth > 1 }]
+      }
+      const isExp = expanded.has(acct.id)
+      return [
+        { label: acct.name, amount: total, bold: true, isGroup: true, isExpanded: isExp, onToggle: () => toggleGroup(acct.id), indent: depth > 0, indent2: depth > 1 },
+        ...(isExp ? kids.flatMap(c => renderNode(c, depth + 1)) : []),
+      ]
+    }
+    return rel.filter(a => !byId[a.parent_id]).flatMap(a => renderNode(a, 0))
   }
 
   const isBalanced = Math.abs(data.totalAssets - (data.totalLiabilities + data.totalCorpus)) < 0.01
