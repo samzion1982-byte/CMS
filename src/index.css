@@ -1067,17 +1067,18 @@ input[type="radio"]                    { cursor: pointer; user-select: none; }
   #tb-print-area th     { font-size: 9px  !important; padding: 5px 8px !important; }
   #tb-print-area td     { font-size: 10px !important; padding: 5px 8px !important; }
 
-  /* Ledger print area */
+  /* Ledger print area — landscape A4, injected via doPrint() */
   #ledger-print-area {
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    width: 100% !important;
   }
-  #ledger-print-area .card  { box-shadow: none !important; border-radius: 4px !important; border: 1px solid #d1d5db !important; margin-bottom: 14px !important; break-inside: avoid; }
-  #ledger-print-area table  { border-collapse: collapse !important; width: 100% !important; }
+  #ledger-print-area .card  { box-shadow: none !important; border-radius: 4px !important; border: 1px solid #d1d5db !important; margin-bottom: 12px !important; break-inside: avoid; overflow: visible !important; }
+  #ledger-print-area table  { border-collapse: collapse !important; width: 100% !important; table-layout: fixed; }
   #ledger-print-area thead  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #ledger-print-area tfoot  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   #ledger-print-area tbody tr { page-break-inside: avoid; }
-  #ledger-print-area th     { font-size: 9px  !important; padding: 5px 8px !important; border: 0.5px solid #d1d5db !important; }
-  #ledger-print-area td     { font-size: 10px !important; padding: 5px 8px !important; border-bottom: 0.5px solid #e5e7eb !important; }
+  #ledger-print-area th     { font-size: 8px  !important; padding: 4px 6px !important; border: 0.5px solid #d1d5db !important; white-space: nowrap; overflow: hidden; }
+  #ledger-print-area td     { font-size: 9px  !important; padding: 4px 6px !important; border-bottom: 0.5px solid #e5e7eb !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

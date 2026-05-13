@@ -357,7 +357,14 @@ export default function LedgerPage() {
     exportToExcel(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`)
   }
 
-  function doPrint() { window.print() }
+  function doPrint() {
+    const s = document.createElement('style')
+    s.id = 'ledger-page-override'
+    s.textContent = '@page { size: A4 landscape; margin: 0.8cm 1cm; } #ledger-print-area { zoom: 0.85; }'
+    document.head.appendChild(s)
+    window.print()
+    setTimeout(() => document.getElementById('ledger-page-override')?.remove(), 500)
+  }
 
   const canGenerate = selectedIds.size > 0
 
