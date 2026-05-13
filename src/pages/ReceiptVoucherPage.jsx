@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -21,7 +21,7 @@ import { getFunds } from '../lib/accountingLib'
 
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
-// strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
+// strip punctuation for fuzzy matching ("Mens" â†’ "Men's Fellowship")
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 function matchAcct(name, q) {
@@ -31,8 +31,8 @@ function matchAcct(name, q) {
   return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
 }
 
-// ── Typeahead account picker ──────────────────────────────────────
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
+// â”€â”€ Typeahead account picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function AccountPicker({ value, accounts, onChange, placeholder = 'Select accountâ€¦', disabled = false }) {
   const [query, setQuery] = useState('')
   const [open,  setOpen]  = useState(false)
   const [hi,    setHi]    = useState(0)
@@ -150,7 +150,7 @@ function Step1CashOrBank({ onChoose }) {
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────
+// â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function ReceiptVoucherPage() {
   const { user }  = useAuth()
   const navigate  = useNavigate()
@@ -158,24 +158,24 @@ export default function ReceiptVoucherPage() {
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null   // set when editing existing entry
 
-  // ── Data
+  // â”€â”€ Data
   const [allCoa,       setAllCoa]       = useState([])
   const [receiptNo,    setReceiptNo]    = useState('')
   const [loaded,       setLoaded]       = useState(false)
 
-  // ── Voucher header (always visible)
+  // â”€â”€ Voucher header (always visible)
   const [entryDate,    setEntryDate]    = useState(() => localISO(new Date()))
   const [receivedFrom, setReceivedFrom] = useState('')
   const [refNo,        setRefNo]        = useState('')
 
-  // ── Wizard state
+  // â”€â”€ Wizard state
   // step: 1 = cash/bank choice  2 = pick account  3 = credit entries
   const [step,         setStep]         = useState(1)
   const [receiptType,  setReceiptType]  = useState('')   // 'cash' | 'bank'
   const [debitCoaId,   setDebitCoaId]   = useState('')   // COA account id for the debit line
   const [debitLabel,   setDebitLabel]   = useState('')   // display label
 
-  // ── Credit entries
+  // â”€â”€ Credit entries
   const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
   const [lineNarration, setLineNarration] = useState('')
 
@@ -184,11 +184,11 @@ export default function ReceiptVoucherPage() {
   const [funds,  setFunds]  = useState([])
   const [fundId, setFundId] = useState('')
 
-  // ── Save state
+  // â”€â”€ Save state
   const [saving,  setSaving]  = useState(false)
   const [posting, setPosting] = useState(false)
 
-  // ── Derived
+  // â”€â”€ Derived
   const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
 
   const cashAccounts  = useMemo(() => {
@@ -242,7 +242,7 @@ export default function ReceiptVoucherPage() {
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
 
-  // ── Wizard navigation ─────────────────────────────────────────
+  // â”€â”€ Wizard navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function chooseType(type) {
     setReceiptType(type)
     setDebitCoaId('')
@@ -267,12 +267,12 @@ export default function ReceiptVoucherPage() {
     else if (step === 2) setStep(1)
   }
 
-  // ── Credit line helpers ───────────────────────────────────────
+  // â”€â”€ Credit line helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function updateLine(idx, field, val) { setLines(ls => ls.map((l, i) => i === idx ? { ...l, [field]: val } : l)) }
   function addLine()       { setLines(ls => [...ls, blankLine()]) }
   function removeLine(idx) { setLines(ls => ls.length > 1 ? ls.filter((_, i) => i !== idx) : ls) }
 
-  // ── Save / Post ───────────────────────────────────────────────
+  // â”€â”€ Save / Post â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleSave(andPost = false) {
     if (!isValid) return
     const setSt = andPost ? setPosting : setSaving
@@ -302,7 +302,7 @@ export default function ReceiptVoucherPage() {
     } catch (err) { toast(err.message || 'Failed to save', 'error'); setSt(false) }
   }
 
-  // ── Loading ───────────────────────────────────────────────────
+  // â”€â”€ Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!loaded) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
       <Loader2 size={28} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--accent)' }} />
@@ -312,11 +312,11 @@ export default function ReceiptVoucherPage() {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
 
-      {/* ══ ALWAYS VISIBLE: header + voucher details ══ */}
+      {/* â•â• ALWAYS VISIBLE: header + voucher details â•â• */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
           <button onClick={() => navigate('/accounting')}
-            style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--accent)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -357,15 +357,15 @@ export default function ReceiptVoucherPage() {
             <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
             <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
               style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
-              <option value="">— None (General) —</option>
+              <option value="">â€” None (General) â€”</option>
               {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
-            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>â—</span>}
           </div>
         )}
       </div>
 
-      {/* ══ STEP PROGRESS ══ */}
+      {/* â•â• STEP PROGRESS â•â• */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, fontSize: 12 }}>
         {[
           { n: 1, label: 'Cash or Bank?' },
@@ -379,7 +379,7 @@ export default function ReceiptVoucherPage() {
               background: step >= s.n ? 'var(--accent)' : 'var(--card-border)',
               color: step >= s.n ? '#fff' : 'var(--text-3)',
               flexShrink: 0,
-            }}>{step > s.n ? '✓' : s.n}</div>
+            }}>{step > s.n ? 'âœ“' : s.n}</div>
             <span style={{ color: step >= s.n ? 'var(--text-1)' : 'var(--text-3)', fontWeight: step === s.n ? 700 : 400 }}>
               {s.label}
             </span>
@@ -388,12 +388,12 @@ export default function ReceiptVoucherPage() {
         ))}
       </div>
 
-      {/* ══ STEP 1: Cash or Bank ══ */}
+      {/* â•â• STEP 1: Cash or Bank â•â• */}
       {step === 1 && (
         <Step1CashOrBank onChoose={chooseType} />
       )}
 
-      {/* ══ STEP 2: Pick account ══ */}
+      {/* â•â• STEP 2: Pick account â•â• */}
       {step === 2 && (
         <div className="card" style={{ padding: '22px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
@@ -440,7 +440,7 @@ export default function ReceiptVoucherPage() {
         </div>
       )}
 
-      {/* ══ STEP 3: Credit entries ══ */}
+      {/* â•â• STEP 3: Credit entries â•â• */}
       {step === 3 && (
         <>
           {/* Selected account banner */}
@@ -455,7 +455,7 @@ export default function ReceiptVoucherPage() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: receiptType === 'bank' ? '#2563eb' : '#16a34a', marginBottom: 2 }}>
-                Debit — Received Into
+                Debit â€” Received Into
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{debitLabel}</div>
             </div>
@@ -463,7 +463,7 @@ export default function ReceiptVoucherPage() {
             <div style={{ textAlign: 'right', marginRight: 12 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Debit Amount</div>
               <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 18, color: total > 0 ? '#dc2626' : 'var(--text-3)' }}>
-                {total > 0 ? fmtAmt(total) : '—'}
+                {total > 0 ? fmtAmt(total) : 'â€”'}
               </div>
             </div>
             {total > 0 && (
@@ -485,7 +485,7 @@ export default function ReceiptVoucherPage() {
 
             {/* Column headers */}
             <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 130px 32px', gap: 10, marginBottom: 8 }}>
-              {['#', 'Account', 'Amount (₹)', ''].map(h => (
+              {['#', 'Account', 'Amount (â‚¹)', ''].map(h => (
                 <span key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{h}</span>
               ))}
             </div>
@@ -498,7 +498,7 @@ export default function ReceiptVoucherPage() {
                   value={line.account_id}
                   accounts={creditAccounts}
                   onChange={id => updateLine(idx, 'account_id', id)}
-                  placeholder="Select account…"
+                  placeholder="Select accountâ€¦"
                   disabled={busy}
                 />
                 <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
@@ -525,7 +525,7 @@ export default function ReceiptVoucherPage() {
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)' }}>Total Credit</span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 20, color: total > 0 ? '#16a34a' : 'var(--text-3)' }}>
-                  {total > 0 ? fmtAmt(total) : '—'}
+                  {total > 0 ? fmtAmt(total) : 'â€”'}
                 </span>
               </div>
             </div>

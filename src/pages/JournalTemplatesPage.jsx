@@ -1,8 +1,8 @@
-/* ═══════════════════════════════════════════════════════════════
-   JournalTemplatesPage.jsx — Save & reuse journal entry templates
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   JournalTemplatesPage.jsx â€” Save & reuse journal entry templates
    Uses journal_templates table (id, church_id, name, voucher_type,
    narration, lines JSONB)
-   ═══════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -21,12 +21,12 @@ import {
 const VOUCHER_OPTS = ['Journal', 'Receipt', 'Payment', 'Contra']
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 
-// ── small helpers ────────────────────────────────────────────────
+// â”€â”€ small helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function emptyLine() {
   return { _key: Math.random(), account_id: '', account_name: '', debit_amount: '', credit_amount: '', description: '' }
 }
 
-// ── Line editor row ──────────────────────────────────────────────
+// â”€â”€ Line editor row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LineRow({ line, accounts, onChange, onRemove }) {
   const sel = accounts.find(a => a.id === line.account_id)
   return (
@@ -38,7 +38,7 @@ function LineRow({ line, accounts, onChange, onRemove }) {
             onChange({ ...line, account_id: e.target.value, account_name: a?.name || '' })
           }}
           style={{ width: '100%', height: 32, padding: '0 6px', border: '1.5px solid var(--card-border)', borderRadius: 6, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)' }}>
-          <option value="">— select account —</option>
+          <option value="">â€” select account â€”</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </td>
@@ -61,7 +61,7 @@ function LineRow({ line, accounts, onChange, onRemove }) {
   )
 }
 
-// ── Template Form Modal ──────────────────────────────────────────
+// â”€â”€ Template Form Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function TemplateModal({ template, accounts, churchId, onSave, onClose }) {
   const toast = useToast()
   const [name,        setName]        = useState(template?.name        || '')
@@ -153,8 +153,8 @@ function TemplateModal({ template, accounts, churchId, onSave, onClose }) {
               <thead style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
                   <th style={{ padding: '7px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', textAlign: 'left' }}>Account</th>
-                  <th style={{ padding: '7px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2563eb', textAlign: 'right' }}>Debit (₹)</th>
-                  <th style={{ padding: '7px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#16a34a', textAlign: 'right' }}>Credit (₹)</th>
+                  <th style={{ padding: '7px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2563eb', textAlign: 'right' }}>Debit (â‚¹)</th>
+                  <th style={{ padding: '7px 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#16a34a', textAlign: 'right' }}>Credit (â‚¹)</th>
                   <th style={{ width: 36 }} />
                 </tr>
               </thead>
@@ -182,11 +182,11 @@ function TemplateModal({ template, accounts, churchId, onSave, onClose }) {
             </button>
             {!balanced && totalDr + totalCr > 0 && (
               <span style={{ fontSize: 11, color: '#c2410c', fontWeight: 700 }}>
-                ⚠ Difference: {fmtAmt(Math.abs(totalDr - totalCr))}
+                âš  Difference: {fmtAmt(Math.abs(totalDr - totalCr))}
               </span>
             )}
             {balanced && totalDr > 0 && (
-              <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 700 }}>✓ Balanced</span>
+              <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 700 }}>âœ“ Balanced</span>
             )}
           </div>
 
@@ -204,7 +204,7 @@ function TemplateModal({ template, accounts, churchId, onSave, onClose }) {
   )
 }
 
-// ── Use Template Modal ───────────────────────────────────────────
+// â”€â”€ Use Template Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function UseTemplateModal({ template, onClose, onCreated }) {
   const toast    = useToast()
   const { profile } = useAuth()
@@ -287,9 +287,9 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  MAIN PAGE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function JournalTemplatesPage() {
   const navigate = useNavigate()
   const toast    = useToast()
@@ -345,7 +345,7 @@ export default function JournalTemplatesPage() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -365,7 +365,7 @@ export default function JournalTemplatesPage() {
 
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading templates…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading templatesâ€¦
         </div>
       ) : templates.length === 0 ? (
         <div className="card" style={{ padding: '60px 40px', textAlign: 'center' }}>

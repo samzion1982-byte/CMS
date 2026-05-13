@@ -1,7 +1,7 @@
-/* ═══════════════════════════════════════════════════════════════
-   YearEndClosingPage.jsx — Year-end closing entries wizard
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   YearEndClosingPage.jsx â€” Year-end closing entries wizard
    Transfers Income/Expense balances to Corpus Fund (Equity)
-   ═══════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -93,7 +93,7 @@ export default function YearEndClosingPage() {
       }
     })
 
-    // Surplus → Cr Corpus Fund; Deficit → Dr Corpus Fund
+    // Surplus â†’ Cr Corpus Fund; Deficit â†’ Dr Corpus Fund
     if (Math.abs(surplus) > 0.005) {
       if (surplus > 0) {
         lines.push({ account_id: equityId, debit_amount: 0, credit_amount: surplus, description: 'Surplus transferred to Corpus Fund', line_number: 0 })
@@ -133,7 +133,7 @@ export default function YearEndClosingPage() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -173,14 +173,14 @@ export default function YearEndClosingPage() {
         <div style={{ marginBottom: 16, padding: '10px 16px', background: '#fefce8', border: '1.5px solid #fde047', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
           <AlertTriangle size={15} style={{ color: '#ca8a04', flexShrink: 0 }} />
           <span style={{ fontSize: 13, color: '#713f12' }}>
-            A year-end closing entry already exists for FY {fy}. Generating again will create a duplicate — review the existing entry in Journal Entries first.
+            A year-end closing entry already exists for FY {fy}. Generating again will create a duplicate â€” review the existing entry in Journal Entries first.
           </span>
         </div>
       )}
 
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading income statement…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading income statementâ€¦
         </div>
       ) : preview ? (
         <>
@@ -215,7 +215,7 @@ export default function YearEndClosingPage() {
               </label>
               <select value={equityId} onChange={e => setEquityId(e.target.value)}
                 style={{ width: '100%', height: 36, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)' }}>
-                <option value="">— select account —</option>
+                <option value="">â€” select account â€”</option>
                 {(preview.equityAccounts || []).map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
@@ -231,7 +231,7 @@ export default function YearEndClosingPage() {
           {/* Preview table */}
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
-              Closing Entry Preview — FY {fy}
+              Closing Entry Preview â€” FY {fy}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ background: 'var(--table-header-bg)' }}>
@@ -239,12 +239,12 @@ export default function YearEndClosingPage() {
                   <th style={{ ...LABEL_TH }}>Account</th>
                   <th style={{ ...LABEL_TH, width: 80 }}>Type</th>
                   <th style={{ ...LABEL_TH, textAlign: 'right', width: 140, color: 'var(--text-3)' }}>Net Balance</th>
-                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 140, color: '#2563eb' }}>Closing Dr (₹)</th>
-                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 140, color: '#16a34a' }}>Closing Cr (₹)</th>
+                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 140, color: '#2563eb' }}>Closing Dr (â‚¹)</th>
+                  <th style={{ ...LABEL_TH, textAlign: 'right', width: 140, color: '#16a34a' }}>Closing Cr (â‚¹)</th>
                 </tr>
               </thead>
               <tbody>
-                {/* Income rows — will be Dr'd to zero */}
+                {/* Income rows â€” will be Dr'd to zero */}
                 {preview.income.length > 0 && (
                   <tr style={{ background: '#f0fdf455' }}>
                     <td colSpan={5} style={{ padding: '6px 14px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#15803d' }}>
@@ -262,12 +262,12 @@ export default function YearEndClosingPage() {
                       </td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#15803d' }}>{fmtAmt(net)}</td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb', fontWeight: 600 }}>{fmtAmt(net)}</td>
-                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>—</td>
+                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>â€”</td>
                     </tr>
                   )
                 })}
 
-                {/* Expense rows — will be Cr'd to zero */}
+                {/* Expense rows â€” will be Cr'd to zero */}
                 {preview.expenses.length > 0 && (
                   <tr style={{ background: '#fff7ed55' }}>
                     <td colSpan={5} style={{ padding: '6px 14px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#c2410c' }}>
@@ -284,7 +284,7 @@ export default function YearEndClosingPage() {
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#fff7ed', color: '#c2410c' }}>Expense</span>
                       </td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#c2410c' }}>{fmtAmt(net)}</td>
-                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>—</td>
+                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>â€”</td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{fmtAmt(net)}</td>
                     </tr>
                   )
@@ -305,12 +305,12 @@ export default function YearEndClosingPage() {
                       <td style={{ padding: '7px 14px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#dbeafe', color: '#1d4ed8' }}>Equity</span>
                       </td>
-                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>—</td>
+                      <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: 'var(--text-3)' }}>â€”</td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: preview.surplus < 0 ? '#2563eb' : 'var(--text-3)', fontWeight: preview.surplus < 0 ? 600 : 400 }}>
-                        {preview.surplus < 0 ? fmtAmt(Math.abs(preview.surplus)) : '—'}
+                        {preview.surplus < 0 ? fmtAmt(Math.abs(preview.surplus)) : 'â€”'}
                       </td>
                       <td style={{ padding: '7px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: preview.surplus > 0 ? '#16a34a' : 'var(--text-3)', fontWeight: preview.surplus > 0 ? 600 : 400 }}>
-                        {preview.surplus > 0 ? fmtAmt(preview.surplus) : '—'}
+                        {preview.surplus > 0 ? fmtAmt(preview.surplus) : 'â€”'}
                       </td>
                     </tr>
                   </>

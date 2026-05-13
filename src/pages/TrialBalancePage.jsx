@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════════
-   TrialBalancePage.jsx — Trial Balance (Indian Format)
-   ═══════════════════════════════════════════════════════════════ */
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   TrialBalancePage.jsx â€” Trial Balance (Indian Format)
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -13,7 +13,7 @@ import {
   Printer, ChevronDown, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 
-/* FY "2025-26" → "31st March 2026" */
+/* FY "2025-26" â†’ "31st March 2026" */
 function fyEndDate(fy) {
   const endYear = parseInt(fy.split('-')[0], 10) + 1
   return `31st March ${endYear}`
@@ -62,15 +62,15 @@ export default function TrialBalancePage() {
       { header: 'S.No.',        key: 'sno',    align: 'center' },
       { header: 'Account Name', key: 'name',   align: 'left'   },
       { header: 'Type',         key: 'type',   align: 'left'   },
-      { header: 'Debit (₹)',    key: 'debit',  align: 'right'  },
-      { header: 'Credit (₹)',   key: 'credit', align: 'right'  },
+      { header: 'Debit (â‚¹)',    key: 'debit',  align: 'right'  },
+      { header: 'Credit (â‚¹)',   key: 'credit', align: 'right'  },
     ]
     let sno = 0
     const exRows = []
     TYPE_ORDER.forEach(type => {
       const group = display.filter(r => r.account_type === type)
       if (!group.length) return
-      exRows.push({ sno: '', name: `── ${TYPE_META[type].label.toUpperCase()} ──`, type: '', debit: '', credit: '' })
+      exRows.push({ sno: '', name: `â”€â”€ ${TYPE_META[type].label.toUpperCase()} â”€â”€`, type: '', debit: '', credit: '' })
       group.forEach(r => {
         sno++
         exRows.push({ sno, name: r.name, type: displayAccountType(type), debit: r.total_debit || '', credit: r.total_credit || '' })
@@ -83,16 +83,16 @@ export default function TrialBalancePage() {
     exportToExcel(cols, exRows, `Trial Balance FY ${fy}`, `TrialBalance_${fy}.xlsx`)
   }
 
-  /* ── Render ─────────────────────────────────────────────────── */
+  /* â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   return (
     <div className="page-container">
 
-      {/* Page header — hidden when printing */}
+      {/* Page header â€” hidden when printing */}
       <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => navigate('/accounting')}
-              style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+              style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -118,7 +118,7 @@ export default function TrialBalancePage() {
         )}
       </div>
 
-      {/* Controls — hidden when printing */}
+      {/* Controls â€” hidden when printing */}
       <div className="card no-print" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Financial Year</label>
@@ -164,14 +164,14 @@ export default function TrialBalancePage() {
       {loading && (
         <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
           <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-          Generating trial balance…
+          Generating trial balanceâ€¦
         </div>
       )}
 
-      {/* ── Report ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {generated && !loading && (
         <>
-          {/* Balance status banner — hidden when printing (agreement shown in tfoot) */}
+          {/* Balance status banner â€” hidden when printing (agreement shown in tfoot) */}
           <div className="no-print" style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '14px 20px', marginBottom: 20, borderRadius: 10,
@@ -189,7 +189,7 @@ export default function TrialBalancePage() {
               <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)' }}>
                 {balanced
                   ? `Total Debits = Total Credits = ${fmtAmt(totalDebit)}`
-                  : `Difference of ${fmtAmt(Math.abs(totalDebit - totalCredit))} — check for unposted entries`}
+                  : `Difference of ${fmtAmt(Math.abs(totalDebit - totalCredit))} â€” check for unposted entries`}
               </p>
             </div>
             <div style={{ display: 'flex', gap: 24, flexShrink: 0 }}>
@@ -204,7 +204,7 @@ export default function TrialBalancePage() {
             </div>
           </div>
 
-          {/* ── Report card (the only thing that prints) ─────────── */}
+          {/* â”€â”€ Report card (the only thing that prints) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div id="tb-print-area" className="card" style={{ overflow: 'visible' }}>
 
             {/* Indian-style report header */}
@@ -230,15 +230,15 @@ export default function TrialBalancePage() {
                   Trial Balance
                 </p>
                 <p style={{ margin: '0 0 3px', fontSize: 12, color: '#4b5563' }}>
-                  For the Financial Year {fy} &nbsp;·&nbsp; As on {fyEndDate(fy)}
+                  For the Financial Year {fy} &nbsp;Â·&nbsp; As on {fyEndDate(fy)}
                 </p>
                 <p style={{ margin: 0, fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>
-                  (All amounts in Indian Rupees — ₹)
+                  (All amounts in Indian Rupees â€” â‚¹)
                 </p>
               </div>
             </div>
 
-            {/* ── Table ─────────────────────────────────────────── */}
+            {/* â”€â”€ Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#1e293b' }}>
@@ -249,10 +249,10 @@ export default function TrialBalancePage() {
                     Name of Account
                   </th>
                   <th style={{ padding: '11px 18px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#93c5fd', textAlign: 'right', width: 180, borderRight: '1px solid #334155' }}>
-                    Debit (₹)
+                    Debit (â‚¹)
                   </th>
                   <th style={{ padding: '11px 18px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#86efac', textAlign: 'right', width: 180 }}>
-                    Credit (₹)
+                    Credit (â‚¹)
                   </th>
                 </tr>
               </thead>
@@ -293,10 +293,10 @@ export default function TrialBalancePage() {
                             {r.name}
                           </td>
                           <td style={{ padding: '9px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: r.total_debit > 0 ? '#1d4ed8' : '#9ca3af', fontWeight: r.total_debit > 0 ? 600 : 400, borderRight: '1px solid #e5e7eb' }}>
-                            {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}
+                            {r.total_debit > 0 ? fmtAmt(r.total_debit) : 'â€”'}
                           </td>
                           <td style={{ padding: '9px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: r.total_credit > 0 ? '#15803d' : '#9ca3af', fontWeight: r.total_credit > 0 ? 600 : 400 }}>
-                            {r.total_credit > 0 ? fmtAmt(r.total_credit) : '—'}
+                            {r.total_credit > 0 ? fmtAmt(r.total_credit) : 'â€”'}
                           </td>
                         </tr>
                       )
@@ -307,13 +307,13 @@ export default function TrialBalancePage() {
                       <tr key={`sub-${type}`} style={{ background: meta.subtBg, borderTop: '1px solid #d1d5db', borderBottom: '1px solid #d1d5db' }}>
                         <td style={{ padding: '8px 14px', borderRight: '1px solid #d1d5db' }} />
                         <td style={{ padding: '8px 18px', fontSize: 12, fontStyle: 'italic', fontWeight: 700, color: meta.hdrText, borderRight: '1px solid #d1d5db' }}>
-                          Sub-Total — {meta.label}
+                          Sub-Total â€” {meta.label}
                         </td>
                         <td style={{ padding: '8px 18px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#1d4ed8', fontSize: 13, borderRight: '1px solid #d1d5db' }}>
-                          {subDebit > 0 ? fmtAmt(subDebit) : '—'}
+                          {subDebit > 0 ? fmtAmt(subDebit) : 'â€”'}
                         </td>
                         <td style={{ padding: '8px 18px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#15803d', fontSize: 13 }}>
-                          {subCredit > 0 ? fmtAmt(subCredit) : '—'}
+                          {subCredit > 0 ? fmtAmt(subCredit) : 'â€”'}
                         </td>
                       </tr>
                     )
@@ -340,13 +340,13 @@ export default function TrialBalancePage() {
                 {balanced ? (
                   <tr style={{ background: '#f0fdf4' }}>
                     <td colSpan={4} style={{ padding: '9px 28px', fontSize: 12, fontWeight: 700, color: '#15803d', textAlign: 'center', borderTop: '1px solid #86efac' }}>
-                      ✓ &nbsp; Trial Balance Agrees &nbsp;—&nbsp; Total Debits = Total Credits = {fmtAmt(totalDebit)}
+                      âœ“ &nbsp; Trial Balance Agrees &nbsp;â€”&nbsp; Total Debits = Total Credits = {fmtAmt(totalDebit)}
                     </td>
                   </tr>
                 ) : (
                   <tr style={{ background: '#fff1f2' }}>
                     <td colSpan={4} style={{ padding: '9px 28px', fontSize: 12, fontWeight: 700, color: '#b91c1c', textAlign: 'center', borderTop: '1px solid #fca5a5' }}>
-                      ✗ &nbsp; Trial Balance Disagrees &nbsp;—&nbsp; Difference of {fmtAmt(Math.abs(totalDebit - totalCredit))}
+                      âœ— &nbsp; Trial Balance Disagrees &nbsp;â€”&nbsp; Difference of {fmtAmt(Math.abs(totalDebit - totalCredit))}
                     </td>
                   </tr>
                 )}
@@ -356,7 +356,7 @@ export default function TrialBalancePage() {
             {/* Footer note */}
             <div style={{ padding: '10px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', background: '#f9fafb' }}>
               <span style={{ fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>
-                Note: Amounts shown in Indian Rupee (₹). Prepared on computer.
+                Note: Amounts shown in Indian Rupee (â‚¹). Prepared on computer.
               </span>
               <span style={{ fontSize: 11, color: '#6b7280' }}>
                 {display.length} account{display.length !== 1 ? 's' : ''}

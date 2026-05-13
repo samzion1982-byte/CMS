@@ -1,8 +1,8 @@
-/* ═══════════════════════════════════════════════════════════════
-   BankReconciliationPage.jsx — Mark journal lines as reconciled
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   BankReconciliationPage.jsx â€” Mark journal lines as reconciled
    Uses is_reconciled, reconciled_at, reconciled_by columns on
    journal_entry_lines
-   ═══════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -124,7 +124,7 @@ export default function BankReconciliationPage() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -209,7 +209,7 @@ export default function BankReconciliationPage() {
 
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading transactions…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading transactionsâ€¦
         </div>
       ) : displayed.length === 0 ? (
         <div className="card" style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-3)' }}>
@@ -233,8 +233,8 @@ export default function BankReconciliationPage() {
                 <th style={{ ...LABEL_TH }}>Entry #</th>
                 <th style={{ ...LABEL_TH }}>Type</th>
                 <th style={{ ...LABEL_TH }}>Narration</th>
-                <th style={{ ...LABEL_TH, textAlign: 'right', color: '#2563eb' }}>Debit (₹)</th>
-                <th style={{ ...LABEL_TH, textAlign: 'right', color: '#16a34a' }}>Credit (₹)</th>
+                <th style={{ ...LABEL_TH, textAlign: 'right', color: '#2563eb' }}>Debit (â‚¹)</th>
+                <th style={{ ...LABEL_TH, textAlign: 'right', color: '#16a34a' }}>Credit (â‚¹)</th>
                 <th style={{ ...LABEL_TH }}>Reconciled By</th>
               </tr>
             </thead>
@@ -243,7 +243,7 @@ export default function BankReconciliationPage() {
                 const je = l.journal_entries
                 const dateStr = je?.entry_date
                   ? new Date(je.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                  : '—'
+                  : 'â€”'
                 return (
                   <tr key={l.id} style={{ background: l.is_reconciled ? '#f0fdf430' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
                     <td style={{ padding: '8px 10px', textAlign: 'center' }}>
@@ -257,23 +257,23 @@ export default function BankReconciliationPage() {
                       </button>
                     </td>
                     <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{dateStr}</td>
-                    <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{je?.entry_number || '—'}</td>
+                    <td style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, color: 'var(--accent)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{je?.entry_number || 'â€”'}</td>
                     <td style={{ padding: '8px 14px' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{je?.voucher_type || '—'}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{je?.voucher_type || 'â€”'}</span>
                     </td>
                     <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {l.description || je?.narration || '—'}
+                      {l.description || je?.narration || 'â€”'}
                     </td>
                     <td style={{ padding: '8px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>
-                      {Number(l.debit_amount) > 0 ? fmtAmt(l.debit_amount) : '—'}
+                      {Number(l.debit_amount) > 0 ? fmtAmt(l.debit_amount) : 'â€”'}
                     </td>
                     <td style={{ padding: '8px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>
-                      {Number(l.credit_amount) > 0 ? fmtAmt(l.credit_amount) : '—'}
+                      {Number(l.credit_amount) > 0 ? fmtAmt(l.credit_amount) : 'â€”'}
                     </td>
                     <td style={{ padding: '8px 14px', fontSize: 11, color: l.is_reconciled ? '#16a34a' : 'var(--text-3)' }}>
                       {l.is_reconciled
                         ? <span title={l.reconciled_at ? new Date(l.reconciled_at).toLocaleString('en-IN') : ''}>{l.reconciled_by || 'reconciled'}</span>
-                        : <span style={{ opacity: 0.5 }}>—</span>}
+                        : <span style={{ opacity: 0.5 }}>â€”</span>}
                     </td>
                   </tr>
                 )

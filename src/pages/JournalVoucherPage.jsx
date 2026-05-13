@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -25,9 +25,9 @@ const ACCENT = '#0891b2'
 let _lineId = 0
 function newLine() { return { _id: ++_lineId, accountId: '', accountName: '', amount: '' } }
 
-// strip specials to spaces → "Men's" → "men s"
+// strip specials to spaces â†’ "Men's" â†’ "men s"
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
-// strip ALL non-alphanumeric → "Men's" → "mens"
+// strip ALL non-alphanumeric â†’ "Men's" â†’ "mens"
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 function matchAcct(name, q) {
   if (!q) return true
@@ -38,7 +38,7 @@ function matchAcct(name, q) {
   return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
 }
 
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
+function AccountPicker({ value, accounts, onChange, placeholder = 'Select accountâ€¦', disabled = false }) {
   const [query, setQuery] = useState('')
   const [open,  setOpen]  = useState(false)
   const [hi,    setHi]    = useState(0)
@@ -104,7 +104,7 @@ function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRe
               value={line.accountId}
               accounts={accounts}
               onChange={(id, name) => onChange(idx, 'accountId', id, name)}
-              placeholder="Account…"
+              placeholder="Accountâ€¦"
               disabled={disabled}
             />
             <input
@@ -256,7 +256,7 @@ export default function JournalVoucherPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
           <button onClick={() => navigate('/accounting')}
-            style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--accent)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -295,10 +295,10 @@ export default function JournalVoucherPage() {
             <label className="field-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Designated Fund</label>
             <select value={fundId} onChange={e => setFundId(e.target.value)} disabled={busy}
               style={{ height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: fundId ? 'var(--text-1)' : 'var(--text-3)', flex: 1, maxWidth: 280 }}>
-              <option value="">— None (General) —</option>
+              <option value="">â€” None (General) â€”</option>
               {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
-            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>●</span>}
+            {fundId && <span style={{ fontSize: 11, fontWeight: 700, color: funds.find(f => f.id === fundId)?.color || 'var(--accent)' }}>â—</span>}
           </div>
         )}
       </div>

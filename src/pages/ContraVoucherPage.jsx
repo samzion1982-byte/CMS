@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -62,7 +62,7 @@ function AccCard({ acc, selected, dimmed, onClick }) {
         {acc.name}
       </span>
       {selected && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: col, whiteSpace: 'nowrap' }}>✓ Selected</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: col, whiteSpace: 'nowrap' }}>âœ“ Selected</span>
       )}
     </button>
   )
@@ -253,11 +253,11 @@ export default function ContraVoucherPage() {
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
 
-      {/* ── Header ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
           <button onClick={() => navigate('/accounting')}
-            style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--accent)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -275,7 +275,7 @@ export default function ContraVoucherPage() {
         </button>
       </div>
 
-      {/* ── Voucher meta ────────────────────────────────────────── */}
+      {/* â”€â”€ Voucher meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="card" style={{ marginBottom: 16, padding: '14px 18px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr', gap: '10px 16px' }}>
           <div>
@@ -293,7 +293,7 @@ export default function ContraVoucherPage() {
         </div>
       </div>
 
-      {/* ── From | To panels ────────────────────────────────────── */}
+      {/* â”€â”€ From | To panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {cashBankAccounts.length === 0 ? (
         <div className="card" style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
           <p style={{ margin: 0, fontSize: 13 }}>No cash or bank accounts found. Add them in Chart of Accounts first.</p>
@@ -325,7 +325,7 @@ export default function ContraVoucherPage() {
         </div>
       )}
 
-      {/* ── Transfer summary + Amount + Actions ─────────────────── */}
+      {/* â”€â”€ Transfer summary + Amount + Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="card" style={{ padding: '18px 20px' }}>
         {/* Summary bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(124,58,237,0.05)', border: '1.5px solid rgba(124,58,237,0.15)' }}>
@@ -356,7 +356,7 @@ export default function ContraVoucherPage() {
         {/* Amount row + buttons */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>Transfer Amount (₹) *</label>
+            <label className="field-label" style={{ display: 'block', marginBottom: 6 }}>Transfer Amount (â‚¹) *</label>
             <input
               type="number" min="0" step="0.01" placeholder="0.00"
               value={amount} onChange={e => setAmount(e.target.value)} disabled={busy}

@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════════
-   JournalEntryPage.jsx — List + Create/Edit Journal Entries
-   ═══════════════════════════════════════════════════════════════ */
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   JournalEntryPage.jsx â€” List + Create/Edit Journal Entries
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -27,7 +27,7 @@ import VoucherPrint from '../components/accounting/VoucherPrint'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
 
-// ── Account typeahead picker ──────────────────────────────────────
+// â”€â”€ Account typeahead picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
 function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
 function matchAcct(name, q) {
@@ -37,7 +37,7 @@ function matchAcct(name, q) {
   return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
 }
 
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
+function AccountPicker({ value, accounts, onChange, placeholder = 'Select accountâ€¦', disabled = false }) {
   const [query, setQuery] = useState('')
   const [open,  setOpen]  = useState(false)
   const [hi,    setHi]    = useState(0)
@@ -94,16 +94,16 @@ function AccountPicker({ value, accounts, onChange, placeholder = 'Select accoun
   )
 }
 
-// ── Voucher type badge ────────────────────────────────────────────
+// â”€â”€ Voucher type badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function VBadge({ type }) {
   const c = VOUCHER_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
   return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: c.bg, color: c.text }}>{type}</span>
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  LIST PAGE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export default function JournalEntryPage() {
   const navigate = useNavigate()
@@ -137,7 +137,7 @@ export default function JournalEntryPage() {
   return <JournalEntryList />
 }
 
-// ── Entry system setup prompt ─────────────────────────────────────
+// â”€â”€ Entry system setup prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EntrySetupPrompt() {
   const navigate = useNavigate()
@@ -152,12 +152,12 @@ function EntrySetupPrompt() {
           Before creating journal entries, you need to choose your accounting method and lock it with the master password.
         </p>
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 28px' }}>
-          Go to <strong>Accounts → Settings</strong> and select Single-Entry or Double-Entry, then click <em>Lock Entry System</em>.
+          Go to <strong>Accounts â†’ Settings</strong> and select Single-Entry or Double-Entry, then click <em>Lock Entry System</em>.
         </p>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button onClick={() => navigate(-1)}
             style={{ padding: '10px 20px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
-            ← Back
+            â† Back
           </button>
           <button onClick={() => navigate('/accounting/settings')}
             style={{ padding: '10px 22px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -169,7 +169,7 @@ function EntrySetupPrompt() {
   )
 }
 
-// ── Permanent Delete Modal ────────────────────────────────────────
+// â”€â”€ Permanent Delete Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PermanentDeleteModal({ entry, onClose, onDeleted }) {
   const { profile } = useAuth()
@@ -237,11 +237,11 @@ function PermanentDeleteModal({ entry, onClose, onDeleted }) {
             value={password}
             onChange={e => setPassword(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handlePermanentDelete() }}
-            placeholder="Enter accounting delete password…"
+            placeholder="Enter accounting delete passwordâ€¦"
             style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
           />
           <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 0 0' }}>
-            The delete password is set in Accounting → Settings.
+            The delete password is set in Accounting â†’ Settings.
           </p>
         </div>
 
@@ -261,7 +261,7 @@ function PermanentDeleteModal({ entry, onClose, onDeleted }) {
   )
 }
 
-// ── List ─────────────────────────────────────────────────────────
+// â”€â”€ List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function JournalEntryList() {
   const { profile } = useAuth()
@@ -272,7 +272,7 @@ function JournalEntryList() {
   const [entries,    setEntries]    = useState([])
   const [loading,    setLoading]    = useState(true)
 
-  // + key opens new entry modal — capture phase so it fires even when filters are focused
+  // + key opens new entry modal â€” capture phase so it fires even when filters are focused
   useEffect(() => {
     function handler(e) {
       if (e.key !== '+') return
@@ -340,8 +340,8 @@ function JournalEntryList() {
       { header: 'Type',        key: 'type',   align: 'left'  },
       { header: 'Narration',   key: 'narr',   align: 'left'  },
       { header: 'Ref No',      key: 'ref',    align: 'left'  },
-      { header: 'Debit (₹)',   key: 'debit',  align: 'right' },
-      { header: 'Credit (₹)',  key: 'credit', align: 'right' },
+      { header: 'Debit (â‚¹)',   key: 'debit',  align: 'right' },
+      { header: 'Credit (â‚¹)',  key: 'credit', align: 'right' },
       { header: 'Status',      key: 'status', align: 'left'  },
     ]
     const rows = filtered.map(e => ({
@@ -363,7 +363,7 @@ function JournalEntryList() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -409,7 +409,7 @@ function JournalEntryList() {
       <div className="card" style={{ padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
           <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search entry # or narration…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search entry # or narrationâ€¦"
             style={{ width: '100%', paddingLeft: 30, paddingRight: 10, height: 36, border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
           {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={13} /></button>}
         </div>
@@ -444,7 +444,7 @@ function JournalEntryList() {
       {/* Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}><Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading…</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}><Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loadingâ€¦</div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
             <FileText size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
@@ -476,11 +476,11 @@ function JournalEntryList() {
                     >
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{e.entry_number}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                        {e.entry_date ? new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                        {e.entry_date ? new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : 'â€”'}
                       </td>
                       <td style={{ padding: '10px 14px' }}><VBadge type={e.voucher_type} /></td>
-                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.narration || '—'}</td>
-                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-3)' }}>{e.reference_no || '—'}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-2)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.narration || 'â€”'}</td>
+                      <td style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text-3)' }}>{e.reference_no || 'â€”'}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(e.total_debit)}</td>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(e.total_credit)}</td>
                       <td style={{ padding: '10px 14px' }}>
@@ -534,7 +534,7 @@ function JournalEntryList() {
                     <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
                     <td colSpan={2} style={{ padding: '10px 14px' }}>
                       {Math.abs(totalDebit - totalCredit) < 0.01
-                        ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>✓ Balanced</span>
+                        ? <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>âœ“ Balanced</span>
                         : <span style={{ fontSize: 11, fontWeight: 700, color: '#c2410c' }}>Diff: {fmtAmt(Math.abs(totalDebit - totalCredit))}</span>
                       }
                     </td>
@@ -550,7 +550,7 @@ function JournalEntryList() {
       {totalPages > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, padding: '10px 16px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10 }}>
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            Showing {page * PAGE_SIZE + 1}â€“{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
           </span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
@@ -577,9 +577,9 @@ function JournalEntryList() {
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  FORM (New / Edit)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const { profile } = useAuth()
@@ -600,7 +600,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const [church,        setChurch]        = useState(null)
 
   const dateInputRef = useRef(null)
-  // stable refs for keyboard handlers — always point to latest functions
+  // stable refs for keyboard handlers â€” always point to latest functions
   const saveDraftRef = useRef(null)
   const savePostRef  = useRef(null)
   const addLineRef   = useRef(null)
@@ -694,7 +694,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
     if (!header.entry_date) { toast('Entry date is required', 'error'); return }
     const validLines = lines.filter(l => l.account_id && (parseFloat(l.debit_amount) > 0 || parseFloat(l.credit_amount) > 0))
     if (validLines.length < 2) { toast('At least 2 line items with amounts are required', 'error'); return }
-    if (!balanced) { toast(`Entry is not balanced. Difference: ₹${diff.toFixed(2)}`, 'error'); return }
+    if (!balanced) { toast(`Entry is not balanced. Difference: â‚¹${diff.toFixed(2)}`, 'error'); return }
 
     setSaving(true)
     try {
@@ -764,7 +764,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
     <div className="page-container">
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
         <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-        Loading entry…
+        Loading entryâ€¦
       </div>
     </div>
   )
@@ -776,7 +776,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
@@ -787,7 +787,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
               {formReadOnly ? `View: ${header.entry_number}` : (entryId ? `Edit: ${header.entry_number}` : 'New Journal Entry')}
             </h1>
             <p className="page-subtitle">
-              {editingPosted ? 'Editing posted entry — changes update financial records' : formReadOnly ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}
+              {editingPosted ? 'Editing posted entry â€” changes update financial records' : formReadOnly ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}
             </p>
           </div>
         </div>
@@ -890,7 +890,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
           <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 14px' }}>Narration &amp; Summary</p>
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Narration</label>
-            <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} disabled={formReadOnly} rows={3} placeholder="Describe the transaction…"
+            <textarea value={header.narration} onChange={e => sh('narration', e.target.value)} disabled={formReadOnly} rows={3} placeholder="Describe the transactionâ€¦"
               style={{ width: '100%', padding: '8px 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', resize: 'none', boxSizing: 'border-box' }} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
@@ -904,7 +904,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
             </div>
             <div style={{ textAlign: 'center', padding: '8px', background: balanced ? '#dcfce733' : '#fee2e233', borderRadius: 8, border: `1.5px solid ${balanced ? '#16a34a44' : '#b91c1c44'}` }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: balanced ? '#16a34a' : '#b91c1c', margin: '0 0 2px' }}>Balance</p>
-              <p style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: balanced ? '#16a34a' : '#b91c1c', margin: 0 }}>{balanced ? '✓ OK' : fmtAmt(diff)}</p>
+              <p style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: balanced ? '#16a34a' : '#b91c1c', margin: 0 }}>{balanced ? 'âœ“ OK' : fmtAmt(diff)}</p>
             </div>
           </div>
           {!formReadOnly && !balanced && totalDebit > 0 && (
@@ -933,8 +933,8 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 40 }}>#</th>
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account</th>
                 <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Description</th>
-                <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 140 }}>Debit (₹)</th>
-                <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 140 }}>Credit (₹)</th>
+                <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 140 }}>Debit (â‚¹)</th>
+                <th style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 140 }}>Credit (â‚¹)</th>
                 {!formReadOnly && <th style={{ width: 40 }}></th>}
               </tr>
             </thead>
@@ -947,7 +947,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                       value={line.account_id}
                       accounts={accounts}
                       onChange={v => setLine(i, 'account_id', v)}
-                      placeholder="— Select Ledger —"
+                      placeholder="â€” Select Ledger â€”"
                       disabled={formReadOnly}
                     />
                   </td>
@@ -984,7 +984,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                 <tr>
                   <td colSpan={formReadOnly ? 5 : 6} style={{ padding: '8px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c2410c', fontSize: 12, fontWeight: 600 }}>
-                      <AlertCircle size={14} /> Entry not balanced — difference of {fmtAmt(diff)}
+                      <AlertCircle size={14} /> Entry not balanced â€” difference of {fmtAmt(diff)}
                     </div>
                   </td>
                 </tr>
@@ -1099,9 +1099,9 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                           return (
                             <span key={field} style={{ fontSize: 11, color: 'var(--text-3)' }}>
                               <span style={{ fontWeight: 600, color: 'var(--text-2)', textTransform: 'capitalize' }}>{field.replace(/_/g,' ')}:</span>{' '}
-                              <span style={{ textDecoration: 'line-through', color: '#b91c1c' }}>{String(oldVal ?? '—')}</span>
-                              {' → '}
-                              <span style={{ color: '#16a34a' }}>{String(newVal ?? '—')}</span>
+                              <span style={{ textDecoration: 'line-through', color: '#b91c1c' }}>{String(oldVal ?? 'â€”')}</span>
+                              {' â†’ '}
+                              <span style={{ color: '#16a34a' }}>{String(newVal ?? 'â€”')}</span>
                             </span>
                           )
                         })}

@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════════
-   LedgerPage.jsx — Account Ledger View (multi-account)
-   ═══════════════════════════════════════════════════════════════ */
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   LedgerPage.jsx â€” Account Ledger View (multi-account)
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
@@ -11,7 +11,7 @@ import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
 
-// ── Account multi-select dropdown (tree view) ─────────────────────
+// â”€â”€ Account multi-select dropdown (tree view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
   const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
@@ -24,7 +24,7 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
-  // Build id → children map once
+  // Build id â†’ children map once
   const childrenOf = useMemo(() => {
     const map = {}
     allAccounts.forEach(a => {
@@ -119,7 +119,7 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
   }
 
   const triggerLabel = selectedIds.size === 0
-    ? 'Select accounts…'
+    ? 'Select accountsâ€¦'
     : selectedIds.size === 1
       ? allAccounts.find(a => a.id === [...selectedIds][0])?.name || '1 account'
       : `${selectedIds.size} accounts selected`
@@ -153,7 +153,7 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
             <Search size={12} style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
             <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="Search accounts…"
+              placeholder="Search accountsâ€¦"
               style={{ width: '100%', height: 30, padding: '0 8px 0 26px', border: '1px solid var(--card-border)', borderRadius: 6, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
           </div>
 
@@ -184,7 +184,7 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
   )
 }
 
-// ── Single account ledger card ────────────────────────────────────
+// â”€â”€ Single account ledger card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LedgerCard({ account, lines, dateFrom, dateTo }) {
   const c          = TYPE_COLOR[account.account_type] || { bg: '#f1f5f9', text: '#475569' }
   const periodLines = lines.filter(l => !l.isOpening)
@@ -218,8 +218,8 @@ function LedgerCard({ account, lines, dateFrom, dateTo }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ background: 'var(--table-header-bg)' }}>
               <tr>
-                {['Date','Entry #','Type','Narration','Debit (₹)','Credit (₹)','Balance (₹)'].map(h => (
-                  <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit (₹)','Credit (₹)','Balance (₹)'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                {['Date','Entry #','Type','Narration','Debit (â‚¹)','Credit (â‚¹)','Balance (â‚¹)'].map(h => (
+                  <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit (â‚¹)','Credit (â‚¹)','Balance (â‚¹)'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -227,18 +227,18 @@ function LedgerCard({ account, lines, dateFrom, dateTo }) {
               {lines.map((l, i) => (
                 <tr key={i} style={{ background: l.isOpening ? 'rgba(37,99,235,0.05)' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
                   <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                    {l.isOpening ? '—' : new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {l.isOpening ? 'â€”' : new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </td>
-                  <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number || '—'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number || 'â€”'}</td>
                   <td style={{ padding: '9px 14px' }}>
                     {l.voucher_type
                       ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{l.voucher_type}</span>
                       : l.isOpening ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#dbeafe', color: '#2563eb' }}>Opening</span>
                       : null}
                   </td>
-                  <td style={{ padding: '9px 14px', fontSize: 12, color: l.isOpening ? '#2563eb' : 'var(--text-2)', fontWeight: l.isOpening ? 700 : 400, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || '—'}</td>
-                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.debit > 0 ? '#2563eb' : 'var(--text-3)' }}>{l.debit > 0 ? fmtAmt(l.debit) : '—'}</td>
-                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.credit > 0 ? '#16a34a' : 'var(--text-3)' }}>{l.credit > 0 ? fmtAmt(l.credit) : '—'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, color: l.isOpening ? '#2563eb' : 'var(--text-2)', fontWeight: l.isOpening ? 700 : 400, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || 'â€”'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.debit > 0 ? '#2563eb' : 'var(--text-3)' }}>{l.debit > 0 ? fmtAmt(l.debit) : 'â€”'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.credit > 0 ? '#16a34a' : 'var(--text-3)' }}>{l.credit > 0 ? fmtAmt(l.credit) : 'â€”'}</td>
                   <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: l.running_balance >= 0 ? '#2563eb' : '#b91c1c' }}>
                     {fmtAmt(Math.abs(l.running_balance))} <span style={{ fontSize: 10 }}>{l.running_balance >= 0 ? 'Dr' : 'Cr'}</span>
                   </td>
@@ -262,7 +262,7 @@ function LedgerCard({ account, lines, dateFrom, dateTo }) {
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────
+// â”€â”€ Main page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function LedgerPage() {
   const navigate     = useNavigate()
   const location     = useLocation()
@@ -338,13 +338,13 @@ export default function LedgerPage() {
       { header: 'Entry #',     key: 'entry',   align: 'left'  },
       { header: 'Type',        key: 'type',    align: 'left'  },
       { header: 'Narration',   key: 'narr',    align: 'left'  },
-      { header: 'Debit (₹)',   key: 'debit',   align: 'right' },
-      { header: 'Credit (₹)',  key: 'credit',  align: 'right' },
-      { header: 'Balance (₹)', key: 'balance', align: 'right' },
+      { header: 'Debit (â‚¹)',   key: 'debit',   align: 'right' },
+      { header: 'Credit (â‚¹)',  key: 'credit',  align: 'right' },
+      { header: 'Balance (â‚¹)', key: 'balance', align: 'right' },
     ]
     const rows = []
     ledgers.forEach(({ account, lines }) => {
-      rows.push({ date: `── ${account.name} ──`, entry: '', type: '', narr: '', debit: '', credit: '', balance: '' })
+      rows.push({ date: `â”€â”€ ${account.name} â”€â”€`, entry: '', type: '', narr: '', debit: '', credit: '', balance: '' })
       lines.forEach(l => rows.push({
         date:    l.date,
         entry:   l.entry_number,
@@ -368,17 +368,17 @@ export default function LedgerPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--accent)' }}>
+              <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
                 <ArrowLeft size={15} />
               </button>
               <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
             </div>
             {cameFromReport && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+                <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
                   <ArrowLeft size={15} />
                 </button>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Back</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Back</span>
               </div>
             )}
           </div>
@@ -406,7 +406,7 @@ export default function LedgerPage() {
         <DatePresets onSelect={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
 
-      {/* Filter bar — account dropdown + dates + generate */}
+      {/* Filter bar â€” account dropdown + dates + generate */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', overflow: 'visible' }}>
         <AccountSelector allAccounts={allAccounts} postableIds={postableIds} selectedIds={selectedIds} onChange={setSelectedIds} />
         <div style={{ flex: 1, minWidth: 140 }}>
@@ -436,7 +436,7 @@ export default function LedgerPage() {
 
       {loading && (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} /> Loading ledger…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} /> Loading ledgerâ€¦
         </div>
       )}
 
