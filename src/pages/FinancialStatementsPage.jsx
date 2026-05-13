@@ -145,27 +145,53 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
 
 function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
   function renderSide(cell, isRight) {
-    const borderL = isRight ? '2px solid var(--card-border)' : 'none'
-    if (!cell) return <><td style={{ borderLeft: borderL }} /><td /><td /></>
+    const sepBorder = isRight ? '2px solid var(--card-border)' : 'none'
+    if (!cell) return <><td style={{ borderLeft: sepBorder }} /><td /><td /></>
+
     const clickable = !!(cell.accountId && navigate) && !cell.isGroup
     const isGroup   = !!cell.isGroup
     function handleClick() {
       if (isGroup) { cell.onToggle?.(); return }
       if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
     }
-    const pl = cell.indent2 ? 52 : cell.indent ? 32 : 14
+
+    // Compensate paddingLeft for chevron (12px icon + 4px margin = 16px)
+    // so group and non-group rows at the same indent level align their text
+    const pl = cell.indent2
+      ? (isGroup ? 36 : 52)
+      : cell.indent
+        ? (isGroup ? 16 : 32)
+        : 14
+
+    const hasInner = cell.inner !== undefined
+    const hasOuter = cell.outer !== undefined
+
     return (
       <>
-        <td style={{ ...TD, borderLeft: borderL, fontWeight: cell.bold ? 700 : 400, paddingLeft: pl, color: cell.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'default' }} onClick={handleClick}>
-          {isGroup && <ChevronRight size={12} style={{ marginRight: 4, display: 'inline-block', verticalAlign: 'middle', color: 'var(--text-3)', transform: cell.isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />}
+        {/* Label cell */}
+        <td
+          style={{ ...TD, borderLeft: sepBorder, paddingTop: 6, paddingBottom: 6,
+            fontWeight: cell.bold ? 700 : 400, paddingLeft: pl,
+            color: cell.muted ? 'var(--text-3)' : 'var(--text-1)',
+            fontStyle: cell.italic ? 'italic' : 'normal',
+            cursor: (isGroup || clickable) ? 'pointer' : 'default' }}
+          onClick={handleClick}
+        >
+          {isGroup && (
+            <ChevronRight size={12} style={{ marginRight: 4, display: 'inline-block', verticalAlign: 'middle', color: 'var(--text-3)', transform: cell.isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+          )}
           {cell.label || ''}
-          {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
+          {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />}
         </td>
-        <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', width: 120, color: 'var(--text-2)', fontWeight: cell.bold ? 600 : 400 }}>
-          {cell.inner !== undefined ? fmtAmt(cell.inner) : ''}
+
+        {/* Inner column — detail amounts, light gray, smaller */}
+        <td style={{ paddingRight: 10, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 12, width: 115, color: hasInner ? '#9ca3af' : 'transparent', fontWeight: 400, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+          {hasInner ? fmtAmt(cell.inner) : ''}
         </td>
-        <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', width: 140, fontWeight: 700 }}>
-          {cell.outer !== undefined ? fmtAmt(cell.outer) : ''}
+
+        {/* Outer column — totals, bold, prominent, hairline left border */}
+        <td style={{ paddingRight: 14, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 13, width: 145, fontWeight: hasOuter ? 800 : 400, color: hasOuter ? 'var(--text-1)' : 'transparent', borderLeft: '1px solid rgba(0,0,0,0.07)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+          {hasOuter ? fmtAmt(cell.outer) : ''}
         </td>
       </>
     )
@@ -178,29 +204,35 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         <thead style={{ background: 'var(--table-header-bg)' }}>
           <tr>
             <th style={TH}>{leftLabel}</th>
-            <th style={{ ...TH, width: 120, textAlign: 'right', opacity: 0.5 }}></th>
-            <th style={{ ...TH, width: 140, textAlign: 'right' }}>Amount</th>
+            <th style={{ ...TH, width: 115, textAlign: 'right', color: '#9ca3af', fontWeight: 500 }}>Detail</th>
+            <th style={{ ...TH, width: 145, textAlign: 'right', borderLeft: '1px solid rgba(0,0,0,0.07)' }}>Amount</th>
             <th style={{ ...TH, borderLeft: '2px solid var(--card-border)' }}>{rightLabel}</th>
-            <th style={{ ...TH, width: 120, textAlign: 'right', opacity: 0.5 }}></th>
-            <th style={{ ...TH, width: 140, textAlign: 'right' }}>Amount</th>
+            <th style={{ ...TH, width: 115, textAlign: 'right', color: '#9ca3af', fontWeight: 500 }}>Detail</th>
+            <th style={{ ...TH, width: 145, textAlign: 'right', borderLeft: '1px solid rgba(0,0,0,0.07)' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: maxLen }, (_, i) => (
-            <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
-              {renderSide(leftRows[i] || null, false)}
-              {renderSide(rightRows[i] || null, true)}
-            </tr>
-          ))}
+          {Array.from({ length: maxLen }, (_, i) => {
+            const l = leftRows[i]
+            const r = rightRows[i]
+            // Highlight total/bold rows with a very subtle background
+            const isTotalRow = (l?.bold && (l?.outer !== undefined)) || (r?.bold && (r?.outer !== undefined))
+            return (
+              <tr key={i} style={{ background: isTotalRow ? 'rgba(0,0,0,0.025)' : 'transparent', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+                {renderSide(l || null, false)}
+                {renderSide(r || null, true)}
+              </tr>
+            )
+          })}
         </tbody>
         <tfoot>
           <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
-            <td style={{ ...TD, fontWeight: 800 }}>TOTAL</td>
+            <td style={{ ...TD, fontWeight: 800, paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
             <td />
-            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(leftTotal)}</td>
-            <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)' }}>TOTAL</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 14, borderLeft: '1px solid rgba(0,0,0,0.07)' }}>{fmtAmt(leftTotal)}</td>
+            <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)', paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
             <td />
-            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(rightTotal)}</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 14, borderLeft: '1px solid rgba(0,0,0,0.07)' }}>{fmtAmt(rightTotal)}</td>
           </tr>
         </tfoot>
       </table>
