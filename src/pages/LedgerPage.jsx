@@ -200,13 +200,6 @@ function LedgerCard({ account, lines, dateFrom, dateTo }) {
           <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: c.text, margin: '0 0 1px', letterSpacing: '0.07em' }}>{account.account_type}</p>
           <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>{account.name}</p>
         </div>
-        <div style={{ display: 'flex', gap: 20, fontSize: 12, fontFamily: 'monospace', flexWrap: 'wrap' }}>
-          <span style={{ color: '#2563eb', fontWeight: 600 }}>Dr&nbsp;{fmtAmt(totalDebit)}</span>
-          <span style={{ color: '#16a34a', fontWeight: 600 }}>Cr&nbsp;{fmtAmt(totalCredit)}</span>
-          <span style={{ color: closingBal >= 0 ? '#2563eb' : '#b91c1c', fontWeight: 700 }}>
-            Closing:&nbsp;{fmtAmt(Math.abs(closingBal))}&nbsp;{closingBal >= 0 ? 'Dr' : 'Cr'}
-          </span>
-        </div>
       </div>
 
       {lines.length === 0 ? (
@@ -352,8 +345,14 @@ export default function LedgerPage() {
         narr:    l.narration,
         debit:   l.debit   || '',
         credit:  l.credit  || '',
-        balance: l.running_balance,
+        balance: l.running_balance != null ? `${Math.abs(l.running_balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${l.running_balance >= 0 ? 'Dr' : 'Cr'}` : '',
       }))
+      const periodLines  = lines.filter(l => !l.isOpening)
+      const totalDebit   = periodLines.reduce((s, l) => s + l.debit,  0)
+      const totalCredit  = periodLines.reduce((s, l) => s + l.credit, 0)
+      const closingBal   = lines.length > 0 ? lines[lines.length - 1].running_balance : 0
+      const closingLabel = `${Math.abs(closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${closingBal >= 0 ? 'Dr' : 'Cr'}`
+      rows.push({ date: 'TOTAL', entry: '', type: '', narr: `${periodLines.length} entries`, debit: totalDebit || '', credit: totalCredit || '', balance: closingLabel })
     })
     exportToExcel(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`)
   }
