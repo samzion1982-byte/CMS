@@ -20,7 +20,7 @@ import {
   Plus, Search, X, Save, Edit2, Trash2, CheckSquare,
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
   Settings, Zap, Eye, Clock, User, ShieldAlert, RotateCcw, ShieldOff, Lock,
-  FileSpreadsheet, Printer, ChevronLeft, ChevronRight,
+  FileSpreadsheet, Printer, ChevronLeft, ChevronRight, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import VoucherPrint from '../components/accounting/VoucherPrint'
@@ -226,6 +226,7 @@ function JournalEntryList() {
   const [permDeleteEntry, setPermDeleteEntry] = useState(null)
   const [fyOpen,      setFyOpen]      = useState(false)
   const [page,        setPage]        = useState(0)
+  const [dateSort,    setDateSort]    = useState('desc') // 'asc' | 'desc'
   const PAGE_SIZE = 25
   const FYS = fyOptions()
 
@@ -251,8 +252,13 @@ function JournalEntryList() {
     return e.entry_number.toLowerCase().includes(q) || (e.narration || '').toLowerCase().includes(q)
   })
 
-  const totalPages  = Math.ceil(filtered.length / PAGE_SIZE)
-  const pageEntries = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const sorted = [...filtered].sort((a, b) =>
+    dateSort === 'asc'
+      ? (a.entry_date || '').localeCompare(b.entry_date || '')
+      : (b.entry_date || '').localeCompare(a.entry_date || '')
+  )
+  const totalPages  = Math.ceil(sorted.length / PAGE_SIZE)
+  const pageEntries = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   // Reset to page 0 whenever filters change
   useEffect(() => { setPage(0) }, [search, filterType, filterPost, showTrash, fy])
@@ -370,7 +376,13 @@ function JournalEntryList() {
                 <thead style={{ background: 'var(--table-header-bg)' }}>
                   <tr>
                     {['Entry #','Date','Type','Narration','Ref No','Debit','Credit','Status','Actions'].map(h => (
-                      <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit','Credit'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h}
+                        onClick={h === 'Date' ? () => setDateSort(s => s === 'asc' ? 'desc' : 'asc') : undefined}
+                        style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit','Credit'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap', cursor: h === 'Date' ? 'pointer' : 'default', userSelect: 'none' }}>
+                        {h === 'Date'
+                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Date {dateSort === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}</span>
+                          : h}
+                      </th>
                     ))}
                   </tr>
                 </thead>

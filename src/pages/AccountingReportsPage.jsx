@@ -15,6 +15,7 @@ import {
   ArrowLeft, BookOpen, Calendar, Filter, Download,
   TrendingUp, TrendingDown, BarChart2, Loader2,
   ChevronDown, ChevronRight, FileText, Search, X, Scale,
+  ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export default function AccountingReportsPage() {
   const [dbEntries, setDbEntries] = useState([])
   const [dbLoading, setDbLoading] = useState(false)
   const [dbLines,   setDbLines]   = useState({}) // id → lines[]
+  const [dbDateSort, setDbDateSort] = useState('desc') // 'asc' | 'desc'
 
   // ── Account Summary state ─────────────────────────────────────
   const [fy,          setFy]          = useState(getFY())
@@ -139,6 +141,12 @@ export default function AccountingReportsPage() {
 
   const dbTotalDebit  = dbFiltered.reduce((s, e) => s + Number(e.total_debit  || 0), 0)
   const dbTotalCredit = dbFiltered.reduce((s, e) => s + Number(e.total_credit || 0), 0)
+
+  const dbSorted = [...dbFiltered].sort((a, b) =>
+    dbDateSort === 'asc'
+      ? (a.entry_date || '').localeCompare(b.entry_date || '')
+      : (b.entry_date || '').localeCompare(a.entry_date || '')
+  )
 
   // ── Account Summary filtered ──────────────────────────────────
   const balMap = Object.fromEntries(balances.map(b => [b.account_id, b]))
@@ -373,12 +381,18 @@ export default function AccountingReportsPage() {
                   <thead style={{ background: 'var(--table-header-bg)' }}>
                     <tr>
                       {['Date','Entry #','Type','Narration','Ref No','Debit','Credit','Status',''].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit','Credit'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                        <th key={h}
+                          onClick={h === 'Date' ? () => setDbDateSort(s => s === 'asc' ? 'desc' : 'asc') : undefined}
+                          style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit','Credit'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap', cursor: h === 'Date' ? 'pointer' : 'default', userSelect: 'none' }}>
+                          {h === 'Date'
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>Date {dbDateSort === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}</span>
+                            : h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {dbFiltered.map((e, i) => (
+                    {dbSorted.map((e, i) => (
                       <>
                         <tr key={e.id}
                           style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
