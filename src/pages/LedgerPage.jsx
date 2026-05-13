@@ -60,13 +60,10 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
       next.delete(id)
       desc.forEach(did => next.delete(did))
     } else {
-      // Select: if it has children, add only the leaf descendants (not the parent itself)
-      // so the ledger doesn't try to fetch entries for a group header
-      if (hasChildren) {
-        desc.forEach(did => next.add(did))
-      } else {
-        next.add(id)
-      }
+      // Select: add the parent itself AND all postable descendants so that entries
+      // posted directly to the parent account (e.g. old OB entries on "Cash") are not missed
+      next.add(id)
+      desc.forEach(did => next.add(did))
     }
     onChange(next)
   }
@@ -292,13 +289,6 @@ export default function LedgerPage() {
 
   const postableIds = useMemo(() => new Set(postable.map(a => a.id)), [postable])
 
-  // Set of IDs that are parents (have at least one child) — used to skip parent accounts in ledger fetch
-  const parentAccountIds = useMemo(() => {
-    const s = new Set()
-    allAccounts.forEach(a => { if (a.parent_id) s.add(a.parent_id) })
-    return s
-  }, [allAccounts])
-
   useEffect(() => {
     getChartOfAccounts(true).then(all => {
       setAllAccounts(all)
@@ -311,21 +301,25 @@ export default function LedgerPage() {
     if (selectedIds.size === 0) { toast('Please select at least one account', 'error'); return }
     setLoading(true)
     try {
-      // Only fetch ledger for leaf accounts — parent accounts have no direct journal entries
-      const leafIds = [...selectedIds].filter(id => !parentAccountIds.has(id))
-      if (leafIds.length === 0) { toast('Selected accounts are group headers with no direct entries. Please select a child account.', 'error'); setLoading(false); return }
       const results = await Promise.all(
-        leafIds.map(async id => {
+        [...selectedIds].map(async id => {
           const account = allAccounts.find(a => a.id === id)
           const lines   = await getLedger(id, dateFrom, dateTo)
           return { account, lines }
         })
       )
-      setLedgers(results.filter(r => r.account))
+      // Only show cards that have at least one period transaction or a non-zero opening balance
+      const meaningful = results.filter(r => {
+        if (!r.account) return false
+        const periodLines = r.lines.filter(l => !l.isOpening)
+        const ob = r.lines.find(l => l.isOpening)
+        return periodLines.length > 0 || (ob && Math.abs(ob.running_balance) >= 0.01)
+      })
+      setLedgers(meaningful)
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [selectedIds, dateFrom, dateTo, allAccounts, parentAccountIds, toast])
+  }, [selectedIds, dateFrom, dateTo, allAccounts, toast])
 
   // Auto-generate when navigating here with a pre-selected account
   useEffect(() => {
