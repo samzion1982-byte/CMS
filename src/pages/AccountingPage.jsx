@@ -113,22 +113,30 @@ function TypeSummaryCard({ type, count, loading }) {
 // ── Cash / Bank Balance Card ──────────────────────────────────────
 
 function CashBankCard({ label, accounts, total, color, bg, icon: Icon, loading }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasAccounts = accounts.length > 0 && !loading
   return (
     <div className="card" style={{ padding: '20px 22px', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Icon size={15} color={color} />
         </div>
-        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0 }}>{label}</p>
+        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0, flex: 1 }}>{label}</p>
+        {hasAccounts && (
+          <button onClick={() => setExpanded(e => !e)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: 2 }}>
+            <ChevronDown size={14} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+          </button>
+        )}
       </div>
       {loading
-        ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '60%', marginBottom: 12 }} />
-        : <p style={{ fontSize: 26, fontWeight: 900, color, margin: '0 0 12px', fontFamily: 'monospace', lineHeight: 1 }}>
+        ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '60%' }} />
+        : <p style={{ fontSize: 26, fontWeight: 900, color, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>
             {fmtAmt(total)}
           </p>
       }
-      {accounts.length > 0 && !loading && (
-        <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {hasAccounts && expanded && (
+        <div style={{ borderTop: '1px solid var(--card-border)', marginTop: 12, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
           {accounts.map(a => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.name}</span>
@@ -140,7 +148,7 @@ function CashBankCard({ label, accounts, total, color, bg, icon: Icon, loading }
         </div>
       )}
       {accounts.length === 0 && !loading && (
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontStyle: 'italic' }}>No accounts set up</p>
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0', fontStyle: 'italic' }}>No accounts set up</p>
       )}
     </div>
   )
