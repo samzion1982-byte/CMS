@@ -54,12 +54,19 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
   function toggle(id) {
     const next = new Set(selectedIds)
     const desc = getPostableDescendants(id)
-    if (next.has(id)) {
+    const hasChildren = (childrenOf[id] || []).length > 0
+    if (next.has(id) || (hasChildren && desc.every(did => next.has(did)))) {
+      // Deselect: remove this account and all postable descendants
       next.delete(id)
       desc.forEach(did => next.delete(did))
     } else {
-      next.add(id)
-      desc.forEach(did => next.add(did))
+      // Select: if it has children, add only the leaf descendants (not the parent itself)
+      // so the ledger doesn't try to fetch entries for a group header
+      if (hasChildren) {
+        desc.forEach(did => next.add(did))
+      } else {
+        next.add(id)
+      }
     }
     onChange(next)
   }
@@ -77,6 +84,8 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
     const descIds     = getPostableDescendants(node.id)
     const allDescSel  = descIds.length > 0 && descIds.every(did => selectedIds.has(did))
     const someDescSel = descIds.some(did => selectedIds.has(did))
+    // For accounts with children, treat checked/indeterminate by descendants (not self)
+    const effectiveSel = hasChildren ? allDescSel : sel
 
     return (
       <div key={node.id}>
@@ -84,29 +93,25 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
           display: 'flex', alignItems: 'center', gap: 8,
           paddingLeft: indent, paddingRight: 12, paddingTop: 5, paddingBottom: 5,
           cursor: 'pointer',
-          background: sel || (someDescSel && !isPostable) ? tc.text + '12' : 'transparent',
+          background: (sel || someDescSel) ? tc.text + '12' : 'transparent',
         }}
           onMouseEnter={e => { e.currentTarget.style.background = tc.text + '1a' }}
-          onMouseLeave={e => { e.currentTarget.style.background = sel || (someDescSel && !isPostable) ? tc.text + '12' : 'transparent' }}
+          onMouseLeave={e => { e.currentTarget.style.background = (sel || someDescSel) ? tc.text + '12' : 'transparent' }}
         >
-          {isPostable
-            ? <input type="checkbox" checked={sel} onChange={() => toggle(node.id)}
+          {hasChildren
+            ? <input type="checkbox" checked={effectiveSel}
+                ref={el => { if (el) el.indeterminate = someDescSel && !allDescSel }}
+                onChange={() => toggle(node.id)}
                 style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
-            : hasChildren
-              ? <input type="checkbox" checked={allDescSel} ref={el => { if (el) el.indeterminate = someDescSel && !allDescSel }}
-                  onChange={() => {
-                    const next = new Set(selectedIds)
-                    if (allDescSel) descIds.forEach(did => next.delete(did))
-                    else descIds.forEach(did => next.add(did))
-                    onChange(next)
-                  }}
+            : isPostable
+              ? <input type="checkbox" checked={sel} onChange={() => toggle(node.id)}
                   style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
               : <span style={{ width: 14, flexShrink: 0 }} />
           }
           <span style={{
             fontSize: isPostable ? 13 : 12,
-            color: isPostable ? (sel ? 'var(--text-1)' : 'var(--text-2)') : tc.text,
-            fontWeight: isPostable ? (sel ? 600 : 400) : 600,
+            color: isPostable ? (effectiveSel || sel ? 'var(--text-1)' : 'var(--text-2)') : tc.text,
+            fontWeight: hasChildren ? 600 : (sel ? 600 : 400),
           }}>
             {node.name}
           </span>
@@ -287,6 +292,13 @@ export default function LedgerPage() {
 
   const postableIds = useMemo(() => new Set(postable.map(a => a.id)), [postable])
 
+  // Set of IDs that are parents (have at least one child) — used to skip parent accounts in ledger fetch
+  const parentAccountIds = useMemo(() => {
+    const s = new Set()
+    allAccounts.forEach(a => { if (a.parent_id) s.add(a.parent_id) })
+    return s
+  }, [allAccounts])
+
   useEffect(() => {
     getChartOfAccounts(true).then(all => {
       setAllAccounts(all)
@@ -299,8 +311,11 @@ export default function LedgerPage() {
     if (selectedIds.size === 0) { toast('Please select at least one account', 'error'); return }
     setLoading(true)
     try {
+      // Only fetch ledger for leaf accounts — parent accounts have no direct journal entries
+      const leafIds = [...selectedIds].filter(id => !parentAccountIds.has(id))
+      if (leafIds.length === 0) { toast('Selected accounts are group headers with no direct entries. Please select a child account.', 'error'); setLoading(false); return }
       const results = await Promise.all(
-        [...selectedIds].map(async id => {
+        leafIds.map(async id => {
           const account = allAccounts.find(a => a.id === id)
           const lines   = await getLedger(id, dateFrom, dateTo)
           return { account, lines }
@@ -310,7 +325,7 @@ export default function LedgerPage() {
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [selectedIds, dateFrom, dateTo, allAccounts, toast])
+  }, [selectedIds, dateFrom, dateTo, allAccounts, parentAccountIds, toast])
 
   // Auto-generate when navigating here with a pre-selected account
   useEffect(() => {
