@@ -18,7 +18,7 @@ import {
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
   BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
   ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight, Layers,
-  Copy, Archive, CheckSquare, BarChart, Target,
+  Copy, Archive, CheckSquare, BarChart, Target, Building2,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -106,6 +106,42 @@ function TypeSummaryCard({ type, count, loading }) {
       <span style={{ fontSize: 16, fontWeight: 800, color: c.text }}>
         {loading ? '—' : count}
       </span>
+    </div>
+  )
+}
+
+// ── Cash / Bank Balance Card ──────────────────────────────────────
+
+function CashBankCard({ label, accounts, total, color, bg, icon: Icon, loading }) {
+  return (
+    <div className="card" style={{ padding: '20px 22px', flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={15} color={color} />
+        </div>
+        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0 }}>{label}</p>
+      </div>
+      {loading
+        ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '60%', marginBottom: 12 }} />
+        : <p style={{ fontSize: 26, fontWeight: 900, color, margin: '0 0 12px', fontFamily: 'monospace', lineHeight: 1 }}>
+            {fmtAmt(total)}
+          </p>
+      }
+      {accounts.length > 0 && !loading && (
+        <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {accounts.map(a => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.name}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: a.balance >= 0 ? color : '#b91c1c', fontFamily: 'monospace' }}>
+                {fmtAmt(a.balance)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {accounts.length === 0 && !loading && (
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontStyle: 'italic' }}>No accounts set up</p>
+      )}
     </div>
   )
 }
@@ -503,13 +539,58 @@ export default function AccountingPage() {
         </div>
       )}
 
-      {/* ── Stats Row ───────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
-        <StatCard icon={Wallet}      label="Total Assets"      value={L ? null : fmtAmt(stats?.totalAssets)}      sub="All asset accounts"          iconBg="#dbeafe" iconColor="#2563eb" loading={L} />
-        <StatCard icon={Scale}       label="Total Liabilities" value={L ? null : fmtAmt(stats?.totalLiabilities)} sub="All liability accounts"      iconBg="#fee2e2" iconColor="#b91c1c" loading={L} />
-        <StatCard icon={TrendingUp}  label="Total Income"      value={L ? null : fmtAmt(stats?.totalIncome)}      sub={`FY ${fy}`}                  iconBg="#dcfce7" iconColor="#16a34a" loading={L} />
-        <StatCard icon={TrendingDown}label="Total Expenses"    value={L ? null : fmtAmt(stats?.totalExpenses)}    sub={`FY ${fy}`}                  iconBg="#fff7ed" iconColor="#c2410c" loading={L} />
-        <StatCard icon={IndianRupee} label="Surplus / Deficit"  value={L ? null : fmtAmt(stats?.netIncome)}        sub="Income minus Expenditure"    iconBg="#f3e8ff" iconColor="#7c3aed" loading={L} trend={L ? undefined : stats?.netIncome} />
+      {/* ── Cash & Bank Balances ────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
+        <CashBankCard
+          label="Cash & Petty Cash"
+          accounts={L ? [] : (stats?.cashAccounts || [])}
+          total={L ? 0 : (stats?.cashTotal || 0)}
+          color="#16a34a" bg="#dcfce7"
+          icon={Wallet}
+          loading={L}
+        />
+        <CashBankCard
+          label="Bank Accounts"
+          accounts={L ? [] : (stats?.bankAccounts || [])}
+          total={L ? 0 : (stats?.bankTotal || 0)}
+          color="#2563eb" bg="#dbeafe"
+          icon={Building2}
+          loading={L}
+        />
+        {/* Total funds summary */}
+        <div className="card" style={{ padding: '20px 22px', minWidth: 200, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <IndianRupee size={15} color="#7c3aed" />
+            </div>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0 }}>Total Funds</p>
+          </div>
+          {L
+            ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '70%', marginBottom: 12 }} />
+            : <p style={{ fontSize: 26, fontWeight: 900, color: '#7c3aed', margin: '0 0 12px', fontFamily: 'monospace', lineHeight: 1 }}>
+                {fmtAmt((stats?.cashTotal || 0) + (stats?.bankTotal || 0))}
+              </p>
+          }
+          {!L && (
+            <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Cash</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', fontFamily: 'monospace' }}>{fmtAmt(stats?.cashTotal || 0)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Bank</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', fontFamily: 'monospace' }}>{fmtAmt(stats?.bankTotal || 0)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Income / Expenses / Surplus ─────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
+        <StatCard icon={TrendingUp}  label="Total Income"     value={L ? null : fmtAmt(stats?.totalIncome)}   sub={`FY ${fy}`}               iconBg="#dcfce7" iconColor="#16a34a" loading={L} />
+        <StatCard icon={TrendingDown}label="Total Expenses"   value={L ? null : fmtAmt(stats?.totalExpenses)} sub={`FY ${fy}`}               iconBg="#fff7ed" iconColor="#c2410c" loading={L} />
+        <StatCard icon={Scale}       label="Surplus / Deficit" value={L ? null : fmtAmt(stats?.netIncome)}     sub="Income minus Expenditure" iconBg="#f3e8ff" iconColor="#7c3aed" loading={L} trend={L ? undefined : stats?.netIncome} />
       </div>
 
       {/* ── Main 2-col layout ───────────────────────────────────── */}

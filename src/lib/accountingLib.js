@@ -950,7 +950,36 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
 // ── Dashboard stats ───────────────────────────────────────────────
 
 export async function getAccountingStats(fy) {
-  const [tb, is] = await Promise.all([getTrialBalance(fy), getIncomeStatement(fy)])
+  const [tb, is, { data: bals }] = await Promise.all([
+    getTrialBalance(fy),
+    getIncomeStatement(fy),
+    supabase.from('account_balances')
+      .select('account_id, opening_balance, total_debit, total_credit')
+      .eq('financial_year', fy),
+  ])
+
+  const balMap = {}
+  for (const b of bals || []) balMap[b.account_id] = b
+
+  // Identify leaf Asset accounts (no children) for cash/bank breakdown
+  const parentIds = new Set(tb.map(a => a.parent_id).filter(Boolean))
+  const assetLeaves = tb.filter(a => a.account_type === 'Asset' && !parentIds.has(a.id))
+
+  function leafBalance(a) {
+    const b = balMap[a.id]
+    const op = Number(b?.opening_balance || a.opening_balance || 0)
+    return op + Number(b?.total_debit || 0) - Number(b?.total_credit || 0)
+  }
+
+  const cashAccounts = assetLeaves
+    .filter(a => /cash|hand|petty/i.test(a.name) && !/bank/i.test(a.name))
+    .map(a => ({ id: a.id, name: a.name, balance: leafBalance(a) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const bankAccounts = assetLeaves
+    .filter(a => /bank/i.test(a.name))
+    .map(a => ({ id: a.id, name: a.name, balance: leafBalance(a) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   const totalAssets = tb.filter(a => a.account_type === 'Asset')
                         .reduce((s, a) => s + (a.total_debit - a.total_credit), 0)
   const totalLiabilities = tb.filter(a => a.account_type === 'Liability')
@@ -969,6 +998,10 @@ export async function getAccountingStats(fy) {
     netIncome:    is.netIncome,
     totalEntries: totalEntries || 0,
     draftEntries: draftEntries || 0,
+    cashAccounts,
+    bankAccounts,
+    cashTotal: cashAccounts.reduce((s, a) => s + a.balance, 0),
+    bankTotal: bankAccounts.reduce((s, a) => s + a.balance, 0),
   }
 }
 
