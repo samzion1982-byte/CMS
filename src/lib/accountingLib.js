@@ -996,23 +996,17 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
 // ── Dashboard stats ───────────────────────────────────────────────
 
 export async function getAccountingStats(fy) {
-  const [tb, is, { data: bals }, { data: allAssetCOA }] = await Promise.all([
+  const [tb, is, { data: allAssetCOA }] = await Promise.all([
     getTrialBalance(fy),
     getIncomeStatement(fy),
-    supabase.from('account_balances')
-      .select('account_id, opening_balance, total_debit, total_credit')
-      .eq('financial_year', fy),
     supabase.from('chart_of_accounts')
       .select('id, name, parent_id, opening_balance, account_type')
       .eq('account_type', 'Asset')
       .eq('is_active', true),
   ])
 
-  const balMap = {}
-  for (const b of bals || []) balMap[b.account_id] = b
-
-  // Trial balance gives live totals from actual journal entries — use as fallback
-  // when account_balances is stale or missing (e.g. after a direct SQL migration)
+  // Build a map from the trial balance — reads directly from journal_entry_lines,
+  // always accurate regardless of the account_balances cache state.
   const tbMap = {}
   for (const t of tb) tbMap[t.id] = t
 
@@ -1022,13 +1016,6 @@ export async function getAccountingStats(fy) {
   const assetLeaves = assetCOA.filter(a => !assetParentIds.has(a.id))
 
   function leafBalance(a) {
-    const b = balMap[a.id]
-    if (b) {
-      // account_balances row exists — use it (includes carried-forward opening balance)
-      const op = Number(b.opening_balance ?? a.opening_balance ?? 0)
-      return op + Number(b.total_debit || 0) - Number(b.total_credit || 0)
-    }
-    // Fallback: compute from trial balance (live journal entry totals) + COA opening balance
     const t = tbMap[a.id]
     const op = Number(a.opening_balance || 0)
     return op + Number(t?.total_debit || 0) - Number(t?.total_credit || 0)
