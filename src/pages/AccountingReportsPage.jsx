@@ -8,7 +8,7 @@ import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
 import {
   getFY, fyOptions, fmtAmt, fmtDate,
-  getJournalEntries, getChartOfAccounts,
+  getJournalEntries, getChartOfAccounts, getTrialBalance,
   VOUCHER_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
@@ -103,14 +103,17 @@ export default function AccountingReportsPage() {
   const loadAccountSummary = useCallback(async () => {
     setAcLoading(true)
     try {
-      const [accounts, { data: bals }] = await Promise.all([
-        getChartOfAccounts(true),
-        supabase.from('account_balances')
-          .select('*')
-          .eq('financial_year', fy),
-      ])
-      setAllAccounts(accounts)
-      setBalances(bals || [])
+      // Use trial balance (reads from journal_entry_lines directly) so balances
+      // are always accurate regardless of the account_balances cache state.
+      const tb = await getTrialBalance(fy)
+      const active = tb.filter(a => a.is_active !== false)
+      setAllAccounts(active)
+      setBalances(active.map(t => ({
+        account_id:      t.id,
+        opening_balance: t.opening_balance || 0,
+        total_debit:     t.total_debit     || 0,
+        total_credit:    t.total_credit    || 0,
+      })))
     } catch (e) { toast(e.message, 'error') }
     setAcLoading(false)
   }, [fy, toast])

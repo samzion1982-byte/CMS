@@ -781,11 +781,13 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
         if (t === 'cash') {
           if (e.voucher_type === 'Receipt') cashOB += Number(l.debit_amount  || 0)
           if (e.voucher_type === 'Payment') cashOB -= Number(l.credit_amount || 0)
+          if (e.voucher_type === 'Journal') cashOB += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
         } else if (t === 'bank') {
           if (e.voucher_type === 'Receipt') bankOB += Number(l.debit_amount  || 0)
           if (e.voucher_type === 'Payment') bankOB -= Number(l.credit_amount || 0)
+          if (e.voucher_type === 'Journal') bankOB += Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
         }
-        if ((t === 'cash' || t === 'bank') && ['Receipt', 'Payment', 'Contra'].includes(e.voucher_type)) {
+        if ((t === 'cash' || t === 'bank') && ['Receipt', 'Payment', 'Contra', 'Journal'].includes(e.voucher_type)) {
           acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
         }
       }
@@ -891,8 +893,43 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
           if (Number(l.credit_amount) > 0) { bankPayments += Number(l.credit_amount); acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount) }
         }
       }
+
+    } else if (entry.voucher_type === 'Journal') {
+      // Journal entries that move cash/bank must be reflected in the closing balance.
+      // Debit to cash/bank = receipt; credit = payment. Use narration as the display label.
+      for (const l of lines) {
+        if (l.chart_of_accounts?.account_type !== 'Asset') continue
+        const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
+        if (t === 'cash') {
+          if (Number(l.debit_amount) > 0) {
+            cashReceipts += Number(l.debit_amount)
+            acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount)
+            const cat = entry.narration || 'Journal Receipts'
+            receiptOther[cat] = (receiptOther[cat] || 0) + Number(l.debit_amount)
+          }
+          if (Number(l.credit_amount) > 0) {
+            cashPayments += Number(l.credit_amount)
+            acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount)
+            const cat = entry.narration || 'Journal Payments'
+            paymentOther[cat] = (paymentOther[cat] || 0) + Number(l.credit_amount)
+          }
+        } else if (t === 'bank') {
+          if (Number(l.debit_amount) > 0) {
+            bankReceipts += Number(l.debit_amount)
+            acctBal[l.account_id] = (acctBal[l.account_id] || 0) + Number(l.debit_amount)
+            const cat = entry.narration || 'Journal Receipts'
+            receiptOther[cat] = (receiptOther[cat] || 0) + Number(l.debit_amount)
+          }
+          if (Number(l.credit_amount) > 0) {
+            bankPayments += Number(l.credit_amount)
+            acctBal[l.account_id] = (acctBal[l.account_id] || 0) - Number(l.credit_amount)
+            const cat = entry.narration || 'Journal Payments'
+            paymentOther[cat] = (paymentOther[cat] || 0) + Number(l.credit_amount)
+          }
+        }
+      }
     }
-    // Opening Balance, Journal entries excluded from period R&P body
+    // Opening Balance entries excluded from period R&P body
   }
 
   // Build receipts/payments mirroring COA hierarchy (same grouping as COA tree).
