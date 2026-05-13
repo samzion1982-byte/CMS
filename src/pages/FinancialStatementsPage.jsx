@@ -64,9 +64,17 @@ function TwoColTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, ri
         </thead>
         <tbody>
           {rows.map((row, i) => {
-            const rClickable = !!(row.r?.accountId && navigate)
+            const isGrpHdr  = !!(row.l?.isGroup) || !!(row.r?.isGroup)
+            const isSubItem = (!!row.l?.indent && !row.l?.isGroup) || (!!row.r?.indent && !row.r?.isGroup)
+            const isBold    = (row.l?.bold && !row.l?.isGroup) || (row.r?.bold && !row.r?.isGroup)
             return (
-              <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
+              <tr key={i} style={{
+                borderTop: '1px solid rgba(0,0,0,0.04)',
+                background: isGrpHdr  ? 'rgba(79,70,229,0.06)'
+                  : isSubItem ? 'rgba(79,70,229,0.03)'
+                  : isBold    ? 'rgba(0,0,0,0.025)'
+                  : 'transparent',
+              }}>
                 <CellPair cell={row.l} navigate={navigate} dateFrom={dateFrom} dateTo={dateTo} />
                 {(() => {
                   const r = row.r
@@ -122,7 +130,12 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
   return (
     <>
       <td
-        style={{ ...TD, fontWeight: (cell?.bold || isGroup) ? 700 : 400, paddingLeft: cell?.indent2 ? 60 : (cell?.indent && isGroup) ? 24 : cell?.indent ? 40 : 16, color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'inherit', textDecoration: clickable && !isGroup ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
+        style={{ ...TD, fontWeight: (cell?.bold || isGroup) ? 700 : 400,
+          borderLeft: isGroup ? '3px solid var(--accent)' : 'none',
+          paddingLeft: cell?.indent2 ? 60 : cell?.indent ? (isGroup ? 21 : 40) : (isGroup ? 13 : 16),
+          color: cell?.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell?.italic ? 'italic' : 'normal',
+          cursor: (isGroup || clickable) ? 'pointer' : 'inherit',
+          textDecoration: clickable && !isGroup ? 'underline dotted' : 'none', textUnderlineOffset: 3 }}
         onClick={handleClick}
         title={clickable && !isGroup ? 'View Ledger' : isGroup ? (cell.isExpanded ? 'Collapse' : 'Expand') : undefined}
       >
@@ -377,7 +390,7 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   }
 
   function buildHierRows(accounts, getAmt) {
-    const rel    = accounts.filter(a => (a.account_level || 0) >= 3)
+    const rel    = accounts.filter(a => (a.level || 0) >= 3)
     const allIds = new Set(rel.map(a => a.id))
     const childrenOf = {}
     for (const a of rel) {
@@ -404,7 +417,7 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
       } else {
         const amt = getAmt(acct)
         if (!showZero && Math.abs(amt) < 0.01) continue
-        rows.push({ label: acct.name, amount: Math.max(0, amt), indent: true, accountId: acct.id })
+        rows.push({ label: acct.name, amount: Math.max(0, amt), accountId: acct.id })
       }
     }
     return rows
@@ -473,7 +486,7 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
   // Build hierarchical rows from a flat account list.
   // Only shows level 3+ accounts; groups those that have children within the list.
   function buildHierRows(accounts, getAmt) {
-    const rel    = accounts.filter(a => (a.account_level || 0) >= 3)
+    const rel    = accounts.filter(a => (a.level || 0) >= 3)
     const allIds = new Set(rel.map(a => a.id))
     const childrenOf = {}
     for (const a of rel) {
@@ -500,7 +513,7 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
       } else {
         const amt = getAmt(acct)
         if (!showZero && Math.abs(amt) < 0.01) continue
-        rows.push({ label: acct.name, amount: Math.max(0, amt), indent: true, accountId: acct.id })
+        rows.push({ label: acct.name, amount: Math.max(0, amt), accountId: acct.id })
       }
     }
     return rows
