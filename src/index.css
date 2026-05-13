@@ -984,14 +984,8 @@ html { zoom: 0.95; }
 .simple-accounts-scope button:hover:not(:disabled) { filter: brightness(0.88) !important; }
 .simple-accounts-scope button:active:not(:disabled) { filter: brightness(0.78) !important; transform: none !important; }
 
-/* Prevent I-beam text cursor on non-interactive content inside pages */
-.page-container td,
-.page-container th,
-.page-container p,
-.page-container h1, .page-container h2,
-.page-container h3, .page-container h4,
-.page-container label,
-.page-container span { cursor: default; }
+/* Prevent I-beam text cursor on all non-interactive content app-wide */
+td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
 
 .transition-fast   { transition: all 0.15s ease; }
 .transition-normal { transition: all 0.3s ease; }
