@@ -25,57 +25,109 @@ import JournalEntryModal from '../components/accounting/JournalEntryModal'
 // ── Balance Bar (Cash | Bank | Total) ────────────────────────────
 
 function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading }) {
-  const [expanded, setExpanded] = useState(null)
+  const [hovered, setHovered] = useState(false)
+  const open = hovered && !loading
   const totalFunds = cashTotal + bankTotal
 
-  function Section({ id, label, total, color, bg, Icon, accounts, last }) {
-    const expandable = accounts.length > 0 && !loading
+  function Detail({ accounts, color, extraRows }) {
+    const rows = accounts.length > 0 ? accounts : extraRows || []
     return (
-      <div
-        onClick={() => expandable && setExpanded(e => e === id ? null : id)}
-        style={{
-          flex: 1, padding: '16px 22px',
-          borderRight: last ? 'none' : '1px solid var(--card-border)',
-          background: last ? 'var(--card-header-bg)' : 'transparent',
-          cursor: expandable ? 'pointer' : 'default',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Icon size={13} color={color} />
-          </div>
-          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>{label}</span>
-          {expandable && (
-            <ChevronDown size={12} color="var(--text-3)"
-              style={{ transform: expanded === id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
-          )}
+      <div style={{
+        maxHeight: open ? 200 : 0,
+        opacity:   open ? 1   : 0,
+        overflow: 'hidden',
+        transition: 'max-height 0.38s cubic-bezier(0.4,0,0.2,1), opacity 0.28s ease',
+      }}>
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {rows.map((r, i) => (
+            <div key={r.id ?? i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-2)' }}>{r.name}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', color: r.balance >= 0 ? (r.color || color) : '#b91c1c' }}>
+                {fmtAmt(r.balance)}
+              </span>
+            </div>
+          ))}
         </div>
-        {loading
-          ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontSize: 24, fontWeight: 900, color, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(total)}</p>
-        }
-        {!last && !loading && accounts.length === 0 && (
-          <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
-        )}
-        {expanded === id && !loading && accounts.length > 0 && (
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {accounts.map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: a.balance >= 0 ? color : '#b91c1c', fontFamily: 'monospace' }}>{fmtAmt(a.balance)}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     )
   }
 
   return (
-    <div className="card" style={{ display: 'flex', marginBottom: 14, overflow: 'hidden' }}>
-      <Section id="cash"  label="Cash & Petty Cash" total={cashTotal}  color="#16a34a" bg="#dcfce7" Icon={Wallet}      accounts={cashAccounts}  last={false} />
-      <Section id="bank"  label="Bank Accounts"      total={bankTotal}  color="#2563eb" bg="#dbeafe" Icon={Building2}   accounts={bankAccounts}  last={false} />
-      <Section id="total" label="Total Funds"         total={totalFunds} color="#7c3aed" bg="#f3e8ff" Icon={IndianRupee} accounts={[]}            last={true}  />
+    <div
+      className="card"
+      onMouseEnter={() => !loading && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex', marginBottom: 14, overflow: 'hidden',
+        transition: 'box-shadow 0.3s ease, transform 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+        transform: open ? 'translateY(-2px)' : 'none',
+        boxShadow: open ? '0 12px 36px rgba(0,0,0,0.13)' : 'var(--card-shadow)',
+      }}
+    >
+      {/* Cash */}
+      <div style={{ flex: 1, padding: '16px 22px', borderRight: '1px solid var(--card-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+            <Wallet size={13} color="#16a34a" />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>Cash & Petty Cash</span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
+          : <p style={{ fontSize: 24, fontWeight: 900, color: '#16a34a', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(cashTotal)}</p>
+        }
+        {!loading && cashAccounts.length === 0
+          ? <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
+          : <Detail accounts={cashAccounts} color="#16a34a" />
+        }
+      </div>
+
+      {/* Bank */}
+      <div style={{ flex: 1, padding: '16px 22px', borderRight: '1px solid var(--card-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+            <Building2 size={13} color="#2563eb" />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>Bank Accounts</span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
+          : <p style={{ fontSize: 24, fontWeight: 900, color: '#2563eb', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(bankTotal)}</p>
+        }
+        {!loading && bankAccounts.length === 0
+          ? <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
+          : <Detail accounts={bankAccounts} color="#2563eb" />
+        }
+      </div>
+
+      {/* Total */}
+      <div style={{ flex: 1, padding: '16px 22px', background: 'var(--card-header-bg)',
+        transition: 'background 0.3s ease', background: open ? '#f5f0ff' : 'var(--card-header-bg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+            <IndianRupee size={13} color="#7c3aed" />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)' }}>Total Funds</span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
+          : <p style={{ fontSize: 24, fontWeight: 900, color: '#7c3aed', margin: 0, fontFamily: 'monospace', lineHeight: 1,
+              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(totalFunds)}</p>
+        }
+        <Detail
+          accounts={[]}
+          extraRows={[
+            { id: 'cash', name: 'Cash & Petty Cash', balance: cashTotal,  color: '#16a34a' },
+            { id: 'bank', name: 'Bank Accounts',      balance: bankTotal,  color: '#2563eb' },
+          ]}
+          color="#7c3aed"
+        />
+      </div>
     </div>
   )
 }
