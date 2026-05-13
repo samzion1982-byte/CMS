@@ -11,10 +11,19 @@ import { getChurch } from '../lib/supabase'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
 
-// ── Account checkbox selector ─────────────────────────────────────
+// ── Account multi-select dropdown ────────────────────────────────
 function AccountSelector({ accounts, selectedIds, onChange }) {
+  const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
-  const types = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
+  const wrapRef = useRef(null)
+  const types   = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
+
+  // Close on outside click
+  useEffect(() => {
+    function onDown(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
 
   const filtered = query.trim()
     ? accounts.filter(a => a.name.toLowerCase().includes(query.toLowerCase()))
@@ -34,69 +43,98 @@ function AccountSelector({ accounts, selectedIds, onChange }) {
     onChange(next)
   }
 
-  return (
-    <div className="card" style={{ padding: '14px 18px', marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.07em' }}>Select Accounts</span>
-        {selectedIds.size > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99, background: 'var(--accent)', color: '#fff' }}>
-            {selectedIds.size} selected
-          </span>
-        )}
-        {selectedIds.size > 0 && (
-          <button onClick={() => onChange(new Set())}
-            style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <X size={11} /> Clear
-          </button>
-        )}
-        <div style={{ marginLeft: 'auto', position: 'relative' }}>
-          <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
-          <input
-            value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search…"
-            style={{ height: 30, padding: '0 10px 0 26px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', width: 160 }}
-          />
-        </div>
-      </div>
+  // Label shown on the trigger button
+  const triggerLabel = selectedIds.size === 0
+    ? 'Select accounts…'
+    : selectedIds.size === 1
+      ? accounts.find(a => a.id === [...selectedIds][0])?.name || '1 account'
+      : `${selectedIds.size} accounts selected`
 
-      <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {types.map(type => {
-          const group = filtered.filter(a => a.account_type === type)
-          if (!group.length) return null
-          const allSel  = group.every(a => selectedIds.has(a.id))
-          const someSel = group.some(a => selectedIds.has(a.id))
-          const tc = TYPE_COLOR[type] || { text: '#475569' }
-          return (
-            <div key={type}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 6 }}>
-                <input type="checkbox" checked={allSel}
-                  ref={el => { if (el) el.indeterminate = someSel && !allSel }}
-                  onChange={() => toggleGroup(type)}
-                  style={{ cursor: 'pointer', accentColor: tc.text }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: tc.text, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                  {displayAccountType(type)}
-                </span>
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 20 }}>
-                {group.map(a => {
-                  const sel = selectedIds.has(a.id)
-                  return (
-                    <label key={a.id}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '4px 10px', borderRadius: 7, fontSize: 12, fontWeight: sel ? 600 : 400, color: sel ? tc.text : 'var(--text-2)', background: sel ? tc.text + '14' : 'var(--table-header-bg)', border: `1.5px solid ${sel ? tc.text + '66' : 'var(--card-border)'}`, transition: 'all 0.12s' }}>
-                      <input type="checkbox" checked={sel} onChange={() => toggle(a.id)}
-                        style={{ cursor: 'pointer', accentColor: tc.text }} />
-                      {a.name}
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <p style={{ fontSize: 12, color: 'var(--text-3)', padding: '8px 0' }}>No accounts match "{query}"</p>
-        )}
-      </div>
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flex: 2, minWidth: 220 }}>
+      <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account *</label>
+
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', height: 36, padding: '0 10px', border: `1.5px solid ${open ? 'var(--accent)' : 'var(--card-border)'}`, borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: selectedIds.size ? 'var(--text-1)' : 'var(--text-3)', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, outline: 'none' }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {selectedIds.size > 0 && (
+            <span
+              onMouseDown={e => { e.stopPropagation(); onChange(new Set()) }}
+              style={{ display: 'flex', alignItems: 'center', color: 'var(--text-3)', padding: 2, borderRadius: 4 }}
+            >
+              <X size={12} />
+            </span>
+          )}
+          <svg width="12" height="12" viewBox="0 0 12 12" style={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none', color: 'var(--text-3)' }}>
+            <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+          </svg>
+        </span>
+      </button>
+
+      {/* Dropdown panel */}
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 400, marginTop: 4, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
+
+          {/* Search */}
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
+            <Search size={12} style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
+            <input
+              autoFocus
+              value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="Search accounts…"
+              style={{ width: '100%', height: 30, padding: '0 8px 0 26px', border: '1px solid var(--card-border)', borderRadius: 6, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Grouped checkboxes */}
+          <div style={{ maxHeight: 280, overflowY: 'auto', padding: '6px 0' }}>
+            {types.map(type => {
+              const group = filtered.filter(a => a.account_type === type)
+              if (!group.length) return null
+              const allSel  = group.every(a => selectedIds.has(a.id))
+              const someSel = group.some(a => selectedIds.has(a.id))
+              const tc      = TYPE_COLOR[type] || { text: '#475569' }
+              return (
+                <div key={type}>
+                  {/* Group header row */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', cursor: 'pointer', background: tc.text + '0a' }}>
+                    <input type="checkbox" checked={allSel}
+                      ref={el => { if (el) el.indeterminate = someSel && !allSel }}
+                      onChange={() => toggleGroup(type)}
+                      style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: tc.text }}>
+                      {displayAccountType(type)}
+                    </span>
+                  </label>
+
+                  {/* Account rows */}
+                  {group.map(a => {
+                    const sel = selectedIds.has(a.id)
+                    return (
+                      <label key={a.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 28px', cursor: 'pointer', background: sel ? tc.text + '0d' : 'transparent' }}
+                        onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = sel ? tc.text + '0d' : 'transparent' }}
+                      >
+                        <input type="checkbox" checked={sel} onChange={() => toggle(a.id)}
+                          style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, color: sel ? 'var(--text-1)' : 'var(--text-2)', fontWeight: sel ? 600 : 400 }}>{a.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )
+            })}
+            {filtered.length === 0 && (
+              <p style={{ fontSize: 12, color: 'var(--text-3)', padding: '10px 14px' }}>No accounts match "{query}"</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -285,11 +323,9 @@ export default function LedgerPage() {
         <DatePresets onSelect={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
 
-      {/* Account selector */}
-      <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
-
-      {/* Date range + generate */}
+      {/* Filter bar — account dropdown + dates + generate */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
         <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>From Date</label>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
