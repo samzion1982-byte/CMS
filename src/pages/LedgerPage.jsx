@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   LedgerPage.jsx — Account Ledger View
+   LedgerPage.jsx — Account Ledger View (multi-account)
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -8,15 +8,184 @@ import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcel } from '../lib/exportExcel'
 import { getChurch } from '../lib/supabase'
-import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer } from 'lucide-react'
+import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
 
+// ── Account checkbox selector ─────────────────────────────────────
+function AccountSelector({ accounts, selectedIds, onChange }) {
+  const [query, setQuery] = useState('')
+  const types = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
+
+  const filtered = query.trim()
+    ? accounts.filter(a => a.name.toLowerCase().includes(query.toLowerCase()))
+    : accounts
+
+  function toggle(id) {
+    const next = new Set(selectedIds)
+    next.has(id) ? next.delete(id) : next.add(id)
+    onChange(next)
+  }
+
+  function toggleGroup(type) {
+    const group = filtered.filter(a => a.account_type === type)
+    const allSel = group.every(a => selectedIds.has(a.id))
+    const next = new Set(selectedIds)
+    group.forEach(a => allSel ? next.delete(a.id) : next.add(a.id))
+    onChange(next)
+  }
+
+  return (
+    <div className="card" style={{ padding: '14px 18px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', letterSpacing: '0.07em' }}>Select Accounts</span>
+        {selectedIds.size > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99, background: 'var(--accent)', color: '#fff' }}>
+            {selectedIds.size} selected
+          </span>
+        )}
+        {selectedIds.size > 0 && (
+          <button onClick={() => onChange(new Set())}
+            style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <X size={11} /> Clear
+          </button>
+        )}
+        <div style={{ marginLeft: 'auto', position: 'relative' }}>
+          <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
+          <input
+            value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Search…"
+            style={{ height: 30, padding: '0 10px 0 26px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', width: 160 }}
+          />
+        </div>
+      </div>
+
+      <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {types.map(type => {
+          const group = filtered.filter(a => a.account_type === type)
+          if (!group.length) return null
+          const allSel  = group.every(a => selectedIds.has(a.id))
+          const someSel = group.some(a => selectedIds.has(a.id))
+          const tc = TYPE_COLOR[type] || { text: '#475569' }
+          return (
+            <div key={type}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginBottom: 6 }}>
+                <input type="checkbox" checked={allSel}
+                  ref={el => { if (el) el.indeterminate = someSel && !allSel }}
+                  onChange={() => toggleGroup(type)}
+                  style={{ cursor: 'pointer', accentColor: tc.text }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: tc.text, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                  {displayAccountType(type)}
+                </span>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 20 }}>
+                {group.map(a => {
+                  const sel = selectedIds.has(a.id)
+                  return (
+                    <label key={a.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', padding: '4px 10px', borderRadius: 7, fontSize: 12, fontWeight: sel ? 600 : 400, color: sel ? tc.text : 'var(--text-2)', background: sel ? tc.text + '14' : 'var(--table-header-bg)', border: `1.5px solid ${sel ? tc.text + '66' : 'var(--card-border)'}`, transition: 'all 0.12s' }}>
+                      <input type="checkbox" checked={sel} onChange={() => toggle(a.id)}
+                        style={{ cursor: 'pointer', accentColor: tc.text }} />
+                      {a.name}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+        {filtered.length === 0 && (
+          <p style={{ fontSize: 12, color: 'var(--text-3)', padding: '8px 0' }}>No accounts match "{query}"</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Single account ledger card ────────────────────────────────────
+function LedgerCard({ account, lines, dateFrom, dateTo }) {
+  const c          = TYPE_COLOR[account.account_type] || { bg: '#f1f5f9', text: '#475569' }
+  const periodLines = lines.filter(l => !l.isOpening)
+  const totalDebit  = periodLines.reduce((s, l) => s + l.debit,  0)
+  const totalCredit = periodLines.reduce((s, l) => s + l.credit, 0)
+  const closingBal  = lines.length > 0 ? lines[lines.length - 1].running_balance : 0
+
+  return (
+    <div className="card" style={{ overflow: 'hidden', marginBottom: 24 }}>
+      {/* Account header */}
+      <div style={{ padding: '12px 20px', background: c.text + '0f', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: c.text, margin: '0 0 1px', letterSpacing: '0.07em' }}>{account.account_type}</p>
+          <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>{account.name}</p>
+        </div>
+        <div style={{ display: 'flex', gap: 20, fontSize: 12, fontFamily: 'monospace', flexWrap: 'wrap' }}>
+          <span style={{ color: '#2563eb', fontWeight: 600 }}>Dr&nbsp;{fmtAmt(totalDebit)}</span>
+          <span style={{ color: '#16a34a', fontWeight: 600 }}>Cr&nbsp;{fmtAmt(totalCredit)}</span>
+          <span style={{ color: closingBal >= 0 ? '#2563eb' : '#b91c1c', fontWeight: 700 }}>
+            Closing:&nbsp;{fmtAmt(Math.abs(closingBal))}&nbsp;{closingBal >= 0 ? 'Dr' : 'Cr'}
+          </span>
+        </div>
+      </div>
+
+      {lines.length === 0 ? (
+        <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+          No posted transactions in the selected period.
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ background: 'var(--table-header-bg)' }}>
+              <tr>
+                {['Date','Entry #','Type','Narration','Debit (₹)','Credit (₹)','Balance (₹)'].map(h => (
+                  <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit (₹)','Credit (₹)','Balance (₹)'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={i} style={{ background: l.isOpening ? 'rgba(37,99,235,0.05)' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                  <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                    {l.isOpening ? '—' : new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number || '—'}</td>
+                  <td style={{ padding: '9px 14px' }}>
+                    {l.voucher_type
+                      ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{l.voucher_type}</span>
+                      : l.isOpening ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#dbeafe', color: '#2563eb' }}>Opening</span>
+                      : null}
+                  </td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, color: l.isOpening ? '#2563eb' : 'var(--text-2)', fontWeight: l.isOpening ? 700 : 400, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || '—'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.debit > 0 ? '#2563eb' : 'var(--text-3)' }}>{l.debit > 0 ? fmtAmt(l.debit) : '—'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.credit > 0 ? '#16a34a' : 'var(--text-3)' }}>{l.credit > 0 ? fmtAmt(l.credit) : '—'}</td>
+                  <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: l.running_balance >= 0 ? '#2563eb' : '#b91c1c' }}>
+                    {fmtAmt(Math.abs(l.running_balance))} <span style={{ fontSize: 10 }}>{l.running_balance >= 0 ? 'Dr' : 'Cr'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
+              <tr>
+                <td colSpan={4} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL ({periodLines.length} entries)</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: closingBal >= 0 ? '#2563eb' : '#b91c1c' }}>
+                  {fmtAmt(Math.abs(closingBal))} <span style={{ fontSize: 11 }}>{closingBal >= 0 ? 'Dr' : 'Cr'}</span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────
 export default function LedgerPage() {
   const navigate     = useNavigate()
   const toast        = useToast()
   const [searchParams] = useSearchParams()
 
-  const today = (() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
   const fy    = getFY()
   const { from: fyFrom } = fyDateRange(fy)
 
@@ -24,35 +193,39 @@ export default function LedgerPage() {
   const initFrom      = searchParams.get('from') || fyFrom
   const initTo        = searchParams.get('to')   || today
 
-  const [accounts,   setAccounts]   = useState([])
-  const [accountId,  setAccountId]  = useState(initAccountId)
-  const [dateFrom,   setDateFrom]   = useState(initFrom)
-  const [dateTo,     setDateTo]     = useState(initTo)
-  const [lines,      setLines]      = useState([])
-  const [loading,    setLoading]    = useState(false)
-  const [generated,  setGenerated]  = useState(false)
-  const [church,     setChurch]     = useState(null)
-  const autoGenDone  = useRef(false)
+  const [accounts,     setAccounts]     = useState([])
+  const [selectedIds,  setSelectedIds]  = useState(() => new Set(initAccountId ? [initAccountId] : []))
+  const [dateFrom,     setDateFrom]     = useState(initFrom)
+  const [dateTo,       setDateTo]       = useState(initTo)
+  const [ledgers,      setLedgers]      = useState([]) // [{ account, lines }]
+  const [loading,      setLoading]      = useState(false)
+  const [generated,    setGenerated]    = useState(false)
+  const [church,       setChurch]       = useState(null)
+  const autoGenDone = useRef(false)
 
   useEffect(() => {
     getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
     getChurch().then(setChurch).catch(() => {})
   }, [])
 
-  const selectedAccount = accounts.find(a => a.id === accountId)
-
   const generate = useCallback(async () => {
-    if (!accountId) { toast('Please select an account', 'error'); return }
+    if (selectedIds.size === 0) { toast('Please select at least one account', 'error'); return }
     setLoading(true)
     try {
-      const data = await getLedger(accountId, dateFrom, dateTo)
-      setLines(data)
+      const results = await Promise.all(
+        [...selectedIds].map(async id => {
+          const account = accounts.find(a => a.id === id)
+          const lines   = await getLedger(id, dateFrom, dateTo)
+          return { account, lines }
+        })
+      )
+      setLedgers(results.filter(r => r.account))
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [accountId, dateFrom, dateTo, toast])
+  }, [selectedIds, dateFrom, dateTo, accounts, toast])
 
-  // Auto-generate when navigating from financial statements with a pre-selected account
+  // Auto-generate when navigating here with a pre-selected account
   useEffect(() => {
     if (!autoGenDone.current && accounts.length > 0 && initAccountId) {
       autoGenDone.current = true
@@ -60,27 +233,26 @@ export default function LedgerPage() {
     }
   }, [accounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const periodLines = lines.filter(l => !l.isOpening)
-  const totalDebit  = periodLines.reduce((s, l) => s + l.debit,  0)
-  const totalCredit = periodLines.reduce((s, l) => s + l.credit, 0)
-  const closingBal  = lines.length > 0 ? lines[lines.length - 1].running_balance : 0
-
   function doExport() {
-    const rows = lines.map(l => ({
-      Date:        l.date,
-      'Entry #':   l.entry_number,
-      Type:        l.voucher_type,
-      Narration:   l.narration,
-      'Debit (₹)': l.debit,
-      'Credit (₹)': l.credit,
-      'Balance (₹)': l.running_balance,
-    }))
-    exportToExcel(rows, `Ledger_${selectedAccount?.name}_${dateFrom}_${dateTo}`)
+    const rows = []
+    ledgers.forEach(({ account, lines }) => {
+      rows.push({ Date: `── ${account.name} ──`, 'Entry #': '', Type: '', Narration: '', 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' })
+      lines.forEach(l => rows.push({
+        Date:         l.date,
+        'Entry #':    l.entry_number,
+        Type:         l.voucher_type || (l.isOpening ? 'Opening' : ''),
+        Narration:    l.narration,
+        'Debit (₹)':  l.debit,
+        'Credit (₹)': l.credit,
+        'Balance (₹)':l.running_balance,
+      }))
+    })
+    exportToExcel(rows, `Ledger_${dateFrom}_${dateTo}`)
   }
 
   function doPrint() { window.print() }
 
-  const c = selectedAccount ? (TYPE_COLOR[selectedAccount.account_type] || { bg: '#f1f5f9', text: '#475569' }) : null
+  const canGenerate = selectedIds.size > 0
 
   return (
     <div className="page-container">
@@ -109,26 +281,15 @@ export default function LedgerPage() {
       </div>
 
       {/* Date presets */}
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ marginBottom: 10 }}>
         <DatePresets onSelect={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
 
-      {/* Filter bar */}
+      {/* Account selector */}
+      <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
+
+      {/* Date range + generate */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ flex: 2, minWidth: 220 }}>
-          <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Account *</label>
-          <select value={accountId} onChange={e => setAccountId(e.target.value)}
-            style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none' }}>
-            <option value="">— Select Account —</option>
-            {['Asset','Liability','Equity','Income','Expense'].map(type => (
-              <optgroup key={type} label={displayAccountType(type)}>
-                {accounts.filter(a => a.account_type === type).map(a => (
-                  <option key={a.id} value={a.id}>{a.path}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
         <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>From Date</label>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -139,41 +300,18 @@ export default function LedgerPage() {
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
         </div>
-        <button onClick={generate} disabled={loading || !accountId}
-          style={{ height: 36, padding: '0 20px', background: accountId ? 'var(--accent)' : '#e5e7eb', color: accountId ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: accountId ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7, alignSelf: 'flex-end' }}>
-          {loading ? <Loader2 size={14} className="animate-spin" /> : null} Generate
+        <button onClick={generate} disabled={loading || !canGenerate}
+          style={{ height: 36, padding: '0 24px', background: canGenerate ? 'var(--accent)' : '#e5e7eb', color: canGenerate ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canGenerate ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 7, alignSelf: 'flex-end' }}>
+          {loading ? <Loader2 size={14} className="animate-spin" /> : null}
+          Generate{selectedIds.size > 1 ? ` (${selectedIds.size})` : ''}
         </button>
       </div>
 
-      {/* Account header card */}
-      {generated && selectedAccount && c && (
-        <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-          <div className="card" style={{ flex: 1, padding: '16px 20px', background: c.bg + '33', borderLeft: `4px solid ${c.text}` }}>
-            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: c.text, margin: '0 0 4px', letterSpacing: '0.07em' }}>{selectedAccount.account_type} Account</p>
-            <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>{selectedAccount.name}</p>
-            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{selectedAccount.path}</p>
-          </div>
-          <div className="card" style={{ padding: '14px 20px', textAlign: 'center', minWidth: 130 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#2563eb', margin: '0 0 4px' }}>Total Debit</p>
-            <p style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: '#2563eb', margin: 0 }}>{fmtAmt(totalDebit)}</p>
-          </div>
-          <div className="card" style={{ padding: '14px 20px', textAlign: 'center', minWidth: 130 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#16a34a', margin: '0 0 4px' }}>Total Credit</p>
-            <p style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: '#16a34a', margin: 0 }}>{fmtAmt(totalCredit)}</p>
-          </div>
-          <div className="card" style={{ padding: '14px 20px', textAlign: 'center', minWidth: 130, background: closingBal >= 0 ? '#dcfce733' : '#fee2e233' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: closingBal >= 0 ? '#16a34a' : '#b91c1c', margin: '0 0 4px' }}>Closing Balance</p>
-            <p style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: closingBal >= 0 ? '#16a34a' : '#b91c1c', margin: 0 }}>{fmtAmt(Math.abs(closingBal))}</p>
-            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '2px 0 0' }}>{closingBal >= 0 ? 'Dr' : 'Cr'}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Ledger table */}
+      {/* Empty state */}
       {!generated && !loading && (
         <div className="card" style={{ padding: '50px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
           <BookMarked size={32} style={{ opacity: 0.25, display: 'block', margin: '0 auto 12px' }} />
-          <p style={{ fontSize: 13 }}>Select an account and click Generate to view the ledger.</p>
+          <p style={{ fontSize: 13 }}>Select one or more accounts and click Generate.</p>
         </div>
       )}
 
@@ -183,67 +321,10 @@ export default function LedgerPage() {
         </div>
       )}
 
-      {generated && !loading && (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          {/* Print header */}
-          <div className="print-only" style={{ padding: '20px', textAlign: 'center', borderBottom: '2px solid #000' }}>
-            <p style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>{church?.church_name}</p>
-            <p style={{ fontSize: 12, margin: '0 0 12px' }}>Account Ledger — {selectedAccount?.path}</p>
-            <p style={{ fontSize: 11, margin: 0 }}>Period: {dateFrom} to {dateTo}</p>
-          </div>
-
-          {lines.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-3)' }}>
-              <BookMarked size={28} style={{ opacity: 0.25, display: 'block', margin: '0 auto 10px' }} />
-              <p style={{ fontSize: 13, margin: 0 }}>No posted transactions for this account in the selected period.</p>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ background: 'var(--table-header-bg)' }}>
-                  <tr>
-                    {['Date','Entry #','Type','Narration','Debit (₹)','Credit (₹)','Balance (₹)'].map(h => (
-                      <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: ['Debit (₹)','Credit (₹)','Balance (₹)'].includes(h) ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l, i) => (
-                    <tr key={i} style={{ background: l.isOpening ? 'rgba(37,99,235,0.05)' : i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
-                      <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                        {l.isOpening ? '—' : new Date(l.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{l.entry_number || '—'}</td>
-                      <td style={{ padding: '9px 14px' }}>
-                        {l.voucher_type
-                          ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#475569' }}>{l.voucher_type}</span>
-                          : l.isOpening ? <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#dbeafe', color: '#2563eb' }}>Opening</span>
-                          : null}
-                      </td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, color: l.isOpening ? '#2563eb' : 'var(--text-2)', fontWeight: l.isOpening ? 700 : 400, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.narration || '—'}</td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.debit > 0 ? '#2563eb' : 'var(--text-3)' }}>{l.debit > 0 ? fmtAmt(l.debit) : '—'}</td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: l.credit > 0 ? '#16a34a' : 'var(--text-3)' }}>{l.credit > 0 ? fmtAmt(l.credit) : '—'}</td>
-                      <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, textAlign: 'right', color: l.running_balance >= 0 ? '#2563eb' : '#b91c1c' }}>
-                        {fmtAmt(Math.abs(l.running_balance))} <span style={{ fontSize: 10 }}>{l.running_balance >= 0 ? 'Dr' : 'Cr'}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
-                  <tr>
-                    <td colSpan={4} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>TOTAL ({lines.length} transactions)</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#2563eb' }}>{fmtAmt(totalDebit)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: '#16a34a' }}>{fmtAmt(totalCredit)}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', textAlign: 'right', color: closingBal >= 0 ? '#2563eb' : '#b91c1c' }}>
-                      {fmtAmt(Math.abs(closingBal))} <span style={{ fontSize: 11 }}>{closingBal >= 0 ? 'Dr' : 'Cr'}</span>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Ledger cards */}
+      {generated && !loading && ledgers.map(({ account, lines }) => (
+        <LedgerCard key={account.id} account={account} lines={lines} dateFrom={dateFrom} dateTo={dateTo} />
+      ))}
     </div>
   )
 }
