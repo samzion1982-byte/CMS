@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════════
-   AccountingSettingsPage.jsx — Full Accounting Settings
-   ═══════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   AccountingSettingsPage.jsx â€” Full Accounting Settings
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -32,59 +32,59 @@ const MONTHS = [
   'July','August','September','October','November','December',
 ]
 
-// Comprehensive country → currency/format presets (A-Z, Custom last)
+// Comprehensive country â†’ currency/format presets (A-Z, Custom last)
 const COUNTRIES = [
   { country: 'Argentina',          currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Australia',          currency: 'A$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Bahrain',            currency: 'BD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Bangladesh',         currency: '৳',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Belgium',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Bangladesh',         currency: 'à§³',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Belgium',            currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Brazil',             currency: 'R$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Canada',             currency: 'CA$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'China',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'China',              currency: 'Â¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
   { country: 'Colombia',           currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Denmark',            currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Egypt',              currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Egypt',              currency: 'Â£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Ethiopia',           currency: 'Br',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Fiji',               currency: 'FJ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'France',             currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Germany',            currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Ghana',              currency: '₵',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'France',             currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Germany',            currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Ghana',              currency: 'â‚µ',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Hong Kong',          currency: 'HK$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'India',              currency: '₹',     numberFormat: 'indian',        dateFormat: 'DD-MM-YYYY' },
+  { country: 'India',              currency: 'â‚¹',     numberFormat: 'indian',        dateFormat: 'DD-MM-YYYY' },
   { country: 'Indonesia',          currency: 'Rp',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Israel',             currency: '₪',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Italy',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Japan',              currency: '¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Israel',             currency: 'â‚ª',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Italy',              currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Japan',              currency: 'Â¥',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
   { country: 'Kenya',              currency: 'KSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Kuwait',             currency: 'KD',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Malaysia',           currency: 'RM',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Mexico',             currency: '$',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Myanmar',            currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Nepal',              currency: 'रू',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Netherlands',        currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nepal',              currency: 'à¤°à¥‚',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Netherlands',        currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'New Zealand',        currency: 'NZ$',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Nigeria',            currency: '₦',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Nigeria',            currency: 'â‚¦',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Norway',             currency: 'kr',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Oman',               currency: 'OMR',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Pakistan',           currency: '₨',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Pakistan',           currency: 'â‚¨',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Papua New Guinea',   currency: 'K',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Philippines',        currency: '₱',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
-  { country: 'Portugal',           currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Philippines',        currency: 'â‚±',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
+  { country: 'Portugal',           currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Qatar',              currency: 'QR',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Saudi Arabia',       currency: '﷼',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Saudi Arabia',       currency: 'ï·¼',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Singapore',          currency: 'S$',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'South Africa',       currency: 'R',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'South Korea',        currency: '₩',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
-  { country: 'Spain',              currency: '€',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'South Korea',        currency: 'â‚©',     numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
+  { country: 'Spain',              currency: 'â‚¬',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Sri Lanka',          currency: 'Rs',    numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Sweden',             currency: 'kr',    numberFormat: 'international', dateFormat: 'YYYY-MM-DD' },
   { country: 'Switzerland',        currency: 'CHF',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Tanzania',           currency: 'TSh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'Thailand',           currency: '฿',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'UAE',                currency: 'د.إ',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'Thailand',           currency: 'à¸¿',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'UAE',                currency: 'Ø¯.Ø¥',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'Uganda',             currency: 'USh',   numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
-  { country: 'UK',                 currency: '£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
+  { country: 'UK',                 currency: 'Â£',     numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
   { country: 'USA',                currency: '$',     numberFormat: 'international', dateFormat: 'MM-DD-YYYY' },
   { country: 'Custom',             currency: '',      numberFormat: 'international', dateFormat: 'DD-MM-YYYY' },
 ]
@@ -111,7 +111,7 @@ const VOUCHER_PREFIXES = [
   { key: 'prefix_opening', type: 'Opening', default: 'OB' },
 ]
 
-// ── Helpers ───────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function FL({ children }) {
   return (
@@ -163,7 +163,7 @@ function ToggleRow({ checked, onChange, label, desc }) {
   )
 }
 
-// ── Master Password Modal ─────────────────────────────────────────
+// â”€â”€ Master Password Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MasterPasswordModal({ title, description, confirmLabel, confirmColor = '#b91c1c', onConfirm, onCancel }) {
   const [password, setPassword] = useState('')
@@ -201,7 +201,7 @@ function MasterPasswordModal({ title, description, confirmLabel, confirmColor = 
             <input ref={inputRef} type={showPw ? 'text' : 'password'} value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-              placeholder="Enter master password…"
+              placeholder="Enter master passwordâ€¦"
               style={{ width: '100%', height: 42, padding: '0 40px 0 14px', border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}`, borderRadius: 9, fontSize: 14, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', letterSpacing: showPw ? 'normal' : '0.1em' }} />
             <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
               {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -213,7 +213,7 @@ function MasterPasswordModal({ title, description, confirmLabel, confirmColor = 
           <button onClick={onCancel} disabled={working} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
           <button onClick={handleConfirm} disabled={!password || working} style={{ flex: 2, height: 40, background: password ? confirmColor : '#e5e7eb', color: password ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: password ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
             {working ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
-            {working ? 'Processing…' : confirmLabel}
+            {working ? 'Processingâ€¦' : confirmLabel}
           </button>
         </div>
       </div>
@@ -221,7 +221,7 @@ function MasterPasswordModal({ title, description, confirmLabel, confirmColor = 
   )
 }
 
-// ── Entry system option card ──────────────────────────────────────
+// â”€â”€ Entry system option card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EntryCard({ value, selected, onSelect, title, subtitle, bullets }) {
   const active = selected === value
@@ -241,7 +241,7 @@ function EntryCard({ value, selected, onSelect, title, subtitle, bullets }) {
   )
 }
 
-// ── Settings page lock screen (master password required to open) ──
+// â”€â”€ Settings page lock screen (master password required to open) â”€â”€
 
 function SettingsLockScreen({ onUnlock }) {
   const [password, setPassword] = useState('')
@@ -273,7 +273,7 @@ function SettingsLockScreen({ onUnlock }) {
             <input ref={inputRef} type={showPw ? 'text' : 'password'} value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && attempt()}
-              placeholder="Enter master password…"
+              placeholder="Enter master passwordâ€¦"
               style={{ ...INPUT_STYLE, letterSpacing: showPw ? 'normal' : '0.12em', border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}` }} />
             <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
               {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -290,7 +290,7 @@ function SettingsLockScreen({ onUnlock }) {
   )
 }
 
-// ── Custom Voucher Type modal ──────────────────────────────────────
+// â”€â”€ Custom Voucher Type modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function VoucherTypeModal({ editing, onSave, onCancel }) {
   const [name,   setName]   = useState(editing?.name   || '')
@@ -324,11 +324,11 @@ function VoucherTypeModal({ editing, onSave, onCancel }) {
           <div>
             <FL>Voucher Type Name</FL>
             <input value={name} onChange={e => setName(e.target.value)}
-              placeholder="e.g. Tithe Receipt, Salary, Building Fund…"
+              placeholder="e.g. Tithe Receipt, Salary, Building Fundâ€¦"
               style={{ ...INPUT_STYLE }} />
           </div>
           <div>
-            <FL>Entry Number Prefix (2–4 chars)</FL>
+            <FL>Entry Number Prefix (2â€“4 chars)</FL>
             <input value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase().slice(0, 4))}
               placeholder="e.g. TR, SF, SL"
               style={{ ...INPUT_STYLE, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase' }} />
@@ -357,9 +357,9 @@ function VoucherTypeModal({ editing, onSave, onCancel }) {
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  MAIN PAGE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const INPUT_STYLE = { height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', width: '100%' }
 
@@ -378,13 +378,13 @@ export default function AccountingSettingsPage() {
   const [dangerModal, setDangerModal] = useState(null)
   const [voucherModal, setVoucherModal] = useState(null) // null | 'add' | { editing: obj, idx: number }
 
-  // ── Form state ────────────────────────────────────────────────
+  // â”€â”€ Form state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [entrySystem,   setEntrySystem]   = useState('double')
   const [entryLocked,   setEntryLocked]   = useState(false)
 
   // Display & Format
   const [country,       setCountry]       = useState('India')
-  const [currency,      setCurrency]      = useState('₹')
+  const [currency,      setCurrency]      = useState('â‚¹')
   const [numberFormat,  setNumberFormat]  = useState('indian')
   const [dateFormat,    setDateFormat]    = useState('DD-MM-YYYY')
 
@@ -421,7 +421,7 @@ export default function AccountingSettingsPage() {
   const [validating,    setValidating]    = useState(false)
   const [restoring,     setRestoring]     = useState(false)
 
-  // ── Load ──────────────────────────────────────────────────────
+  // â”€â”€ Load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     Promise.all([
       supabase.from('churches').select('*').limit(1).single(),
@@ -436,7 +436,7 @@ export default function AccountingSettingsPage() {
       setEntrySystem(data.accounting_entry_system || 'double')
       setEntryLocked(!!data.accounting_entry_system_locked)
       setCountry(data.accounting_country || 'India')
-      setCurrency(data.accounting_currency || '₹')
+      setCurrency(data.accounting_currency || 'â‚¹')
       setNumberFormat(data.accounting_number_format || 'indian')
       setDateFormat(data.accounting_date_format || 'DD-MM-YYYY')
       setReportSubtitle(data.accounting_report_subtitle || '')
@@ -483,19 +483,19 @@ export default function AccountingSettingsPage() {
     setCustomVouchers(prev => prev.filter((_, i) => i !== idx))
   }
 
-  // ── Backup export ─────────────────────────────────────────────
+  // â”€â”€ Backup export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleExport() {
     setExportWorking(true)
     try {
       const result = await exportAccountingBackup()
-      toast(`Backup downloaded — ${result.accounts} accounts, ${result.entries} entries, ${result.lines} lines.`, 'success')
+      toast(`Backup downloaded â€” ${result.accounts} accounts, ${result.entries} entries, ${result.lines} lines.`, 'success')
     } catch (e) {
       toast('Export failed: ' + e.message, 'error')
     }
     setExportWorking(false)
   }
 
-  // ── Backup file chosen → validate ─────────────────────────────
+  // â”€â”€ Backup file chosen â†’ validate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleFileChosen(e) {
     const file = e.target.files?.[0]
     if (!fileInputRef.current) return
@@ -513,7 +513,7 @@ export default function AccountingSettingsPage() {
     setValidating(false)
   }
 
-  // ── Restore confirmed (after master password) ─────────────────
+  // â”€â”€ Restore confirmed (after master password) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleRestore() {
     if (!validation?.parsed || !churchId) return
     setRestoring(true)
@@ -531,7 +531,7 @@ export default function AccountingSettingsPage() {
     setRestoring(false)
   }
 
-  // ── Save ──────────────────────────────────────────────────────
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleSave() {
     if (!churchId) return
     setSaving(true)
@@ -560,7 +560,7 @@ export default function AccountingSettingsPage() {
     setSaving(false)
   }
 
-  // ── Danger zone ───────────────────────────────────────────────
+  // â”€â”€ Danger zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleFlush() {
     try {
       await flushJournalEntries()
@@ -579,7 +579,7 @@ export default function AccountingSettingsPage() {
     } catch (e) { toast('Reset failed: ' + e.message, 'error'); throw e }
   }
 
-  // ── Preview helpers ───────────────────────────────────────────
+  // â”€â”€ Preview helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const previewAmount = numberFormat === 'indian'
     ? currency + Number(123456.78).toLocaleString('en-IN', { minimumFractionDigits: 2 })
     : currency + Number(123456.78).toLocaleString('en-US', { minimumFractionDigits: 2 })
@@ -604,7 +604,7 @@ export default function AccountingSettingsPage() {
     <div className="page-container">
       <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
         <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-        Loading settings…
+        Loading settingsâ€¦
       </div>
     </div>
   )
@@ -641,17 +641,17 @@ export default function AccountingSettingsPage() {
         <MasterPasswordModal
           title="Confirm Restore from Backup"
           description={`This will PERMANENTLY REPLACE all accounts, journal entries, and settings with the backup file contents. This cannot be undone.`}
-          confirmLabel={restoring ? 'Restoring…' : 'Replace & Restore'}
+          confirmLabel={restoring ? 'Restoringâ€¦' : 'Replace & Restore'}
           confirmColor="#7c3aed"
           onConfirm={handleRestore}
           onCancel={() => setDangerModal(null)}
         />
       )}
 
-      {/* ── Header ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+          <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <ArrowLeft size={15} />
           </button>
           <div>
@@ -664,24 +664,24 @@ export default function AccountingSettingsPage() {
         <button onClick={handleSave} disabled={saving}
           style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {saving ? 'Saving…' : 'Save Settings'}
+          {saving ? 'Savingâ€¦' : 'Save Settings'}
         </button>
       </div>
 
       {/* Module status */}
       <div style={{ padding: '12px 18px', borderRadius: 10, marginBottom: 24, background: acEnabled ? '#dcfce733' : '#fff7ed33', border: `1.5px solid ${acEnabled ? '#86efac' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 18 }}>{acEnabled ? '✓' : '⚠'}</span>
+        <span style={{ fontSize: 18 }}>{acEnabled ? 'âœ“' : 'âš '}</span>
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: acEnabled ? '#16a34a' : '#c2410c', margin: 0 }}>
             Accounting Module is {acEnabled ? 'Enabled' : 'Disabled'}
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
-            {acEnabled ? 'Active — changes take effect immediately.' : 'Enable from Church Setup first.'}
+            {acEnabled ? 'Active â€” changes take effect immediately.' : 'Enable from Church Setup first.'}
           </p>
         </div>
       </div>
 
-      {/* ── 1. Account Setup ─────────────────────────────────────── */}
+      {/* â”€â”€ 1. Account Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={BookOpen} title="Account Setup" subtitle={entryLocked ? 'Your accounting system is set and locked.' : 'Choose your accounting method.'}>
         {entryLocked ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', borderRadius: 12, border: '2px solid var(--accent)', background: 'var(--sidebar-item-active-bg)' }}>
@@ -693,7 +693,7 @@ export default function AccountingSettingsPage() {
                 {entrySystem === 'double' ? 'Double Entry System' : 'Single Entry System'}
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-                {entrySystem === 'double' ? 'Full double-entry — debit and credit for every transaction.' : 'Simple cash-book style — income and payment recording.'}
+                {entrySystem === 'double' ? 'Full double-entry â€” debit and credit for every transaction.' : 'Simple cash-book style â€” income and payment recording.'}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: '#fee2e2', borderRadius: 7 }}>
@@ -713,7 +713,7 @@ export default function AccountingSettingsPage() {
         )}
       </SectionCard>
 
-      {/* ── 2. Display & Format ──────────────────────────────────── */}
+      {/* â”€â”€ 2. Display & Format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={Globe} title="Display & Format" subtitle="Set how amounts, dates and currency appear across all reports and screens.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
 
@@ -729,7 +729,7 @@ export default function AccountingSettingsPage() {
           <div>
             <FL>Currency Symbol</FL>
             <input value={currency} onChange={e => { setCurrency(e.target.value); setCountry('Custom') }}
-              placeholder="₹" style={{ ...INPUT_STYLE }} />
+              placeholder="â‚¹" style={{ ...INPUT_STYLE }} />
           </div>
 
           {/* Number format */}
@@ -768,7 +768,7 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 3. Report Settings ───────────────────────────────────── */}
+      {/* â”€â”€ 3. Report Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={FileText} title="Report Settings" subtitle="Appears on all printed reports and exports.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
           <div>
@@ -793,7 +793,7 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 4. Voucher Settings ───────────────────────────────────── */}
+      {/* â”€â”€ 4. Voucher Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={Receipt} title="Voucher Settings" subtitle="Configure entry number prefixes and posting behaviour.">
 
         {/* Entry number prefixes */}
@@ -921,7 +921,7 @@ export default function AccountingSettingsPage() {
                 {customVouchers.length === 0 && (
                   <tr style={{ borderTop: '1px solid var(--card-border)' }}>
                     <td colSpan={5} style={{ padding: '14px', textAlign: 'center', fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
-                      No custom voucher types yet — click Add Type to create one
+                      No custom voucher types yet â€” click Add Type to create one
                     </td>
                   </tr>
                 )}
@@ -934,13 +934,13 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 5. Default Accounts ──────────────────────────────────── */}
+      {/* â”€â”€ 5. Default Accounts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={CreditCard} title="Default Accounts" subtitle="Pre-fill these accounts when creating Cash or Bank vouchers.">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
             <FL>Default Cash Account</FL>
             <select value={defaultCashId} onChange={e => setDefaultCashId(e.target.value)} style={{ ...INPUT_STYLE }}>
-              <option value="">— None —</option>
+              <option value="">â€” None â€”</option>
               {['Asset','Liability','Equity','Income','Expense'].map(type => {
                 const group = accounts.filter(a => a.account_type === type)
                 if (!group.length) return null
@@ -955,7 +955,7 @@ export default function AccountingSettingsPage() {
           <div>
             <FL>Default Bank Account</FL>
             <select value={defaultBankId} onChange={e => setDefaultBankId(e.target.value)} style={{ ...INPUT_STYLE }}>
-              <option value="">— None —</option>
+              <option value="">â€” None â€”</option>
               {['Asset','Liability','Equity','Income','Expense'].map(type => {
                 const group = accounts.filter(a => a.account_type === type)
                 if (!group.length) return null
@@ -970,7 +970,7 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 6. Period Lock & Opening Date ────────────────────────── */}
+      {/* â”€â”€ 6. Period Lock & Opening Date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={CalendarOff} title="Period Lock & Opening Date" subtitle="Prevent edits to past periods and define when records begin.">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
@@ -992,8 +992,8 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 7. Receipt Integration ───────────────────────────────── */}
-      <SectionCard icon={Link2} title="Receipt Integration" subtitle="Control how the Finance → Receipt module connects with accounting entries.">
+      {/* â”€â”€ 7. Receipt Integration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <SectionCard icon={Link2} title="Receipt Integration" subtitle="Control how the Finance â†’ Receipt module connects with accounting entries.">
         <ToggleRow
           checked={autoPostReceipts}
           onChange={setAutoPostReceipts}
@@ -1002,7 +1002,7 @@ export default function AccountingSettingsPage() {
         />
       </SectionCard>
 
-      {/* ── 8. Fiscal Year ───────────────────────────────────────── */}
+      {/* â”€â”€ 8. Fiscal Year â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard icon={ClipboardList} title="Fiscal Year" subtitle="Set the month your financial year begins. Indian churches typically start in April.">
         <div style={{ maxWidth: 260 }}>
           <FL>Financial Year Starts In</FL>
@@ -1010,12 +1010,12 @@ export default function AccountingSettingsPage() {
             {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
           </select>
           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-            Current FY: {MONTHS[fiscalMonth - 1]} – {MONTHS[(fiscalMonth + 10) % 12]}
+            Current FY: {MONTHS[fiscalMonth - 1]} â€“ {MONTHS[(fiscalMonth + 10) % 12]}
           </p>
         </div>
       </SectionCard>
 
-      {/* ── 9. Backup & Restore ─────────────────────────────────── */}
+      {/* â”€â”€ 9. Backup & Restore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <SectionCard
         icon={Database}
         title="Backup & Restore"
@@ -1048,7 +1048,7 @@ export default function AccountingSettingsPage() {
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: exportWorking ? '#86efac' : '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: exportWorking ? 'not-allowed' : 'pointer', flexShrink: 0, transition: 'background 0.15s' }}
           >
             {exportWorking ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {exportWorking ? 'Exporting…' : 'Download Backup (.xlsx)'}
+            {exportWorking ? 'Exportingâ€¦' : 'Download Backup (.xlsx)'}
           </button>
         </div>
 
@@ -1067,7 +1067,7 @@ export default function AccountingSettingsPage() {
               style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: validating ? '#c4b5fd' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: validating ? 'not-allowed' : 'pointer', flexShrink: 0 }}
             >
               {validating ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {validating ? 'Validating…' : 'Choose Backup File (.xlsx)'}
+              {validating ? 'Validatingâ€¦' : 'Choose Backup File (.xlsx)'}
             </button>
           </div>
 
@@ -1115,12 +1115,12 @@ export default function AccountingSettingsPage() {
                         <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
                           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
                             Total Debit: <strong style={{ color: 'var(--text-1)' }}>
-                              ₹{Number(validation.summary.totalDebit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              â‚¹{Number(validation.summary.totalDebit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </strong>
                           </p>
                           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
                             Total Credit: <strong style={{ color: 'var(--text-1)' }}>
-                              ₹{Number(validation.summary.totalCredit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              â‚¹{Number(validation.summary.totalCredit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </strong>
                           </p>
                         </div>
@@ -1152,7 +1152,7 @@ export default function AccountingSettingsPage() {
                       onClick={() => setDangerModal('restore')}
                       style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
                     >
-                      <Lock size={13} /> Restore Now — requires master password
+                      <Lock size={13} /> Restore Now â€” requires master password
                     </button>
                   </div>
                 </>
@@ -1161,11 +1161,11 @@ export default function AccountingSettingsPage() {
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                     <XCircle size={18} color="#b91c1c" />
-                    <p style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', margin: 0 }}>Validation failed — this file cannot be restored</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', margin: 0 }}>Validation failed â€” this file cannot be restored</p>
                   </div>
                   <div style={{ padding: '10px 14px', background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 8, marginBottom: 12 }}>
                     {validation.errors.map((err, i) => (
-                      <p key={i} style={{ fontSize: 11, color: '#b91c1c', margin: i === 0 ? 0 : '4px 0 0' }}>• {err}</p>
+                      <p key={i} style={{ fontSize: 11, color: '#b91c1c', margin: i === 0 ? 0 : '4px 0 0' }}>â€¢ {err}</p>
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1189,7 +1189,7 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 10. Danger Zone ──────────────────────────────────────── */}
+      {/* â”€â”€ 10. Danger Zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="card" style={{ padding: '22px 24px', border: '1.5px solid #fca5a5', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 }}>
           <AlertTriangle size={16} color="#b91c1c" />
@@ -1228,7 +1228,7 @@ export default function AccountingSettingsPage() {
         <button onClick={handleSave} disabled={saving}
           style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 28px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {saving ? 'Saving…' : 'Save Settings'}
+          {saving ? 'Savingâ€¦' : 'Save Settings'}
         </button>
       </div>
     </div>

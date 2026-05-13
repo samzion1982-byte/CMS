@@ -1,7 +1,7 @@
-/* ═══════════════════════════════════════════════════════════════
-   OpeningBalancesPage.jsx — Enter / edit opening balances
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   OpeningBalancesPage.jsx â€” Enter / edit opening balances
    Creates Journal entries with voucher_type = 'Opening Balance'
-   ═══════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -141,7 +141,7 @@ export default function OpeningBalancesPage() {
       }))
 
     if (lines.length === 0) { toast('Enter at least one balance.', 'error'); return }
-    if (!balanced) { toast(`Opening balances do not balance — difference ₹${diff.toFixed(2)}`, 'error'); return }
+    if (!balanced) { toast(`Opening balances do not balance â€” difference â‚¹${diff.toFixed(2)}`, 'error'); return }
 
     setSaving(true)
     try {
@@ -211,7 +211,7 @@ export default function OpeningBalancesPage() {
     <div className="page-container">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+          <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <ArrowLeft size={15} />
           </button>
           <div>
@@ -260,10 +260,10 @@ export default function OpeningBalancesPage() {
         <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
           <div className="card" style={{ padding: '12px 18px', flex: 1, background: balanced ? '#f0fdf4' : '#fff7ed', borderLeft: `4px solid ${balanced ? '#16a34a' : '#c2410c'}` }}>
             <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: balanced ? '#16a34a' : '#c2410c', margin: '0 0 4px' }}>
-              {balanced ? '✓ Balanced' : `⚠ Difference: ${fmtAmt(diff)}`}
+              {balanced ? 'âœ“ Balanced' : `âš  Difference: ${fmtAmt(diff)}`}
             </p>
             <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
-              {balanced ? 'Opening balances are balanced — safe to save.' : 'Debit and credit totals must match before saving.'}
+              {balanced ? 'Opening balances are balanced â€” safe to save.' : 'Debit and credit totals must match before saving.'}
             </p>
           </div>
           <div className="card" style={{ padding: '12px 18px', textAlign: 'center', minWidth: 130 }}>
@@ -277,15 +277,15 @@ export default function OpeningBalancesPage() {
         </div>
       )}
 
-      {/* Auto-balance strip — shown only when unbalanced */}
+      {/* Auto-balance strip â€” shown only when unbalanced */}
       {!loading && !balanced && equityAccounts.length > 0 && (
         <div style={{ marginBottom: 16, padding: '12px 18px', background: '#fff7ed', border: '1.5px solid #fdba74', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>
-            Auto-balance {fmtAmt(diff)} →
+            Auto-balance {fmtAmt(diff)} â†’
           </span>
           <select value={autoEquityId} onChange={e => setAutoEquityId(e.target.value)}
             style={{ flex: 1, minWidth: 200, maxWidth: 320, height: 34, padding: '0 10px', border: '1.5px solid #fdba74', borderRadius: 7, fontSize: 13, background: '#fff', color: 'var(--text-1)' }}>
-            <option value="">Select Corpus / Equity account…</option>
+            <option value="">Select Corpus / Equity accountâ€¦</option>
             {equityAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
           <button onClick={handleAutoBalance} disabled={!autoEquityId}
@@ -300,7 +300,7 @@ export default function OpeningBalancesPage() {
 
       {loading ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accounts…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />Loading accountsâ€¦
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -397,8 +397,8 @@ export default function OpeningBalancesPage() {
                   <thead>
                     <tr style={{ background: c.bg + '55' }}>
                       <th style={{ ...LABEL.TH }}>Account Name</th>
-                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#2563eb' }}>Debit (₹)</th>
-                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#16a34a' }}>Credit (₹)</th>
+                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#2563eb' }}>Debit (â‚¹)</th>
+                      <th style={{ ...LABEL.TH, textAlign: 'right', width: 180, color: '#16a34a' }}>Credit (â‚¹)</th>
                     </tr>
                   </thead>
                   <tbody>

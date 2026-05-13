@@ -1,11 +1,11 @@
-/* ═══════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    FinancialStatementsPage.jsx
-   Church financial statements — three standard reports:
+   Church financial statements â€” three standard reports:
 
    1. Receipts & Payments Account  (cash-basis summary)
-   2. Income & Expenditure Account (accrual — Surplus / Deficit)
+   2. Income & Expenditure Account (accrual â€” Surplus / Deficit)
    3. Balance Sheet                (Assets vs Liabilities + Corpus Fund)
-   ═══════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -30,9 +30,9 @@ function fmtD(iso) {
   return `${d}-${m}-${y}`
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Shared layout helpers
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const TABS = [
   { id: 'rp', label: 'Receipts & Payments' },
@@ -153,10 +153,10 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
   )
 }
 
-// ════════════════════════════════════════════════════════════════
-//  R&P Table — 6-column layout (3 per side: label | detail | amount)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  R&P Table â€” 6-column layout (3 per side: label | detail | amount)
 //  inner = expanded sub-item (dim)  outer = group total / standalone (bold)
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
   function renderSide(cell, isRight) {
@@ -177,7 +177,7 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         ? (isGroup ? 16 : 32)
         : 14
 
-    // Left accent border on group header rows (left side only — right side keeps its divider)
+    // Left accent border on group header rows (left side only â€” right side keeps its divider)
     const accentBorder = isGroup && cell.indent && !isRight
     const labelBorderLeft = accentBorder ? '3px solid var(--accent)' : sepBorder
 
@@ -197,11 +197,11 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
           {cell.label || ''}
           {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />}
         </td>
-        {/* Detail column — expanded sub-items only (dim) */}
+        {/* Detail column â€” expanded sub-items only (dim) */}
         <td style={{ paddingRight: 8, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 12, width: 120, color: 'var(--text-3)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
           {cell.inner !== undefined ? fmtAmt(cell.inner) : ''}
         </td>
-        {/* Amount column — standalone items, group totals, section totals (bold) */}
+        {/* Amount column â€” standalone items, group totals, section totals (bold) */}
         <td style={{ paddingRight: 16, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: cell.bold ? 14 : 13, width: 145, fontWeight: cell.bold ? 800 : 500, color: 'var(--text-1)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
           {cell.outer !== undefined ? fmtAmt(cell.outer) : ''}
         </td>
@@ -261,9 +261,9 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Receipts & Payments Account
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
   function allKeysFor(d) {
@@ -301,7 +301,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
 
   const allExpanded = allGroupKeys.length > 0 && allGroupKeys.every(k => expanded.has(k))
 
-  // Balance section rows (opening or closing) — drill-down if multiple accounts
+  // Balance section rows (opening or closing) â€” drill-down if multiple accounts
   function balRows(key, label, total, accounts) {
     if (accounts.length <= 1) {
       const name = accounts.length === 1 ? accounts[0].name : label
@@ -316,7 +316,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
     ]
   }
 
-  // Receipt/payment group rows — drill-down when multiple child accounts
+  // Receipt/payment group rows â€” drill-down when multiple child accounts
   function grpRows(prefix, item) {
     if (item.children.length === 0) {
       return [{ label: item.name, outer: item.amount, indent: true, accountId: item.accountId }]
@@ -403,7 +403,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
     const grandTotal = data.openingBalance + data.totalReceipts
     await exportTwoColumn(
       left, right,
-      'DR  —  RECEIPTS', 'CR  —  PAYMENTS',
+      'DR  â€”  RECEIPTS', 'CR  â€”  PAYMENTS',
       'Receipts & Payments Account',
       `RP_${dateFrom}_${dateTo}.xlsx`,
       { leftTotal: grandTotal, rightTotal: data.totalPayments + data.closingBalance }
@@ -429,20 +429,20 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={data.openingBalance + data.totalReceipts}
         rightTotal={data.totalPayments + data.closingBalance}
-        leftLabel="Dr  —  Receipts"
-        rightLabel="Cr  —  Payments"
+        leftLabel="Dr  â€”  Receipts"
+        rightLabel="Cr  â€”  Payments"
         navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <p className="no-print" style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
-        Receipts &amp; Payments grouped by COA hierarchy · click ▶ to expand groups · click account to view ledger
+        Receipts &amp; Payments grouped by COA hierarchy Â· click â–¶ to expand groups Â· click account to view ledger
       </p>
     </div>
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Income & Expenditure Account
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   const [expanded, setExpanded] = useState(new Set())
@@ -553,7 +553,7 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
     ]
     await exportTwoColumn(
       left, right,
-      'DR  —  EXPENDITURE', 'CR  —  INCOME',
+      'DR  â€”  EXPENDITURE', 'CR  â€”  INCOME',
       'Income & Expenditure Account',
       `IE_${dateFrom}_${dateTo}.xlsx`,
       { leftTotal, rightTotal }
@@ -571,8 +571,8 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={leftTotal} rightTotal={rightTotal}
-        leftLabel="Dr  —  Expenditure"
-        rightLabel="Cr  —  Income"
+        leftLabel="Dr  â€”  Expenditure"
+        rightLabel="Cr  â€”  Income"
         navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <div style={{ marginTop: 14, padding: '12px 20px', borderRadius: 10, background: isDeficit ? '#fff5f5' : '#f0fdf4', border: `1.5px solid ${isDeficit ? '#fca5a5' : '#86efac'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -583,8 +583,8 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
           </p>
           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
             {isDeficit
-              ? 'Expenditure exceeds Income — deficit carried to Corpus Fund.'
-              : 'Income exceeds Expenditure — surplus transferred to Corpus Fund.'}
+              ? 'Expenditure exceeds Income â€” deficit carried to Corpus Fund.'
+              : 'Income exceeds Expenditure â€” surplus transferred to Corpus Fund.'}
           </p>
         </div>
       </div>
@@ -592,9 +592,9 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  Balance Sheet
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
   const [expanded, setExpanded] = useState(new Set())
@@ -729,17 +729,17 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
         {isBalanced ? <CheckCircle size={20} color="#16a34a" /> : <XCircle size={20} color="#b91c1c" />}
         <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: isBalanced ? '#15803d' : '#b91c1c' }}>
           {isBalanced
-            ? 'Balance Sheet is balanced — Assets = Corpus Fund + Liabilities'
-            : `Does not balance — difference ${fmtAmt(Math.abs(data.totalAssets - data.totalLiabilities - data.totalCorpus))}`}
+            ? 'Balance Sheet is balanced â€” Assets = Corpus Fund + Liabilities'
+            : `Does not balance â€” difference ${fmtAmt(Math.abs(data.totalAssets - data.totalLiabilities - data.totalCorpus))}`}
         </p>
       </div>
     </div>
   )
 }
 
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  MAIN PAGE
-// ════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export default function FinancialStatementsPage() {
   const navigate = useNavigate()
@@ -831,17 +831,17 @@ export default function FinancialStatementsPage() {
   return (
     <div className="page-container">
 
-      {/* ── Header ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+          <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <ArrowLeft size={15} />
           </button>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <BarChart2 size={20} style={{ color: 'var(--accent)' }} /> Financial Statements
             </h1>
-            <p className="page-subtitle">R&amp;P · Income &amp; Expenditure · Balance Sheet — FY {fy}</p>
+            <p className="page-subtitle">R&amp;P Â· Income &amp; Expenditure Â· Balance Sheet â€” FY {fy}</p>
           </div>
         </div>
 
@@ -867,7 +867,7 @@ export default function FinancialStatementsPage() {
           <button onClick={generate} disabled={loading}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {loading ? 'Generating…' : generated ? 'Refresh' : 'Generate'}
+            {loading ? 'Generatingâ€¦' : generated ? 'Refresh' : 'Generate'}
           </button>
 
           {generated && (
@@ -879,7 +879,7 @@ export default function FinancialStatementsPage() {
         </div>
       </div>
 
-      {/* ── Date Range Picker ───────────────────────────────────── */}
+      {/* â”€â”€ Date Range Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="card no-print" style={{ padding: '12px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <Calendar size={15} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Period</span>
@@ -922,7 +922,7 @@ export default function FinancialStatementsPage() {
 
         {rangeMode === 'full' && (
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-            {fmtD(fyDateRange(fy).from)} — {fmtD(fyDateRange(fy).to)}
+            {fmtD(fyDateRange(fy).from)} â€” {fmtD(fyDateRange(fy).to)}
           </span>
         )}
 
@@ -937,7 +937,7 @@ export default function FinancialStatementsPage() {
         </label>
       </div>
 
-      {/* ── Tabs ───────────────────────────────────────────────── */}
+      {/* â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="no-print" style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--table-header-bg)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
@@ -947,7 +947,7 @@ export default function FinancialStatementsPage() {
         ))}
       </div>
 
-      {/* ── Empty state ─────────────────────────────────────────── */}
+      {/* â”€â”€ Empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {!generated && !loading && (
         <div style={{ padding: '60px 24px', textAlign: 'center', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 12 }}>
           <BarChart2 size={36} style={{ color: 'var(--text-3)', display: 'block', margin: '0 auto 12px' }} />
@@ -957,12 +957,12 @@ export default function FinancialStatementsPage() {
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>
             {rangeMode === 'custom'
               ? `${fmtD(fromDate)} to ${fmtD(toDate)}`
-              : `Full year — FY ${fy}`}
+              : `Full year â€” FY ${fy}`}
           </p>
           <button onClick={generate}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             <RefreshCw size={14} />
-            {rangeMode === 'custom' ? `Generate ${fmtD(fromDate)} → ${fmtD(toDate)}` : `Generate for FY ${fy}`}
+            {rangeMode === 'custom' ? `Generate ${fmtD(fromDate)} â†’ ${fmtD(toDate)}` : `Generate for FY ${fy}`}
           </button>
         </div>
       )}
@@ -970,11 +970,11 @@ export default function FinancialStatementsPage() {
       {loading && (
         <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-3)' }}>
           <Loader2 size={28} className="animate-spin" style={{ display: 'block', margin: '0 auto 10px' }} />
-          Generating financial statements…
+          Generating financial statementsâ€¦
         </div>
       )}
 
-      {/* ── Reports ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {generated && !loading && (
         <div id="financial-print-area" className="card" style={{ padding: 24 }}>
           {/* Church header */}
@@ -987,7 +987,7 @@ export default function FinancialStatementsPage() {
             )}
             <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
               {tab === 'rp' ? 'Receipts & Payments Account' : tab === 'ie' ? 'Income & Expenditure Account' : 'Balance Sheet'}
-              &nbsp;·&nbsp;
+              &nbsp;Â·&nbsp;
               {genFrom === fyDateRange(fy).from && genTo === fyDateRange(fy).to
                 ? `Full Year FY ${fy}`
                 : `${fmtD(genFrom)} to ${fmtD(genTo)}`}

@@ -1,6 +1,6 @@
-/* ═══════════════════════════════════════════════════════════════
-   TrialBalancePage.jsx — Trial Balance Report
-   ═══════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   TrialBalancePage.jsx â€” Trial Balance Report
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -46,8 +46,8 @@ export default function TrialBalancePage() {
       { header: 'Account Name', key: 'name',   align: 'left'  },
       { header: 'Type',         key: 'type',   align: 'left'  },
       { header: 'Level',        key: 'level',  align: 'center'},
-      { header: 'Debit (₹)',    key: 'debit',  align: 'right' },
-      { header: 'Credit (₹)',   key: 'credit', align: 'right' },
+      { header: 'Debit (â‚¹)',    key: 'debit',  align: 'right' },
+      { header: 'Credit (â‚¹)',   key: 'credit', align: 'right' },
     ]
     const rows = display.map(r => ({
       name:   r.name,
@@ -64,7 +64,7 @@ export default function TrialBalancePage() {
     <div className="page-container">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+          <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <ArrowLeft size={15} />
           </button>
           <div>
@@ -125,7 +125,7 @@ export default function TrialBalancePage() {
 
       {loading && (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
-          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} /> Generating trial balance…
+          <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} /> Generating trial balanceâ€¦
         </div>
       )}
 
@@ -134,9 +134,9 @@ export default function TrialBalancePage() {
           {/* Balance status */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
             <div className="card" style={{ flex: 1, padding: '16px 20px', background: balanced ? '#dcfce733' : '#fee2e233', borderLeft: `4px solid ${balanced ? '#16a34a' : '#b91c1c'}` }}>
-              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: balanced ? '#16a34a' : '#b91c1c', margin: '0 0 6px' }}>{balanced ? '✓ Trial Balance Agrees' : '⚠ Trial Balance Disagrees'}</p>
+              <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: balanced ? '#16a34a' : '#b91c1c', margin: '0 0 6px' }}>{balanced ? 'âœ“ Trial Balance Agrees' : 'âš  Trial Balance Disagrees'}</p>
               <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
-                {balanced ? `Total Debits = Total Credits = ${fmtAmt(totalDebit)}` : `Difference of ${fmtAmt(Math.abs(totalDebit - totalCredit))} — check for unposted entries`}
+                {balanced ? `Total Debits = Total Credits = ${fmtAmt(totalDebit)}` : `Difference of ${fmtAmt(Math.abs(totalDebit - totalCredit))} â€” check for unposted entries`}
               </p>
             </div>
             <div className="card" style={{ padding: '16px 20px', textAlign: 'center', minWidth: 140 }}>
@@ -153,7 +153,7 @@ export default function TrialBalancePage() {
           <div className="print-only" style={{ textAlign: 'center', marginBottom: 16 }}>
             <p style={{ fontSize: 16, fontWeight: 800, margin: '0 0 4px' }}>{church?.church_name}</p>
             <p style={{ fontSize: 12, margin: '0 0 4px' }}>{church?.address}, {church?.city}</p>
-            <p style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Trial Balance — FY {fy}</p>
+            <p style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px' }}>Trial Balance â€” FY {fy}</p>
           </div>
 
           <div className="card" style={{ overflow: 'hidden' }}>
@@ -163,8 +163,8 @@ export default function TrialBalancePage() {
                   <tr>
                     <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>Account Name</th>
                     <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left', width: 100 }}>Type</th>
-                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 150 }}>Debit (₹)</th>
-                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 150 }}>Credit (₹)</th>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2563eb', textAlign: 'right', width: 150 }}>Debit (â‚¹)</th>
+                    <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#16a34a', textAlign: 'right', width: 150 }}>Credit (â‚¹)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -184,10 +184,10 @@ export default function TrialBalancePage() {
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
                         </td>
                         <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: r.total_debit > 0 ? '#2563eb' : 'var(--text-3)' }}>
-                          {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}
+                          {r.total_debit > 0 ? fmtAmt(r.total_debit) : 'â€”'}
                         </td>
                         <td style={{ padding: '9px 14px', fontSize: 12, fontFamily: 'monospace', textAlign: 'right', color: r.total_credit > 0 ? '#16a34a' : 'var(--text-3)' }}>
-                          {r.total_credit > 0 ? fmtAmt(r.total_credit) : '—'}
+                          {r.total_credit > 0 ? fmtAmt(r.total_credit) : 'â€”'}
                         </td>
                       </tr>
                     ))
@@ -202,7 +202,7 @@ export default function TrialBalancePage() {
                   {balanced && (
                     <tr>
                       <td colSpan={4} style={{ padding: '8px 14px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: '#16a34a' }}>
-                        ✓ Trial Balance Agrees — Total Debits = Total Credits = {fmtAmt(totalDebit)}
+                        âœ“ Trial Balance Agrees â€” Total Debits = Total Credits = {fmtAmt(totalDebit)}
                       </td>
                     </tr>
                   )}
