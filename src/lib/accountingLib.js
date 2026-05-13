@@ -1011,6 +1011,11 @@ export async function getAccountingStats(fy) {
   const balMap = {}
   for (const b of bals || []) balMap[b.account_id] = b
 
+  // Trial balance gives live totals from actual journal entries — use as fallback
+  // when account_balances is stale or missing (e.g. after a direct SQL migration)
+  const tbMap = {}
+  for (const t of tb) tbMap[t.id] = t
+
   // Use COA directly so accounts with no current-FY transactions (but a COA opening balance) are included
   const assetCOA = allAssetCOA || []
   const assetParentIds = new Set(assetCOA.map(a => a.parent_id).filter(Boolean))
@@ -1018,8 +1023,15 @@ export async function getAccountingStats(fy) {
 
   function leafBalance(a) {
     const b = balMap[a.id]
-    const op = Number(b?.opening_balance ?? a.opening_balance ?? 0)
-    return op + Number(b?.total_debit || 0) - Number(b?.total_credit || 0)
+    if (b) {
+      // account_balances row exists — use it (includes carried-forward opening balance)
+      const op = Number(b.opening_balance ?? a.opening_balance ?? 0)
+      return op + Number(b.total_debit || 0) - Number(b.total_credit || 0)
+    }
+    // Fallback: compute from trial balance (live journal entry totals) + COA opening balance
+    const t = tbMap[a.id]
+    const op = Number(a.opening_balance || 0)
+    return op + Number(t?.total_debit || 0) - Number(t?.total_credit || 0)
   }
 
   const cashRe = /cash|hand|petty/i
