@@ -105,9 +105,10 @@ export default function VoucherPrint({
               border: '1px solid #000',
               height: '100%',
               boxSizing: 'border-box',
+              position: 'relative',
               display: 'flex',
               flexDirection: 'column',
-              padding: '10px 16px 8px',
+              padding: '10px 16px 90px',
               overflow: 'hidden',
             }}>
 
@@ -202,16 +203,11 @@ export default function VoucherPrint({
               )}
             </div>
 
-            {/* spacer — pushes signature to bottom */}
-            <div style={{ flex: 1 }} />
-
-            {/* ── Signature block ──────────────────────────── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10 }}>
+            {/* ── Signature block — absolutely pinned so it's always visible ── */}
+            <div style={{ position: 'absolute', left: 16, right: 16, bottom: 22, display: 'flex', justifyContent: 'space-between' }}>
               {['Prepared By', 'Checked By', 'Approved By'].map(role => (
                 <div key={role} style={{ width: '30%', display: 'flex', flexDirection: 'column' }}>
-                  {/* Signing space */}
-                  <div style={{ height: 48 }} />
-                  {/* Signature line + label */}
+                  <div style={{ height: 40 }} />
                   <div style={{ borderTop: '1.5px solid #000', paddingTop: 5, textAlign: 'center', fontSize: 10, fontWeight: 700, letterSpacing: '0.03em' }}>
                     {role}
                   </div>
@@ -220,7 +216,7 @@ export default function VoucherPrint({
             </div>
 
             {/* ── Footer ──────────────────────────────────── */}
-            <div style={{ marginTop: 6, textAlign: 'center', fontSize: 9, color: '#9ca3af' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 8, textAlign: 'center', fontSize: 9, color: '#9ca3af' }}>
               Computer generated — {church?.church_name}
             </div>
 
