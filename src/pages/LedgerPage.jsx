@@ -352,7 +352,7 @@ export default function LedgerPage() {
       const totalCredit  = periodLines.reduce((s, l) => s + l.credit, 0)
       const closingBal   = lines.length > 0 ? lines[lines.length - 1].running_balance : 0
       const closingLabel = `${Math.abs(closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${closingBal >= 0 ? 'Dr' : 'Cr'}`
-      rows.push({ date: 'TOTAL', entry: '', type: '', narr: `${periodLines.length} entries`, debit: totalDebit || '', credit: totalCredit || '', balance: closingLabel })
+      rows.push({ date: 'TOTAL', entry: '', type: '', narr: `${periodLines.length} entries`, debit: totalDebit || '', credit: totalCredit || '', balance: closingLabel, _bold: true })
     })
     exportToExcel(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`)
   }
@@ -363,7 +363,7 @@ export default function LedgerPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
+      <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -401,12 +401,12 @@ export default function LedgerPage() {
       </div>
 
       {/* Date presets */}
-      <div style={{ marginBottom: 10 }}>
+      <div className="no-print" style={{ marginBottom: 10 }}>
         <DatePresets onSelect={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
 
       {/* Filter bar — account dropdown + dates + generate */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', overflow: 'visible' }}>
+      <div className="card no-print" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', overflow: 'visible' }}>
         <AccountSelector allAccounts={allAccounts} postableIds={postableIds} selectedIds={selectedIds} onChange={setSelectedIds} />
         <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>From Date</label>
@@ -440,9 +440,11 @@ export default function LedgerPage() {
       )}
 
       {/* Ledger cards */}
-      {generated && !loading && ledgers.map(({ account, lines }) => (
-        <LedgerCard key={account.id} account={account} lines={lines} dateFrom={dateFrom} dateTo={dateTo} />
-      ))}
+      <div id="ledger-print-area">
+        {generated && !loading && ledgers.map(({ account, lines }) => (
+          <LedgerCard key={account.id} account={account} lines={lines} dateFrom={dateFrom} dateTo={dateTo} />
+        ))}
+      </div>
     </div>
   )
 }

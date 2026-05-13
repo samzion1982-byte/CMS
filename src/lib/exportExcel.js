@@ -47,15 +47,19 @@ function populateSheet(ws, columns, rows) {
     const dataRow   = ws.addRow(row)
     const isLastRow = i === totalRows - 1
     const isAlt     = i % 2 === 1
-    dataRow.height  = 18
+    const isBold    = !!row._bold
+    dataRow.height  = isBold ? 21 : 18
     dataRow.eachCell({ includeEmpty: true }, (cell, colIdx) => {
       const isLeft  = colIdx === 1
       const isRight = colIdx === lastColIdx
       const col = columns[colIdx - 1]
-      cell.font      = { size: 10, name: 'Calibri' }
+      cell.font      = { size: isBold ? 11 : 10, name: 'Calibri', bold: isBold }
       cell.alignment = { vertical: 'middle', horizontal: col?.align || 'center', wrapText: false }
-      cell.border    = cellBorder(false, isLastRow, isLeft, isRight)
-      if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
+      cell.border    = isBold
+        ? cellBorder(true, true, isLeft, isRight)
+        : cellBorder(false, isLastRow, isLeft, isRight)
+      if (isBold)      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } }
+      else if (isAlt)  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
     })
   })
 }
