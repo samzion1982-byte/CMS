@@ -324,7 +324,7 @@ export default function LedgerPage() {
       </div>
 
       {/* Filter bar — account dropdown + dates + generate */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', overflow: 'visible' }}>
         <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
         <div style={{ flex: 1, minWidth: 140 }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>From Date</label>
