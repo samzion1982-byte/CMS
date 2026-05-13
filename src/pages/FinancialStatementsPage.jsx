@@ -781,7 +781,7 @@ export default function FinancialStatementsPage() {
       {generated && !loading && (
         <div id="financial-print-area" className="card" style={{ padding: 24 }}>
           {/* Church header */}
-          <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--card-border)' }}>
+          <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
             <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>
               {church?.church_name || 'Church'}
             </p>
