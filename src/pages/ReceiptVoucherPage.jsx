@@ -192,9 +192,10 @@ export default function ReceiptVoucherPage() {
   const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
 
   const cashAccounts  = useMemo(() => {
-    const filtered = assetAccounts.filter(a => /cash|hand|petty/i.test(a.name))
-    return filtered.length > 0 ? filtered : assetAccounts
-  }, [assetAccounts])
+    const parentIds = new Set(allCoa.map(a => a.parent_id).filter(Boolean))
+    const filtered = assetAccounts.filter(a => /cash|hand|petty/i.test(a.name) && !parentIds.has(a.id))
+    return filtered.length > 0 ? filtered : assetAccounts.filter(a => !parentIds.has(a.id))
+  }, [assetAccounts, allCoa])
 
   const bankCoaAccounts = useMemo(() => {
     const parentIds = new Set(allCoa.map(a => a.parent_id).filter(Boolean))

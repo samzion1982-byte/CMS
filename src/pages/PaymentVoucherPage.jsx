@@ -156,9 +156,10 @@ export default function PaymentVoucherPage() {
 
   const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
   const cashAccounts  = useMemo(() => {
-    const f = assetAccounts.filter(a => /cash|hand|petty/i.test(a.name))
-    return f.length > 0 ? f : assetAccounts
-  }, [assetAccounts])
+    const parentIds = new Set(allCoa.map(a => a.parent_id).filter(Boolean))
+    const f = assetAccounts.filter(a => /cash|hand|petty/i.test(a.name) && !parentIds.has(a.id))
+    return f.length > 0 ? f : assetAccounts.filter(a => !parentIds.has(a.id))
+  }, [assetAccounts, allCoa])
   const bankAccounts  = useMemo(() => {
     const parentIds = new Set(allCoa.map(a => a.parent_id).filter(Boolean))
     return assetAccounts.filter(a => /bank/i.test(a.name) && !parentIds.has(a.id))
