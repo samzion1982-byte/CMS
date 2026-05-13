@@ -252,21 +252,12 @@ export default function PaymentVoucherPage() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')}
-              style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--accent)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <ArrowLeft size={16} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate(-1)}
-              style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-3)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <ArrowLeft size={16} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Back</span>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button onClick={() => navigate('/accounting')}
+            style={{ background: 'none', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--accent)', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <ArrowLeft size={16} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
         <div style={{ flex: 1 }}>
           <h1 className="page-title" style={{ marginBottom: 1 }}>{editId ? 'Edit Payment Voucher' : 'Payment Voucher'}</h1>
