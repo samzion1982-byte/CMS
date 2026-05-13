@@ -7,7 +7,7 @@
    3. Balance Sheet                (Assets vs Liabilities + Corpus Fund)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import {
@@ -146,7 +146,7 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
 function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
   function renderSide(cell, isRight) {
     const sepBorder = isRight ? '2px solid var(--card-border)' : 'none'
-    if (!cell) return <><td style={{ borderLeft: sepBorder }} /><td /><td /></>
+    if (!cell) return <><td style={{ borderLeft: sepBorder }} /><td /></>
 
     const clickable = !!(cell.accountId && navigate) && !cell.isGroup
     const isGroup   = !!cell.isGroup
@@ -155,20 +155,25 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
       if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
     }
 
-    // Compensate paddingLeft for chevron (12px icon + 4px margin = 16px)
-    // so group and non-group rows at the same indent level align their text
+    // Compensate paddingLeft for chevron width (16px) so text aligns with non-group rows
     const pl = cell.indent2
       ? (isGroup ? 36 : 52)
       : cell.indent
         ? (isGroup ? 16 : 32)
         : 14
 
-    const hasInner = cell.inner !== undefined
-    const hasOuter = cell.outer !== undefined
+    // Show outer (total) if present, else inner (detail)
+    const amount    = cell.outer !== undefined ? cell.outer : cell.inner
+    const hasAmount = amount !== undefined
+    // Section totals: bold, no indent. Group totals: bold, indent. Items: normal
+    const isSectionTotal = cell.bold && !cell.indent
+    const isGroupTotal   = cell.bold && cell.indent
+    const amtWeight = isSectionTotal ? 800 : isGroupTotal ? 700 : 400
+    const amtSize   = isSectionTotal ? 14 : 13
+    const amtColor  = cell.indent2 ? 'var(--text-2)' : 'var(--text-1)'
 
     return (
       <>
-        {/* Label cell */}
         <td
           style={{ ...TD, borderLeft: sepBorder, paddingTop: 6, paddingBottom: 6,
             fontWeight: cell.bold ? 700 : 400, paddingLeft: pl,
@@ -183,15 +188,8 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
           {cell.label || ''}
           {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.4, verticalAlign: 'middle' }} />}
         </td>
-
-        {/* Inner column — detail amounts, light gray, smaller */}
-        <td style={{ paddingRight: 10, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 12, width: 115, color: hasInner ? '#9ca3af' : 'transparent', fontWeight: 400, verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-          {hasInner ? fmtAmt(cell.inner) : ''}
-        </td>
-
-        {/* Outer column — totals, bold, prominent, hairline left border */}
-        <td style={{ paddingRight: 14, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: 13, width: 145, fontWeight: hasOuter ? 800 : 400, color: hasOuter ? 'var(--text-1)' : 'transparent', borderLeft: '1px solid rgba(0,0,0,0.07)', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-          {hasOuter ? fmtAmt(cell.outer) : ''}
+        <td style={{ paddingRight: 16, paddingTop: 6, paddingBottom: 6, textAlign: 'right', fontFamily: 'monospace', fontSize: amtSize, width: 160, fontWeight: amtWeight, color: hasAmount ? amtColor : 'transparent', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+          {hasAmount ? fmtAmt(amount) : ''}
         </td>
       </>
     )
@@ -204,21 +202,22 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         <thead style={{ background: 'var(--table-header-bg)' }}>
           <tr>
             <th style={TH}>{leftLabel}</th>
-            <th style={{ ...TH, width: 115, textAlign: 'right', color: '#9ca3af', fontWeight: 500 }}>Detail</th>
-            <th style={{ ...TH, width: 145, textAlign: 'right', borderLeft: '1px solid rgba(0,0,0,0.07)' }}>Amount</th>
+            <th style={{ ...TH, width: 160, textAlign: 'right' }}>Amount</th>
             <th style={{ ...TH, borderLeft: '2px solid var(--card-border)' }}>{rightLabel}</th>
-            <th style={{ ...TH, width: 115, textAlign: 'right', color: '#9ca3af', fontWeight: 500 }}>Detail</th>
-            <th style={{ ...TH, width: 145, textAlign: 'right', borderLeft: '1px solid rgba(0,0,0,0.07)' }}>Amount</th>
+            <th style={{ ...TH, width: 160, textAlign: 'right' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
           {Array.from({ length: maxLen }, (_, i) => {
             const l = leftRows[i]
             const r = rightRows[i]
-            // Highlight total/bold rows with a very subtle background
-            const isTotalRow = (l?.bold && (l?.outer !== undefined)) || (r?.bold && (r?.outer !== undefined))
+            const isSectionTotal = (l?.bold && !l?.indent) || (r?.bold && !r?.indent)
+            const isGroupTotal   = (l?.bold && l?.indent)  || (r?.bold && r?.indent)
             return (
-              <tr key={i} style={{ background: isTotalRow ? 'rgba(0,0,0,0.025)' : 'transparent', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+              <tr key={i} style={{
+                borderTop: isSectionTotal ? '1.5px solid var(--card-border)' : '1px solid rgba(0,0,0,0.04)',
+                background: isSectionTotal ? 'rgba(0,0,0,0.025)' : isGroupTotal ? 'rgba(0,0,0,0.015)' : 'transparent',
+              }}>
                 {renderSide(l || null, false)}
                 {renderSide(r || null, true)}
               </tr>
@@ -228,11 +227,9 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
         <tfoot>
           <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
             <td style={{ ...TD, fontWeight: 800, paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
-            <td />
-            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 14, borderLeft: '1px solid rgba(0,0,0,0.07)' }}>{fmtAmt(leftTotal)}</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 15, paddingRight: 16 }}>{fmtAmt(leftTotal)}</td>
             <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)', paddingTop: 10, paddingBottom: 10 }}>TOTAL</td>
-            <td />
-            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 14, borderLeft: '1px solid rgba(0,0,0,0.07)' }}>{fmtAmt(rightTotal)}</td>
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, fontSize: 15, paddingRight: 16 }}>{fmtAmt(rightTotal)}</td>
           </tr>
         </tfoot>
       </table>
@@ -254,6 +251,19 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
   const bankAccts   = data.bankAccounts   || []
   const cashAcctsOB = data.cashAccountsOB || []
   const bankAcctsOB = data.bankAccountsOB || []
+
+  const allGroupKeys = useMemo(() => {
+    const keys = []
+    if (cashAcctsOB.length > 1) keys.push('obCash')
+    if (bankAcctsOB.length > 1) keys.push('obBank')
+    for (const r of data.receipts || []) if ((r.children?.length || 0) > 0) keys.push('r_' + r.name)
+    for (const p of data.payments || []) if ((p.children?.length || 0) > 0) keys.push('p_' + p.name)
+    if (cashAccts.length > 1) keys.push('cbCash')
+    if (bankAccts.length > 1) keys.push('cbBank')
+    return keys
+  }, [data, cashAccts, bankAccts, cashAcctsOB, bankAcctsOB])
+
+  const allExpanded = allGroupKeys.length > 0 && allGroupKeys.every(k => expanded.has(k))
 
   // Balance section rows (opening or closing) — drill-down if multiple accounts
   function balRows(key, label, total, accounts) {
@@ -312,6 +322,22 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
 
   return (
     <div>
+      {allGroupKeys.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            onClick={() => setExpanded(allExpanded ? new Set() : new Set(allGroupKeys))}
+            style={{
+              fontSize: 12, padding: '4px 14px', borderRadius: 6,
+              border: '1px solid var(--card-border)', background: 'var(--card-bg)',
+              cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            {allExpanded
+              ? <><ChevronDown size={13} /> Collapse All</>
+              : <><ChevronRight size={13} /> Expand All</>}
+          </button>
+        </div>
+      )}
       <RPTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={data.openingBalance + data.totalReceipts}
