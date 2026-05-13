@@ -19,28 +19,14 @@ function fyEndDate(fy) {
   return `31st March ${endYear}`
 }
 
-/* Account-type display order and colours */
 const TYPE_ORDER = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 const TYPE_META  = {
-  Asset:     { label: 'Assets',      hdrBg: '#eff6ff', hdrText: '#1d4ed8', bar: '#2563eb' },
-  Liability: { label: 'Liabilities', hdrBg: '#fff1f2', hdrText: '#be123c', bar: '#e11d48' },
-  Equity:    { label: 'Corpus / Equity', hdrBg: '#f0fdf4', hdrText: '#15803d', bar: '#16a34a' },
-  Income:    { label: 'Income',      hdrBg: '#f0fdf4', hdrText: '#15803d', bar: '#16a34a' },
-  Expense:   { label: 'Expenditure', hdrBg: '#fff7ed', hdrText: '#c2410c', bar: '#f97316' },
+  Asset:     { label: 'Assets',          hdrBg: '#dbeafe', hdrText: '#1e40af', bar: '#2563eb', subtBg: '#eff6ff' },
+  Liability: { label: 'Liabilities',     hdrBg: '#fee2e2', hdrText: '#991b1b', bar: '#dc2626', subtBg: '#fff1f2' },
+  Equity:    { label: 'Corpus / Equity', hdrBg: '#dcfce7', hdrText: '#166534', bar: '#16a34a', subtBg: '#f0fdf4' },
+  Income:    { label: 'Income',          hdrBg: '#dcfce7', hdrText: '#166534', bar: '#16a34a', subtBg: '#f0fdf4' },
+  Expense:   { label: 'Expenditure',     hdrBg: '#ffedd5', hdrText: '#9a3412', bar: '#ea580c', subtBg: '#fff7ed' },
 }
-
-const TH = {
-  padding: '10px 14px',
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-  color: 'var(--text-3)',
-  background: 'var(--table-header-bg)',
-  borderBottom: '2px solid var(--card-border)',
-  whiteSpace: 'nowrap',
-}
-const TD = { padding: '8px 14px', fontSize: 13, borderBottom: '1px solid var(--card-border)' }
 
 export default function TrialBalancePage() {
   const navigate = useNavigate()
@@ -84,14 +70,14 @@ export default function TrialBalancePage() {
     TYPE_ORDER.forEach(type => {
       const group = display.filter(r => r.account_type === type)
       if (!group.length) return
-      exRows.push({ sno: '', name: `── ${displayAccountType(type).toUpperCase()} ──`, type: '', debit: '', credit: '' })
+      exRows.push({ sno: '', name: `── ${TYPE_META[type].label.toUpperCase()} ──`, type: '', debit: '', credit: '' })
       group.forEach(r => {
         sno++
         exRows.push({ sno, name: r.name, type: displayAccountType(type), debit: r.total_debit || '', credit: r.total_credit || '' })
       })
       const sd = group.reduce((s, r) => s + r.total_debit,  0)
       const sc = group.reduce((s, r) => s + r.total_credit, 0)
-      exRows.push({ sno: '', name: `Sub-Total (${displayAccountType(type)})`, type: '', debit: sd || '', credit: sc || '' })
+      exRows.push({ sno: '', name: `Sub-Total (${TYPE_META[type].label})`, type: '', debit: sd || '', credit: sc || '' })
     })
     exRows.push({ sno: '', name: 'GRAND TOTAL', type: '', debit: totalDebit, credit: totalCredit })
     exportToExcel(cols, exRows, `Trial Balance FY ${fy}`, `TrialBalance_${fy}.xlsx`)
@@ -101,8 +87,8 @@ export default function TrialBalancePage() {
   return (
     <div className="page-container">
 
-      {/* Page header */}
-      <div className="page-header">
+      {/* Page header — hidden when printing */}
+      <div className="page-header no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => navigate('/accounting')}
@@ -115,7 +101,7 @@ export default function TrialBalancePage() {
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Scale size={20} style={{ color: 'var(--accent)' }} /> Trial Balance
             </h1>
-            <p className="page-subtitle">Verify total debits equal total credits — Indian format</p>
+            <p className="page-subtitle">Verify total debits equal total credits</p>
           </div>
         </div>
         {generated && (
@@ -132,8 +118,8 @@ export default function TrialBalancePage() {
         )}
       </div>
 
-      {/* Controls bar */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      {/* Controls — hidden when printing */}
+      <div className="card no-print" style={{ padding: '14px 18px', marginBottom: 24, display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
           <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Financial Year</label>
           <button onClick={() => setFyOpen(o => !o)}
@@ -185,8 +171,8 @@ export default function TrialBalancePage() {
       {/* ── Report ──────────────────────────────────────────────── */}
       {generated && !loading && (
         <>
-          {/* Balance status banner */}
-          <div style={{
+          {/* Balance status banner — hidden when printing (agreement shown in tfoot) */}
+          <div className="no-print" style={{
             display: 'flex', alignItems: 'center', gap: 12,
             padding: '14px 20px', marginBottom: 20, borderRadius: 10,
             background: balanced ? '#f0fdf4' : '#fff1f2',
@@ -218,148 +204,161 @@ export default function TrialBalancePage() {
             </div>
           </div>
 
-          {/* ── Report card ──────────────────────────────────────── */}
-          <div className="card" style={{ overflow: 'hidden' }}>
+          {/* ── Report card (the only thing that prints) ─────────── */}
+          <div id="tb-print-area" className="card" style={{ overflow: 'visible' }}>
 
-            {/* ── Indian-style report header ─────────────────────── */}
-            <div style={{ padding: '22px 28px 16px', textAlign: 'center', borderBottom: '2px solid var(--card-border)', background: 'var(--card-header-bg)' }}>
-              <p style={{ margin: '0 0 2px', fontSize: 18, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--text-1)' }}>
+            {/* Indian-style report header */}
+            <div style={{
+              padding: '20px 28px 14px',
+              textAlign: 'center',
+              borderBottom: '2px solid #d1d5db',
+              background: '#f9fafb',
+            }}>
+              <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#111827' }}>
                 {church?.church_name || 'Church Name'}
               </p>
               {(church?.address || church?.city) && (
-                <p style={{ margin: '0 0 1px', fontSize: 12, color: 'var(--text-2)' }}>
+                <p style={{ margin: '0 0 1px', fontSize: 12, color: '#4b5563' }}>
                   {[church.address, church.city].filter(Boolean).join(', ')}
                 </p>
               )}
               {church?.diocese && (
-                <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--text-3)' }}>{church.diocese}</p>
+                <p style={{ margin: '0 0 10px', fontSize: 11, color: '#6b7280' }}>{church.diocese}</p>
               )}
-              <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--text-1)', borderTop: '1px solid var(--card-border)', paddingTop: 10 }}>
-                Trial Balance
-              </p>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
-                For the Financial Year {fy} &nbsp;·&nbsp; As on {fyEndDate(fy)}
-              </p>
-              <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text-3)' }}>
-                (All amounts in ₹)
-              </p>
+              <div style={{ borderTop: '1px solid #d1d5db', marginTop: 8, paddingTop: 10 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', color: '#111827' }}>
+                  Trial Balance
+                </p>
+                <p style={{ margin: '0 0 3px', fontSize: 12, color: '#4b5563' }}>
+                  For the Financial Year {fy} &nbsp;·&nbsp; As on {fyEndDate(fy)}
+                </p>
+                <p style={{ margin: 0, fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>
+                  (All amounts in Indian Rupees — ₹)
+                </p>
+              </div>
             </div>
 
             {/* ── Table ─────────────────────────────────────────── */}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ ...TH, textAlign: 'center', width: 56 }}>S.No.</th>
-                    <th style={{ ...TH, textAlign: 'left' }}>Name of Account</th>
-                    <th style={{ ...TH, textAlign: 'right', width: 170 }}>
-                      <span style={{ color: '#2563eb' }}>Debit</span>
-                      <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 400, marginLeft: 4 }}>(₹)</span>
-                    </th>
-                    <th style={{ ...TH, textAlign: 'right', width: 170 }}>
-                      <span style={{ color: '#16a34a' }}>Credit</span>
-                      <span style={{ color: 'var(--text-3)', fontSize: 10, fontWeight: 400, marginLeft: 4 }}>(₹)</span>
-                    </th>
-                  </tr>
-                </thead>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#1e293b' }}>
+                  <th style={{ padding: '11px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f1f5f9', textAlign: 'center', width: 60, borderRight: '1px solid #334155' }}>
+                    S.No.
+                  </th>
+                  <th style={{ padding: '11px 18px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#f1f5f9', textAlign: 'left', borderRight: '1px solid #334155' }}>
+                    Name of Account
+                  </th>
+                  <th style={{ padding: '11px 18px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#93c5fd', textAlign: 'right', width: 180, borderRight: '1px solid #334155' }}>
+                    Debit (₹)
+                  </th>
+                  <th style={{ padding: '11px 18px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#86efac', textAlign: 'right', width: 180 }}>
+                    Credit (₹)
+                  </th>
+                </tr>
+              </thead>
 
-                <tbody>
-                  {(() => {
-                    let sno = 0
-                    const sections = []
+              <tbody>
+                {(() => {
+                  let sno = 0
+                  const sections = []
+                  let isFirst = true
 
-                    TYPE_ORDER.forEach(type => {
-                      const group = display.filter(r => r.account_type === type)
-                      if (!group.length) return
-                      const meta = TYPE_META[type]
-                      const subDebit  = group.reduce((s, r) => s + r.total_debit,  0)
-                      const subCredit = group.reduce((s, r) => s + r.total_credit, 0)
+                  TYPE_ORDER.forEach(type => {
+                    const group = display.filter(r => r.account_type === type)
+                    if (!group.length) return
+                    const meta     = TYPE_META[type]
+                    const subDebit  = group.reduce((s, r) => s + r.total_debit,  0)
+                    const subCredit = group.reduce((s, r) => s + r.total_credit, 0)
 
-                      /* Group header row */
+                    /* Group header row */
+                    sections.push(
+                      <tr key={`hdr-${type}`} style={{ background: meta.hdrBg, borderTop: isFirst ? 'none' : '2px solid #d1d5db' }}>
+                        <td colSpan={4} style={{ padding: '9px 18px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: meta.hdrText }}>
+                          <span style={{ display: 'inline-block', width: 4, height: 14, borderRadius: 2, background: meta.bar, marginRight: 10, verticalAlign: 'middle' }} />
+                          {meta.label}
+                        </td>
+                      </tr>
+                    )
+                    isFirst = false
+
+                    /* Account rows */
+                    group.forEach((r, i) => {
+                      sno++
                       sections.push(
-                        <tr key={`hdr-${type}`}>
-                          <td colSpan={4} style={{
-                            padding: '9px 14px', fontSize: 11, fontWeight: 800,
-                            textTransform: 'uppercase', letterSpacing: '0.1em',
-                            background: meta.hdrBg, color: meta.hdrText,
-                            borderBottom: '1px solid var(--card-border)',
-                            borderTop: sections.length ? '2px solid var(--card-border)' : 'none',
-                          }}>
-                            <span style={{ display: 'inline-block', width: 3, height: 12, borderRadius: 2, background: meta.bar, marginRight: 10, verticalAlign: 'middle' }} />
-                            {meta.label}
+                        <tr key={r.id} style={{ background: i % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
+                          <td style={{ padding: '9px 14px', textAlign: 'center', color: '#6b7280', fontSize: 12, fontFamily: 'monospace', borderRight: '1px solid #e5e7eb' }}>
+                            {sno}
                           </td>
-                        </tr>
-                      )
-
-                      /* Account rows */
-                      group.forEach((r, i) => {
-                        sno++
-                        sections.push(
-                          <tr key={r.id} style={{ background: i % 2 === 1 ? 'rgba(0,0,0,0.013)' : 'transparent' }}>
-                            <td style={{ ...TD, textAlign: 'center', color: 'var(--text-3)', fontSize: 12, fontFamily: 'monospace' }}>{sno}</td>
-                            <td style={{ ...TD, color: 'var(--text-1)', paddingLeft: 28 }}>{r.name}</td>
-                            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', color: r.total_debit > 0 ? '#1d4ed8' : 'var(--text-3)', fontWeight: r.total_debit > 0 ? 600 : 400 }}>
-                              {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}
-                            </td>
-                            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', color: r.total_credit > 0 ? '#15803d' : 'var(--text-3)', fontWeight: r.total_credit > 0 ? 600 : 400 }}>
-                              {r.total_credit > 0 ? fmtAmt(r.total_credit) : '—'}
-                            </td>
-                          </tr>
-                        )
-                      })
-
-                      /* Sub-total row */
-                      sections.push(
-                        <tr key={`sub-${type}`} style={{ background: meta.hdrBg + '88' }}>
-                          <td style={{ ...TD, borderTop: '1px solid var(--card-border)' }} />
-                          <td style={{ ...TD, fontSize: 12, fontStyle: 'italic', fontWeight: 700, color: meta.hdrText, borderTop: '1px solid var(--card-border)', paddingLeft: 28 }}>
-                            Sub-Total — {meta.label}
+                          <td style={{ padding: '9px 18px', color: '#111827', fontSize: 13, borderRight: '1px solid #e5e7eb' }}>
+                            {r.name}
                           </td>
-                          <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#1d4ed8', borderTop: '1px solid var(--card-border)' }}>
-                            {subDebit > 0 ? fmtAmt(subDebit) : '—'}
+                          <td style={{ padding: '9px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: r.total_debit > 0 ? '#1d4ed8' : '#9ca3af', fontWeight: r.total_debit > 0 ? 600 : 400, borderRight: '1px solid #e5e7eb' }}>
+                            {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}
                           </td>
-                          <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#15803d', borderTop: '1px solid var(--card-border)' }}>
-                            {subCredit > 0 ? fmtAmt(subCredit) : '—'}
+                          <td style={{ padding: '9px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: r.total_credit > 0 ? '#15803d' : '#9ca3af', fontWeight: r.total_credit > 0 ? 600 : 400 }}>
+                            {r.total_credit > 0 ? fmtAmt(r.total_credit) : '—'}
                           </td>
                         </tr>
                       )
                     })
 
-                    return sections
-                  })()}
-                </tbody>
+                    /* Sub-total row */
+                    sections.push(
+                      <tr key={`sub-${type}`} style={{ background: meta.subtBg, borderTop: '1px solid #d1d5db', borderBottom: '1px solid #d1d5db' }}>
+                        <td style={{ padding: '8px 14px', borderRight: '1px solid #d1d5db' }} />
+                        <td style={{ padding: '8px 18px', fontSize: 12, fontStyle: 'italic', fontWeight: 700, color: meta.hdrText, borderRight: '1px solid #d1d5db' }}>
+                          Sub-Total — {meta.label}
+                        </td>
+                        <td style={{ padding: '8px 18px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#1d4ed8', fontSize: 13, borderRight: '1px solid #d1d5db' }}>
+                          {subDebit > 0 ? fmtAmt(subDebit) : '—'}
+                        </td>
+                        <td style={{ padding: '8px 18px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#15803d', fontSize: 13 }}>
+                          {subCredit > 0 ? fmtAmt(subCredit) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
 
-                {/* Grand total */}
-                <tfoot>
-                  <tr style={{ background: 'var(--table-header-bg)', borderTop: '3px double var(--card-border)' }}>
-                    <td style={{ padding: '13px 14px' }} />
-                    <td style={{ padding: '13px 14px 13px 28px', fontSize: 14, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-1)' }}>
-                      Grand Total
-                    </td>
-                    <td style={{ padding: '13px 14px', textAlign: 'right', fontFamily: 'monospace', fontSize: 15, fontWeight: 900, color: '#1d4ed8' }}>
-                      {fmtAmt(totalDebit)}
-                    </td>
-                    <td style={{ padding: '13px 14px', textAlign: 'right', fontFamily: 'monospace', fontSize: 15, fontWeight: 900, color: '#15803d' }}>
-                      {fmtAmt(totalCredit)}
+                  return sections
+                })()}
+              </tbody>
+
+              {/* Grand Total */}
+              <tfoot>
+                <tr style={{ background: '#1e293b', borderTop: '3px double #6b7280' }}>
+                  <td style={{ padding: '13px 14px', borderRight: '1px solid #334155' }} />
+                  <td style={{ padding: '13px 18px', fontSize: 14, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#f1f5f9', borderRight: '1px solid #334155' }}>
+                    Grand Total
+                  </td>
+                  <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 15, fontWeight: 900, color: '#93c5fd', borderRight: '1px solid #334155' }}>
+                    {fmtAmt(totalDebit)}
+                  </td>
+                  <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'monospace', fontSize: 15, fontWeight: 900, color: '#86efac' }}>
+                    {fmtAmt(totalCredit)}
+                  </td>
+                </tr>
+                {balanced ? (
+                  <tr style={{ background: '#f0fdf4' }}>
+                    <td colSpan={4} style={{ padding: '9px 28px', fontSize: 12, fontWeight: 700, color: '#15803d', textAlign: 'center', borderTop: '1px solid #86efac' }}>
+                      ✓ &nbsp; Trial Balance Agrees &nbsp;—&nbsp; Total Debits = Total Credits = {fmtAmt(totalDebit)}
                     </td>
                   </tr>
-                  {balanced && (
-                    <tr style={{ background: '#f0fdf4' }}>
-                      <td colSpan={4} style={{ padding: '9px 28px', fontSize: 12, fontWeight: 700, color: '#15803d', textAlign: 'center', borderTop: '1px solid #86efac' }}>
-                        ✓ &nbsp; Trial Balance Agrees &nbsp;—&nbsp; Total Debits = Total Credits = {fmtAmt(totalDebit)}
-                      </td>
-                    </tr>
-                  )}
-                </tfoot>
-              </table>
-            </div>
+                ) : (
+                  <tr style={{ background: '#fff1f2' }}>
+                    <td colSpan={4} style={{ padding: '9px 28px', fontSize: 12, fontWeight: 700, color: '#b91c1c', textAlign: 'center', borderTop: '1px solid #fca5a5' }}>
+                      ✗ &nbsp; Trial Balance Disagrees &nbsp;—&nbsp; Difference of {fmtAmt(Math.abs(totalDebit - totalCredit))}
+                    </td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
 
             {/* Footer note */}
-            <div style={{ padding: '10px 20px', borderTop: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', background: 'var(--card-header-bg)' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-3)', fontStyle: 'italic' }}>
+            <div style={{ padding: '10px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', background: '#f9fafb' }}>
+              <span style={{ fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>
                 Note: Amounts shown in Indian Rupee (₹). Prepared on computer.
               </span>
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <span style={{ fontSize: 11, color: '#6b7280' }}>
                 {display.length} account{display.length !== 1 ? 's' : ''}
               </span>
             </div>

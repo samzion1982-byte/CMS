@@ -1030,11 +1030,13 @@ td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
    ═══════════════════════════════════════════════════════════════ */
 
 @media print {
-  @page { size: A4 landscape; margin: 1cm 1.5cm; }
+  @page { size: A4 portrait; margin: 1cm 1.5cm; }
   .no-print   { display: none !important; }
   .card       { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; border-radius: 0 !important; }
   body        { background: white; padding: 0; margin: 0; color: #000; }
   .app-main   { margin: 0 !important; padding: 0 !important; }
+
+  /* Financial Statements print area */
   #financial-print-area {
     border: none !important; border-radius: 0 !important; box-shadow: none !important;
     padding: 8px !important; background: #fff !important;
@@ -1045,6 +1047,19 @@ td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
   #financial-print-area th    { font-size: 9px  !important; padding: 5px 8px !important; border: 0.5px solid #ccc !important; }
   #financial-print-area td    { font-size: 11px !important; padding: 5px 8px !important; }
   #financial-print-area tr    { page-break-inside: avoid; }
+
+  /* Trial Balance print area */
+  #tb-print-area {
+    border: none !important; border-radius: 0 !important; box-shadow: none !important;
+    background: #fff !important; width: 100% !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #tb-print-area table  { border-collapse: collapse !important; width: 100% !important; }
+  #tb-print-area thead  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #tb-print-area tfoot  { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #tb-print-area tbody tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; page-break-inside: avoid; }
+  #tb-print-area th     { font-size: 9px  !important; padding: 5px 8px !important; }
+  #tb-print-area td     { font-size: 10px !important; padding: 5px 8px !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
