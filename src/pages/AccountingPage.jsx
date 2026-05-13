@@ -22,26 +22,104 @@ import {
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
-// ── Stat Card ────────────────────────────────────────────────────
+// ── Balance Bar (Cash | Bank | Total) ────────────────────────────
 
-function StatCard({ icon: Icon, label, value, sub, iconBg, iconColor, loading, trend }) {
-  return (
-    <div className="card" style={{ padding: '16px 16px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={15} color={iconColor} />
+function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading }) {
+  const [expanded, setExpanded] = useState(null)
+  const totalFunds = cashTotal + bankTotal
+
+  function Section({ id, label, total, color, bg, Icon, accounts, last }) {
+    const expandable = accounts.length > 0 && !loading
+    return (
+      <div
+        onClick={() => expandable && setExpanded(e => e === id ? null : id)}
+        style={{
+          flex: 1, padding: '16px 22px',
+          borderRight: last ? 'none' : '1px solid var(--card-border)',
+          background: last ? 'var(--card-header-bg)' : 'transparent',
+          cursor: expandable ? 'pointer' : 'default',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon size={13} color={color} />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>{label}</span>
+          {expandable && (
+            <ChevronDown size={12} color="var(--text-3)"
+              style={{ transform: expanded === id ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
+          )}
         </div>
-        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: 0, lineHeight: 1.3, flex: 1 }}>{label}</p>
-        {trend !== undefined && !loading && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: trend >= 0 ? '#16a34a' : '#dc2626', display: 'flex', alignItems: 'center', gap: 2 }}>
-            {trend >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-          </span>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
+          : <p style={{ fontSize: 24, fontWeight: 900, color, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(total)}</p>
+        }
+        {!last && !loading && accounts.length === 0 && (
+          <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
+        )}
+        {expanded === id && !loading && accounts.length > 0 && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {accounts.map(a => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-2)' }}>{a.name}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: a.balance >= 0 ? color : '#b91c1c', fontFamily: 'monospace' }}>{fmtAmt(a.balance)}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-      <p style={{ fontSize: 19, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.1, margin: '0 0 4px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {loading ? <span className="loading-skeleton" style={{ display: 'inline-block', width: 80, height: 20, borderRadius: 5 }} /> : (value ?? '—')}
-      </p>
-      <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{loading ? '' : sub}</p>
+    )
+  }
+
+  return (
+    <div className="card" style={{ display: 'flex', marginBottom: 14, overflow: 'hidden' }}>
+      <Section id="cash"  label="Cash & Petty Cash" total={cashTotal}  color="#16a34a" bg="#dcfce7" Icon={Wallet}      accounts={cashAccounts}  last={false} />
+      <Section id="bank"  label="Bank Accounts"      total={bankTotal}  color="#2563eb" bg="#dbeafe" Icon={Building2}   accounts={bankAccounts}  last={false} />
+      <Section id="total" label="Total Funds"         total={totalFunds} color="#7c3aed" bg="#f3e8ff" Icon={IndianRupee} accounts={[]}            last={true}  />
+    </div>
+  )
+}
+
+// ── Metrics Bar (Income | Expenses | Surplus) ─────────────────────
+
+function MetricsBar({ totalIncome, totalExpenses, netIncome, fy, loading }) {
+  const surplus = !loading && netIncome >= 0
+  const surplusColor = surplus ? '#16a34a' : '#dc2626'
+  return (
+    <div className="card" style={{ display: 'flex', marginBottom: 24, overflow: 'hidden' }}>
+      <div style={{ flex: 1, padding: '14px 22px', borderRight: '1px solid var(--card-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+          <TrendingUp size={13} color="#16a34a" />
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>Total Income</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>FY {fy}</span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
+          : <p style={{ fontSize: 22, fontWeight: 900, color: '#16a34a', margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(totalIncome)}</p>
+        }
+      </div>
+      <div style={{ flex: 1, padding: '14px 22px', borderRight: '1px solid var(--card-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+          <TrendingDown size={13} color="#c2410c" />
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)' }}>Total Expenses</span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
+          : <p style={{ fontSize: 22, fontWeight: 900, color: '#c2410c', margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(totalExpenses)}</p>
+        }
+      </div>
+      <div style={{ flex: 1, padding: '14px 22px', background: loading ? 'transparent' : surplus ? '#f0fdf4' : '#fff1f2' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+          <Scale size={13} color={loading ? 'var(--text-3)' : surplusColor} />
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)' }}>
+            {loading ? 'Surplus / Deficit' : surplus ? 'Surplus' : 'Deficit'}
+          </span>
+        </div>
+        {loading
+          ? <div className="loading-skeleton" style={{ height: 24, borderRadius: 5, width: '60%' }} />
+          : <p style={{ fontSize: 22, fontWeight: 900, color: surplusColor, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>{fmtAmt(Math.abs(netIncome))}</p>
+        }
+      </div>
     </div>
   )
 }
@@ -110,49 +188,6 @@ function TypeSummaryCard({ type, count, loading }) {
   )
 }
 
-// ── Cash / Bank Balance Card ──────────────────────────────────────
-
-function CashBankCard({ label, accounts, total, color, bg, icon: Icon, loading }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasAccounts = accounts.length > 0 && !loading
-  return (
-    <div className="card" style={{ padding: '20px 22px', flex: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon size={15} color={color} />
-        </div>
-        <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0, flex: 1 }}>{label}</p>
-        {hasAccounts && (
-          <button onClick={() => setExpanded(e => !e)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', alignItems: 'center', padding: 2 }}>
-            <ChevronDown size={14} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-          </button>
-        )}
-      </div>
-      {loading
-        ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '60%' }} />
-        : <p style={{ fontSize: 26, fontWeight: 900, color, margin: 0, fontFamily: 'monospace', lineHeight: 1 }}>
-            {fmtAmt(total)}
-          </p>
-      }
-      {hasAccounts && expanded && (
-        <div style={{ borderTop: '1px solid var(--card-border)', marginTop: 12, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {accounts.map(a => (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{a.name}</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: a.balance >= 0 ? color : '#b91c1c', fontFamily: 'monospace' }}>
-                {fmtAmt(a.balance)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      {accounts.length === 0 && !loading && (
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0', fontStyle: 'italic' }}>No accounts set up</p>
-      )}
-    </div>
-  )
-}
 
 const MASTER_PASSWORD = 'Master007))&'
 
@@ -547,59 +582,23 @@ export default function AccountingPage() {
         </div>
       )}
 
-      {/* ── Cash & Bank Balances ────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
-        <CashBankCard
-          label="Cash & Petty Cash"
-          accounts={L ? [] : (stats?.cashAccounts || [])}
-          total={L ? 0 : (stats?.cashTotal || 0)}
-          color="#16a34a" bg="#dcfce7"
-          icon={Wallet}
-          loading={L}
-        />
-        <CashBankCard
-          label="Bank Accounts"
-          accounts={L ? [] : (stats?.bankAccounts || [])}
-          total={L ? 0 : (stats?.bankTotal || 0)}
-          color="#2563eb" bg="#dbeafe"
-          icon={Building2}
-          loading={L}
-        />
-        {/* Total funds summary */}
-        <div className="card" style={{ padding: '20px 22px', minWidth: 200, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <IndianRupee size={15} color="#7c3aed" />
-            </div>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: 0 }}>Total Funds</p>
-          </div>
-          {L
-            ? <div className="loading-skeleton" style={{ height: 32, borderRadius: 6, width: '70%', marginBottom: 12 }} />
-            : <p style={{ fontSize: 26, fontWeight: 900, color: '#7c3aed', margin: '0 0 12px', fontFamily: 'monospace', lineHeight: 1 }}>
-                {fmtAmt((stats?.cashTotal || 0) + (stats?.bankTotal || 0))}
-              </p>
-          }
-          {!L && (
-            <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Cash</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', fontFamily: 'monospace' }}>{fmtAmt(stats?.cashTotal || 0)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Bank</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', fontFamily: 'monospace' }}>{fmtAmt(stats?.bankTotal || 0)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* ── Balance bar (Cash | Bank | Total) ───────────────────── */}
+      <BalanceBar
+        cashAccounts={L ? [] : (stats?.cashAccounts || [])}
+        bankAccounts={L ? [] : (stats?.bankAccounts || [])}
+        cashTotal={L ? 0 : (stats?.cashTotal || 0)}
+        bankTotal={L ? 0 : (stats?.bankTotal || 0)}
+        loading={L}
+      />
 
-      {/* ── Income / Expenses / Surplus ─────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 24 }}>
-        <StatCard icon={TrendingUp}  label="Total Income"     value={L ? null : fmtAmt(stats?.totalIncome)}   sub={`FY ${fy}`}               iconBg="#dcfce7" iconColor="#16a34a" loading={L} />
-        <StatCard icon={TrendingDown}label="Total Expenses"   value={L ? null : fmtAmt(stats?.totalExpenses)} sub={`FY ${fy}`}               iconBg="#fff7ed" iconColor="#c2410c" loading={L} />
-        <StatCard icon={Scale}       label="Surplus / Deficit" value={L ? null : fmtAmt(stats?.netIncome)}     sub="Income minus Expenditure" iconBg="#f3e8ff" iconColor="#7c3aed" loading={L} trend={L ? undefined : stats?.netIncome} />
-      </div>
+      {/* ── Metrics bar (Income | Expenses | Surplus) ───────────── */}
+      <MetricsBar
+        totalIncome={stats?.totalIncome || 0}
+        totalExpenses={stats?.totalExpenses || 0}
+        netIncome={stats?.netIncome || 0}
+        fy={fy}
+        loading={L}
+      />
 
       {/* ── Main 2-col layout ───────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, marginBottom: 24 }}>
