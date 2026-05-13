@@ -1,27 +1,28 @@
 import { getFY, fyDateRange } from '../../lib/accountingLib'
 
-const today     = () => new Date().toISOString().slice(0, 10)
-const isoDate   = d => d.toISOString().slice(0, 10)
+// toISOString() returns UTC which shifts dates for UTC+ timezones — use local fields instead
+const localISO  = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const today     = () => localISO(new Date())
 
 function presets() {
   const now  = new Date()
   const fy   = getFY()
   const { from: fyFrom, to: fyTo } = fyDateRange(fy)
 
-  const thisMonthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1))
-  const thisMonthEnd   = isoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  const thisMonthStart = localISO(new Date(now.getFullYear(), now.getMonth(), 1))
+  const thisMonthEnd   = localISO(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 
-  const lastMonthStart = isoDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
-  const lastMonthEnd   = isoDate(new Date(now.getFullYear(), now.getMonth(), 0))
+  const lastMonthStart = localISO(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+  const lastMonthEnd   = localISO(new Date(now.getFullYear(), now.getMonth(), 0))
 
   // Current quarter (Apr-Jun / Jul-Sep / Oct-Dec / Jan-Mar)
   const fyStartYear = parseInt(fy.split('-')[0])
   const fyStartMonth = 3 // 0-based = April
   const monthsIntoFY = (now.getMonth() - fyStartMonth + 12) % 12
   const qtr = Math.floor(monthsIntoFY / 3)
-  const qStart = isoDate(new Date(fyStartYear + (qtr >= 3 ? 1 : 0), fyStartMonth + qtr * 3, 1))
+  const qStart = localISO(new Date(fyStartYear + (qtr >= 3 ? 1 : 0), fyStartMonth + qtr * 3, 1))
   // end of quarter
-  const qEnd = isoDate(new Date(fyStartYear + (qtr >= 3 ? 1 : 0), fyStartMonth + qtr * 3 + 3, 0))
+  const qEnd = localISO(new Date(fyStartYear + (qtr >= 3 ? 1 : 0), fyStartMonth + qtr * 3 + 3, 0))
 
   return [
     { label: 'This Month',    from: thisMonthStart, to: thisMonthEnd },
