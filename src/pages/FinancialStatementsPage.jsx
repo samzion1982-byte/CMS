@@ -140,6 +140,75 @@ function CellPair({ cell, navigate, dateFrom, dateTo }) {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  R&P Table — 6-column layout with inner / outer amount columns
+// ════════════════════════════════════════════════════════════════
+
+function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightLabel, navigate, dateFrom, dateTo }) {
+  function renderSide(cell, isRight) {
+    const borderL = isRight ? '2px solid var(--card-border)' : 'none'
+    if (!cell) return <><td style={{ borderLeft: borderL }} /><td /><td /></>
+    const clickable = !!(cell.accountId && navigate) && !cell.isGroup
+    const isGroup   = !!cell.isGroup
+    function handleClick() {
+      if (isGroup) { cell.onToggle?.(); return }
+      if (clickable) navigate(`/accounting/ledger?accountId=${cell.accountId}&from=${dateFrom}&to=${dateTo}`)
+    }
+    const pl = cell.indent2 ? 52 : cell.indent ? 32 : 14
+    return (
+      <>
+        <td style={{ ...TD, borderLeft: borderL, fontWeight: cell.bold ? 700 : 400, paddingLeft: pl, color: cell.muted ? 'var(--text-3)' : 'var(--text-1)', fontStyle: cell.italic ? 'italic' : 'normal', cursor: (isGroup || clickable) ? 'pointer' : 'default' }} onClick={handleClick}>
+          {isGroup && <ChevronRight size={12} style={{ marginRight: 4, display: 'inline-block', verticalAlign: 'middle', color: 'var(--text-3)', transform: cell.isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />}
+          {cell.label || ''}
+          {clickable && <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />}
+        </td>
+        <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', width: 120, color: 'var(--text-2)', fontWeight: cell.bold ? 600 : 400 }}>
+          {cell.inner !== undefined ? fmtAmt(cell.inner) : ''}
+        </td>
+        <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', width: 140, fontWeight: 700 }}>
+          {cell.outer !== undefined ? fmtAmt(cell.outer) : ''}
+        </td>
+      </>
+    )
+  }
+
+  const maxLen = Math.max(leftRows.length, rightRows.length)
+  return (
+    <div style={{ border: '1.5px solid var(--card-border)', borderRadius: 10, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead style={{ background: 'var(--table-header-bg)' }}>
+          <tr>
+            <th style={TH}>{leftLabel}</th>
+            <th style={{ ...TH, width: 120, textAlign: 'right', opacity: 0.5 }}></th>
+            <th style={{ ...TH, width: 140, textAlign: 'right' }}>Amount</th>
+            <th style={{ ...TH, borderLeft: '2px solid var(--card-border)' }}>{rightLabel}</th>
+            <th style={{ ...TH, width: 120, textAlign: 'right', opacity: 0.5 }}></th>
+            <th style={{ ...TH, width: 140, textAlign: 'right' }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: maxLen }, (_, i) => (
+            <tr key={i} style={{ background: i % 2 === 1 ? 'var(--table-alt-bg, #f9fafb)' : 'transparent' }}>
+              {renderSide(leftRows[i] || null, false)}
+              {renderSide(rightRows[i] || null, true)}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
+            <td style={{ ...TD, fontWeight: 800 }}>TOTAL</td>
+            <td />
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(leftTotal)}</td>
+            <td style={{ ...TD, fontWeight: 800, borderLeft: '2px solid var(--card-border)' }}>TOTAL</td>
+            <td />
+            <td style={{ ...TD, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800 }}>{fmtAmt(rightTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
 //  Receipts & Payments Account
 // ════════════════════════════════════════════════════════════════
 
@@ -149,49 +218,69 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
     setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
 
-  const cashAccts = data.cashAccounts || []
-  const bankAccts = data.bankAccounts || []
+  const cashAccts   = data.cashAccounts   || []
+  const bankAccts   = data.bankAccounts   || []
+  const cashAcctsOB = data.cashAccountsOB || []
+  const bankAcctsOB = data.bankAccountsOB || []
 
-  function balanceGroupRows(key, label, total, accounts) {
+  // Balance section rows (opening or closing) — drill-down if multiple accounts
+  function balRows(key, label, total, accounts) {
     if (accounts.length <= 1) {
       const name = accounts.length === 1 ? accounts[0].name : label
-      return [{ label: name, amount: total, indent: true }]
+      return [{ label: name, inner: total, indent: true, accountId: accounts[0]?.id }]
     }
     const isExp = expanded.has(key)
+    if (!isExp) return [{ label, outer: total, indent: true, isGroup: true, isExpanded: false, onToggle: () => toggle(key) }]
     return [
-      { label, amount: total, indent: true, isGroup: true, isExpanded: isExp, onToggle: () => toggle(key) },
-      ...(isExp ? accounts.map(a => ({ label: a.name, amount: a.balance, indent2: true, accountId: a.id })) : []),
+      { label, indent: true, isGroup: true, isExpanded: true, onToggle: () => toggle(key) },
+      ...accounts.map(a => ({ label: a.name, inner: a.balance, indent2: true, accountId: a.id })),
+      { label: `Total ${label}`, outer: total, indent: true, bold: true },
+    ]
+  }
+
+  // Receipt/payment group rows — drill-down when multiple child accounts
+  function grpRows(prefix, item) {
+    if (item.children.length === 0) {
+      return [{ label: item.name, inner: item.amount, indent: true, accountId: item.accountId }]
+    }
+    const key = prefix + item.name
+    const isExp = expanded.has(key)
+    if (!isExp) return [{ label: item.name, outer: item.amount, indent: true, isGroup: true, isExpanded: false, onToggle: () => toggle(key) }]
+    return [
+      { label: item.name, indent: true, isGroup: true, isExpanded: true, onToggle: () => toggle(key) },
+      ...item.children.map(c => ({ label: c.name, inner: c.amount, indent2: true, accountId: c.accountId })),
+      { label: `Total ${item.name}`, outer: item.amount, indent: true, bold: true },
     ]
   }
 
   const leftRows = [
     { label: 'Opening Balance', bold: true },
-    { label: 'Cash in Hand', amount: data.cashOpeningBalance, indent: true },
-    { label: 'Cash at Bank', amount: data.bankOpeningBalance, indent: true },
-    { label: 'Total Opening', amount: data.openingBalance, bold: true },
+    ...balRows('obCash', 'Cash in Hand', data.cashOpeningBalance, cashAcctsOB),
+    ...balRows('obBank', 'Cash at Bank', data.bankOpeningBalance, bankAcctsOB),
+    { label: 'Total Opening', outer: data.openingBalance, bold: true },
     { label: '' },
     { label: 'RECEIPTS', bold: true, muted: true },
-    ...data.receipts.map(r => ({ label: r.name, amount: r.amount, indent: true })),
+    ...data.receipts.flatMap(r => grpRows('r_', r)),
     { label: '' },
-    { label: 'Total Receipts', amount: data.totalReceipts, bold: true },
+    { label: 'Total Receipts', outer: data.totalReceipts, bold: true },
   ]
 
   const rightRows = [
     { label: 'PAYMENTS', bold: true, muted: true },
     { label: '' },
-    ...data.payments.map(p => ({ label: p.name, amount: p.amount, indent: true })),
+    ...data.payments.flatMap(p => grpRows('p_', p)),
     { label: '' },
-    { label: 'Total Payments', amount: data.totalPayments, bold: true },
+    { label: 'Total Payments', outer: data.totalPayments, bold: true },
     { label: '' },
     { label: 'Closing Balance', bold: true },
-    ...balanceGroupRows('cash', 'Cash in Hand', data.cashClosingBalance, cashAccts),
-    ...balanceGroupRows('bank', 'Cash at Bank', data.bankClosingBalance, bankAccts),
-    { label: 'Total Closing', amount: data.closingBalance, bold: true },
+    ...balRows('cbCash', 'Cash in Hand', data.cashClosingBalance, cashAccts),
+    ...balRows('cbBank', 'Cash at Bank', data.bankClosingBalance, bankAccts),
+    { label: 'Total Closing', outer: data.closingBalance, bold: true },
   ]
 
   return (
     <div>
-      <TwoColTable
+      <RPTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={data.openingBalance + data.totalReceipts}
         rightTotal={data.totalPayments + data.closingBalance}
@@ -200,8 +289,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
         navigate={navigate} dateFrom={dateFrom} dateTo={dateTo}
       />
       <p style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'right', margin: '8px 0 0' }}>
-        Receipts grouped by income category · Payments grouped by expense category ·
-        Opening balance from Chart of Accounts settings
+        Receipts &amp; Payments grouped by COA hierarchy · click ▶ to expand groups · click account to view ledger
       </p>
     </div>
   )
