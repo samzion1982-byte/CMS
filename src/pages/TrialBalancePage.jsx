@@ -42,13 +42,22 @@ export default function TrialBalancePage() {
   const balanced    = Math.abs(totalDebit - totalCredit) < 0.01
 
   function doExport() {
-    const data = display.map(r => ({
-      Name: r.name, Type: r.account_type,
-      'Debit (₹)': r.total_debit > 0 ? r.total_debit : '',
-      'Credit (₹)': r.total_credit > 0 ? r.total_credit : '',
+    const cols = [
+      { header: 'Account Name', key: 'name',   align: 'left'  },
+      { header: 'Type',         key: 'type',   align: 'left'  },
+      { header: 'Level',        key: 'level',  align: 'center'},
+      { header: 'Debit (₹)',    key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',   key: 'credit', align: 'right' },
+    ]
+    const rows = display.map(r => ({
+      name:   r.name,
+      type:   r.account_type,
+      level:  r.level ? `L${r.level}` : '',
+      debit:  r.total_debit  > 0 ? r.total_debit  : '',
+      credit: r.total_credit > 0 ? r.total_credit : '',
     }))
-    data.push({ Name: 'TOTAL', Type: '', 'Debit (₹)': totalDebit, 'Credit (₹)': totalCredit })
-    exportToExcel(data, `TrialBalance_${fy}`)
+    rows.push({ name: 'TOTAL', type: '', level: '', debit: totalDebit, credit: totalCredit })
+    exportToExcel(cols, rows, `Trial Balance FY ${fy}`, `TrialBalance_${fy}.xlsx`)
   }
 
   return (

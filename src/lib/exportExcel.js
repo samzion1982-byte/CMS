@@ -7,9 +7,11 @@ const HEADER_FG  = 'FFFFFF'
 const ALT_ROW_BG = 'EEF3FA'
 const INNER_CLR  = 'C5CEE0'
 const OUTER_CLR  = '1E3A5F'
+const SECTION_BG = 'DDE6F5'
+const TOTAL_BG   = 'F0F4FB'
 
-const innerThin  = { style: 'thin',  color: { argb: INNER_CLR } }
-const outerMed   = { style: 'thick', color: { argb: OUTER_CLR } }
+const innerThin = { style: 'thin',   color: { argb: INNER_CLR } }
+const outerMed  = { style: 'medium', color: { argb: OUTER_CLR } }
 
 function cellBorder(isTop, isBottom, isLeft, isRight) {
   return {
@@ -86,5 +88,170 @@ export async function exportToExcelMultiSheet(columns, sheets, fileName) {
     const ws = wb.addWorksheet(sheet.name, { views: [{ state: 'frozen', ySplit: 1 }] })
     populateSheet(ws, columns, sheet.rows)
   }
+  downloadBuffer(await wb.xlsx.writeBuffer(), fileName)
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Two-column financial statement export (R&P, I&E, Balance Sheet)
+//
+//  Row schema for leftRows / rightRows:
+//    { label, amount?, detail?, bold?, section?, total?, indent?, indent2?, italic? }
+//  where:
+//    amount  = main right-aligned amount (outer column)
+//    detail  = secondary right-aligned amount (inner/detail column, for sub-ledger lines)
+//    section = section header row (different background)
+//    total   = grand total row
+// ─────────────────────────────────────────────────────────────────
+export async function exportTwoColumn(
+  leftRows, rightRows,
+  leftLabel, rightLabel,
+  title, fileName,
+  { leftTotal, rightTotal } = {}
+) {
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Church CMS'
+  wb.created = new Date()
+  const ws = wb.addWorksheet(title)
+
+  // 7 columns: LeftLabel | LeftDetail | LeftAmt | Spacer | RightLabel | RightDetail | RightAmt
+  ws.columns = [
+    { key: 'a', width: 40 }, // Left label
+    { key: 'b', width: 15 }, // Left detail (inner)
+    { key: 'c', width: 17 }, // Left outer amount
+    { key: 'd', width: 2  }, // Spacer
+    { key: 'e', width: 40 }, // Right label
+    { key: 'f', width: 15 }, // Right detail (inner)
+    { key: 'g', width: 17 }, // Right outer amount
+  ]
+
+  // ── Row 1: Title ───────────────────────────────────────────────
+  ws.addRow(['', '', '', '', '', '', ''])
+  ws.mergeCells('A1:G1')
+  const tc = ws.getCell('A1')
+  tc.value = title
+  tc.font      = { bold: true, size: 13, name: 'Calibri', color: { argb: HEADER_FG } }
+  tc.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+  tc.alignment = { horizontal: 'center', vertical: 'middle' }
+  tc.border    = { top: outerMed, bottom: outerMed, left: outerMed, right: outerMed }
+  ws.getRow(1).height = 28
+
+  // ── Row 2: Column headers ──────────────────────────────────────
+  ws.addRow([leftLabel, 'DETAIL', 'AMOUNT', '', rightLabel, 'DETAIL', 'AMOUNT'])
+  const hr = ws.getRow(2)
+  hr.height = 22
+  ;[1, 2, 3, 5, 6, 7].forEach(c => {
+    const cell = hr.getCell(c)
+    cell.font      = { bold: true, color: { argb: HEADER_FG }, size: 10, name: 'Calibri' }
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+    cell.alignment = { vertical: 'middle', horizontal: [2,3,6,7].includes(c) ? 'right' : 'left' }
+    cell.border    = {
+      top: outerMed, bottom: outerMed,
+      left:  c === 1 ? outerMed : innerThin,
+      right: c === 7 ? outerMed : innerThin,
+    }
+  })
+
+  // ── Data rows ──────────────────────────────────────────────────
+  const n = Math.max(leftRows.length, rightRows.length)
+
+  function styleDataRow(rowNum, l, r, isLast) {
+    const exRow = ws.getRow(rowNum)
+    exRow.height = 18
+    ;[1, 2, 3, 5, 6, 7].forEach(c => {
+      const cell   = exRow.getCell(c)
+      const isLeft = c <= 3
+      const d      = isLeft ? l : r    // row descriptor for this side
+      // Normalise: R&P uses outer/inner; I&E/BS use amount
+      const amt    = isLeft ? (l.outer ?? l.amount ?? null) : (r.outer ?? r.amount ?? null)
+      const det    = isLeft ? (l.inner ?? l.detail ?? null) : (r.inner ?? r.detail ?? null)
+
+      const isLabelCol  = c === 1 || c === 5
+      const isDetailCol = c === 2 || c === 6
+      const isAmtCol    = c === 3 || c === 7
+
+      // Font
+      cell.font = {
+        bold: !!(d.bold || d.section || d.total),
+        italic: !!d.italic,
+        size: 10,
+        name: 'Calibri',
+      }
+
+      // Fill
+      if (d.section || d.muted) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SECTION_BG } }
+      } else if (d.total) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } }
+      }
+
+      // Alignment
+      if (isLabelCol) {
+        const indent = d.indent2 ? 4 : d.indent ? 2 : 0
+        cell.alignment = { horizontal: 'left', vertical: 'middle', indent }
+      } else {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' }
+      }
+
+      // Value
+      if (isDetailCol) cell.value = (det != null && det !== '') ? Number(det) : null
+      if (isAmtCol)    cell.value = (amt != null && amt !== '') ? Number(amt) : null
+
+      // Number format
+      if ((isDetailCol || isAmtCol) && cell.value != null) {
+        cell.numFmt = '#,##0.00'
+      }
+
+      // Border — medium on outer edges, thin inside
+      cell.border = {
+        top:    innerThin,
+        bottom: isLast ? outerMed : innerThin,
+        left:   c === 1 ? outerMed : innerThin,
+        right:  c === 7 ? outerMed : innerThin,
+      }
+    })
+  }
+
+  for (let i = 0; i < n; i++) {
+    const l = leftRows[i]  || { label: '' }
+    const r = rightRows[i] || { label: '' }
+    // Normalise: R&P uses outer/inner; I&E/BS use amount
+    const la = l.outer ?? l.amount ?? null
+    const ld = l.inner ?? l.detail ?? null
+    const ra = r.outer ?? r.amount ?? null
+    const rd = r.inner ?? r.detail ?? null
+
+    ws.addRow([l.label || '', ld ?? '', la ?? '', '', r.label || '', rd ?? '', ra ?? ''])
+    styleDataRow(i + 3, l, r, i === n - 1 && leftTotal == null)
+  }
+
+  // ── TOTAL row ──────────────────────────────────────────────────
+  if (leftTotal != null || rightTotal != null) {
+    const totRowNum = n + 3
+    ws.addRow(['TOTAL', '', leftTotal ?? '', '', 'TOTAL', '', rightTotal ?? ''])
+    const tr2 = ws.getRow(totRowNum)
+    tr2.height = 20
+    ;[1, 2, 3, 5, 6, 7].forEach(c => {
+      const cell = tr2.getCell(c)
+      cell.font  = { bold: true, size: 11, name: 'Calibri' }
+      cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+      cell.font.color = { argb: HEADER_FG }
+      if (c === 3 || c === 7) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' }
+        if (cell.value != null && cell.value !== '') {
+          cell.value  = Number(cell.value)
+          cell.numFmt = '#,##0.00'
+        }
+      } else {
+        cell.alignment = { horizontal: c === 1 || c === 5 ? 'left' : 'right', vertical: 'middle' }
+      }
+      cell.border = {
+        top: outerMed, bottom: outerMed,
+        left:  c === 1 ? outerMed : innerThin,
+        right: c === 7 ? outerMed : innerThin,
+      }
+    })
+  }
+
   downloadBuffer(await wb.xlsx.writeBuffer(), fileName)
 }

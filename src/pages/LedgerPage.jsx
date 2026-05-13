@@ -42,9 +42,25 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
     return (childrenOf[node.id] || []).some(hasMatch)
   }
 
+  function getPostableDescendants(id) {
+    const result = []
+    for (const child of (childrenOf[id] || [])) {
+      if (postableIds.has(child.id)) result.push(child.id)
+      result.push(...getPostableDescendants(child.id))
+    }
+    return result
+  }
+
   function toggle(id) {
     const next = new Set(selectedIds)
-    next.has(id) ? next.delete(id) : next.add(id)
+    const desc = getPostableDescendants(id)
+    if (next.has(id)) {
+      next.delete(id)
+      desc.forEach(did => next.delete(did))
+    } else {
+      next.add(id)
+      desc.forEach(did => next.add(did))
+    }
     onChange(next)
   }
 
@@ -57,25 +73,39 @@ function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
     const tc         = TYPE_COLOR[node.account_type] || { text: '#64748b' }
     const indent     = 12 + depth * 18
 
+    const hasChildren = children.length > 0
+    const descIds     = getPostableDescendants(node.id)
+    const allDescSel  = descIds.length > 0 && descIds.every(did => selectedIds.has(did))
+    const someDescSel = descIds.some(did => selectedIds.has(did))
+
     return (
       <div key={node.id}>
         <label style={{
           display: 'flex', alignItems: 'center', gap: 8,
           paddingLeft: indent, paddingRight: 12, paddingTop: 5, paddingBottom: 5,
-          cursor: isPostable ? 'pointer' : 'default',
-          background: sel ? tc.text + '12' : 'transparent',
+          cursor: 'pointer',
+          background: sel || (someDescSel && !isPostable) ? tc.text + '12' : 'transparent',
         }}
-          onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = sel ? tc.text + '12' : 'transparent' }}
+          onMouseEnter={e => { e.currentTarget.style.background = tc.text + '1a' }}
+          onMouseLeave={e => { e.currentTarget.style.background = sel || (someDescSel && !isPostable) ? tc.text + '12' : 'transparent' }}
         >
           {isPostable
             ? <input type="checkbox" checked={sel} onChange={() => toggle(node.id)}
                 style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
-            : <span style={{ width: 14, flexShrink: 0 }} />
+            : hasChildren
+              ? <input type="checkbox" checked={allDescSel} ref={el => { if (el) el.indeterminate = someDescSel && !allDescSel }}
+                  onChange={() => {
+                    const next = new Set(selectedIds)
+                    if (allDescSel) descIds.forEach(did => next.delete(did))
+                    else descIds.forEach(did => next.add(did))
+                    onChange(next)
+                  }}
+                  style={{ cursor: 'pointer', accentColor: tc.text, flexShrink: 0 }} />
+              : <span style={{ width: 14, flexShrink: 0 }} />
           }
           <span style={{
             fontSize: isPostable ? 13 : 12,
-            color: isPostable ? (sel ? 'var(--text-1)' : 'var(--text-2)') : 'var(--text-3)',
+            color: isPostable ? (sel ? 'var(--text-1)' : 'var(--text-2)') : tc.text,
             fontWeight: isPostable ? (sel ? 600 : 400) : 600,
           }}>
             {node.name}
@@ -291,20 +321,29 @@ export default function LedgerPage() {
   }, [allAccounts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function doExport() {
+    const cols = [
+      { header: 'Date',        key: 'date',    align: 'left'  },
+      { header: 'Entry #',     key: 'entry',   align: 'left'  },
+      { header: 'Type',        key: 'type',    align: 'left'  },
+      { header: 'Narration',   key: 'narr',    align: 'left'  },
+      { header: 'Debit (₹)',   key: 'debit',   align: 'right' },
+      { header: 'Credit (₹)',  key: 'credit',  align: 'right' },
+      { header: 'Balance (₹)', key: 'balance', align: 'right' },
+    ]
     const rows = []
     ledgers.forEach(({ account, lines }) => {
-      rows.push({ Date: `── ${account.name} ──`, 'Entry #': '', Type: '', Narration: '', 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' })
+      rows.push({ date: `── ${account.name} ──`, entry: '', type: '', narr: '', debit: '', credit: '', balance: '' })
       lines.forEach(l => rows.push({
-        Date:         l.date,
-        'Entry #':    l.entry_number,
-        Type:         l.voucher_type || (l.isOpening ? 'Opening' : ''),
-        Narration:    l.narration,
-        'Debit (₹)':  l.debit,
-        'Credit (₹)': l.credit,
-        'Balance (₹)':l.running_balance,
+        date:    l.date,
+        entry:   l.entry_number,
+        type:    l.voucher_type || (l.isOpening ? 'Opening' : ''),
+        narr:    l.narration,
+        debit:   l.debit   || '',
+        credit:  l.credit  || '',
+        balance: l.running_balance,
       }))
     })
-    exportToExcel(rows, `Ledger_${dateFrom}_${dateTo}`)
+    exportToExcel(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`)
   }
 
   function doPrint() { window.print() }

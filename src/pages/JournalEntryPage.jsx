@@ -267,17 +267,28 @@ function JournalEntryList() {
   const totalCredit = filtered.reduce((s, e) => s + Number(e.total_credit || 0), 0)
 
   function doExport() {
+    const cols = [
+      { header: 'Entry #',     key: 'entry',  align: 'left'  },
+      { header: 'Date',        key: 'date',   align: 'left'  },
+      { header: 'Type',        key: 'type',   align: 'left'  },
+      { header: 'Narration',   key: 'narr',   align: 'left'  },
+      { header: 'Ref No',      key: 'ref',    align: 'left'  },
+      { header: 'Debit (₹)',   key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',  key: 'credit', align: 'right' },
+      { header: 'Status',      key: 'status', align: 'left'  },
+    ]
     const rows = filtered.map(e => ({
-      'Entry #':   e.entry_number,
-      'Date':      e.entry_date,
-      'Type':      e.voucher_type,
-      'Narration': e.narration || '',
-      'Ref No':    e.reference_no || '',
-      'Debit (₹)':  Number(e.total_debit  || 0),
-      'Credit (₹)': Number(e.total_credit || 0),
-      'Status':    e.is_posted ? 'Posted' : 'Draft',
+      entry:  e.entry_number,
+      date:   e.entry_date,
+      type:   e.voucher_type,
+      narr:   e.narration || '',
+      ref:    e.reference_no || '',
+      debit:  Number(e.total_debit  || 0) || '',
+      credit: Number(e.total_credit || 0) || '',
+      status: e.is_posted ? 'Posted' : 'Draft',
     }))
-    exportToExcel(rows, `JournalEntries_FY${fy}`)
+    rows.push({ entry: 'TOTAL', date: '', type: '', narr: '', ref: '', debit: totalDebit, credit: totalCredit, status: '' })
+    exportToExcel(cols, rows, 'Journal Entries', `JournalEntries_FY${fy}.xlsx`)
   }
 
   return (

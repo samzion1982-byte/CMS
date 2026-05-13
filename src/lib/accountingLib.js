@@ -895,32 +895,67 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
     // Opening Balance, Journal entries excluded from period R&P body
   }
 
-  // Build hierarchical receipts/payments grouped by COA parent
+  // Build receipts/payments mirroring COA hierarchy (same grouping as COA tree).
+  // Two-pass: first identify which L3 parents have L4 children in amts,
+  // then build groups cleanly without key collisions.
   function buildHier(amts, others) {
-    const groups = {}
+    // Pass 1: find all L3 IDs that have ≥1 L4 child with an amount
+    const l3WithChildren = new Set()
+    for (const id of Object.keys(amts)) {
+      const acct = coaById[id]
+      if (acct?.level === 4 && acct.parent_id) {
+        const par = coaById[acct.parent_id]
+        if (par?.level === 3) l3WithChildren.add(par.id)
+      }
+    }
+
+    // Pass 2: build groups
+    const groups = {}   // key → { name, total, children[] }
     for (const [id, amount] of Object.entries(amts)) {
       if (!(amount > 0)) continue
       const acct = coaById[id]
-      // Only group L4 sub-ledgers under their L3 ledger parent.
-      // L3 ledgers stay as top-level items (not folded into their L2 group).
-      const parent = (acct?.level === 4 && acct?.parent_id) ? coaById[acct.parent_id] : null
-      const useParent = !!(parent && parent.level === 3)
-      const key = useParent ? parent.id : id
-      const groupName = useParent ? parent.name : (acct?.name || id)
-      if (!groups[key]) groups[key] = { name: groupName, total: 0, children: [], grouped: useParent }
-      groups[key].total += amount
-      groups[key].children.push({ name: acct?.name || id, amount, accountId: id })
+
+      if (acct?.level === 4 && acct.parent_id) {
+        const par = coaById[acct.parent_id]
+        if (par?.level === 3) {
+          // L4 sub-ledger → group under L3 parent
+          const key = 'grp_' + par.id
+          if (!groups[key]) groups[key] = { name: par.name, total: 0, children: [] }
+          groups[key].total += amount
+          groups[key].children.push({ name: acct.name, amount, accountId: id })
+          continue
+        }
+      }
+
+      if (acct?.level === 3 && l3WithChildren.has(acct.id)) {
+        // L3 with L4 children in amts — include its direct amount inside the same group
+        const key = 'grp_' + acct.id
+        if (!groups[key]) groups[key] = { name: acct.name, total: 0, children: [] }
+        groups[key].total += amount
+        groups[key].children.push({ name: acct.name, amount, accountId: id })
+        continue
+      }
+
+      // Flat item (L3 with no active L4 children, L2, or other levels)
+      groups['flat_' + id] = { name: acct?.name || id, total: amount, children: [] }
     }
+
     for (const [name, amount] of Object.entries(others)) {
       if (!(amount > 0)) continue
-      groups['__o__' + name] = { name, total: amount, children: [], grouped: false }
+      groups['__o__' + name] = { name, total: amount, children: [] }
     }
+
     return Object.values(groups)
       .map(g => {
-        if (!g.grouped || g.children.length <= 1) {
-          const child = g.children[0]
-          return { name: g.grouped && child ? child.name : g.name, amount: g.total, accountId: child?.accountId || null, children: [] }
+        if (g.children.length === 0) {
+          return { name: g.name, amount: g.total, accountId: null, children: [] }
         }
+        if (g.children.length === 1) {
+          // Single active child — show child name directly (no group wrapper)
+          const c = g.children[0]
+          return { name: c.name, amount: g.total, accountId: c.accountId, children: [] }
+        }
+        // Multiple children — show as expandable group
         return { name: g.name, amount: g.total, accountId: null, children: g.children.sort((a, b) => b.amount - a.amount) }
       })
       .filter(g => g.amount > 0)
@@ -961,33 +996,40 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
 // ── Dashboard stats ───────────────────────────────────────────────
 
 export async function getAccountingStats(fy) {
-  const [tb, is, { data: bals }] = await Promise.all([
+  const [tb, is, { data: bals }, { data: allAssetCOA }] = await Promise.all([
     getTrialBalance(fy),
     getIncomeStatement(fy),
     supabase.from('account_balances')
       .select('account_id, opening_balance, total_debit, total_credit')
       .eq('financial_year', fy),
+    supabase.from('chart_of_accounts')
+      .select('id, name, parent_id, opening_balance, account_type')
+      .eq('account_type', 'Asset')
+      .eq('is_active', true),
   ])
 
   const balMap = {}
   for (const b of bals || []) balMap[b.account_id] = b
 
-  // Identify leaf Asset accounts (no children) for cash/bank breakdown
-  const parentIds = new Set(tb.map(a => a.parent_id).filter(Boolean))
-  const assetLeaves = tb.filter(a => a.account_type === 'Asset' && !parentIds.has(a.id))
+  // Use COA directly so accounts with no current-FY transactions (but a COA opening balance) are included
+  const assetCOA = allAssetCOA || []
+  const assetParentIds = new Set(assetCOA.map(a => a.parent_id).filter(Boolean))
+  const assetLeaves = assetCOA.filter(a => !assetParentIds.has(a.id))
 
   function leafBalance(a) {
     const b = balMap[a.id]
-    const op = Number(b?.opening_balance || a.opening_balance || 0)
+    const op = Number(b?.opening_balance ?? a.opening_balance ?? 0)
     return op + Number(b?.total_debit || 0) - Number(b?.total_credit || 0)
   }
 
+  const cashRe = /cash|hand|petty/i
+  const bankRe = /bank/i
   const cashAccounts = assetLeaves
-    .filter(a => /cash|hand|petty/i.test(a.name) && !/bank/i.test(a.name))
+    .filter(a => cashRe.test(a.name) && !bankRe.test(a.name))
     .map(a => ({ id: a.id, name: a.name, balance: leafBalance(a) }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const bankAccounts = assetLeaves
-    .filter(a => /bank/i.test(a.name))
+    .filter(a => bankRe.test(a.name))
     .map(a => ({ id: a.id, name: a.name, balance: leafBalance(a) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 

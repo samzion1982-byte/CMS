@@ -15,8 +15,9 @@ import {
   ArrowLeft, BookOpen, Calendar, Filter, Download,
   TrendingUp, TrendingDown, BarChart2, Loader2,
   ChevronDown, ChevronRight, FileText, Search, X, Scale,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, FileSpreadsheet,
 } from 'lucide-react'
+import { exportToExcel } from '../lib/exportExcel'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -297,6 +298,135 @@ export default function AccountingReportsPage() {
     return rows
   }, [allAccounts, balances, childrenMap, grpExpanded, grShowZero])
 
+  // ── Export handlers ───────────────────────────────────────────
+  async function doExportDayBook() {
+    const cols = [
+      { header: 'Date',        key: 'date',   align: 'left'  },
+      { header: 'Entry #',     key: 'entry',  align: 'left'  },
+      { header: 'Type',        key: 'type',   align: 'left'  },
+      { header: 'Narration',   key: 'narr',   align: 'left'  },
+      { header: 'Ref No',      key: 'ref',    align: 'left'  },
+      { header: 'Debit (₹)',   key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',  key: 'credit', align: 'right' },
+      { header: 'Status',      key: 'status', align: 'left'  },
+    ]
+    const rows = dbSorted.map(e => ({
+      date:   e.entry_date ? new Date(e.entry_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
+      entry:  e.entry_number,
+      type:   e.voucher_type,
+      narr:   e.narration || '',
+      ref:    e.reference_no || '',
+      debit:  Number(e.total_debit  || 0) || '',
+      credit: Number(e.total_credit || 0) || '',
+      status: e.is_posted ? 'Posted' : 'Draft',
+    }))
+    rows.push({ date: '', entry: 'TOTAL', type: '', narr: '', ref: '', debit: dbTotalDebit, credit: dbTotalCredit, status: '' })
+    await exportToExcel(cols, rows, 'Day Book', `DayBook_${dbFrom}_${dbTo}.xlsx`)
+  }
+
+  async function doExportAccountSummary() {
+    const cols = [
+      { header: 'Type',             key: 'type',    align: 'left'   },
+      { header: 'Code',             key: 'code',    align: 'left'   },
+      { header: 'Account Name',     key: 'name',    align: 'left'   },
+      { header: 'Level',            key: 'level',   align: 'center' },
+      { header: 'Opening (₹)',      key: 'opening', align: 'right'  },
+      { header: 'Total Debit (₹)',  key: 'debit',   align: 'right'  },
+      { header: 'Total Credit (₹)', key: 'credit',  align: 'right'  },
+      { header: 'Net Balance (₹)',  key: 'net',     align: 'right'  },
+    ]
+    const rows = []
+    AC_TYPES.forEach(type => {
+      const accounts = acByType[type] || []
+      if (!accounts.length) return
+      accounts.forEach(a => {
+        const net = ['Asset', 'Expense'].includes(a.account_type)
+          ? a.opening + a.total_debit - a.total_credit
+          : a.opening + a.total_credit - a.total_debit
+        rows.push({
+          type:    displayAccountType(a.account_type),
+          code:    a.code || '',
+          name:    '  '.repeat(Math.max(0, (a.level || 1) - 1)) + a.name,
+          level:   `L${a.level}`,
+          opening: a.opening !== 0 ? a.opening : '',
+          debit:   a.total_debit  > 0 ? a.total_debit  : '',
+          credit:  a.total_credit > 0 ? a.total_credit : '',
+          net:     Math.abs(net),
+        })
+      })
+    })
+    await exportToExcel(cols, rows, `Account Summary FY ${fy}`, `AccountSummary_FY${fy}.xlsx`)
+  }
+
+  async function doExportGroupReport() {
+    // Compute fully-expanded rows independently of UI expand state
+    const lbm = Object.fromEntries(balances.map(b => [b.account_id, b]))
+
+    function leafNet(a) {
+      const b = lbm[a.id]
+      const dr = Number(b?.total_debit || 0), cr = Number(b?.total_credit || 0)
+      const op = Number(b?.opening_balance || a.opening_balance || 0)
+      return ['Asset', 'Expense'].includes(a.account_type) ? op + dr - cr : op + cr - dr
+    }
+    function netBal(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? leafNet(a) : ch.reduce((s, c) => s + netBal(c), 0)
+    }
+    function totDr(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? Number(lbm[a.id]?.total_debit || 0) : ch.reduce((s, c) => s + totDr(c), 0)
+    }
+    function totCr(a) {
+      const ch = childrenMap[a.id] || []
+      return ch.length === 0 ? Number(lbm[a.id]?.total_credit || 0) : ch.reduce((s, c) => s + totCr(c), 0)
+    }
+
+    const cols = [
+      { header: 'Account / Group', key: 'name',   align: 'left'  },
+      { header: 'Debit (₹)',       key: 'debit',  align: 'right' },
+      { header: 'Credit (₹)',      key: 'credit', align: 'right' },
+      { header: 'Net Balance (₹)', key: 'net',    align: 'right' },
+    ]
+    const rows = []
+
+    function flattenAll(accounts, depth) {
+      const sortedAccounts = [...accounts].sort((a, b) => {
+        const ag = (childrenMap[a.id] || []).length > 0
+        const bg = (childrenMap[b.id] || []).length > 0
+        if (ag !== bg) return ag ? -1 : 1
+        return (a.code || a.name).localeCompare(b.code || b.name)
+      })
+      sortedAccounts.forEach(a => {
+        const ch  = childrenMap[a.id] || []
+        const net = netBal(a), dr = totDr(a), cr = totCr(a)
+        if (!grShowZero && net === 0 && dr === 0 && cr === 0) return
+        const indent = '  '.repeat(depth)
+        const prefix = ch.length > 0 ? '▸ ' : '  '
+        rows.push({
+          name:   indent + prefix + a.name,
+          debit:  dr > 0 ? dr : '',
+          credit: cr > 0 ? cr : '',
+          net:    Math.abs(net),
+        })
+        if (ch.length > 0) flattenAll(ch, depth + 1)
+      })
+    }
+
+    AC_TYPES.forEach(type => {
+      const roots = allAccounts.filter(a => a.account_type === type && !a.parent_id)
+      if (!roots.length) return
+      const typeNet = roots.reduce((s, r) => s + netBal(r), 0)
+      const typeDr  = roots.reduce((s, r) => s + totDr(r), 0)
+      const typeCr  = roots.reduce((s, r) => s + totCr(r), 0)
+      if (!grShowZero && typeNet === 0 && typeDr === 0 && typeCr === 0) return
+      rows.push({ name: `━━ ${displayAccountType(type).toUpperCase()} ACCOUNTS ━━`, debit: typeDr || '', credit: typeCr || '', net: Math.abs(typeNet) })
+      flattenAll(roots, 0)
+      rows.push({ name: '', debit: '', credit: '', net: '' })
+    })
+
+    await exportToExcel(cols, rows, `Group Report FY ${fy}`, `GroupReport_FY${fy}.xlsx`)
+  }
+
   const TYPE_COLOR_MAP = {
     Asset:     { bg: '#dbeafe', text: '#1d4ed8' },
     Liability: { bg: '#fee2e2', text: '#b91c1c' },
@@ -364,6 +494,11 @@ export default function AccountingReportsPage() {
             <button onClick={loadDayBook} style={{ height: 34, padding: '0 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Filter size={13} /> Apply
             </button>
+            {dbFiltered.length > 0 && (
+              <button onClick={doExportDayBook} style={{ height: 34, padding: '0 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileSpreadsheet size={13} /> Export
+              </button>
+            )}
           </div>
 
           {/* Day Book table */}
@@ -497,6 +632,11 @@ export default function AccountingReportsPage() {
             <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 'auto' }}>
               {acFiltered.length} active accounts
             </span>
+            {acFiltered.length > 0 && (
+              <button onClick={doExportAccountSummary} style={{ height: 34, padding: '0 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileSpreadsheet size={13} /> Export
+              </button>
+            )}
           </div>
 
           {acLoading ? (
@@ -605,6 +745,11 @@ export default function AccountingReportsPage() {
               <input type="checkbox" checked={grShowZero} onChange={e => setGrShowZero(e.target.checked)} />
               Show zero-balance accounts
             </label>
+            {grRows.length > 0 && (
+              <button onClick={doExportGroupReport} style={{ height: 34, padding: '0 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileSpreadsheet size={13} /> Export
+              </button>
+            )}
           </div>
 
           {acLoading ? (

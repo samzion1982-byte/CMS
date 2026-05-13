@@ -19,8 +19,9 @@ import {
 import { getChurch } from '../lib/supabase'
 import {
   BarChart2, ArrowLeft, Loader2, Printer, ChevronDown, ChevronRight,
-  RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink,
+  RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink, FileSpreadsheet,
 } from 'lucide-react'
+import { exportTwoColumn } from '../lib/exportExcel'
 
 // DD-MM-YYYY display format for ISO date strings
 function fmtD(iso) {
@@ -265,7 +266,19 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
 // ════════════════════════════════════════════════════════════════
 
 function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
-  const [expanded, setExpanded] = useState(new Set())
+  function allKeysFor(d) {
+    const keys = []
+    for (const r of d.receipts || []) if ((r.children?.length || 0) > 0) keys.push('r_' + r.name)
+    for (const p of d.payments || []) if ((p.children?.length || 0) > 0) keys.push('p_' + p.name)
+    if ((d.cashAccountsOB || []).length > 1) keys.push('obCash')
+    if ((d.bankAccountsOB || []).length > 1) keys.push('obBank')
+    if ((d.cashAccounts || []).length > 1) keys.push('cbCash')
+    if ((d.bankAccounts || []).length > 1) keys.push('cbBank')
+    return keys
+  }
+  const [expanded, setExpanded] = useState(() => new Set(allKeysFor(data)))
+  // Re-expand all groups whenever the report is regenerated with new data
+  useEffect(() => { setExpanded(new Set(allKeysFor(data))) }, [data])
   function toggle(key) {
     setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
@@ -343,24 +356,75 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
     { label: 'Total Closing', outer: data.closingBalance, bold: true },
   ]
 
+  async function doExport() {
+    function balRowsExp(label, total, accounts) {
+      if (accounts.length <= 1) {
+        return [{ label: accounts[0]?.name || label, amount: total }]
+      }
+      return [
+        { label, bold: true },
+        ...accounts.map(a => ({ label: a.name, detail: a.balance, indent: true })),
+        { label: `Total ${label}`, amount: total, bold: true },
+      ]
+    }
+    function grpRowsExp(item) {
+      if (!item.children || item.children.length === 0) {
+        return [{ label: item.name, amount: item.amount }]
+      }
+      return [
+        { label: item.name, bold: true },
+        ...item.children.map(c => ({ label: c.name, detail: c.amount, indent: true })),
+        { label: `Total ${item.name}`, amount: item.amount, bold: true },
+      ]
+    }
+    const left = [
+      { label: 'Opening Balance', bold: true, section: true },
+      ...balRowsExp('Cash in Hand', data.cashOpeningBalance, cashAcctsOB),
+      ...balRowsExp('Cash at Bank', data.bankOpeningBalance, bankAcctsOB),
+      { label: 'Total Opening Balance', amount: data.openingBalance, bold: true, total: true },
+      { label: '' },
+      { label: 'RECEIPTS', bold: true, section: true },
+      ...data.receipts.flatMap(r => grpRowsExp(r)),
+      { label: '' },
+      { label: 'Total Receipts', amount: data.totalReceipts, bold: true, total: true },
+    ]
+    const right = [
+      { label: 'PAYMENTS', bold: true, section: true },
+      { label: '' },
+      ...data.payments.flatMap(p => grpRowsExp(p)),
+      { label: '' },
+      { label: 'Total Payments', amount: data.totalPayments, bold: true, total: true },
+      { label: '' },
+      { label: 'Closing Balance', bold: true, section: true },
+      ...balRowsExp('Cash in Hand', data.cashClosingBalance, cashAccts),
+      ...balRowsExp('Cash at Bank', data.bankClosingBalance, bankAccts),
+      { label: 'Total Closing Balance', amount: data.closingBalance, bold: true, total: true },
+    ]
+    const grandTotal = data.openingBalance + data.totalReceipts
+    await exportTwoColumn(
+      left, right,
+      'DR  —  RECEIPTS', 'CR  —  PAYMENTS',
+      'Receipts & Payments Account',
+      `RP_${dateFrom}_${dateTo}.xlsx`,
+      { leftTotal: grandTotal, rightTotal: data.totalPayments + data.closingBalance }
+    )
+  }
+
   return (
     <div>
-      {allGroupKeys.length > 0 && (
-        <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+        <button onClick={doExport}
+          style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <FileSpreadsheet size={13} /> Export Excel
+        </button>
+        {allGroupKeys.length > 0 && (
           <button
             onClick={() => setExpanded(allExpanded ? new Set() : new Set(allGroupKeys))}
-            style={{
-              fontSize: 12, padding: '4px 14px', borderRadius: 6,
-              border: '1px solid var(--card-border)', background: 'var(--card-bg)',
-              cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 5,
-            }}
-          >
-            {allExpanded
-              ? <><ChevronDown size={13} /> Collapse All</>
-              : <><ChevronRight size={13} /> Expand All</>}
+            style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            {allExpanded ? <><ChevronDown size={13} /> Collapse All</> : <><ChevronRight size={13} /> Expand All</>}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <RPTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={data.openingBalance + data.totalReceipts}
@@ -443,8 +507,67 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
   const leftTotal  = data.totalExpenses + (surplus > 0 ? surplus : 0)
   const rightTotal = data.totalIncome   + (surplus < 0 ? Math.abs(surplus) : 0)
 
+  async function doExport() {
+    function hierRowsExp(accounts, getAmt) {
+      const rel  = accounts.filter(a => (a.level || 0) >= 2)
+      const byId = {}; rel.forEach(a => { byId[a.id] = a })
+      const childrenOf = {}
+      for (const a of rel) {
+        if (a.parent_id && byId[a.parent_id]) {
+          if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
+          childrenOf[a.parent_id].push(a)
+        }
+      }
+      function totalOf(acct) {
+        return getAmt(acct) + (childrenOf[acct.id] || []).reduce((s, c) => s + totalOf(c), 0)
+      }
+      function renderNode(acct, depth) {
+        const kids = childrenOf[acct.id] || []
+        const total = totalOf(acct)
+        if (Math.abs(total) < 0.01) return []
+        if (kids.length === 0) return [{ label: acct.name, amount: total, indent: depth > 0, indent2: depth > 1 }]
+        return [
+          { label: acct.name, amount: total, bold: true, indent: depth > 0, indent2: depth > 1 },
+          ...kids.flatMap(c => renderNode(c, depth + 1)),
+        ]
+      }
+      return rel.filter(a => !byId[a.parent_id]).flatMap(a => renderNode(a, 0))
+    }
+    const left = [
+      { label: 'EXPENDITURE', bold: true, section: true },
+      { label: '' },
+      ...hierRowsExp(data.expenses, a => a.total_debit - a.total_credit),
+      { label: '' },
+      { label: 'Total Expenditure', amount: data.totalExpenses, bold: true, total: true },
+      { label: '' },
+      ...(!isDeficit ? [{ label: 'Surplus transferred to Corpus Fund', amount: surplus, bold: true, italic: true }] : []),
+    ]
+    const right = [
+      { label: 'INCOME', bold: true, section: true },
+      { label: '' },
+      ...hierRowsExp(data.income, a => a.total_credit - a.total_debit),
+      { label: '' },
+      { label: 'Total Income', amount: data.totalIncome, bold: true, total: true },
+      { label: '' },
+      ...(isDeficit ? [{ label: 'Deficit (Excess of Expenditure)', amount: Math.abs(surplus), bold: true, italic: true }] : []),
+    ]
+    await exportTwoColumn(
+      left, right,
+      'DR  —  EXPENDITURE', 'CR  —  INCOME',
+      'Income & Expenditure Account',
+      `IE_${dateFrom}_${dateTo}.xlsx`,
+      { leftTotal, rightTotal }
+    )
+  }
+
   return (
     <div>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button onClick={doExport}
+          style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <FileSpreadsheet size={13} /> Export Excel
+        </button>
+      </div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={leftTotal} rightTotal={rightTotal}
@@ -533,8 +656,68 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
     { label: 'Total Assets', amount: data.totalAssets, bold: true },
   ]
 
+  async function doExport() {
+    function hierRowsExp(accounts, getAmt) {
+      const rel  = accounts.filter(a => (a.level || 0) >= 2)
+      const byId = {}; rel.forEach(a => { byId[a.id] = a })
+      const childrenOf = {}
+      for (const a of rel) {
+        if (a.parent_id && byId[a.parent_id]) {
+          if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
+          childrenOf[a.parent_id].push(a)
+        }
+      }
+      function totalOf(acct) {
+        return getAmt(acct) + (childrenOf[acct.id] || []).reduce((s, c) => s + totalOf(c), 0)
+      }
+      function renderNode(acct, depth) {
+        const kids = childrenOf[acct.id] || []
+        const total = totalOf(acct)
+        if (Math.abs(total) < 0.01) return []
+        if (kids.length === 0) return [{ label: acct.name, amount: total, indent: depth > 0, indent2: depth > 1 }]
+        return [
+          { label: acct.name, amount: total, bold: true, indent: depth > 0, indent2: depth > 1 },
+          ...kids.flatMap(c => renderNode(c, depth + 1)),
+        ]
+      }
+      return rel.filter(a => !byId[a.parent_id]).flatMap(a => renderNode(a, 0))
+    }
+    const left = [
+      { label: 'CORPUS / GENERAL FUND', bold: true, section: true },
+      { label: '' },
+      ...hierRowsExp(data.corpus, a => a.total_credit - a.total_debit),
+      { label: data.surplus >= 0 ? 'Add: Surplus for the year' : 'Less: Deficit for the year', amount: Math.abs(data.surplus), indent: true, italic: true },
+      { label: 'Total Corpus Fund', amount: data.totalCorpus, bold: true, total: true },
+      { label: '' },
+      { label: 'LIABILITIES', bold: true, section: true },
+      { label: '' },
+      ...hierRowsExp(data.liabilities, a => a.total_credit - a.total_debit),
+      { label: 'Total Liabilities', amount: data.totalLiabilities, bold: true, total: true },
+    ]
+    const right = [
+      { label: 'ASSETS', bold: true, section: true },
+      { label: '' },
+      ...hierRowsExp(data.assets, a => a.total_debit - a.total_credit),
+      { label: '' },
+      { label: 'Total Assets', amount: data.totalAssets, bold: true, total: true },
+    ]
+    await exportTwoColumn(
+      left, right,
+      'Corpus Fund & Liabilities', 'Assets',
+      'Balance Sheet',
+      `BalanceSheet_${dateFrom}_${dateTo}.xlsx`,
+      { leftTotal: data.totalCorpus + data.totalLiabilities, rightTotal: data.totalAssets }
+    )
+  }
+
   return (
     <div>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button onClick={doExport}
+          style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <FileSpreadsheet size={13} /> Export Excel
+        </button>
+      </div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
         leftTotal={data.totalCorpus + data.totalLiabilities} rightTotal={data.totalAssets}
