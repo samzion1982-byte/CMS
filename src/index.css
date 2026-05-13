@@ -984,12 +984,14 @@ html { zoom: 0.95; }
 .simple-accounts-scope button:hover:not(:disabled) { filter: brightness(0.88) !important; }
 .simple-accounts-scope button:active:not(:disabled) { filter: brightness(0.78) !important; transform: none !important; }
 
-/* Prevent I-beam text cursor on all non-interactive content app-wide */
+/* Prevent I-beam cursor AND blinking text caret on all non-interactive content */
+body { user-select: none; }
 div, td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
-/* Restore correct cursors for interactive elements */
-a, button, [role="button"]                              { cursor: pointer; }
-input, textarea, select, [contenteditable]              { cursor: text; }
-input[type="checkbox"], input[type="radio"]             { cursor: pointer; }
+/* Restore correct cursors and text selection for interactive elements */
+a, button, [role="button"]             { cursor: pointer; }
+input, textarea, select                { cursor: text; user-select: text; }
+input[type="checkbox"],
+input[type="radio"]                    { cursor: pointer; user-select: none; }
 
 .transition-fast   { transition: all 0.15s ease; }
 .transition-normal { transition: all 0.3s ease; }
