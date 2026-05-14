@@ -72,6 +72,69 @@ function downloadBuffer(buffer, fileName) {
   URL.revokeObjectURL(url)
 }
 
+/* Title-block export — titleLines: [{ text, bold?, size?, italic?, bg? }] */
+export async function exportToExcelWithTitle(columns, rows, sheetName, fileName, titleLines = []) {
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Church CMS'
+  wb.created = new Date()
+
+  const colCount  = columns.length
+  const frozenRow = titleLines.length + 1        // freeze below title + header
+
+  const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: frozenRow }] })
+
+  // Column widths (no auto-header; we add header row manually below)
+  ws.columns = columns.map(c => {
+    const maxContent = Math.max(c.header.length, ...rows.map(r => String(r[c.key] ?? '').length))
+    return { key: c.key, width: Math.min(Math.max(maxContent + 6, 14), 60) }
+  })
+
+  // ── Title block rows ────────────────────────────────────────────
+  titleLines.forEach(({ text, bold, size, italic, bg }) => {
+    const r = ws.addRow([text, ...Array(colCount - 1).fill('')])
+    ws.mergeCells(r.number, 1, r.number, colCount)
+    const cell    = ws.getCell(r.number, 1)
+    cell.value    = text
+    cell.font     = { bold: !!bold, italic: !!italic, size: size || 11, name: 'Calibri' }
+    cell.fill     = bg ? { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } } : undefined
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    r.height      = (size || 11) * 2.2
+  })
+
+  // ── Column header row ───────────────────────────────────────────
+  const headerRow = ws.addRow(columns.map(c => c.header))
+  headerRow.height = 24
+  headerRow.eachCell({ includeEmpty: true }, (cell, colIdx) => {
+    cell.font      = { bold: true, color: { argb: HEADER_FG }, size: 11, name: 'Calibri' }
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border    = cellBorder(true, false, colIdx === 1, colIdx === colCount)
+  })
+
+  // ── Data rows ───────────────────────────────────────────────────
+  const totalRows = rows.length
+  rows.forEach((row, i) => {
+    const dataRow   = ws.addRow(columns.map(c => row[c.key] ?? ''))
+    const isLastRow = i === totalRows - 1
+    const isAlt     = i % 2 === 1
+    const isBold    = !!row._bold
+    dataRow.height  = isBold ? 21 : 18
+    dataRow.eachCell({ includeEmpty: true }, (cell, colIdx) => {
+      const col      = columns[colIdx - 1]
+      cell.font      = { size: isBold ? 11 : 10, name: 'Calibri', bold: isBold }
+      cell.alignment = { vertical: 'middle', horizontal: col?.align || 'center' }
+      cell.border    = isBold
+        ? cellBorder(true, true, colIdx === 1, colIdx === colCount)
+        : cellBorder(false, isLastRow, colIdx === 1, colIdx === colCount)
+      if (isBold)     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } }
+      else if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
+    })
+  })
+
+  downloadBuffer(await wb.xlsx.writeBuffer(), fileName)
+}
+
 export async function exportToExcel(columns, rows, sheetName, fileName) {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
