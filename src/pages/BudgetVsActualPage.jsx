@@ -21,19 +21,27 @@ import {
 const LABEL_TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }
 const BUDGET_TYPES = ['Income', 'Expense']
 
+function prevFY(fy) {
+  const [start] = fy.split('-')
+  const s = parseInt(start, 10)
+  return `${s - 1}-${String(s).slice(-2)}`
+}
+
 export default function BudgetVsActualPage() {
   const navigate = useNavigate()
   const toast    = useToast()
 
-  const [tab,      setTab]      = useState('setup')   // 'setup' | 'report'
-  const [fy,       setFy]       = useState(getFY())
-  const [fyOpen,   setFyOpen]   = useState(false)
-  const [accounts, setAccounts] = useState([])         // postable accounts
-  const [budgets,  setBudgets]  = useState({})         // { [accountId]: amount string }
-  const [actuals,  setActuals]  = useState({})         // { [accountId]: net amount }
-  const [churchId, setChurchId] = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
+  const [tab,         setTab]         = useState('setup')   // 'setup' | 'report'
+  const [fy,          setFy]          = useState(getFY())
+  const [fyOpen,      setFyOpen]      = useState(false)
+  const [accounts,    setAccounts]    = useState([])         // postable accounts
+  const [budgets,     setBudgets]     = useState({})         // { [accountId]: amount string }
+  const [pcts,        setPcts]        = useState({})         // { [accountId]: pct string }
+  const [closingBals, setClosingBals] = useState({})         // { [accountId]: prev-FY net }
+  const [actuals,     setActuals]     = useState({})         // { [accountId]: net amount }
+  const [churchId,    setChurchId]    = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [saving,      setSaving]      = useState(false)
   const FYS = fyOptions()
 
   const load = useCallback(async () => {
@@ -53,15 +61,26 @@ export default function BudgetVsActualPage() {
       const bMap = {}
       for (const b of budgetRows || []) bMap[b.account_id] = String(b.budgeted_amount || '')
       setBudgets(bMap)
+      setPcts({})  // reset pcts when FY changes
 
-      // Load actuals from trial balance
-      const tb = await getTrialBalance(fy)
+      // Load actuals (current FY) + closing balances (previous FY) in parallel
+      const [tb, prevTb] = await Promise.all([
+        getTrialBalance(fy),
+        getTrialBalance(prevFY(fy)),
+      ])
       const aMap = {}
       for (const a of tb) {
         if (a.account_type === 'Income')  aMap[a.id] = a.total_credit - a.total_debit
         if (a.account_type === 'Expense') aMap[a.id] = a.total_debit  - a.total_credit
       }
       setActuals(aMap)
+
+      const cMap = {}
+      for (const a of prevTb) {
+        if (a.account_type === 'Income')  cMap[a.id] = a.total_credit - a.total_debit
+        if (a.account_type === 'Expense') cMap[a.id] = a.total_debit  - a.total_credit
+      }
+      setClosingBals(cMap)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
   }, [fy, toast])
@@ -70,6 +89,16 @@ export default function BudgetVsActualPage() {
 
   function setBudget(accountId, value) {
     setBudgets(prev => ({ ...prev, [accountId]: value }))
+  }
+
+  function setPct(accountId, value) {
+    setPcts(prev => ({ ...prev, [accountId]: value }))
+    const closing = closingBals[accountId] || 0
+    if (closing > 0 && value !== '') {
+      const pctNum = parseFloat(value) || 0
+      const computed = closing * (1 + pctNum / 100)
+      setBudgets(prev => ({ ...prev, [accountId]: computed.toFixed(2) }))
+    }
   }
 
   async function handleSave() {
@@ -190,11 +219,16 @@ export default function BudgetVsActualPage() {
         /* ─── Budget Setup Tab ─────────────────────────────────── */
         <div className="card" style={{ overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: 'var(--table-header-bg)' }}>
+            <thead style={{ background: '#1e293b' }}>
               <tr>
-                <th style={{ ...LABEL_TH }}>Account Name</th>
-                <th style={{ ...LABEL_TH, width: 80 }}>Type</th>
-                <th style={{ ...LABEL_TH, textAlign: 'right', width: 180 }}>Budget Amount (₹)</th>
+                <th style={{ ...LABEL_TH, color: '#94a3b8' }}>Account Name</th>
+                <th style={{ ...LABEL_TH, color: '#94a3b8', width: 80 }}>Type</th>
+                <th style={{ ...LABEL_TH, color: '#94a3b8', textAlign: 'right', width: 160 }}>
+                  Closing Balance (₹)
+                  <div style={{ fontSize: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#64748b', marginTop: 1 }}>prev FY {prevFY(fy)}</div>
+                </th>
+                <th style={{ ...LABEL_TH, color: '#94a3b8', textAlign: 'center', width: 100 }}>Inc / Dec %</th>
+                <th style={{ ...LABEL_TH, color: '#94a3b8', textAlign: 'right', width: 170 }}>Budget Amount (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -204,24 +238,46 @@ export default function BudgetVsActualPage() {
                 const c = TYPE_COLOR[type] || { bg: '#f1f5f9', text: '#475569' }
                 return [
                   <tr key={`${type}-header`} style={{ background: c.bg + '55' }}>
-                    <td colSpan={3} style={{ padding: '7px 14px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: c.text }}>
+                    <td colSpan={5} style={{ padding: '7px 14px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: c.text }}>
                       {displayAccountType(type)}
                     </td>
                   </tr>,
-                  ...group.map((a, i) => (
-                    <tr key={a.id} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
-                      <td style={{ padding: '7px 14px', fontSize: 13, color: 'var(--text-1)' }}>{a.name}</td>
-                      <td style={{ padding: '7px 14px' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
-                      </td>
-                      <td style={{ padding: '5px 10px' }}>
-                        <input type="number" min="0" step="0.01" placeholder="0.00"
-                          value={budgets[a.id] || ''}
-                          onChange={e => setBudget(a.id, e.target.value)}
-                          style={{ width: '100%', height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(budgets[a.id]) > 0 ? '#eff6ff' : 'var(--input-bg)', color: 'var(--accent)', outline: 'none', boxSizing: 'border-box' }} />
-                      </td>
-                    </tr>
-                  )),
+                  ...group.map((a, i) => {
+                    const closing   = closingBals[a.id] || 0
+                    const pct       = pcts[a.id] ?? ''
+                    const budgetVal = budgets[a.id] || ''
+                    const pctNum    = parseFloat(pct)
+                    const isInc     = !isNaN(pctNum) && pct !== '' && pctNum > 0
+                    const isDec     = !isNaN(pctNum) && pct !== '' && pctNum < 0
+                    return (
+                      <tr key={a.id} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                        <td style={{ padding: '7px 14px', fontSize: 13, color: 'var(--text-1)' }}>{a.name}</td>
+                        <td style={{ padding: '7px 14px' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: c.bg, color: c.text }}>{displayAccountType(type)}</span>
+                        </td>
+                        <td style={{ padding: '7px 14px', fontSize: 12, textAlign: 'right', color: closing > 0 ? 'var(--text-2)' : 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
+                          {closing > 0 ? fmtAmt(closing) : <span style={{ fontSize: 11 }}>—</span>}
+                        </td>
+                        <td style={{ padding: '5px 8px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                            <input
+                              type="number" step="0.1" placeholder="0"
+                              value={pct}
+                              onChange={e => setPct(a.id, e.target.value)}
+                              style={{ width: 62, height: 32, padding: '0 6px', border: `1.5px solid ${isInc ? '#16a34a' : isDec ? '#dc2626' : 'var(--card-border)'}`, borderRadius: 7, fontSize: 12, textAlign: 'right', background: isInc ? '#f0fdf4' : isDec ? '#fef2f2' : 'var(--input-bg)', color: isInc ? '#16a34a' : isDec ? '#dc2626' : 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>%</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '5px 10px' }}>
+                          <input type="number" min="0" step="0.01" placeholder="0.00"
+                            value={budgetVal}
+                            onChange={e => setBudget(a.id, e.target.value)}
+                            style={{ width: '100%', height: 32, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, textAlign: 'right', background: parseFloat(budgetVal) > 0 ? '#eff6ff' : 'var(--input-bg)', color: 'var(--accent)', outline: 'none', boxSizing: 'border-box' }} />
+                        </td>
+                      </tr>
+                    )
+                  }),
                 ]
               })}
             </tbody>
