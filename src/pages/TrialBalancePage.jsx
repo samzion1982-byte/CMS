@@ -105,7 +105,7 @@ export default function TrialBalancePage() {
       church?.church_name ? { text: church.church_name, bold: true, size: 14, bg: 'DBEAFE' } : null,
       (church?.address || church?.city) ? { text: [church?.address, church?.city].filter(Boolean).join(', '), size: 11 } : null,
       church?.diocese ? { text: church.diocese, size: 10, italic: true } : null,
-      { text: 'TRIAL BALANCE', bold: true, size: 13, bg: '1E3A5F' },
+      { text: 'TRIAL BALANCE', bold: true, size: 13, bg: '1E3A5F', color: 'FFFFFF' },
       { text: `From: ${fmtDateDisplay(dateFrom)}  To: ${fmtDateDisplay(dateTo)}  (FY ${fy})`, size: 10 },
       { text: 'All amounts in Indian Rupees (₹)', size: 9, italic: true },
     ].filter(Boolean)

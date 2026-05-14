@@ -72,7 +72,7 @@ function downloadBuffer(buffer, fileName) {
   URL.revokeObjectURL(url)
 }
 
-/* Title-block export — titleLines: [{ text, bold?, size?, italic?, bg? }] */
+/* Title-block export — titleLines: [{ text, bold?, size?, italic?, bg?, color? }] */
 export async function exportToExcelWithTitle(columns, rows, sheetName, fileName, titleLines = []) {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
@@ -81,6 +81,7 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
 
   const colCount  = columns.length
   const frozenRow = titleLines.length + 1        // freeze below title + header
+  const lastTitle = titleLines.length            // index of last title line (1-based row)
 
   const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: frozenRow }] })
 
@@ -91,14 +92,26 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
   })
 
   // ── Title block rows ────────────────────────────────────────────
-  titleLines.forEach(({ text, bold, size, italic, bg }) => {
+  titleLines.forEach(({ text, bold, size, italic, bg, color }, idx) => {
+    const isFirst = idx === 0
+    const isLast  = idx === lastTitle - 1
     const r = ws.addRow([text, ...Array(colCount - 1).fill('')])
     ws.mergeCells(r.number, 1, r.number, colCount)
     const cell    = ws.getCell(r.number, 1)
     cell.value    = text
-    cell.font     = { bold: !!bold, italic: !!italic, size: size || 11, name: 'Calibri' }
+    cell.font     = { bold: !!bold, italic: !!italic, size: size || 11, name: 'Calibri',
+                      color: { argb: color || '111827' } }
     cell.fill     = bg ? { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } } : undefined
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border   = {
+      top:    isFirst ? outerMed : innerThin,
+      bottom: isLast  ? outerMed : innerThin,
+      left:   outerMed,
+      right:  outerMed,
+    }
+    // ExcelJS needs the right-edge cell border set explicitly on merged rows
+    const rightCell = ws.getCell(r.number, colCount)
+    rightCell.border = { ...cell.border }
     r.height      = (size || 11) * 2.2
   })
 
