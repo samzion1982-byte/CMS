@@ -985,11 +985,11 @@ html { zoom: 0.95; }
 .simple-accounts-scope button:active:not(:disabled) { filter: brightness(0.78) !important; transform: none !important; }
 
 /* Prevent I-beam cursor AND blinking text caret on all non-interactive content */
-body { user-select: none; }
+body { user-select: none; caret-color: transparent; }
 div, td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
 /* Restore correct cursors and text selection for interactive elements */
 a, button, [role="button"]             { cursor: pointer; }
-input, textarea, select                { cursor: text; user-select: text; }
+input, textarea, select                { cursor: text; user-select: text; caret-color: auto; }
 input[type="checkbox"],
 input[type="radio"]                    { cursor: pointer; user-select: none; }
 
