@@ -251,9 +251,12 @@ export default function DeclarationPage() {
 
   const toggleFYLock = useCallback(async (fy) => {
     const willLock = !lockedFYs.has(fy)
+    const now = new Date().toISOString()
+    const update = willLock ? { is_locked: true } : { is_locked: false, last_activity_at: now }
     const { error } = await supabase.from('decl_financial_years')
-      .update({ is_locked: willLock }).eq('fy', fy)
+      .update(update).eq('fy', fy)
     if (error) return
+    if (!willLock) setFyActivity(prev => ({ ...prev, [fy]: now }))
     setLockedFYs(prev => {
       const next = new Set(prev)
       if (next.has(fy)) next.delete(fy); else next.add(fy)

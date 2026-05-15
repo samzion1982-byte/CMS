@@ -735,7 +735,7 @@ const lockFY = async (fy) => {
     const { error } = await supabase.auth.signInWithPassword({ email: user?.email || '', password: unlockPw })
     setUnlocking(false)
     if (error) { setUnlockErr('Incorrect password'); pwRef.current?.select(); return }
-    await supabase.from('receipt_financial_years').upsert({ fy, is_locked: false }, { onConflict: 'fy' })
+    await supabase.from('receipt_financial_years').upsert({ fy, is_locked: false, last_activity_at: new Date().toISOString() }, { onConflict: 'fy' })
     setUnlockingFY(null); setUnlockPw(''); setUnlockErr('')
     onRefresh()
     toast(`FY ${fy} unlocked`, 'success')
