@@ -295,7 +295,7 @@ export default function LoginPage() {
           background: linear-gradient(180deg, rgba(8,12,36,0.96) 0%, rgba(3,5,18,0.98) 100%);
           backdrop-filter: blur(2px);
           border-radius: 22px;
-          padding: 28px 30px 24px;
+          padding: 20px 30px 18px;
           overflow: hidden;
           transition: all 0.3s ease;
           border: 1px solid rgba(59,130,246,0.2);
@@ -310,8 +310,8 @@ export default function LoginPage() {
         /* Verse */
         .verse-top {
           text-align: center;
-          margin-bottom: 20px;
-          padding-bottom: 16px;
+          margin-bottom: 14px;
+          padding-bottom: 12px;
           border-bottom: 1px solid rgba(59,130,246,0.2);
         }
         .verse-text {
@@ -336,17 +336,17 @@ export default function LoginPage() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          margin-bottom: 20px;
+          margin-bottom: 14px;
           width: 100%;
         }
-        
+
         .church-header {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 12px;
-          margin-bottom: 10px;
+          gap: 8px;
+          margin-bottom: 6px;
           width: 100%;
         }
         
@@ -390,12 +390,12 @@ export default function LoginPage() {
         .cms-divider {
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(59,130,246,0.4), #60a5fa, rgba(59,130,246,0.4), transparent);
-          margin: 20px 0 20px 0;
+          margin: 12px 0;
         }
 
         /* CMS LABEL - Golden effect only */
         .cms-section {
-          margin-bottom: 18px;
+          margin-bottom: 14px;
           text-align: center;
         }
         .church-cms-label {
@@ -429,7 +429,7 @@ export default function LoginPage() {
         }
 
         /* Form inputs */
-        .f-group { margin-bottom: 16px; }
+        .f-group { margin-bottom: 12px; }
         .f-label {
           display: block;
           font-size: 11px;
@@ -666,7 +666,7 @@ export default function LoginPage() {
         }
 
         @media (max-width: 550px) {
-          .card { padding: 28px 24px 26px; }
+          .card { padding: 16px 20px 16px; }
           .church-name { font-size: 18px; letter-spacing: 1px; }
           .church-location { font-size: 10px; }
           .church-cms-label { font-size: 14px; letter-spacing: 1.5px; }
