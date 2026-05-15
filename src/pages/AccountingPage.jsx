@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import { useEntity } from '../lib/EntityContext'
 import {
   getFY, fyOptions, fmtAmt,
   getAccountingStats, getJournalEntries, getChartOfAccounts,
@@ -14,11 +15,11 @@ import {
   TYPE_COLOR, VOUCHER_COLOR, displayAccountType,
 } from '../lib/accountingLib'
 import {
-  BookOpen, Settings, TrendingUp, TrendingDown, Scale, IndianRupee,
+  Settings, TrendingUp, TrendingDown, Scale, IndianRupee,
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
-  BarChart2, BookMarked, ClipboardList, Wallet, RefreshCw,
-  ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight, Layers,
-  Copy, Archive, CheckSquare, BarChart, Target, Building2,
+  BarChart2, ClipboardList, Wallet, RefreshCw,
+  ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight,
+  CheckSquare, BarChart, Target, Building2, Layers,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -31,13 +32,9 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
 
   function Detail({ accounts, color, extraRows }) {
     const rows = accounts.length > 0 ? accounts : extraRows || []
+    if (!open) return null
     return (
-      <div style={{
-        maxHeight: open ? 200 : 0,
-        opacity:   open ? 1   : 0,
-        overflow: 'hidden',
-        transition: 'max-height 0.38s cubic-bezier(0.4,0,0.2,1), opacity 0.28s ease',
-      }}>
+      <div>
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 5 }}>
           {rows.map((r, i) => (
             <div key={r.id ?? i} style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -57,26 +54,19 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
       className="card"
       onMouseEnter={() => !loading && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', marginBottom: 14, overflow: 'hidden',
-        transition: 'box-shadow 0.3s ease, transform 0.3s cubic-bezier(0.34,1.56,0.64,1)',
-        transform: open ? 'translateY(-2px)' : 'none',
-        boxShadow: open ? '0 12px 36px rgba(0,0,0,0.13)' : 'var(--card-shadow)',
-      }}
+      style={{ display: 'flex', marginBottom: 14, overflow: 'hidden' }}
     >
       {/* Cash */}
       <div style={{ flex: 1, padding: '16px 22px', borderRight: '1px solid var(--card-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Wallet size={13} color="#16a34a" />
           </div>
           <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>Cash & Petty Cash</span>
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontWeight: 900, color: '#16a34a', margin: 0, lineHeight: 1,
-              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(cashTotal)}</p>
+          : <p style={{ fontWeight: 900, color: '#16a34a', margin: 0, lineHeight: 1, fontSize: 24 }}>{fmtAmt(cashTotal)}</p>
         }
         {!loading && cashAccounts.length === 0
           ? <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
@@ -87,16 +77,14 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
       {/* Bank */}
       <div style={{ flex: 1, padding: '16px 22px', borderRight: '1px solid var(--card-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Building2 size={13} color="#2563eb" />
           </div>
           <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', flex: 1 }}>Bank Accounts</span>
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontWeight: 900, color: '#2563eb', margin: 0, lineHeight: 1,
-              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(bankTotal)}</p>
+          : <p style={{ fontWeight: 900, color: '#2563eb', margin: 0, lineHeight: 1, fontSize: 24 }}>{fmtAmt(bankTotal)}</p>
         }
         {!loading && bankAccounts.length === 0
           ? <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0', fontStyle: 'italic' }}>No accounts</p>
@@ -105,19 +93,16 @@ function BalanceBar({ cashAccounts, bankAccounts, cashTotal, bankTotal, loading 
       </div>
 
       {/* Total */}
-      <div style={{ flex: 1, padding: '16px 22px', background: 'var(--card-header-bg)',
-        transition: 'background 0.3s ease', background: open ? '#f5f0ff' : 'var(--card-header-bg)' }}>
+      <div style={{ flex: 1, padding: '16px 22px', background: 'var(--card-header-bg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            transition: 'transform 0.3s ease', transform: open ? 'scale(1.15)' : 'scale(1)' }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <IndianRupee size={13} color="#7c3aed" />
           </div>
           <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)' }}>Total Funds</span>
         </div>
         {loading
           ? <div className="loading-skeleton" style={{ height: 28, borderRadius: 5, width: '55%' }} />
-          : <p style={{ fontWeight: 900, color: '#7c3aed', margin: 0, lineHeight: 1,
-              transition: 'font-size 0.25s ease', fontSize: open ? 22 : 24 }}>{fmtAmt(totalFunds)}</p>
+          : <p style={{ fontWeight: 900, color: '#7c3aed', margin: 0, lineHeight: 1, fontSize: 24 }}>{fmtAmt(totalFunds)}</p>
         }
         <Detail
           accounts={[]}
@@ -477,6 +462,11 @@ export default function AccountingPage() {
   const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const { entities, currentEntity, currentEntityId, switchEntity, loading: entityLoading } = useEntity()
+  const [entityOpen,     setEntityOpen]     = useState(false)
+  const [switchTarget,   setSwitchTarget]   = useState(null)  // entity pending password
+  const [switchPwInput,  setSwitchPwInput]  = useState('')
+  const [switchPwError,  setSwitchPwError]  = useState('')
 
   const [enabled,         setEnabled]         = useState(null) // null = loading
   const [entryLocked,     setEntryLocked]     = useState(null) // null = loading
@@ -492,6 +482,7 @@ export default function AccountingPage() {
   const FYS = fyOptions()
 
   const load = useCallback(async () => {
+    if (!currentEntityId) { setLoading(false); return }
     setLoading(true)
     try {
       const [on, setup] = await Promise.all([isAccountingEnabled(), getEntrySystemStatus()])
@@ -500,9 +491,9 @@ export default function AccountingPage() {
       setEntrySystem(setup.entry_system)
       if (!on) { setLoading(false); return }
       const [s, accts, ents] = await Promise.all([
-        getAccountingStats(fy),
-        getChartOfAccounts(true),
-        getJournalEntries({ fy }),
+        getAccountingStats(fy, currentEntityId),
+        getChartOfAccounts(true, currentEntityId),
+        getJournalEntries({ fy, entityId: currentEntityId }),
       ])
       setStats(s)
       setAccounts(accts)
@@ -511,7 +502,7 @@ export default function AccountingPage() {
       toast('Failed to load accounting data: ' + e.message, 'error')
     }
     setLoading(false)
-  }, [fy, toast])
+  }, [fy, currentEntityId, toast])
 
   useEffect(() => { load() }, [load])
 
@@ -566,7 +557,47 @@ export default function AccountingPage() {
     )
   }
 
+  // ── No entity in DB ───────────────────────────────────────────
+  if (!entityLoading && !currentEntityId) {
+    return (
+      <div className="page-container">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Landmark size={22} style={{ color: 'var(--accent)' }} /> Accounts
+            </h1>
+            <p className="page-subtitle">Financial overview &amp; accounting management</p>
+          </div>
+        </div>
+        <div className="card" style={{ padding: '60px 40px', textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#eff6ff', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Layers size={28} color="#2563eb" />
+          </div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 8px' }}>No Accounting Book Found</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 440, margin: '0 auto 24px', lineHeight: 1.6 }}>
+            The database migration ran but no accounting entity was seeded. Create your first accounting book to get started.
+          </p>
+          <button
+            onClick={() => navigate('/accounting/entities')}
+            style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            <Layers size={15} /> Set Up Accounting Book
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const L = loading || enabled === null || entryLocked === null
+
+  // Blocks navigation to any entry-creation page until the entry system is locked
+  function guardedNav(path) {
+    if (!entryLocked) {
+      toast('Accounting method not set up. Go to Settings and lock the entry system first.', 'error')
+      return
+    }
+    navigate(path)
+  }
 
   // Show setup modal when accounting is on, not yet locked, and not skipped this session
   const showSetup = enabled === true && entryLocked === false && !setupDismissed
@@ -580,6 +611,57 @@ export default function AccountingPage() {
         }} />
       )}
 
+      {/* Switch entity — master password gate */}
+      {switchTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 400, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '22px 26px 18px', borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <Lock size={22} color="#d97706" />
+              </div>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 4px' }}>Switch Accounting Book</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+                Switching to <strong style={{ color: 'var(--accent)' }}>{switchTarget.name}</strong> requires the master password.
+              </p>
+            </div>
+            <div style={{ padding: '20px 26px' }}>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>Master Password</label>
+              <input
+                type="password"
+                value={switchPwInput}
+                onChange={e => { setSwitchPwInput(e.target.value); setSwitchPwError('') }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && switchPwInput) {
+                    if (switchPwInput !== MASTER_PASSWORD) { setSwitchPwError('Incorrect password.'); setSwitchPwInput(''); return }
+                    switchEntity(switchTarget.id); toast(`Switched to "${switchTarget.name}".`, 'success')
+                    setSwitchTarget(null); setSwitchPwInput(''); setSwitchPwError('')
+                  }
+                }}
+                placeholder="Enter master password…"
+                autoFocus
+                style={{ width: '100%', height: 40, padding: '0 12px', border: `1.5px solid ${switchPwError ? '#b91c1c' : 'var(--card-border)'}`, borderRadius: 8, fontSize: 14, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', letterSpacing: '0.1em' }}
+              />
+              {switchPwError && <p style={{ fontSize: 12, color: '#b91c1c', margin: '5px 0 0', fontWeight: 600 }}>{switchPwError}</p>}
+            </div>
+            <div style={{ padding: '0 26px 24px', display: 'flex', gap: 10 }}>
+              <button onClick={() => { setSwitchTarget(null); setSwitchPwInput(''); setSwitchPwError('') }} className="no-lift"
+                style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                Cancel
+              </button>
+              <button disabled={!switchPwInput} className="no-lift"
+                onClick={() => {
+                  if (switchPwInput !== MASTER_PASSWORD) { setSwitchPwError('Incorrect password.'); setSwitchPwInput(''); return }
+                  switchEntity(switchTarget.id); toast(`Switched to "${switchTarget.name}".`, 'success')
+                  setSwitchTarget(null); setSwitchPwInput(''); setSwitchPwError('')
+                }}
+                style={{ flex: 2, height: 40, background: switchPwInput ? '#d97706' : '#e5e7eb', color: switchPwInput ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: switchPwInput ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                <Lock size={13} /> Confirm &amp; Switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="page-header">
         <div>
@@ -590,10 +672,42 @@ export default function AccountingPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Entity Switcher */}
+          {entities.length > 1 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setEntityOpen(o => !o)}
+                className="no-lift ac-entity-btn"
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 9, fontSize: 15, fontWeight: 700, color: '#1d4ed8', cursor: 'pointer' }}
+              >
+                <Layers size={15} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentEntity?.name || 'Select Entity'}</span>
+                <ChevronDown size={15} style={{ flexShrink: 0 }} />
+              </button>
+              {entityOpen && (
+                <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 220, overflow: 'hidden' }}>
+                  {entities.filter(e => e.is_active).map(e => (
+                    <button key={e.id}
+                      onClick={() => {
+                        setEntityOpen(false)
+                        if (e.id === currentEntityId) return
+                        setSwitchTarget(e); setSwitchPwInput(''); setSwitchPwError('')
+                      }}
+                      className="no-lift"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: e.id === currentEntityId ? 'var(--sidebar-item-active-bg)' : 'transparent', color: e.id === currentEntityId ? 'var(--accent)' : 'var(--text-1)', fontWeight: e.id === currentEntityId ? 700 : 400, border: 'none', cursor: e.id === currentEntityId ? 'default' : 'pointer' }}>
+                      <Layers size={12} style={{ flexShrink: 0 }} /> {e.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* FY Selector */}
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setFyOpen(o => !o)}
+              className="no-lift ac-fy-btn"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--text-1)', cursor: 'pointer' }}
             >
               FY {fy} <ChevronDown size={13} />
@@ -602,6 +716,7 @@ export default function AccountingPage() {
               <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140, overflow: 'hidden' }}>
                 {FYS.map(f => (
                   <button key={f} onClick={() => { setFy(f); setFyOpen(false) }}
+                    className="no-lift"
                     style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
                     FY {f}
                   </button>
@@ -610,14 +725,14 @@ export default function AccountingPage() {
             )}
           </div>
 
-          <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+          <button onClick={load} title="Refresh" className="no-lift ac-icon-btn" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <RefreshCw size={15} />
           </button>
-
 
           <button
             onClick={() => navigate('/accounting/settings')}
             title="Accounting Settings"
+            className="no-lift ac-icon-btn"
             style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}
           >
             <Settings size={15} />
@@ -630,7 +745,17 @@ export default function AccountingPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, marginBottom: 20, fontSize: 13, color: '#c2410c' }}>
           <AlertCircle size={16} />
           <span><strong>{stats.draftEntries}</strong> draft {stats.draftEntries === 1 ? 'entry' : 'entries'} pending posting. Post them to update balances.</span>
-          <button onClick={() => navigate('/accounting/journal-entries')} style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: '#c2410c', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>View All</button>
+          <button onClick={() => navigate('/accounting/journal-entries')} className="no-lift" style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: '#c2410c', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>View All</button>
+        </div>
+      )}
+
+      {/* ── Current book title ──────────────────────────────────── */}
+      {currentEntity?.name && (
+        <div style={{ textAlign: 'center', margin: '-6px 0 20px' }}>
+          <span className="ac-entity-badge">
+            <Layers size={16} />
+            {currentEntity.name}
+          </span>
         </div>
       )}
 
@@ -733,10 +858,10 @@ export default function AccountingPage() {
               <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Entries</p>
             </div>
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <QuickBtn icon={IndianRupee}    label="Receipt Voucher" desc="Money received — cash or bank" onClick={() => navigate('/accounting/receipt-voucher')} color="#16a34a" />
-              <QuickBtn icon={CreditCard}     label="Payment Voucher" desc="Money paid out — cash or bank"  onClick={() => navigate('/accounting/payment-voucher')} color="#dc2626" />
-              <QuickBtn icon={ArrowLeftRight} label="Contra Entry"    desc="Cash ↔ bank transfers"          onClick={() => navigate('/accounting/contra-voucher')} color="#7c3aed" />
-              <QuickBtn icon={FileText}       label="Journal Entry"   desc="General double-entry posting"   onClick={() => navigate('/accounting/journal-voucher')} color="#0891b2" />
+              <QuickBtn icon={IndianRupee}    label="Receipt Voucher" desc="Money received — cash or bank" onClick={() => guardedNav('/accounting/receipt-voucher')} color="#16a34a" />
+              <QuickBtn icon={CreditCard}     label="Payment Voucher" desc="Money paid out — cash or bank"  onClick={() => guardedNav('/accounting/payment-voucher')} color="#dc2626" />
+              <QuickBtn icon={ArrowLeftRight} label="Contra Entry"    desc="Cash ↔ bank transfers"          onClick={() => guardedNav('/accounting/contra-voucher')} color="#7c3aed" />
+              <QuickBtn icon={FileText}       label="Journal Entry"   desc="General double-entry posting"   onClick={() => guardedNav('/accounting/journal-voucher')} color="#0891b2" />
             </div>
           </div>
 
@@ -754,31 +879,16 @@ export default function AccountingPage() {
             </div>
           </div>
 
-          {/* Master Setup */}
+          {/* Analysis */}
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Layers size={14} color="#64748b" />
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Master Setup</p>
+              <BarChart size={14} color="#c2410c" />
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Analysis</p>
             </div>
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <QuickBtn icon={BookOpen} label="Chart of Accounts"  desc="View & manage account hierarchy"    onClick={() => navigate('/accounting/chart-of-accounts')} color="#475569" />
-              <QuickBtn icon={Scale}    label="Opening Balances"   desc="Set account balances at FY start"   onClick={() => navigate('/accounting/opening-balances')}  color="#0891b2" />
-              <QuickBtn icon={Copy}     label="Journal Templates"  desc="Save & reuse recurring entries"     onClick={() => navigate('/accounting/templates')}          color="#7c3aed" />
-              <QuickBtn icon={Wallet}   label="Designated Funds"   desc="Building, Benevolence & other funds" onClick={() => navigate('/accounting/funds')}              color="#c2410c" />
-            </div>
-          </div>
-
-          {/* Year-End & Reconciliation */}
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Archive size={14} color="#c2410c" />
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Year-End &amp; Analysis</p>
-            </div>
-            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <QuickBtn icon={Archive}     label="Year-End Closing"     desc="Post closing entries to Corpus Fund"  onClick={() => navigate('/accounting/year-end-closing')}    color="#c2410c" />
               <QuickBtn icon={CheckSquare} label="Bank Reconciliation"  desc="Match entries against bank statement"  onClick={() => navigate('/accounting/bank-reconciliation')} color="#0891b2" />
               <QuickBtn icon={BarChart}    label="Budget vs Actual"     desc="Compare budgets to real spending"      onClick={() => navigate('/accounting/budget-vs-actual')}    color="#16a34a" />
-              <QuickBtn icon={Target}     label="Fund Report"          desc="Balances per designated fund"          onClick={() => navigate('/accounting/fund-report')}         color="#7c3aed" />
+              <QuickBtn icon={Target}      label="Fund Report"          desc="Balances per designated fund"          onClick={() => navigate('/accounting/fund-report')}         color="#7c3aed" />
             </div>
           </div>
 

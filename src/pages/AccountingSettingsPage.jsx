@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
 import {
-  flushJournalEntries, resetEntrySystemLock,
+  flushJournalEntries, resetEntrySystemLock, lockEntrySystem,
   getChartOfAccounts, getPostableAccountsWithPath, VOUCHER_TYPES,
 } from '../lib/accountingLib'
 import {
@@ -16,14 +16,15 @@ import {
   applyBackupRestore,
 } from '../lib/accountingBackup'
 import {
-  ArrowLeft, Settings, Save, Loader2, BookOpen, ClipboardList,
-  Lock, CheckCircle, Trash2, RotateCcw, AlertTriangle,
-  Globe, FileText, Receipt, CreditCard, CalendarOff,
+  ArrowLeft, Settings, Save, Loader2, ClipboardList,
+  Lock, Trash2, RotateCcw, AlertTriangle,
+  Globe, Receipt, CreditCard, CalendarOff,
   Link2, Eye, EyeOff, Hash, Calendar,
   Download, Upload, Database, ShieldCheck, XCircle, AlertCircle,
-  Plus, Pencil, X, Tag,
+  Plus, Pencil, X, Tag, ShieldAlert, BookOpen, Scale, Copy, Wallet, Archive, ChevronRight, BarChart2, Layers, Star,
 } from 'lucide-react'
 import { displayAccountType } from '../lib/accountingLib'
+import { useEntity } from '../lib/EntityContext'
 
 const MASTER_PASSWORD = 'Master007))&'
 
@@ -221,26 +222,6 @@ function MasterPasswordModal({ title, description, confirmLabel, confirmColor = 
   )
 }
 
-// ── Entry system option card ──────────────────────────────────────
-
-function EntryCard({ value, selected, onSelect, title, subtitle, bullets }) {
-  const active = selected === value
-  return (
-    <div onClick={() => onSelect(value)} style={{ flex: 1, padding: '18px 20px', borderRadius: 12, cursor: 'pointer', border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`, background: active ? 'var(--sidebar-item-active-bg)' : 'var(--card-bg)', transition: 'all 0.15s' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-        <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`, background: active ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', display: 'block' }} />}
-        </div>
-        <p style={{ fontSize: 14, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-1)', margin: 0 }}>{title}</p>
-      </div>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.5 }}>{subtitle}</p>
-      <ul style={{ margin: 0, padding: '0 0 0 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {bullets.map(b => <li key={b} style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>{b}</li>)}
-      </ul>
-    </div>
-  )
-}
-
 // ── Settings page lock screen (master password required to open) ──
 
 function SettingsLockScreen({ onUnlock }) {
@@ -366,13 +347,13 @@ const INPUT_STYLE = { height: 38, padding: '0 12px', border: '1.5px solid var(--
 export default function AccountingSettingsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { entities, currentEntityId, defaultEntityId, switchEntity, setDefaultEntity, reload: reloadEntities } = useEntity()
 
   const [pageUnlocked, setPageUnlocked] = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
   const [churchId,    setChurchId]    = useState(null)
   const [churchName,  setChurchName]  = useState('')
-  const [diocese,     setDiocese]     = useState('')
   const [acEnabled,   setAcEnabled]   = useState(false)
   const [accounts,    setAccounts]    = useState([])
   const [dangerModal, setDangerModal] = useState(null)
@@ -388,8 +369,6 @@ export default function AccountingSettingsPage() {
   const [numberFormat,  setNumberFormat]  = useState('indian')
   const [dateFormat,    setDateFormat]    = useState('DD-MM-YYYY')
 
-  // Report
-  const [reportSubtitle, setReportSubtitle] = useState('')
 
   const [autoPost,        setAutoPost]        = useState(false)
   const [prefixes, setPrefixes] = useState({
@@ -414,6 +393,8 @@ export default function AccountingSettingsPage() {
   // Custom Voucher Types (stored as JSON in churches)
   const [customVouchers, setCustomVouchers] = useState([])  // [{name, prefix, color}]
 
+  const [lockingSystem, setLockingSystem] = useState(false)
+
   // Backup & Restore
   const fileInputRef                  = useRef(null)
   const [exportWorking, setExportWorking] = useState(false)
@@ -421,16 +402,25 @@ export default function AccountingSettingsPage() {
   const [validating,    setValidating]    = useState(false)
   const [restoring,     setRestoring]     = useState(false)
 
-  // ── Load ──────────────────────────────────────────────────────
+  // Entity management (inline)
+  const ENTITY_TYPES = ['Church', 'Trust', 'School', 'Complex', 'Other']
+  const [entityModal,      setEntityModal]      = useState(null)  // null | 'add' | { editing: entity }
+  const [entityDeleting,   setEntityDeleting]   = useState(null)
+  const [entityToggling,   setEntityToggling]   = useState(null)
+  const [entitySavingType, setEntitySavingType] = useState(null)
+  const activeEntityCount = entities.filter(e => e.is_active).length
+
+  // Switch entity — master password gate
+  const [switchTarget,  setSwitchTarget]  = useState(null)  // entity object pending switch
+  const [switchPwInput, setSwitchPwInput] = useState('')
+  const [switchPwError, setSwitchPwError] = useState('')
+
+  // ── Load church settings (no entityId needed) ─────────────────
   useEffect(() => {
-    Promise.all([
-      supabase.from('churches').select('*').limit(1).single(),
-      getChartOfAccounts(true).then(all => getPostableAccountsWithPath(all)),
-    ]).then(([{ data, error }, accts]) => {
+    supabase.from('churches').select('*').limit(1).single().then(({ data, error }) => {
       if (error || !data) { toast('Could not load settings', 'error'); setLoading(false); return }
       setChurchId(data.id)
       setChurchName(data.church_name || '')
-      setDiocese(data.diocese || '')
       setAcEnabled(!!data.accounting_enabled)
       setCustomVouchers(Array.isArray(data.accounting_custom_vouchers) ? data.accounting_custom_vouchers : [])
       setEntrySystem(data.accounting_entry_system || 'double')
@@ -439,7 +429,6 @@ export default function AccountingSettingsPage() {
       setCurrency(data.accounting_currency || '₹')
       setNumberFormat(data.accounting_number_format || 'indian')
       setDateFormat(data.accounting_date_format || 'DD-MM-YYYY')
-      setReportSubtitle(data.accounting_report_subtitle || '')
       setAutoPost(!!data.accounting_auto_post)
       setPrefixes({
         prefix_receipt: data.accounting_prefix_receipt || 'RV',
@@ -454,10 +443,15 @@ export default function AccountingSettingsPage() {
       setOpeningDate(data.accounting_opening_date || '')
       setAutoPostReceipts(!!data.accounting_auto_post_receipts)
       setFiscalMonth(data.accounting_fiscal_month || 4)
-      setAccounts(accts || [])
       setLoading(false)
     })
   }, [toast])
+
+  // ── Load accounts list when entity changes ─────────────────────
+  useEffect(() => {
+    if (!currentEntityId) return
+    getChartOfAccounts(true, currentEntityId).then(all => setAccounts(getPostableAccountsWithPath(all)))
+  }, [currentEntityId])
 
   // When country changes, auto-apply presets
   function handleCountryChange(c) {
@@ -531,6 +525,77 @@ export default function AccountingSettingsPage() {
     setRestoring(false)
   }
 
+  // ── Entity handlers ───────────────────────────────────────────
+  async function handleEntitySave(formData) {
+    if (entityModal?.editing) {
+      const { error } = await supabase.from('accounting_entities').update(formData).eq('id', entityModal.editing.id)
+      if (error) { toast('Save failed: ' + error.message, 'error'); return }
+      toast('Book updated.', 'success')
+    } else {
+      const { error } = await supabase.from('accounting_entities').insert(formData)
+      if (error) { toast('Save failed: ' + error.message, 'error'); return }
+      toast('Accounting book added.', 'success')
+    }
+    setEntityModal(null)
+    reloadEntities()
+  }
+
+  async function handleEntityDelete(entity) {
+    if (!window.confirm(`Delete "${entity.name}"? This cannot be undone.`)) return
+    setEntityDeleting(entity.id)
+    try {
+      const [{ count: coaCount }, { count: jeCount }] = await Promise.all([
+        supabase.from('chart_of_accounts').select('id', { count: 'exact', head: true }).eq('entity_id', entity.id),
+        supabase.from('journal_entries').select('id', { count: 'exact', head: true }).eq('entity_id', entity.id),
+      ])
+      if ((coaCount || 0) > 0 || (jeCount || 0) > 0) {
+        toast(`Cannot delete: this book has ${coaCount || 0} accounts and ${jeCount || 0} journal entries. Rename it instead.`, 'error')
+        setEntityDeleting(null); return
+      }
+      const { error } = await supabase.from('accounting_entities').delete().eq('id', entity.id)
+      if (error) throw error
+      await reloadEntities()
+      toast('Book deleted.', 'success')
+    } catch (e) { toast('Delete failed: ' + e.message, 'error') }
+    setEntityDeleting(null)
+  }
+
+  async function handleEntityToggle(entity) {
+    if (entity.is_active && activeEntityCount <= 1) { toast('Cannot deactivate the last active book.', 'error'); return }
+    setEntityToggling(entity.id)
+    const newVal = !entity.is_active
+    const { error } = await supabase.from('accounting_entities').update({ is_active: newVal }).eq('id', entity.id)
+    if (error) { toast('Update failed: ' + error.message, 'error'); setEntityToggling(null); return }
+    if (!newVal && entity.id === currentEntityId) {
+      const next = entities.find(e => e.id !== entity.id && e.is_active)
+      if (next) switchEntity(next.id)
+    }
+    await reloadEntities()
+    setEntityToggling(null)
+    toast(`Book ${newVal ? 'activated' : 'deactivated'}.`, 'success')
+  }
+
+  function handleSwitchConfirm() {
+    if (switchPwInput !== MASTER_PASSWORD) {
+      setSwitchPwError('Incorrect password.')
+      setSwitchPwInput('')
+      return
+    }
+    switchEntity(switchTarget.id)
+    toast(`Switched to "${switchTarget.name}".`, 'success')
+    setSwitchTarget(null)
+    setSwitchPwInput('')
+    setSwitchPwError('')
+  }
+
+  async function handleEntityTypeChange(entity, newType) {
+    setEntitySavingType(entity.id)
+    const { error } = await supabase.from('accounting_entities').update({ entity_type: newType }).eq('id', entity.id)
+    if (error) toast('Update failed: ' + error.message, 'error')
+    else { reloadEntities(); toast('Type updated.', 'success') }
+    setEntitySavingType(null)
+  }
+
   // ── Save ──────────────────────────────────────────────────────
   async function handleSave() {
     if (!churchId) return
@@ -540,7 +605,6 @@ export default function AccountingSettingsPage() {
       accounting_currency:          currency,
       accounting_number_format:     numberFormat,
       accounting_date_format:       dateFormat,
-      accounting_report_subtitle:   reportSubtitle || null,
       accounting_auto_post:         autoPost,
       accounting_prefix_receipt:    prefixes.prefix_receipt || 'RV',
       accounting_prefix_payment:    prefixes.prefix_payment || 'PV',
@@ -556,6 +620,7 @@ export default function AccountingSettingsPage() {
       accounting_custom_vouchers:      customVouchers,
     }).eq('id', churchId)
     if (error) { toast('Failed to save: ' + error.message, 'error'); setSaving(false); return }
+
     toast('Settings saved.', 'success')
     setSaving(false)
   }
@@ -609,8 +674,133 @@ export default function AccountingSettingsPage() {
     </div>
   )
 
+  // ── Inline entity add/edit modal ─────────────────────────────
+  function EntityFormModal({ editing, onSave, onCancel }) {
+    const isEdit = !!editing
+    const [name,        setName]        = useState(editing?.name        || '')
+    const [entityType,  setEntityType]  = useState(editing?.entity_type || 'Church')
+    const [address,     setAddress]     = useState(editing?.address     || '')
+    const [city,        setCity]        = useState(editing?.city        || '')
+    const [dioceseVal,  setDioceseVal]  = useState(editing?.diocese     || '')
+    const [description, setDescription] = useState(editing?.description || '')
+    const [saving,      setSaving2]     = useState(false)
+
+    async function doSave() {
+      const n = name.trim()
+      if (!n) return
+      setSaving2(true)
+      await onSave({
+        name: n,
+        entity_type: entityType,
+        address:     address.trim()     || null,
+        city:        city.trim()        || null,
+        diocese:     dioceseVal.trim()  || null,
+        description: description.trim() || null,
+      })
+      setSaving2(false)
+    }
+
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', overflow: 'hidden' }}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <Layers size={15} style={{ color: 'var(--accent)' }} />
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{isEdit ? 'Edit Accounting Book' : 'Add Accounting Book'}</p>
+            </div>
+            <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={16} /></button>
+          </div>
+          <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <FL>Book Name *</FL>
+              <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="e.g. CSI St.Paul's Church…" style={{ ...INPUT_STYLE }} />
+            </div>
+            <div>
+              <FL>Type</FL>
+              <select value={entityType} onChange={e => setEntityType(e.target.value)} style={{ ...INPUT_STYLE }}>
+                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <FL>Address</FL>
+                <input value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. 12 Church Road" style={{ ...INPUT_STYLE }} />
+              </div>
+              <div>
+                <FL>City</FL>
+                <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Chennai" style={{ ...INPUT_STYLE }} />
+              </div>
+            </div>
+            <div>
+              <FL>Diocese</FL>
+              <input value={dioceseVal} onChange={e => setDioceseVal(e.target.value)} placeholder="e.g. Diocese of Madras" style={{ ...INPUT_STYLE }} />
+            </div>
+            <div>
+              <FL>Description (optional)</FL>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+                placeholder="Brief description of this accounting book…"
+                style={{ ...INPUT_STYLE, height: 'auto', padding: '8px 12px', resize: 'vertical' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={onCancel} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
+              <button onClick={doSave} disabled={!name.trim() || saving}
+                style={{ flex: 2, height: 40, background: name.trim() ? 'var(--accent)' : '#e5e7eb', color: name.trim() ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: name.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Book')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="page-container">
+
+      {/* Entity modal */}
+      {entityModal === 'add' && <EntityFormModal onSave={handleEntitySave} onCancel={() => setEntityModal(null)} />}
+      {entityModal?.editing && <EntityFormModal editing={entityModal.editing} onSave={handleEntitySave} onCancel={() => setEntityModal(null)} />}
+
+      {/* Switch entity — master password gate */}
+      {switchTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 400, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '22px 26px 18px', borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <Lock size={22} color="#d97706" />
+              </div>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 4px' }}>Switch Accounting Book</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+                Switching to <strong style={{ color: 'var(--accent)' }}>{switchTarget.name}</strong> requires the master password.
+              </p>
+            </div>
+            <div style={{ padding: '20px 26px' }}>
+              <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>Master Password</label>
+              <input
+                type="password"
+                value={switchPwInput}
+                onChange={e => { setSwitchPwInput(e.target.value); setSwitchPwError('') }}
+                onKeyDown={e => e.key === 'Enter' && handleSwitchConfirm()}
+                placeholder="Enter master password…"
+                autoFocus
+                style={{ ...INPUT_STYLE, letterSpacing: '0.1em', borderColor: switchPwError ? '#b91c1c' : undefined }}
+              />
+              {switchPwError && <p style={{ fontSize: 12, color: '#b91c1c', margin: '5px 0 0', fontWeight: 600 }}>{switchPwError}</p>}
+            </div>
+            <div style={{ padding: '0 26px 24px', display: 'flex', gap: 10 }}>
+              <button onClick={() => { setSwitchTarget(null); setSwitchPwInput(''); setSwitchPwError('') }}
+                style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                Cancel
+              </button>
+              <button onClick={handleSwitchConfirm} disabled={!switchPwInput}
+                style={{ flex: 2, height: 40, background: switchPwInput ? '#d97706' : '#e5e7eb', color: switchPwInput ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: switchPwInput ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                <Lock size={13} /> Confirm &amp; Switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Danger modals */}
       {/* Voucher type modal */}
@@ -672,7 +862,7 @@ export default function AccountingSettingsPage() {
       </div>
 
       {/* Module status */}
-      <div style={{ padding: '12px 18px', borderRadius: 10, marginBottom: 24, background: acEnabled ? '#dcfce733' : '#fff7ed33', border: `1.5px solid ${acEnabled ? '#86efac' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ padding: '12px 18px', borderRadius: 10, marginBottom: 20, background: acEnabled ? '#dcfce733' : '#fff7ed33', border: `1.5px solid ${acEnabled ? '#86efac' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 18 }}>{acEnabled ? '✓' : '⚠'}</span>
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: acEnabled ? '#16a34a' : '#c2410c', margin: 0 }}>
@@ -684,39 +874,192 @@ export default function AccountingSettingsPage() {
         </div>
       </div>
 
-      {/* ── 1. Account Setup ─────────────────────────────────────── */}
-      <SectionCard icon={BookOpen} title="Account Setup" subtitle={entryLocked ? 'Your accounting system is set and locked.' : 'Choose your accounting method.'}>
+      {/* ── Accounting Books (Entity Management) ────────────────── */}
+      <SectionCard icon={Layers} title="Accounting Books" subtitle="Each book is a completely separate set of accounts and journal entries — e.g. Church body vs. a Trust or School.">
+
+        {/* Warning banner */}
+        <div style={{ display: 'flex', gap: 10, padding: '12px 16px', background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 9, marginBottom: 16 }}>
+          <AlertTriangle size={15} style={{ color: '#c2410c', flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 12, color: '#92400e', margin: 0, lineHeight: 1.6 }}>
+            <strong>Important:</strong> Books cannot be deleted once they have accounting data (accounts or journal entries). Each book is completely isolated — data is never shared between books. Switching books changes all reports and entries across the entire module.
+          </p>
+        </div>
+
+        {/* Entity rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {entities.map(entity => {
+            const TYPE_CLR = { Church: { bg: '#dbeafe', text: '#1d4ed8' }, Trust: { bg: '#dcfce7', text: '#15803d' }, School: { bg: '#fef9c3', text: '#854d0e' }, Complex: { bg: '#f3e8ff', text: '#7c3aed' }, Other: { bg: '#f1f5f9', text: '#475569' } }
+            const clr = TYPE_CLR[entity.entity_type] || TYPE_CLR.Other
+            const isCurrent = entity.id === currentEntityId
+
+            return (
+              <div key={entity.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 9, background: isCurrent ? 'var(--sidebar-item-active-bg)' : 'var(--table-header-bg)', border: `1.5px solid ${isCurrent ? 'var(--accent)' : 'var(--card-border)'}`, opacity: entity.is_active ? 1 : 0.55 }}>
+                {/* Type inline select */}
+                <select
+                  value={entity.entity_type}
+                  onChange={e => handleEntityTypeChange(entity, e.target.value)}
+                  disabled={entitySavingType === entity.id}
+                  style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, background: clr.bg, color: clr.text, border: `1px solid ${clr.text}44`, cursor: 'pointer', outline: 'none', appearance: 'none', WebkitAppearance: 'none', flexShrink: 0 }}
+                >
+                  {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+
+                {/* Name + status */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entity.name}</p>
+                  {entity.description && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '1px 0 0' }}>{entity.description}</p>}
+                </div>
+
+                {/* Badges */}
+                {isCurrent && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#dbeafe', color: '#1d4ed8', whiteSpace: 'nowrap', flexShrink: 0 }}>Active</span>}
+                {entity.id === defaultEntityId && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#fef9c3', color: '#854d0e', whiteSpace: 'nowrap', flexShrink: 0 }}>Default</span>}
+                {!entity.is_active && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#f3f4f6', color: 'var(--text-3)', flexShrink: 0 }}>Inactive</span>}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                  {!isCurrent && entity.is_active && (
+                    <button onClick={() => { setSwitchTarget(entity); setSwitchPwInput(''); setSwitchPwError('') }} title="Use this book"
+                      style={{ padding: '5px 10px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                      Switch
+                    </button>
+                  )}
+                  {/* Set as default */}
+                  <button
+                    onClick={() => { setDefaultEntity(entity.id); toast(`"${entity.name}" set as default book.`, 'success') }}
+                    title={entity.id === defaultEntityId ? 'Default book' : 'Set as default book'}
+                    style={{ padding: '5px 8px', background: entity.id === defaultEntityId ? '#fef9c3' : 'var(--card-bg)', border: `1px solid ${entity.id === defaultEntityId ? '#fde68a' : 'var(--card-border)'}`, borderRadius: 6, cursor: 'pointer', color: entity.id === defaultEntityId ? '#92400e' : 'var(--text-3)', display: 'flex', alignItems: 'center' }}>
+                    <Star size={12} fill={entity.id === defaultEntityId ? '#f59e0b' : 'none'} />
+                  </button>
+                  <button onClick={() => setEntityModal({ editing: entity })} title="Edit"
+                    style={{ padding: '5px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center' }}>
+                    <Pencil size={12} />
+                  </button>
+                  <button onClick={() => handleEntityToggle(entity)}
+                    disabled={entityToggling === entity.id || (entity.is_active && activeEntityCount <= 1)}
+                    title={entity.is_active ? 'Deactivate' : 'Activate'}
+                    style={{ padding: '5px 8px', background: entity.is_active ? '#fff7ed' : '#f0fdf4', border: `1px solid ${entity.is_active ? '#fed7aa' : '#bbf7d0'}`, borderRadius: 6, cursor: 'pointer', color: entity.is_active ? '#c2410c' : '#15803d', display: 'flex', alignItems: 'center', opacity: (entity.is_active && activeEntityCount <= 1) ? 0.4 : 1 }}>
+                    {entityToggling === entity.id ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                  </button>
+                  {!isCurrent && (
+                    <button onClick={() => handleEntityDelete(entity)} disabled={entityDeleting === entity.id} title="Delete (only if empty)"
+                      style={{ padding: '5px 8px', background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 6, cursor: 'pointer', color: '#b91c1c', display: 'flex', alignItems: 'center' }}>
+                      {entityDeleting === entity.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <button onClick={() => setEntityModal('add')}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <Plus size={14} /> Add Accounting Book
+        </button>
+      </SectionCard>
+
+      {/* ── Accounting Method ─────────────────────────────────────── */}
+      <SectionCard icon={BarChart2} title="Accounting Method"
+        subtitle={entryLocked ? 'Your accounting method is set and locked. Use Danger Zone to reset.' : 'Choose the accounting method. Once locked, it cannot be changed without a reset.'}>
+
         {entryLocked ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', borderRadius: 12, border: '2px solid var(--accent)', background: 'var(--sidebar-item-active-bg)' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 11, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <CheckCircle size={22} color="#2563eb" />
+          /* Locked — compact status */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px', borderRadius: 10, background: '#eff6ff', border: '1.5px solid #bfdbfe' }}>
+            <div style={{ width: 42, height: 42, borderRadius: 10, background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {entrySystem === 'double' ? <BarChart2 size={20} color="#2563eb" /> : <ClipboardList size={20} color="#2563eb" />}
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--accent)', margin: '0 0 2px' }}>
+              <p style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8', margin: '0 0 3px' }}>
                 {entrySystem === 'double' ? 'Double Entry System' : 'Single Entry System'}
               </p>
-              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-                {entrySystem === 'double' ? 'Full double-entry — debit and credit for every transaction.' : 'Simple cash-book style — income and payment recording.'}
+              <p style={{ fontSize: 12, color: '#3b82f6', margin: 0 }}>
+                {entrySystem === 'double'
+                  ? 'Full double-entry — every transaction has a debit and credit posting.'
+                  : 'Simple cash-book style — income and payment recording only.'}
               </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: '#fee2e2', borderRadius: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#fee2e2', borderRadius: 7, flexShrink: 0 }}>
               <Lock size={12} color="#b91c1c" />
               <span style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c' }}>Locked</span>
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <EntryCard value="single" selected={entrySystem} onSelect={setEntrySystem}
-              title="Single Entry System" subtitle="Simple cash-book style."
-              bullets={['No accounting background needed','Track cash in and cash out','Basic reports']} />
-            <EntryCard value="double" selected={entrySystem} onSelect={setEntrySystem}
-              title="Double Entry System" subtitle="Full double-entry bookkeeping."
-              bullets={['Trial Balance, Income & Expenditure, Balance Sheet','Audit-ready','Recommended for registered churches']} />
-          </div>
+          /* Unlocked — selection cards + lock button */
+          <>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
+              {[
+                {
+                  value: 'single',
+                  icon: ClipboardList,
+                  title: 'Single Entry System',
+                  subtitle: 'Simple cash-book style — income and payments only.',
+                  bullets: ['No accounting background needed', 'Record cash received and paid out', 'Basic income & expenditure reports', 'Best for small or new churches'],
+                },
+                {
+                  value: 'double',
+                  icon: BarChart2,
+                  title: 'Double Entry System',
+                  subtitle: 'Full double-entry — every transaction has debit and credit.',
+                  bullets: ['Chart of Accounts — Assets, Liabilities, Corpus Fund', 'Trial Balance, Balance Sheet, I&E reports', 'Audit-ready financial statements', 'Recommended for registered churches'],
+                },
+              ].map(card => {
+                const active = entrySystem === card.value
+                const Icon = card.icon
+                return (
+                  <div key={card.value} onClick={() => setEntrySystem(card.value)}
+                    style={{ flex: 1, minWidth: 220, padding: '16px 18px', borderRadius: 12, cursor: 'pointer', border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`, background: active ? 'var(--sidebar-item-active-bg)' : 'var(--card-bg)', transition: 'all 0.15s' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: `2px solid ${active ? 'var(--accent)' : 'var(--card-border)'}`, background: active ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {active && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff', display: 'block' }} />}
+                      </div>
+                      <Icon size={16} style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }} />
+                      <p style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text-1)', margin: 0 }}>{card.title}</p>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 8px', lineHeight: 1.5 }}>{card.subtitle}</p>
+                    <ul style={{ margin: 0, padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {card.bullets.map(b => <li key={b} style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>{b}</li>)}
+                    </ul>
+                  </div>
+                )
+              })}
+            </div>
+            <button
+              onClick={async () => {
+                if (!churchId) return
+                setLockingSystem(true)
+                try {
+                  await lockEntrySystem(churchId, entrySystem)
+                  setEntryLocked(true)
+                  toast(`${entrySystem === 'double' ? 'Double' : 'Single'} Entry System locked.`, 'success')
+                } catch (e) { toast('Failed to lock: ' + e.message, 'error') }
+                setLockingSystem(false)
+              }}
+              disabled={lockingSystem}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              {lockingSystem ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+              {lockingSystem ? 'Locking…' : `Lock as ${entrySystem === 'double' ? 'Double' : 'Single'} Entry`}
+            </button>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
+              Once locked this cannot be changed without using Danger Zone → Reset Entry System Lock.
+            </p>
+          </>
         )}
       </SectionCard>
 
-      {/* ── 2. Display & Format ──────────────────────────────────── */}
+      {/* ── Fiscal Year ──────────────────────────────────────────── */}
+      <SectionCard icon={ClipboardList} title="Fiscal Year" subtitle="Set the month your financial year begins. Indian churches typically start in April.">
+        <div style={{ maxWidth: 260 }}>
+          <FL>Financial Year Starts In</FL>
+          <select value={fiscalMonth} onChange={e => setFiscalMonth(Number(e.target.value))} style={{ ...INPUT_STYLE }}>
+            {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
+            Current FY: {MONTHS[fiscalMonth - 1]} – {MONTHS[(fiscalMonth + 10) % 12]}
+          </p>
+        </div>
+      </SectionCard>
+
+      {/* ── Display & Format ─────────────────────────────────────── */}
       <SectionCard icon={Globe} title="Display & Format" subtitle="Set how amounts, dates and currency appear across all reports and screens.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
 
@@ -771,67 +1114,8 @@ export default function AccountingSettingsPage() {
         </div>
       </SectionCard>
 
-      {/* ── 3. Report Settings ───────────────────────────────────── */}
-      <SectionCard icon={FileText} title="Report Settings" subtitle="Appears on all printed reports and exports.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-          <div>
-            <FL>Church Name (from Church Setup)</FL>
-            <input value={churchName} disabled
-              style={{ ...INPUT_STYLE, background: 'var(--table-header-bg)', color: 'var(--text-3)', cursor: 'not-allowed' }} />
-            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Edit in Church Setup</p>
-          </div>
-          <div>
-            <FL>Diocese (from Church Setup)</FL>
-            <input value={diocese} disabled
-              style={{ ...INPUT_STYLE, background: 'var(--table-header-bg)', color: 'var(--text-3)', cursor: 'not-allowed' }} />
-            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Shown on reports below church name</p>
-          </div>
-          <div>
-            <FL>Additional Subtitle (optional)</FL>
-            <input value={reportSubtitle} onChange={e => setReportSubtitle(e.target.value)}
-              placeholder="e.g. Finance Department"
-              style={{ ...INPUT_STYLE }} />
-            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>Third line on printed reports</p>
-          </div>
-        </div>
-      </SectionCard>
-
-      {/* ── 4. Voucher Settings ───────────────────────────────────── */}
-      <SectionCard icon={Receipt} title="Voucher Settings" subtitle="Configure entry number prefixes and posting behaviour.">
-
-        {/* Entry number prefixes */}
-        <div style={{ marginBottom: 16 }}>
-          <FL>Entry Number Prefixes</FL>
-          <div style={{ border: '1.5px solid var(--card-border)', borderRadius: 9, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ background: 'var(--table-header-bg)' }}>
-                <tr>
-                  {['Voucher Type','Prefix','Preview'].map(h => (
-                    <th key={h} style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {VOUCHER_PREFIXES.map(({ key, type, default: def }) => (
-                  <tr key={key} style={{ borderTop: '1px solid var(--card-border)' }}>
-                    <td style={{ padding: '8px 14px', fontSize: 13, color: 'var(--text-1)' }}>{type}</td>
-                    <td style={{ padding: '6px 10px', width: 120 }}>
-                      <input
-                        value={prefixes[key]}
-                        onChange={e => setPrefixes(p => ({ ...p, [key]: e.target.value.toUpperCase().slice(0, 4) }))}
-                        placeholder={def}
-                        style={{ ...INPUT_STYLE, height: 32, width: 80, textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}
-                      />
-                    </td>
-                    <td style={{ padding: '8px 14px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-3)' }}>
-                      {prefixes[key] || def}-{fyPart}-00001
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* ── 4. Voucher Types & Prefixes ──────────────────────────── */}
+      <SectionCard icon={Receipt} title="Voucher Types & Prefixes" subtitle="Manage all voucher types, their entry number prefixes, and posting behaviour.">
 
         <ToggleRow
           checked={autoPost}
@@ -840,13 +1124,13 @@ export default function AccountingSettingsPage() {
           desc="Entries are posted immediately instead of saving as drafts."
         />
 
-        {/* Custom Voucher Types */}
-        <div style={{ marginTop: 20 }}>
+        {/* Unified voucher types table */}
+        <div style={{ marginTop: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <FL>Custom Voucher Types</FL>
+            <FL>All Voucher Types &amp; Prefixes</FL>
             <button onClick={() => setVoucherModal('add')}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-              <Plus size={12} /> Add Type
+              <Plus size={12} /> Add Custom Type
             </button>
           </div>
 
@@ -854,16 +1138,16 @@ export default function AccountingSettingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead style={{ background: 'var(--table-header-bg)' }}>
                 <tr>
-                  {['Type', 'Prefix', 'Preview', 'Source', ''].map(h => (
+                  {['Voucher Type', 'Prefix', 'Entry # Preview', 'Source', ''].map(h => (
                     <th key={h} style={{ padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {/* Built-in types (read-only) */}
+                {/* Built-in types — prefix editable */}
                 {BUILTIN_VOUCHER_TYPES.map(type => {
-                  const pk = `prefix_${type.toLowerCase()}`
-                  const pfx = prefixes[pk] || type.slice(0,2).toUpperCase()
+                  const pk  = `prefix_${type.toLowerCase()}`
+                  const pfx = prefixes[pk] || type.slice(0, 2).toUpperCase()
                   return (
                     <tr key={type} style={{ borderTop: '1px solid var(--card-border)', background: 'var(--table-header-bg)' }}>
                       <td style={{ padding: '7px 14px', fontSize: 13, color: 'var(--text-1)', fontWeight: 600 }}>
@@ -871,10 +1155,10 @@ export default function AccountingSettingsPage() {
                           <Tag size={12} style={{ color: 'var(--text-3)' }} /> {type}
                         </div>
                       </td>
-                      <td style={{ padding: '5px 10px', width: 100 }}>
+                      <td style={{ padding: '5px 10px', width: 110 }}>
                         <input value={prefixes[pk] || ''}
-                          onChange={e => setPrefixes(p => ({ ...p, [pk]: e.target.value.toUpperCase().slice(0,4) }))}
-                          style={{ ...INPUT_STYLE, height: 30, width: 70, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase' }} />
+                          onChange={e => setPrefixes(p => ({ ...p, [pk]: e.target.value.toUpperCase().slice(0, 4) }))}
+                          style={{ ...INPUT_STYLE, height: 30, width: 75, fontFamily: 'monospace', fontWeight: 700, textTransform: 'uppercase' }} />
                       </td>
                       <td style={{ padding: '7px 14px', fontSize: 11, fontFamily: 'monospace', color: 'var(--text-3)' }}>
                         {pfx}-{fyPart}-00001
@@ -886,6 +1170,7 @@ export default function AccountingSettingsPage() {
                     </tr>
                   )
                 })}
+
                 {/* Custom types */}
                 {customVouchers.map((v, idx) => {
                   const COLOR_MAP = {
@@ -921,10 +1206,11 @@ export default function AccountingSettingsPage() {
                     </tr>
                   )
                 })}
+
                 {customVouchers.length === 0 && (
                   <tr style={{ borderTop: '1px solid var(--card-border)' }}>
                     <td colSpan={5} style={{ padding: '14px', textAlign: 'center', fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
-                      No custom voucher types yet — click Add Type to create one
+                      No custom types yet — click Add Custom Type to create one
                     </td>
                   </tr>
                 )}
@@ -932,7 +1218,7 @@ export default function AccountingSettingsPage() {
             </table>
           </div>
           <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 0 0' }}>
-            Custom types appear alongside built-in types when creating journal entries.
+            Built-in prefixes are saved with Settings. Custom types appear alongside built-in types when creating journal entries.
           </p>
         </div>
       </SectionCard>
@@ -1005,20 +1291,7 @@ export default function AccountingSettingsPage() {
         />
       </SectionCard>
 
-      {/* ── 8. Fiscal Year ───────────────────────────────────────── */}
-      <SectionCard icon={ClipboardList} title="Fiscal Year" subtitle="Set the month your financial year begins. Indian churches typically start in April.">
-        <div style={{ maxWidth: 260 }}>
-          <FL>Financial Year Starts In</FL>
-          <select value={fiscalMonth} onChange={e => setFiscalMonth(Number(e.target.value))} style={{ ...INPUT_STYLE }}>
-            {MONTHS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-            Current FY: {MONTHS[fiscalMonth - 1]} – {MONTHS[(fiscalMonth + 10) % 12]}
-          </p>
-        </div>
-      </SectionCard>
-
-      {/* ── 9. Backup & Restore ─────────────────────────────────── */}
+      {/* ── Backup & Restore ─────────────────────────────────── */}
       <SectionCard
         icon={Database}
         title="Backup & Restore"
@@ -1189,6 +1462,31 @@ export default function AccountingSettingsPage() {
               )}
             </div>
           )}
+        </div>
+      </SectionCard>
+
+      {/* ── Administration ───────────────────────────────────── */}
+      <SectionCard icon={ShieldAlert} title="Administration" subtitle="Sensitive setup tasks. Access is protected by this master password screen.">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[
+            { icon: BookOpen, label: 'Chart of Accounts',  desc: 'View and manage the account hierarchy',           path: '/accounting/chart-of-accounts' },
+            { icon: Scale,    label: 'Opening Balances',   desc: 'Set account balances at the start of each FY',    path: '/accounting/opening-balances'  },
+            { icon: Copy,     label: 'Journal Templates',  desc: 'Save and reuse recurring journal entries',        path: '/accounting/templates'          },
+            { icon: Wallet,   label: 'Designated Funds',   desc: 'Building, Benevolence and other funds',           path: '/accounting/funds'              },
+            { icon: Archive,  label: 'Year-End Closing',   desc: 'Post closing entries and close the FY',           path: '/accounting/year-end-closing'   },
+          ].map(({ icon: Icon, label, desc, path }) => (
+            <button key={path} onClick={() => navigate(path)}
+              style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', background: 'var(--table-header-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--sidebar-item-active-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon size={16} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 2px' }}>{label}</p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{desc}</p>
+              </div>
+              <ChevronRight size={15} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+            </button>
+          ))}
         </div>
       </SectionCard>
 

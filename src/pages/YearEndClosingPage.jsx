@@ -13,6 +13,7 @@ import {
   createJournalEntry, nextEntryNumber,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   ArrowLeft, Loader2, CheckCircle, AlertTriangle, RefreshCw,
   ChevronDown, Archive,
@@ -24,6 +25,7 @@ export default function YearEndClosingPage() {
   const navigate = useNavigate()
   const toast    = useToast()
   const { profile } = useAuth()
+  const { currentEntityId } = useEntity()
 
   const [fy,          setFy]          = useState(getFY())
   const [fyOpen,      setFyOpen]      = useState(false)
@@ -40,8 +42,8 @@ export default function YearEndClosingPage() {
     setAlreadyDone(false)
     try {
       const [stmt, all] = await Promise.all([
-        getIncomeStatement(fy),
-        getChartOfAccounts(true),
+        getIncomeStatement(fy, currentEntityId),
+        getChartOfAccounts(true, currentEntityId),
       ])
 
       // Check if closing entry already exists for this FY
@@ -109,7 +111,7 @@ export default function YearEndClosingPage() {
 
     setSaving(true)
     try {
-      const entryNo = await nextEntryNumber(fy, 'Journal')
+      const entryNo = await nextEntryNumber(fy, 'Journal', currentEntityId)
       const entry = {
         entry_number:   `YEC-${fy}`,
         entry_date:     fyTo,
@@ -119,6 +121,7 @@ export default function YearEndClosingPage() {
         total_debit:    totalDr,
         total_credit:   totalCr,
         is_posted:      true,
+        entity_id:      currentEntityId,
       }
       await createJournalEntry(entry, lines.map((l, i) => ({ ...l, line_number: i + 1 })), profile?.email || 'admin')
       toast('Year-end closing entries generated and posted!', 'success')

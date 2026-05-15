@@ -6,8 +6,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
-import { exportToExcel } from '../lib/exportExcel'
-import { getChurch } from '../lib/supabase'
+import { exportToExcelWithTitle } from '../lib/exportExcel'
+import { useEntity } from '../lib/EntityContext'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
 
@@ -260,6 +260,7 @@ export default function LedgerPage() {
   const navigate     = useNavigate()
   const location     = useLocation()
   const toast        = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
   const [searchParams] = useSearchParams()
 
   const cameFromReport = !!location.state?.from
@@ -280,17 +281,15 @@ export default function LedgerPage() {
   const [ledgers,      setLedgers]      = useState([]) // [{ account, lines }]
   const [loading,      setLoading]      = useState(false)
   const [generated,    setGenerated]    = useState(false)
-  const [church,       setChurch]       = useState(null)
   const autoGenDone = useRef(false)
 
   const postableIds = useMemo(() => new Set(postable.map(a => a.id)), [postable])
 
   useEffect(() => {
-    getChartOfAccounts(true).then(all => {
+    getChartOfAccounts(true, currentEntityId).then(all => {
       setAllAccounts(all)
       setPostable(getPostableAccountsWithPath(all))
     }).catch(() => {})
-    getChurch().then(setChurch).catch(() => {})
   }, [])
 
   const generate = useCallback(async () => {
@@ -300,7 +299,7 @@ export default function LedgerPage() {
       const results = await Promise.all(
         [...selectedIds].map(async id => {
           const account = allAccounts.find(a => a.id === id)
-          const lines   = await getLedger(id, dateFrom, dateTo)
+          const lines   = await getLedger(id, currentEntityId, dateFrom, dateTo)
           return { account, lines }
         })
       )
@@ -354,7 +353,15 @@ export default function LedgerPage() {
       const closingLabel = `${Math.abs(closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${closingBal >= 0 ? 'Dr' : 'Cr'}`
       rows.push({ date: 'TOTAL', entry: '', type: '', narr: `${periodLines.length} entries`, debit: totalDebit || '', credit: totalCredit || '', balance: closingLabel, _bold: true })
     })
-    exportToExcel(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`)
+    const titleLines = [
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
+      { text: 'LEDGER', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+      { text: `${dateFrom}  to  ${dateTo}`, size: 10 },
+    ].filter(Boolean)
+    exportToExcelWithTitle(cols, rows, 'Ledger', `Ledger_${dateFrom}_${dateTo}.xlsx`, titleLines)
   }
 
   function doPrint() {
@@ -448,6 +455,31 @@ export default function LedgerPage() {
 
       {/* Ledger cards */}
       <div id="ledger-print-area">
+        {/* Print-only report header */}
+        {generated && !loading && (
+          <div className="print-only" style={{ textAlign: 'center', padding: '16px 0 20px', borderBottom: '2px solid #d1d5db', marginBottom: 20 }}>
+            <p style={{ margin: '0 0 2px', fontSize: 16, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#111827' }}>
+              {currentEntity?.name || 'Entity Name'}
+            </p>
+            {(currentEntity?.address || currentEntity?.city) && (
+              <p style={{ margin: '0 0 1px', fontSize: 11, color: '#6b7280' }}>
+                {[currentEntity.address, currentEntity.city].filter(Boolean).join(', ')}
+              </p>
+            )}
+            {currentEntity?.diocese && (
+              <p style={{ margin: '0 0 3px', fontSize: 11, color: '#6b7280' }}>{currentEntity.diocese}</p>
+            )}
+            {currentEntity?.description && (
+              <p style={{ margin: '0 0 2px', fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>{currentEntity.description}</p>
+            )}
+            <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 700, letterSpacing: '1px', color: '#111827' }}>LEDGER</p>
+            <p style={{ margin: 0, fontSize: 11, color: '#6b7280' }}>
+              {new Date(dateFrom + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {' — '}
+              {new Date(dateTo + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          </div>
+        )}
         {generated && !loading && ledgers.map(({ account, lines }) => (
           <LedgerCard key={account.id} account={account} lines={lines} dateFrom={dateFrom} dateTo={dateTo} />
         ))}

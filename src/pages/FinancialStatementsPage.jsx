@@ -16,7 +16,7 @@ import {
   getBalanceSheet,
   getFY, fyOptions, fyDateRange, fmtAmt,
 } from '../lib/accountingLib'
-import { getChurch } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   BarChart2, ArrowLeft, Loader2, Printer, ChevronDown, ChevronRight,
   RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink, FileSpreadsheet,
@@ -265,7 +265,7 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
 //  Receipts & Payments Account
 // ════════════════════════════════════════════════════════════════
 
-function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
+function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo }) {
   function allKeysFor(d) {
     const keys = []
     for (const r of d.receipts || []) if ((r.children?.length || 0) > 0) keys.push('r_' + r.name)
@@ -401,12 +401,20 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
       { label: 'Total Closing Balance', amount: data.closingBalance, bold: true, total: true },
     ]
     const grandTotal = data.openingBalance + data.totalReceipts
+    const titleLines = [
+      entity?.name ? { text: entity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
+      entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
+      entity?.description ? { text: entity.description, size: 10, italic: true } : null,
+      { text: `Period: ${dateFrom}  to  ${dateTo}`, size: 10 },
+    ].filter(Boolean)
     await exportTwoColumn(
       left, right,
       'DR  —  RECEIPTS', 'CR  —  PAYMENTS',
       'Receipts & Payments Account',
       `RP_${dateFrom}_${dateTo}.xlsx`,
-      { leftTotal: grandTotal, rightTotal: data.totalPayments + data.closingBalance }
+      { leftTotal: grandTotal, rightTotal: data.totalPayments + data.closingBalance },
+      titleLines
     )
   }
 
@@ -444,7 +452,7 @@ function ReceiptsPayments({ data, navigate, dateFrom, dateTo }) {
 //  Income & Expenditure Account
 // ════════════════════════════════════════════════════════════════
 
-function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
+function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo }) {
   const [expanded, setExpanded] = useState(new Set())
   const surplus   = data.surplus
   const isDeficit = surplus < 0
@@ -551,12 +559,20 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
       { label: '' },
       ...(isDeficit ? [{ label: 'Deficit (Excess of Expenditure)', amount: Math.abs(surplus), bold: true, italic: true }] : []),
     ]
+    const titleLines = [
+      entity?.name ? { text: entity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
+      entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
+      entity?.description ? { text: entity.description, size: 10, italic: true } : null,
+      { text: `Period: ${dateFrom}  to  ${dateTo}`, size: 10 },
+    ].filter(Boolean)
     await exportTwoColumn(
       left, right,
       'DR  —  EXPENDITURE', 'CR  —  INCOME',
       'Income & Expenditure Account',
       `IE_${dateFrom}_${dateTo}.xlsx`,
-      { leftTotal, rightTotal }
+      { leftTotal, rightTotal },
+      titleLines
     )
   }
 
@@ -596,7 +612,7 @@ function IncomeExpenditure({ data, showZero, navigate, dateFrom, dateTo }) {
 //  Balance Sheet
 // ════════════════════════════════════════════════════════════════
 
-function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
+function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo }) {
   const [expanded, setExpanded] = useState(new Set())
 
   function toggleGroup(id) {
@@ -701,12 +717,20 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
       { label: '' },
       { label: 'Total Assets', amount: data.totalAssets, bold: true, total: true },
     ]
+    const titleLines = [
+      entity?.name ? { text: entity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
+      entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
+      entity?.description ? { text: entity.description, size: 10, italic: true } : null,
+      { text: `As at: ${dateTo}`, size: 10 },
+    ].filter(Boolean)
     await exportTwoColumn(
       left, right,
       'Corpus Fund & Liabilities', 'Assets',
       'Balance Sheet',
       `BalanceSheet_${dateFrom}_${dateTo}.xlsx`,
-      { leftTotal: data.totalCorpus + data.totalLiabilities, rightTotal: data.totalAssets }
+      { leftTotal: data.totalCorpus + data.totalLiabilities, rightTotal: data.totalAssets },
+      titleLines
     )
   }
 
@@ -744,6 +768,7 @@ function BalanceSheet({ data, showZero, navigate, dateFrom, dateTo }) {
 export default function FinancialStatementsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const [tab,        setTab]        = useState('rp')
   const [fy,         setFy]         = useState(getFY())
@@ -756,7 +781,6 @@ export default function FinancialStatementsPage() {
   const [rp,         setRp]         = useState(null)
   const [ie,         setIe]         = useState(null)
   const [bs,         setBs]         = useState(null)
-  const [church,     setChurch]     = useState(null)
   const [genFrom,    setGenFrom]    = useState(null)   // dates used for last generate (for display)
   const [genTo,      setGenTo]      = useState(null)
   const [showZero,   setShowZero]   = useState(false)
@@ -807,20 +831,19 @@ export default function FinancialStatementsPage() {
     setLoading(true)
     setGenerated(false)
     try {
-      const [rpData, ieData, bsData, c] = await Promise.all([
-        getReceiptsAndPayments(fy, fd, td),
-        getIncomeStatement(fy, fd, td),
-        getBalanceSheet(fy, fd, td),
-        getChurch(),
+      const [rpData, ieData, bsData] = await Promise.all([
+        getReceiptsAndPayments(fy, currentEntityId, fd, td),
+        getIncomeStatement(fy, currentEntityId, fd, td),
+        getBalanceSheet(fy, currentEntityId, fd, td),
       ])
-      setRp(rpData); setIe(ieData); setBs(bsData); setChurch(c)
+      setRp(rpData); setIe(ieData); setBs(bsData)
       const { from, to } = fyDateRange(fy)
       setGenFrom(fd || from)
       setGenTo(td || to)
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, rangeMode, fromDate, toDate, toast])
+  }, [fy, rangeMode, fromDate, toDate, currentEntityId, toast])
 
   // Auto-generate on every mount so navigating back always shows fresh data
   const didMount = useRef(false)
@@ -983,10 +1006,18 @@ export default function FinancialStatementsPage() {
           {/* Church header */}
           <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--card-border)', textAlign: 'center' }}>
             <p style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-1)', margin: '0 0 2px' }}>
-              {church?.church_name || 'Church'}
+              {currentEntity?.name || 'Entity Name'}
             </p>
-            {church?.diocese && (
-              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 2px' }}>{church.diocese}</p>
+            {(currentEntity?.address || currentEntity?.city) && (
+              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 2px' }}>
+                {[currentEntity.address, currentEntity.city].filter(Boolean).join(', ')}
+              </p>
+            )}
+            {currentEntity?.diocese && (
+              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 2px' }}>{currentEntity.diocese}</p>
+            )}
+            {currentEntity?.description && (
+              <p style={{ fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', margin: '0 0 2px' }}>{currentEntity.description}</p>
             )}
             <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
               {tab === 'rp' ? 'Receipts & Payments Account' : tab === 'ie' ? 'Income & Expenditure Account' : 'Balance Sheet'}
@@ -997,9 +1028,9 @@ export default function FinancialStatementsPage() {
             </p>
           </div>
 
-          {tab === 'rp' && rp && <ReceiptsPayments data={rp} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
-          {tab === 'ie' && ie && <IncomeExpenditure data={ie} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
-          {tab === 'bs' && bs && <BalanceSheet data={bs} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
+          {tab === 'rp' && rp && <ReceiptsPayments data={rp} entity={currentEntity} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
+          {tab === 'ie' && ie && <IncomeExpenditure data={ie} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
+          {tab === 'bs' && bs && <BalanceSheet data={bs} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
         </div>
       )}
 

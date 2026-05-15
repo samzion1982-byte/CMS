@@ -10,9 +10,10 @@ import { useToast } from '../lib/toast'
 import {
   getFY, fyOptions, fyDateRange, fmtAmt,
   getChartOfAccounts, getPostableAccounts, getPostableAccountsWithPath,
-  TYPE_COLOR, displayAccountType,
+  TYPE_COLOR, displayAccountType, getEntrySystemStatus,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   ArrowLeft, Loader2, Save, Scale, ChevronDown, ChevronRight, Info,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ export default function OpeningBalancesPage() {
   const navigate = useNavigate()
   const toast    = useToast()
   const { profile } = useAuth()
+  const { currentEntityId } = useEntity()
 
   const [fy,              setFy]            = useState(getFY())
   const [fyOpen,          setFyOpen]        = useState(false)
@@ -40,18 +42,20 @@ export default function OpeningBalancesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await getChartOfAccounts(false)
+      const all = await getChartOfAccounts(false, currentEntityId)
       setAllAccounts(all)
       const postable = getPostableAccountsWithPath(all)
       setAccounts(postable)
 
       // Load existing opening balance entries for this FY
-      const { data: entries } = await supabase
+      let obQ = supabase
         .from('journal_entries')
         .select('id, journal_entry_lines(account_id, debit_amount, credit_amount)')
         .eq('financial_year', fy)
         .eq('voucher_type', 'Opening Balance')
         .eq('is_deleted', false)
+      if (currentEntityId) obQ = obQ.eq('entity_id', currentEntityId)
+      const { data: entries } = await obQ
 
       const map = {}
       if (entries) {
@@ -130,6 +134,12 @@ export default function OpeningBalancesPage() {
   const balanced = diff < 0.01
 
   async function handleSave() {
+    const systemStatus = await getEntrySystemStatus()
+    if (!systemStatus.locked) {
+      toast('Accounting method not configured. Go to Accounting → Settings and lock the entry system first.', 'error')
+      return
+    }
+
     const lines = leafAccounts
       .filter(a => parseFloat(balances[a.id]?.debit) > 0 || parseFloat(balances[a.id]?.credit) > 0)
       .map(a => ({
@@ -146,12 +156,14 @@ export default function OpeningBalancesPage() {
     setSaving(true)
     try {
       // Delete any existing opening balance entries for this FY
-      const { data: existing } = await supabase
+      let existQ = supabase
         .from('journal_entries')
         .select('id')
         .eq('financial_year', fy)
         .eq('voucher_type', 'Opening Balance')
         .eq('is_deleted', false)
+      if (currentEntityId) existQ = existQ.eq('entity_id', currentEntityId)
+      const { data: existing } = await existQ
 
       if (existing?.length > 0) {
         await supabase.from('journal_entries').update({ is_deleted: true }).in('id', existing.map(e => e.id))
@@ -171,6 +183,7 @@ export default function OpeningBalancesPage() {
           total_debit:    totalDr,
           total_credit:   totalCr,
           is_posted:      true,
+          entity_id:      currentEntityId,
           created_by:     profile?.email || 'admin',
           updated_by:     profile?.email || 'admin',
         })

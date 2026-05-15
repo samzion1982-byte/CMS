@@ -13,6 +13,7 @@ import {
   Loader2, Save, CheckSquare, ArrowLeft, CheckCircle2,
   Plus, Trash2, FileText, Printer,
 } from 'lucide-react'
+import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
@@ -142,6 +143,7 @@ export default function JournalVoucherPage() {
   const { user }   = useAuth()
   const navigate   = useNavigate()
   const toast      = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null
 
@@ -155,7 +157,6 @@ export default function JournalVoucherPage() {
   const [debitLines,  setDebitLines]  = useState([newLine()])
   const [creditLines, setCreditLines] = useState([newLine()])
 
-  const [church,     setChurch]    = useState(null)
   const [showPrint,  setShowPrint] = useState(false)
   const [funds,   setFunds]   = useState([])
   const [fundId,  setFundId]  = useState('')
@@ -173,11 +174,10 @@ export default function JournalVoucherPage() {
   const isValid = isBalanced && hasDebitAccounts && hasCreditAccounts
   const busy = saving || posting
 
-  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
 
   useEffect(() => {
-    const promises = [getChartOfAccounts(true), getAccountingSettings()]
+    const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existing]) => {
       setAllCoa(coa)
@@ -198,7 +198,7 @@ export default function JournalVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Journal: s.accounting_prefix_journal || 'JV' }
-        setVoucherNo(await nextEntryNumber(fy, 'Journal', pfx))
+        setVoucherNo(await nextEntryNumber(fy, 'Journal', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
@@ -224,7 +224,7 @@ export default function JournalVoucherPage() {
       const entry = {
         entry_number: voucherNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Journal', narration: narration || null, reference_no: refNo || null,
-        fund_id: fundId || null,
+        fund_id: fundId || null, entity_id: currentEntityId,
       }
       const jLines = [
         ...debitLines.map(l => ({ account_id: l.accountId, debit_amount: parseFloat(l.amount), credit_amount: 0, description: narration || null })),
@@ -362,7 +362,7 @@ export default function JournalVoucherPage() {
 
       <VoucherPrint
         open={showPrint} onClose={() => setShowPrint(false)}
-        church={church}
+        entity={currentEntity}
         voucherType="Journal"
         voucherNo={voucherNo}
         date={entryDate}

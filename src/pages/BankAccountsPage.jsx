@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
+import { useEntity } from '../lib/EntityContext'
 import { supabase } from '../lib/supabase'
 import { getChartOfAccounts, getPostableAccountsWithPath, fmtAmt } from '../lib/accountingLib'
 import {
@@ -294,6 +295,7 @@ function AccountCard({ account, coaAccounts, onEdit, onDelete, onToggleActive })
 export default function BankAccountsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId } = useEntity()
 
   const [loading,      setLoading]      = useState(true)
   const [accounts,     setAccounts]     = useState([])
@@ -302,16 +304,17 @@ export default function BankAccountsPage() {
   const [filter,       setFilter]       = useState('active')  // 'active' | 'all'
 
   useEffect(() => {
+    if (!currentEntityId) return
     Promise.all([
       supabase.from('bank_accounts').select('*').order('sort_order').order('created_at'),
-      getChartOfAccounts(true).then(all => getPostableAccountsWithPath(all)),
+      getChartOfAccounts(true, currentEntityId).then(all => getPostableAccountsWithPath(all)),
     ]).then(([{ data: ba, error }, coa]) => {
       if (error) toast('Could not load bank accounts: ' + error.message, 'error')
       setAccounts(ba || [])
       setCoaAccounts(coa || [])
       setLoading(false)
     })
-  }, [toast])
+  }, [currentEntityId, toast])
 
   async function handleSave(formData) {
     const user = (await supabase.auth.getUser()).data?.user

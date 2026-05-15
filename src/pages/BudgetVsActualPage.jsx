@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
+import { useEntity } from '../lib/EntityContext'
 import {
   getFY, fyOptions, fmtAmt,
   getChartOfAccounts, getPostableAccountsWithPath,
@@ -30,6 +31,7 @@ function prevFY(fy) {
 export default function BudgetVsActualPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId } = useEntity()
 
   const [tab,         setTab]         = useState('setup')   // 'setup' | 'report'
   const [fy,          setFy]          = useState(getFY())
@@ -47,7 +49,7 @@ export default function BudgetVsActualPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [church, all] = await Promise.all([getChurch(), getChartOfAccounts(false)])
+      const [church, all] = await Promise.all([getChurch(), getChartOfAccounts(false, currentEntityId)])
       setChurchId(church?.id)
       const postable = getPostableAccountsWithPath(all).filter(a => BUDGET_TYPES.includes(a.account_type))
       setAccounts(postable)
@@ -65,8 +67,8 @@ export default function BudgetVsActualPage() {
 
       // Load actuals (current FY) + closing balances (previous FY) in parallel
       const [tb, prevTb] = await Promise.all([
-        getTrialBalance(fy),
-        getTrialBalance(prevFY(fy)),
+        getTrialBalance(fy, currentEntityId),
+        getTrialBalance(prevFY(fy), currentEntityId),
       ])
       const aMap = {}
       for (const a of tb) {
@@ -83,7 +85,7 @@ export default function BudgetVsActualPage() {
       setClosingBals(cMap)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, toast])
+  }, [fy, currentEntityId, toast])
 
   useEffect(() => { load() }, [load])
 

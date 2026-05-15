@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
@@ -49,6 +49,8 @@ import JournalTemplatesPage       from './pages/JournalTemplatesPage'
 import YearEndClosingPage         from './pages/YearEndClosingPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
+import EntityManagementPage       from './pages/EntityManagementPage'
+import { EntityProvider }         from './lib/EntityContext'
 
 console.log('📱 App component rendering')
 
@@ -266,6 +268,15 @@ function PublicRoute({ children }) {
   return children
 }
 
+// Shared EntityProvider for all /accounting/* routes (persists entity selection across pages)
+function AccountingLayout() {
+  return (
+    <EntityProvider>
+      <Outlet />
+    </EntityProvider>
+  )
+}
+
 // 🛣️ Routes
 function AppRoutes() {
   // Global Enter-key navigation: pressing Enter on any text input advances to the next focusable element
@@ -383,28 +394,31 @@ function AppRoutes() {
         element={<PrivateRoute><AppLayout><PaymentRequestLogPage /></AppLayout></PrivateRoute>}
       />
 
-      {/* ── Accounting Module ── */}
-      <Route path="/accounting"                  element={<PrivateRoute><AppLayout><AccountingPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/chart-of-accounts" element={<PrivateRoute><AppLayout><ChartOfAccountsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/journal-entries"      element={<PrivateRoute><AppLayout><JournalEntryPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/journal-entries/:id"  element={<PrivateRoute><AppLayout><JournalEntryPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/ledger"            element={<PrivateRoute><AppLayout><LedgerPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/trial-balance"     element={<PrivateRoute><AppLayout><TrialBalancePage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/statements"        element={<PrivateRoute><AppLayout><FinancialStatementsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/settings"         element={<PrivateRoute><AppLayout><AccountingSettingsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/bank-accounts"   element={<PrivateRoute><AppLayout><BankAccountsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/gl-reports"     element={<PrivateRoute><AppLayout><AccountingReportsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/receipt-voucher" element={<PrivateRoute><AppLayout><ReceiptVoucherPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/payment-voucher" element={<PrivateRoute><AppLayout><PaymentVoucherPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/contra-voucher"  element={<PrivateRoute><AppLayout><ContraVoucherPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/journal-voucher" element={<PrivateRoute><AppLayout><JournalVoucherPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/opening-balances"   element={<PrivateRoute><AppLayout><OpeningBalancesPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/templates"          element={<PrivateRoute><AppLayout><JournalTemplatesPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/year-end-closing"   element={<PrivateRoute><AppLayout><YearEndClosingPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/bank-reconciliation" element={<PrivateRoute><AppLayout><BankReconciliationPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/budget-vs-actual"   element={<PrivateRoute><AppLayout><BudgetVsActualPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/funds"              element={<PrivateRoute><AppLayout><FundsPage /></AppLayout></PrivateRoute>} />
-      <Route path="/accounting/fund-report"        element={<PrivateRoute><AppLayout><FundReportPage /></AppLayout></PrivateRoute>} />
+      {/* ── Accounting Module — all under a single EntityProvider ── */}
+      <Route path="/accounting" element={<PrivateRoute><AccountingLayout /></PrivateRoute>}>
+        <Route index                    element={<AppLayout><AccountingPage /></AppLayout>} />
+        <Route path="chart-of-accounts" element={<AppLayout><ChartOfAccountsPage /></AppLayout>} />
+        <Route path="journal-entries"   element={<AppLayout><JournalEntryPage /></AppLayout>} />
+        <Route path="journal-entries/:id" element={<AppLayout><JournalEntryPage /></AppLayout>} />
+        <Route path="ledger"            element={<AppLayout><LedgerPage /></AppLayout>} />
+        <Route path="trial-balance"     element={<AppLayout><TrialBalancePage /></AppLayout>} />
+        <Route path="statements"        element={<AppLayout><FinancialStatementsPage /></AppLayout>} />
+        <Route path="settings"          element={<AppLayout><AccountingSettingsPage /></AppLayout>} />
+        <Route path="bank-accounts"     element={<AppLayout><BankAccountsPage /></AppLayout>} />
+        <Route path="gl-reports"        element={<AppLayout><AccountingReportsPage /></AppLayout>} />
+        <Route path="receipt-voucher"   element={<AppLayout><ReceiptVoucherPage /></AppLayout>} />
+        <Route path="payment-voucher"   element={<AppLayout><PaymentVoucherPage /></AppLayout>} />
+        <Route path="contra-voucher"    element={<AppLayout><ContraVoucherPage /></AppLayout>} />
+        <Route path="journal-voucher"   element={<AppLayout><JournalVoucherPage /></AppLayout>} />
+        <Route path="opening-balances"  element={<AppLayout><OpeningBalancesPage /></AppLayout>} />
+        <Route path="templates"         element={<AppLayout><JournalTemplatesPage /></AppLayout>} />
+        <Route path="year-end-closing"  element={<AppLayout><YearEndClosingPage /></AppLayout>} />
+        <Route path="bank-reconciliation" element={<AppLayout><BankReconciliationPage /></AppLayout>} />
+        <Route path="budget-vs-actual"  element={<AppLayout><BudgetVsActualPage /></AppLayout>} />
+        <Route path="funds"             element={<AppLayout><FundsPage /></AppLayout>} />
+        <Route path="fund-report"       element={<AppLayout><FundReportPage /></AppLayout>} />
+        <Route path="entities"          element={<AppLayout><EntityManagementPage /></AppLayout>} />
+      </Route>
 
       {/* ── Simple Accounts Module ── */}
       <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />

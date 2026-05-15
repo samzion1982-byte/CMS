@@ -22,10 +22,10 @@ import {
   Settings, Zap, Eye, Clock, User, ShieldAlert, RotateCcw, ShieldOff, Lock,
   FileSpreadsheet, Printer, ChevronLeft, ChevronRight, ArrowUp, ArrowDown,
 } from 'lucide-react'
+import { useEntity } from '../lib/EntityContext'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import VoucherPrint from '../components/accounting/VoucherPrint'
-import { exportToExcel } from '../lib/exportExcel'
-import { getChurch } from '../lib/supabase'
+import { exportToExcelWithTitle } from '../lib/exportExcel'
 
 // ── Account typeahead picker ──────────────────────────────────────
 function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
@@ -267,6 +267,7 @@ function JournalEntryList() {
   const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const [showNewEntry, setShowNewEntry] = useState(false)
   const [entries,    setEntries]    = useState([])
@@ -302,14 +303,15 @@ function JournalEntryList() {
     try {
       const data = await getJournalEntries({
         fy,
-        type:    filterType || undefined,
-        posted:  filterPost === '' ? undefined : filterPost === 'true',
-        deleted: showTrash,
+        type:     filterType || undefined,
+        posted:   filterPost === '' ? undefined : filterPost === 'true',
+        deleted:  showTrash,
+        entityId: currentEntityId,
       })
       setEntries(data)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, filterType, filterPost, showTrash, toast])
+  }, [fy, filterType, filterPost, showTrash, currentEntityId, toast])
 
   useEffect(() => { load() }, [load])
 
@@ -355,7 +357,15 @@ function JournalEntryList() {
       status: e.is_posted ? 'Posted' : 'Draft',
     }))
     rows.push({ entry: 'TOTAL', date: '', type: '', narr: '', ref: '', debit: totalDebit, credit: totalCredit, status: '' })
-    exportToExcel(cols, rows, 'Journal Entries', `JournalEntries_FY${fy}.xlsx`)
+    const titleLines = [
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
+      { text: 'JOURNAL ENTRIES', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+      { text: `FY ${fy}`, size: 10 },
+    ].filter(Boolean)
+    exportToExcelWithTitle(cols, rows, 'Journal Entries', `JournalEntries_FY${fy}.xlsx`, titleLines)
   }
 
   return (
@@ -585,6 +595,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const today = localISO(new Date())
   const currentFY = getFY()
@@ -597,7 +608,6 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const [editingPosted, setEditingPosted] = useState(false)
   const [auditLog,      setAuditLog]      = useState([])
   const [showPrint,     setShowPrint]     = useState(false)
-  const [church,        setChurch]        = useState(null)
 
   const dateInputRef = useRef(null)
   // stable refs for keyboard handlers — always point to latest functions
@@ -620,14 +630,13 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   ])
 
   useEffect(() => {
-    getChartOfAccounts(true).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
-    getChurch().then(setChurch).catch(() => {})
+    getChartOfAccounts(true, currentEntityId).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
   }, [])
 
   useEffect(() => {
     if (!entryId) {
       // Auto-generate entry number
-      nextEntryNumber(currentFY, 'Receipt').then(n => setHeader(h => ({ ...h, entry_number: n }))).catch(() => {})
+      nextEntryNumber(currentFY, 'Receipt', currentEntityId).then(n => setHeader(h => ({ ...h, entry_number: n }))).catch(() => {})
       return
     }
     setLoading(true)
@@ -655,7 +664,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   // Auto-update entry number when voucher type changes (new entry only)
   useEffect(() => {
     if (entryId) return
-    nextEntryNumber(header.financial_year, header.voucher_type)
+    nextEntryNumber(header.financial_year, header.voucher_type, currentEntityId)
       .then(n => setHeader(h => ({ ...h, entry_number: n })))
       .catch(() => {})
   }, [header.voucher_type, header.financial_year, entryId])
@@ -714,7 +723,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
         }
         navigate('/accounting/journal-entries')
       } else {
-        je = await createJournalEntry(header, validLines, profile.email)
+        je = await createJournalEntry({ ...header, entity_id: currentEntityId }, validLines, profile.email)
         if (andPost) {
           await postJournalEntry(je.id, profile.email)
           toast('Entry saved and posted!', 'success')
@@ -1033,7 +1042,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
 
       <VoucherPrint
         open={showPrint} onClose={() => setShowPrint(false)}
-        church={church}
+        entity={currentEntity}
         voucherType={header.voucher_type}
         voucherNo={header.entry_number}
         date={header.entry_date}

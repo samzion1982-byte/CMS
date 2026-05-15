@@ -21,7 +21,7 @@ const H = 508
 
 export default function VoucherPrint({
   open, onClose,
-  church, voucherType, voucherNo, date, refNo, narration, rows, totalAmount, party,
+  entity, voucherType, voucherNo, date, refNo, narration, rows, totalAmount, party,
 }) {
   if (!open) return null
 
@@ -112,18 +112,18 @@ export default function VoucherPrint({
               overflow: 'hidden',
             }}>
 
-            {/* ── Church header ─────────────────────────────── */}
+            {/* ── Entity header ──────────────────────────────── */}
             <div style={{ textAlign: 'center', paddingBottom: 8, marginBottom: 8, borderBottom: `2.5px solid #000` }}>
               <div style={{ fontSize: 17, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 2px' }}>
-                {church?.church_name || 'Church Name'}
+                {entity?.name || 'Church Name'}
               </div>
-              {(church?.address || church?.city) && (
+              {(entity?.address || entity?.city) && (
                 <div style={{ fontSize: 10, color: '#444', margin: '0 0 1px' }}>
-                  {[church.address, church.city].filter(Boolean).join(', ')}
+                  {[entity.address, entity.city].filter(Boolean).join(', ')}
                 </div>
               )}
-              {church?.diocese && (
-                <div style={{ fontSize: 10, color: '#666' }}>{church.diocese}</div>
+              {entity?.diocese && (
+                <div style={{ fontSize: 10, color: '#666' }}>{entity.diocese}</div>
               )}
             </div>
 
@@ -217,7 +217,7 @@ export default function VoucherPrint({
 
             {/* ── Footer ──────────────────────────────────── */}
             <div style={{ position: 'absolute', left: 0, right: 0, bottom: 8, textAlign: 'center', fontSize: 9, color: '#9ca3af' }}>
-              Computer generated — {church?.church_name}
+              Computer generated — {entity?.name}
             </div>
 
             </div>{/* end inner border */}

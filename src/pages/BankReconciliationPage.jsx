@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import { useEntity } from '../lib/EntityContext'
 import {
   getFY, fyOptions, fyDateRange, fmtAmt, fmtDate,
   getChartOfAccounts,
@@ -24,6 +25,7 @@ export default function BankReconciliationPage() {
   const navigate = useNavigate()
   const toast    = useToast()
   const { profile } = useAuth()
+  const { currentEntityId } = useEntity()
 
   const [fy,          setFy]          = useState(getFY())
   const [fyOpen,      setFyOpen]      = useState(false)
@@ -38,7 +40,8 @@ export default function BankReconciliationPage() {
 
   // Load bank/cash asset accounts
   useEffect(() => {
-    getChartOfAccounts(true).then(all => {
+    if (!currentEntityId) return
+    getChartOfAccounts(true, currentEntityId).then(all => {
       const bankCash = all.filter(a =>
         a.account_type === 'Asset' && a.account_level >= 3 &&
         /bank|cash|hand|petty/i.test(a.name)
@@ -46,7 +49,7 @@ export default function BankReconciliationPage() {
       setAccounts(bankCash)
       if (bankCash.length > 0) setAccountId(bankCash[0].id)
     })
-  }, [])
+  }, [currentEntityId])
 
   const loadLines = useCallback(async () => {
     if (!accountId) return

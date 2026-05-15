@@ -12,6 +12,7 @@ import {
   TYPE_COLOR, displayAccountType, getFY, fyDateRange,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
@@ -329,6 +330,7 @@ export default function ChartOfAccountsPage() {
   const { profile } = useAuth()
   const toast       = useToast()
   const navigate    = useNavigate()
+  const { currentEntityId } = useEntity()
 
   const [accounts,    setAccounts]    = useState([])
   const [tree,        setTree]        = useState([])
@@ -348,7 +350,7 @@ export default function ChartOfAccountsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getChartOfAccounts()
+      const data = await getChartOfAccounts(false, currentEntityId)
       setAccounts(data)
       setTree(buildCOATree(data))
     } catch (e) { toast(e.message, 'error') }
@@ -568,6 +570,7 @@ export default function ChartOfAccountsPage() {
         level,
         is_postable:          level >= 3,
         parent_id:            parent?.id || null,
+        entity_id:            currentEntityId,
         ...(!isEdit && { code: baseCode }),
       }
 

@@ -13,6 +13,7 @@ import {
   createJournalEntry, nextEntryNumber, fyDateRange, VOUCHER_TYPES,
 } from '../lib/accountingLib'
 import { supabase, getChurch } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   ArrowLeft, Plus, Trash2, Edit2, Loader2,
   X, Save, Play, Copy,
@@ -208,6 +209,7 @@ function TemplateModal({ template, accounts, churchId, onSave, onClose }) {
 function UseTemplateModal({ template, onClose, onCreated }) {
   const toast    = useToast()
   const { profile } = useAuth()
+  const { currentEntityId } = useEntity()
   const [fy,        setFy]        = useState(getFY())
   const [date,      setDate]      = useState(localISO(new Date()))
   const [narration, setNarration] = useState(template.narration || '')
@@ -227,13 +229,14 @@ function UseTemplateModal({ template, onClose, onCreated }) {
 
     setSaving(true)
     try {
-      const entryNo = await nextEntryNumber(fy, template.voucher_type)
+      const entryNo = await nextEntryNumber(fy, template.voucher_type, currentEntityId)
       const entry = {
         entry_number:   entryNo,
         entry_date:     date,
         financial_year: fy,
         voucher_type:   template.voucher_type || 'Journal',
         narration:      narration || template.narration,
+        entity_id:      currentEntityId,
         total_debit:    totalDr,
         total_credit:   totalCr,
         is_posted:      false,
@@ -294,6 +297,7 @@ export default function JournalTemplatesPage() {
   const navigate = useNavigate()
   const toast    = useToast()
   const { profile } = useAuth()
+  const { currentEntityId } = useEntity()
 
   const [templates, setTemplates] = useState([])
   const [accounts,  setAccounts]  = useState([])
@@ -306,7 +310,7 @@ export default function JournalTemplatesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [church, all] = await Promise.all([getChurch(), getChartOfAccounts(false)])
+      const [church, all] = await Promise.all([getChurch(), getChartOfAccounts(false, currentEntityId)])
       setChurchId(church?.id)
       setAccounts(getPostableAccountsWithPath(all))
       const { data, error } = await supabase
@@ -318,7 +322,7 @@ export default function JournalTemplatesPage() {
       setTemplates(data || [])
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [toast])
+  }, [currentEntityId, toast])
 
   useEffect(() => { load() }, [load])
 

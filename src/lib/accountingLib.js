@@ -92,13 +92,14 @@ export async function flushJournalEntries() {
 
 // ── Chart of Accounts ─────────────────────────────────────────────
 
-export async function getChartOfAccounts(activeOnly = false) {
+export async function getChartOfAccounts(activeOnly = false, entityId) {
   let q = supabase
     .from('chart_of_accounts')
     .select('*')
     .order('sort_order')
     .order('name')
   if (activeOnly) q = q.eq('is_active', true)
+  if (entityId)   q = q.eq('entity_id', entityId)
   const { data, error } = await q
   if (error) throw error
   return data || []
@@ -150,6 +151,7 @@ export function getPostableAccountsWithPath(allAccounts) {
   }))
 }
 
+// account object must include entity_id (set by caller from useEntity())
 export async function createAccount(account, performedBy) {
   // Auto-generate a unique internal code — never shown to the user
   const autoCode = `AC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`
@@ -196,18 +198,19 @@ export async function deleteAccount(id, performedBy) {
 
 // ── Journal Entries ───────────────────────────────────────────────
 
-export async function getJournalEntries({ fy, from, to, type, posted, deleted = false } = {}) {
+export async function getJournalEntries({ fy, from, to, type, posted, deleted = false, entityId } = {}) {
   let q = supabase
     .from('journal_entries')
     .select('*')
     .order('entry_date', { ascending: false })
     .order('entry_number', { ascending: false })
-  if (fy)     q = q.eq('financial_year', fy)
-  if (from)   q = q.gte('entry_date', from)
-  if (to)     q = q.lte('entry_date', to)
-  if (type)   q = q.eq('voucher_type', type)
+  if (fy)       q = q.eq('financial_year', fy)
+  if (from)     q = q.gte('entry_date', from)
+  if (to)       q = q.lte('entry_date', to)
+  if (type)     q = q.eq('voucher_type', type)
   if (posted !== undefined && posted !== null) q = q.eq('is_posted', posted)
   q = q.eq('is_deleted', deleted)
+  if (entityId) q = q.eq('entity_id', entityId)
   const { data, error } = await q
   if (error) throw error
   return data || []
@@ -224,16 +227,18 @@ export async function getJournalEntryWithLines(id) {
 }
 
 // customPrefixes: { Receipt, Payment, Journal, Contra, Opening } — from accounting settings
-export async function nextEntryNumber(fy, type, customPrefixes = {}) {
+export async function nextEntryNumber(fy, type, entityId, customPrefixes = {}) {
   const defaults = { Receipt: 'RV', Payment: 'PV', Journal: 'JV', Contra: 'CT', Opening: 'OB' }
   const prefix = customPrefixes[type] || defaults[type] || 'JV'
   const pattern = `${prefix}-${fy.replace('-', '')}-`
-  const { data } = await supabase
+  let q = supabase
     .from('journal_entries')
     .select('entry_number')
     .like('entry_number', `${pattern}%`)
     .order('entry_number', { ascending: false })
     .limit(1)
+  if (entityId) q = q.eq('entity_id', entityId)
+  const { data } = await q
   const seq = data?.[0] ? parseInt(data[0].entry_number.split('-').pop(), 10) || 0 : 0
   return `${pattern}${String(seq + 1).padStart(5, '0')}`
 }
@@ -255,8 +260,19 @@ export async function getAccountingSettings() {
   return data || {}
 }
 
-async function checkPeriodLock(entryDate) {
-  const { data } = await supabase.from('churches').select('accounting_period_lock_date').limit(1).single()
+async function checkEntrySystemLocked() {
+  const { data } = await supabase
+    .from('churches')
+    .select('accounting_entry_system_locked, accounting_period_lock_date')
+    .limit(1).single()
+  if (!data?.accounting_entry_system_locked) {
+    throw new Error('Accounting method not configured. Go to Accounting → Settings and lock the entry system before recording any entries.')
+  }
+  return data
+}
+
+async function checkPeriodLock(entryDate, churchData) {
+  const data = churchData || (await supabase.from('churches').select('accounting_period_lock_date').limit(1).single()).data
   const lockDate = data?.accounting_period_lock_date
   if (lockDate && entryDate && entryDate <= lockDate) {
     throw new Error(`Entry date (${entryDate}) is on or before the period lock date (${lockDate}). Go to Accounting → Settings to change the lock date.`)
@@ -272,8 +288,10 @@ function validateLines(lines) {
   }
 }
 
+// entry object must include entity_id (set by caller from useEntity())
 export async function createJournalEntry(entry, lines, performedBy) {
-  await checkPeriodLock(entry.entry_date)
+  const churchData = await checkEntrySystemLocked()
+  await checkPeriodLock(entry.entry_date, churchData)
   validateLines(lines)
   const totalDebit  = lines.reduce((s, l) => s + Number(l.debit_amount  || 0), 0)
   const totalCredit = lines.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
@@ -306,7 +324,8 @@ export async function createJournalEntry(entry, lines, performedBy) {
 }
 
 export async function updateJournalEntry(id, entry, lines, performedBy) {
-  await checkPeriodLock(entry.entry_date)
+  const churchData = await checkEntrySystemLocked()
+  await checkPeriodLock(entry.entry_date, churchData)
   validateLines(lines)
   const { data: old } = await supabase.from('journal_entries').select('*').eq('id', id).single()
   if (old?.is_posted) throw new Error('Cannot edit a posted entry.')
@@ -376,8 +395,8 @@ export async function updatePostedJournalEntry(id, entry, lines, performedBy) {
   if (lErr) throw lErr
 
   // Reverse old balance contribution, then apply new lines
-  if (oldLines?.length) await reverseBalanceCache(oldLines, old.financial_year)
-  await updateBalanceCache(lineRows, entry.financial_year || old.financial_year)
+  if (oldLines?.length) await reverseBalanceCache(oldLines, old.financial_year, old.entity_id)
+  await updateBalanceCache(lineRows, entry.financial_year || old.financial_year, entry.entity_id || old.entity_id)
 
   await logAudit('modified_posted', 'journal_entry', id, je, old, performedBy)
   return je
@@ -395,7 +414,7 @@ export async function postJournalEntry(id, performedBy) {
     .eq('id', id)
   if (error) throw error
 
-  await updateBalanceCache(entry.journal_entry_lines, entry.financial_year)
+  await updateBalanceCache(entry.journal_entry_lines, entry.financial_year, entry.entity_id)
   await logAudit('posted', 'journal_entry', id, null, null, performedBy)
 }
 
@@ -431,7 +450,7 @@ export async function permanentDeleteJournalEntry(id, performedBy, password) {
   // Reverse balance cache if the entry was posted
   if (entry?.is_posted) {
     const { data: lines } = await supabase.from('journal_entry_lines').select('*').eq('journal_entry_id', id)
-    if (lines?.length) await reverseBalanceCache(lines, entry.financial_year)
+    if (lines?.length) await reverseBalanceCache(lines, entry.financial_year, entry.entity_id)
   }
   const { error } = await supabase.from('journal_entries').delete().eq('id', id)
   if (error) throw error
@@ -440,14 +459,15 @@ export async function permanentDeleteJournalEntry(id, performedBy, password) {
 
 // ── Account Balance Cache ─────────────────────────────────────────
 
-async function reverseBalanceCache(lines, fy) {
+async function reverseBalanceCache(lines, fy, entityId) {
   for (const line of lines) {
-    const { data: existing } = await supabase
+    let q = supabase
       .from('account_balances')
       .select('*')
       .eq('account_id', line.account_id)
       .eq('financial_year', fy)
-      .maybeSingle()
+    if (entityId) q = q.eq('entity_id', entityId)
+    const { data: existing } = await q.maybeSingle()
     if (!existing) continue
     const newDebit  = Number(existing.total_debit)  - Number(line.debit_amount  || 0)
     const newCredit = Number(existing.total_credit) - Number(line.credit_amount || 0)
@@ -455,23 +475,25 @@ async function reverseBalanceCache(lines, fy) {
     await supabase.from('account_balances').upsert({
       account_id:      line.account_id,
       financial_year:  fy,
+      entity_id:       entityId,
       opening_balance: Number(existing.opening_balance),
       total_debit:     Math.max(0, newDebit),
       total_credit:    Math.max(0, newCredit),
       closing_balance: closing,
       last_updated_at: new Date().toISOString(),
-    }, { onConflict: 'account_id,financial_year' })
+    }, { onConflict: 'account_id,financial_year,entity_id' })
   }
 }
 
-async function updateBalanceCache(lines, fy) {
+async function updateBalanceCache(lines, fy, entityId) {
   for (const line of lines) {
-    const { data: existing } = await supabase
+    let q = supabase
       .from('account_balances')
       .select('*')
       .eq('account_id', line.account_id)
       .eq('financial_year', fy)
-      .maybeSingle()
+    if (entityId) q = q.eq('entity_id', entityId)
+    const { data: existing } = await q.maybeSingle()
 
     const base = existing || { opening_balance: 0, total_debit: 0, total_credit: 0 }
     const newDebit  = Number(base.total_debit)  + Number(line.debit_amount  || 0)
@@ -481,25 +503,28 @@ async function updateBalanceCache(lines, fy) {
     await supabase.from('account_balances').upsert({
       account_id:      line.account_id,
       financial_year:  fy,
+      entity_id:       entityId,
       opening_balance: Number(base.opening_balance),
       total_debit:     newDebit,
       total_credit:    newCredit,
       closing_balance: closing,
       last_updated_at: new Date().toISOString(),
-    }, { onConflict: 'account_id,financial_year' })
+    }, { onConflict: 'account_id,financial_year,entity_id' })
   }
 }
 
 // ── Ledger ────────────────────────────────────────────────────────
 
-export async function getLedger(accountId, from, to) {
+export async function getLedger(accountId, entityId, from, to) {
   // Opening balance: all posted transactions for this account BEFORE `from`
-  const { data: prevEntries } = await supabase
+  let prevQ = supabase
     .from('journal_entries')
     .select('id')
     .eq('is_posted', true)
     .eq('is_deleted', false)
     .lt('entry_date', from)
+  if (entityId) prevQ = prevQ.eq('entity_id', entityId)
+  const { data: prevEntries } = await prevQ
 
   let openingBalance = 0
   if (prevEntries?.length) {
@@ -522,7 +547,7 @@ export async function getLedger(accountId, from, to) {
     .eq('id', accountId)
     .single()
   if (coa && Number(coa.opening_balance)) {
-    const { data: obEntries } = await supabase
+    let obQ = supabase
       .from('journal_entries')
       .select('journal_entry_lines!inner(account_id)')
       .eq('voucher_type', 'Opening Balance')
@@ -530,6 +555,8 @@ export async function getLedger(accountId, from, to) {
       .eq('is_deleted', false)
       .eq('journal_entry_lines.account_id', accountId)
       .limit(1)
+    if (entityId) obQ = obQ.eq('entity_id', entityId)
+    const { data: obEntries } = await obQ
     if (!obEntries?.length) {
       const obDate = coa.opening_balance_date || from
       if (obDate <= from) openingBalance += Number(coa.opening_balance)
@@ -537,7 +564,7 @@ export async function getLedger(accountId, from, to) {
   }
 
   // Step 1: posted, non-deleted entries within the date range
-  const { data: entries, error: e1 } = await supabase
+  let entriesQ = supabase
     .from('journal_entries')
     .select('id, entry_number, entry_date, voucher_type, narration')
     .eq('is_posted', true)
@@ -545,6 +572,8 @@ export async function getLedger(accountId, from, to) {
     .gte('entry_date', from)
     .lte('entry_date', to)
     .order('entry_date', { ascending: true })
+  if (entityId) entriesQ = entriesQ.eq('entity_id', entityId)
+  const { data: entries, error: e1 } = await entriesQ
 
   if (e1) throw e1
 
@@ -595,21 +624,23 @@ export async function getFunds(activeOnly = true) {
   return data || []
 }
 
-export async function getFundReport(fy) {
+export async function getFundReport(fy, entityId) {
   const funds = await getFunds(false)
   if (funds.length === 0) return []
 
-  const { data: lines } = await supabase
+  let q = supabase
     .from('journal_entry_lines')
     .select(`
       debit_amount, credit_amount,
-      journal_entries!inner(fund_id, financial_year, is_posted, is_deleted),
+      journal_entries!inner(fund_id, financial_year, is_posted, is_deleted, entity_id),
       chart_of_accounts!inner(account_type)
     `)
     .eq('journal_entries.is_posted', true)
     .eq('journal_entries.is_deleted', false)
     .eq('journal_entries.financial_year', fy)
     .not('journal_entries.fund_id', 'is', null)
+  if (entityId) q = q.eq('journal_entries.entity_id', entityId)
+  const { data: lines } = await q
 
   const totals = {}
   for (const l of lines || []) {
@@ -650,23 +681,25 @@ export async function getRecentNarrations(limit = 30) {
 
 // ── Trial Balance ─────────────────────────────────────────────────
 
-export async function getTrialBalance(fy, fromDate = null, toDate = null) {
+export async function getTrialBalance(fy, entityId, fromDate = null, toDate = null) {
   const { from, to } = fyDateRange(fy)
   const dateFrom = fromDate || from
   const dateTo   = toDate   || to
-  const accounts = await getChartOfAccounts()
+  const accounts = await getChartOfAccounts(false, entityId)
 
-  const { data: lines } = await supabase
+  let q = supabase
     .from('journal_entry_lines')
     .select(`
       account_id, debit_amount, credit_amount,
-      journal_entries!inner(financial_year, is_posted, entry_date)
+      journal_entries!inner(financial_year, is_posted, is_deleted, entry_date, entity_id)
     `)
     .eq('journal_entries.financial_year', fy)
     .eq('journal_entries.is_posted', true)
     .eq('journal_entries.is_deleted', false)
     .gte('journal_entries.entry_date', dateFrom)
     .lte('journal_entries.entry_date', dateTo)
+  if (entityId) q = q.eq('journal_entries.entity_id', entityId)
+  const { data: lines } = await q
 
   const balMap = {}
   for (const l of lines || []) {
@@ -687,8 +720,8 @@ export async function getTrialBalance(fy, fromDate = null, toDate = null) {
 
 // Income & Expenditure Account (church-appropriate P&L)
 // Returns surplus (positive) or deficit (negative)
-export async function getIncomeStatement(fy, fromDate = null, toDate = null) {
-  const tb = await getTrialBalance(fy, fromDate, toDate)
+export async function getIncomeStatement(fy, entityId, fromDate = null, toDate = null) {
+  const tb = await getTrialBalance(fy, entityId, fromDate, toDate)
   const income   = tb.filter(a => a.account_type === 'Income')
   const expenses = tb.filter(a => a.account_type === 'Expense')
   const totalIncome    = income.reduce((s, a)   => s + (a.total_credit - a.total_debit), 0)
@@ -698,12 +731,12 @@ export async function getIncomeStatement(fy, fromDate = null, toDate = null) {
 }
 
 // Balance Sheet — uses "Corpus Fund" terminology (church/non-profit standard)
-export async function getBalanceSheet(fy, fromDate = null, toDate = null) {
-  const tb = await getTrialBalance(fy, fromDate, toDate)
+export async function getBalanceSheet(fy, entityId, fromDate = null, toDate = null) {
+  const tb = await getTrialBalance(fy, entityId, fromDate, toDate)
   const assets      = tb.filter(a => a.account_type === 'Asset')
   const liabilities = tb.filter(a => a.account_type === 'Liability')
   const corpus      = tb.filter(a => a.account_type === 'Equity')  // "Corpus Fund / General Fund"
-  const { surplus } = await getIncomeStatement(fy, fromDate, toDate)
+  const { surplus } = await getIncomeStatement(fy, entityId, fromDate, toDate)
 
   const totalAssets      = assets.reduce((s, a)      => s + (a.total_debit  - a.total_credit), 0)
   const totalLiabilities = liabilities.reduce((s, a) => s + (a.total_credit - a.total_debit),  0)
@@ -714,25 +747,29 @@ export async function getBalanceSheet(fy, fromDate = null, toDate = null) {
 }
 
 // Receipts & Payments Account (cash-basis — church standard report)
-export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null) {
+export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDate = null) {
   const { from, to } = fyDateRange(fy)
   const dateFrom = fromDate || from
   const dateTo   = toDate   || to
 
   // ── Fetch income/expense COA for receipt/payment hierarchy ──────────
-  const { data: incExpCOA } = await supabase
+  let incExpQ = supabase
     .from('chart_of_accounts')
     .select('id, name, parent_id, level, account_type')
     .in('account_type', ['Income', 'Expense'])
+  if (entityId) incExpQ = incExpQ.eq('entity_id', entityId)
+  const { data: incExpCOA } = await incExpQ
   const coaById = {}
   for (const a of incExpCOA || []) coaById[a.id] = a
 
   // ── Classify asset accounts as Cash or Bank by name ───────────────
-  const { data: assetAccts } = await supabase
+  let assetQ = supabase
     .from('chart_of_accounts')
     .select('id, name, opening_balance, opening_balance_date')
     .eq('account_type', 'Asset')
     .eq('is_active', true)
+  if (entityId) assetQ = assetQ.eq('entity_id', entityId)
+  const { data: assetAccts } = await assetQ
 
   const cashRe = /cash|hand|petty/i
   const bankRe = /bank/i
@@ -761,7 +798,7 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
   // ── Pre-period entries for custom date ranges (FY start → day before fromDate) ──
   let cashOB = cashCoaOB, bankOB = bankCoaOB
   if (dateFrom > from) {
-    const { data: preEntries } = await supabase
+    let preQ = supabase
       .from('journal_entries')
       .select(`
         voucher_type,
@@ -773,6 +810,8 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
       .eq('is_deleted', false)
       .gte('entry_date', from)
       .lt('entry_date', dateFrom)
+    if (entityId) preQ = preQ.eq('entity_id', entityId)
+    const { data: preEntries } = await preQ
 
     for (const e of preEntries || []) {
       for (const l of (e.journal_entry_lines || [])) {
@@ -802,7 +841,7 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
   const acctOBal = { ...acctBal }
 
   // ── Period entries ────────────────────────────────────────────────
-  const { data: entries, error } = await supabase
+  let periodQ = supabase
     .from('journal_entries')
     .select(`
       entry_number, entry_date, voucher_type, narration, total_debit, total_credit,
@@ -815,6 +854,8 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
     .gte('entry_date', dateFrom)
     .lte('entry_date', dateTo)
     .order('entry_date')
+  if (entityId) periodQ = periodQ.eq('entity_id', entityId)
+  const { data: entries, error } = await periodQ
   if (error) throw error
 
   const receiptAmts  = {}   // account_id → amount
@@ -1032,14 +1073,18 @@ export async function getReceiptsAndPayments(fy, fromDate = null, toDate = null)
 
 // ── Dashboard stats ───────────────────────────────────────────────
 
-export async function getAccountingStats(fy) {
+export async function getAccountingStats(fy, entityId) {
+  let coaQ = supabase
+    .from('chart_of_accounts')
+    .select('id, name, parent_id, opening_balance, account_type')
+    .eq('account_type', 'Asset')
+    .eq('is_active', true)
+  if (entityId) coaQ = coaQ.eq('entity_id', entityId)
+
   const [tb, is, { data: allAssetCOA }] = await Promise.all([
-    getTrialBalance(fy),
-    getIncomeStatement(fy),
-    supabase.from('chart_of_accounts')
-      .select('id, name, parent_id, opening_balance, account_type')
-      .eq('account_type', 'Asset')
-      .eq('is_active', true),
+    getTrialBalance(fy, entityId),
+    getIncomeStatement(fy, entityId),
+    coaQ,
   ])
 
   // Build a map from the trial balance — reads directly from journal_entry_lines,
@@ -1073,11 +1118,17 @@ export async function getAccountingStats(fy) {
                         .reduce((s, a) => s + (a.total_debit - a.total_credit), 0)
   const totalLiabilities = tb.filter(a => a.account_type === 'Liability')
                               .reduce((s, a) => s + (a.total_credit - a.total_debit), 0)
-  const { count: totalEntries } = await supabase
+
+  let totalEntriesQ = supabase
     .from('journal_entries').select('id', { count: 'exact', head: true }).eq('financial_year', fy)
-  const { count: draftEntries } = await supabase
-    .from('journal_entries').select('id', { count: 'exact', head: true })
-    .eq('financial_year', fy).eq('is_posted', false)
+  let draftEntriesQ = supabase
+    .from('journal_entries').select('id', { count: 'exact', head: true }).eq('financial_year', fy).eq('is_posted', false)
+  if (entityId) {
+    totalEntriesQ = totalEntriesQ.eq('entity_id', entityId)
+    draftEntriesQ = draftEntriesQ.eq('entity_id', entityId)
+  }
+  const [{ count: totalEntries }, { count: draftEntries }] = await Promise.all([totalEntriesQ, draftEntriesQ])
+
   return {
     totalAssets,
     totalLiabilities,

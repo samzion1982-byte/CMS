@@ -14,6 +14,7 @@ import {
   PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
   CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer,
 } from 'lucide-react'
+import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
@@ -155,6 +156,7 @@ export default function ReceiptVoucherPage() {
   const { user }  = useAuth()
   const navigate  = useNavigate()
   const toast     = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null   // set when editing existing entry
 
@@ -179,7 +181,6 @@ export default function ReceiptVoucherPage() {
   const [lines,        setLines]        = useState(() => [blankLine(), blankLine()])
   const [lineNarration, setLineNarration] = useState('')
 
-  const [church,     setChurch]    = useState(null)
   const [showPrint,  setShowPrint] = useState(false)
   const [funds,  setFunds]  = useState([])
   const [fundId, setFundId] = useState('')
@@ -208,11 +209,10 @@ export default function ReceiptVoucherPage() {
   const isValid = debitCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
   const busy    = saving || posting
 
-  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
 
   useEffect(() => {
-    const promises = [getChartOfAccounts(true), getAccountingSettings()]
+    const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existingEntry]) => {
       setAllCoa(coa)
@@ -237,7 +237,7 @@ export default function ReceiptVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
-        setReceiptNo(await nextEntryNumber(fy, 'Receipt', pfx))
+        setReceiptNo(await nextEntryNumber(fy, 'Receipt', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
@@ -284,7 +284,7 @@ export default function ReceiptVoucherPage() {
       const entry = {
         entry_number: receiptNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Receipt', narration: lineNarration || null, reference_no: refNo || null,
-        fund_id: fundId || null,
+        fund_id: fundId || null, entity_id: currentEntityId,
       }
       const jLines = [
         { account_id: debitCoaId, debit_amount: total, credit_amount: 0, description: receivedFrom || null },
@@ -558,7 +558,7 @@ export default function ReceiptVoucherPage() {
 
       <VoucherPrint
         open={showPrint} onClose={() => setShowPrint(false)}
-        church={church}
+        entity={currentEntity}
         voucherType="Receipt"
         voucherNo={receiptNo}
         date={entryDate}

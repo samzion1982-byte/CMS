@@ -12,6 +12,7 @@ import {
   Loader2, Save, CheckSquare, ArrowLeft, CheckCircle2,
   Banknote, Landmark, ArrowLeftRight, Printer,
 } from 'lucide-react'
+import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
@@ -145,6 +146,7 @@ export default function ContraVoucherPage() {
   const { user }   = useAuth()
   const navigate   = useNavigate()
   const toast      = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null
 
@@ -159,7 +161,6 @@ export default function ContraVoucherPage() {
   const [toId,      setToId]      = useState('')
   const [toLabel,   setToLabel]   = useState('')
   const [amount,    setAmount]    = useState('')
-  const [church,     setChurch]    = useState(null)
   const [showPrint,  setShowPrint] = useState(false)
   const [saving,    setSaving]    = useState(false)
   const [posting,   setPosting]   = useState(false)
@@ -181,10 +182,9 @@ export default function ContraVoucherPage() {
   const isValid = fromId && toId && fromId !== toId && parseFloat(amount) > 0
   const busy    = saving || posting
 
-  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
 
   useEffect(() => {
-    const promises = [getChartOfAccounts(true), getAccountingSettings()]
+    const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existing]) => {
       setAllCoa(coa)
@@ -201,7 +201,7 @@ export default function ContraVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Contra: s.accounting_prefix_contra || 'CT' }
-        setVoucherNo(await nextEntryNumber(fy, 'Contra', pfx))
+        setVoucherNo(await nextEntryNumber(fy, 'Contra', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
@@ -226,6 +226,7 @@ export default function ContraVoucherPage() {
       const entry = {
         entry_number: voucherNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Contra', narration: narration || null, reference_no: refNo || null,
+        entity_id: currentEntityId,
       }
       const jLines = [
         { account_id: toId,   debit_amount: amt, credit_amount: 0,   description: narration || null },
@@ -384,7 +385,7 @@ export default function ContraVoucherPage() {
 
       <VoucherPrint
         open={showPrint} onClose={() => setShowPrint(false)}
-        church={church}
+        entity={currentEntity}
         voucherType="Contra"
         voucherNo={voucherNo}
         date={entryDate}

@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getTrialBalance, getFY, fyOptions, fyDateRange, fmtAmt, displayAccountType } from '../lib/accountingLib'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
-import { getChurch } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   Scale, ArrowLeft, Loader2, FileSpreadsheet,
   Printer, ChevronDown, CheckCircle2, AlertTriangle,
@@ -37,6 +37,7 @@ const TYPE_META  = {
 export default function TrialBalancePage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const defaultFY = getFY()
   const { from: defaultFrom, to: defaultTo } = fyDateRange(defaultFY)
@@ -49,7 +50,6 @@ export default function TrialBalancePage() {
   const [generated, setGenerated] = useState(false)
   const [showZero,  setShowZero]  = useState(false)
   const [fyOpen,    setFyOpen]    = useState(false)
-  const [church,    setChurch]    = useState(null)
   const FYS = fyOptions()
 
   function handleFyChange(f) {
@@ -64,13 +64,12 @@ export default function TrialBalancePage() {
   const generate = useCallback(async () => {
     setLoading(true)
     try {
-      const [data, c] = await Promise.all([getTrialBalance(fy, dateFrom, dateTo), getChurch()])
+      const data = await getTrialBalance(fy, currentEntityId, dateFrom, dateTo)
       setRows(data)
-      setChurch(c)
       setGenerated(true)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, dateFrom, dateTo, toast])
+  }, [fy, dateFrom, dateTo, currentEntityId, toast])
 
   const display     = showZero ? rows : rows.filter(r => r.total_debit > 0 || r.total_credit > 0)
   const totalDebit  = display.reduce((s, r) => s + r.total_debit,  0)
@@ -102,9 +101,10 @@ export default function TrialBalancePage() {
     exRows.push({ sno: '', name: 'GRAND TOTAL', type: '', debit: totalDebit, credit: totalCredit, _bold: true })
 
     const titleLines = [
-      church?.church_name ? { text: church.church_name, bold: true, size: 14, bg: 'DBEAFE' } : null,
-      (church?.address || church?.city) ? { text: [church?.address, church?.city].filter(Boolean).join(', '), size: 11 } : null,
-      church?.diocese ? { text: church.diocese, size: 10, italic: true } : null,
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 14, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 11 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
       { text: 'TRIAL BALANCE', bold: true, size: 13, bg: '1E3A5F', color: 'FFFFFF' },
       { text: `From: ${fmtDateDisplay(dateFrom)}  To: ${fmtDateDisplay(dateTo)}  (FY ${fy})`, size: 10 },
       { text: 'All amounts in Indian Rupees (₹)', size: 9, italic: true },
@@ -255,15 +255,18 @@ export default function TrialBalancePage() {
             {/* Indian-style report header */}
             <div style={{ padding: '20px 28px 14px', textAlign: 'center', borderBottom: '2px solid #d1d5db', background: '#f9fafb' }}>
               <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1.5px', color: '#111827' }}>
-                {church?.church_name || 'Church Name'}
+                {currentEntity?.name || 'Entity Name'}
               </p>
-              {(church?.address || church?.city) && (
+              {(currentEntity?.address || currentEntity?.city) && (
                 <p style={{ margin: '0 0 1px', fontSize: 12, color: '#4b5563' }}>
-                  {[church.address, church.city].filter(Boolean).join(', ')}
+                  {[currentEntity.address, currentEntity.city].filter(Boolean).join(', ')}
                 </p>
               )}
-              {church?.diocese && (
-                <p style={{ margin: '0 0 10px', fontSize: 11, color: '#6b7280' }}>{church.diocese}</p>
+              {currentEntity?.diocese && (
+                <p style={{ margin: '0 0 4px', fontSize: 11, color: '#6b7280' }}>{currentEntity.diocese}</p>
+              )}
+              {currentEntity?.description && (
+                <p style={{ margin: '0 0 6px', fontSize: 11, color: '#6b7280', fontStyle: 'italic' }}>{currentEntity.description}</p>
               )}
               <div style={{ borderTop: '1px solid #d1d5db', marginTop: 8, paddingTop: 10 }}>
                 <p style={{ margin: '0 0 2px', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '2px', color: '#111827' }}>

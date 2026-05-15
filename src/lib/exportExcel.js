@@ -186,7 +186,8 @@ export async function exportTwoColumn(
   leftRows, rightRows,
   leftLabel, rightLabel,
   title, fileName,
-  { leftTotal, rightTotal } = {}
+  { leftTotal, rightTotal } = {},
+  titleLines = []
 ) {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
@@ -205,20 +206,37 @@ export async function exportTwoColumn(
     { key: 'g', width: 17 }, // Right outer amount
   ]
 
-  // ── Row 1: Title ───────────────────────────────────────────────
+  // ── Entity title block rows ────────────────────────────────────
+  titleLines.forEach(({ text, bold, size, italic, bg, color }, idx) => {
+    const isFirst = idx === 0
+    const isLast  = idx === titleLines.length - 1
+    const r = ws.addRow([text, '', '', '', '', '', ''])
+    ws.mergeCells(r.number, 1, r.number, 7)
+    const cell    = ws.getCell(r.number, 1)
+    cell.value    = text
+    cell.font     = { bold: !!bold, italic: !!italic, size: size || 11, name: 'Calibri', color: { argb: color || '111827' } }
+    cell.fill     = bg ? { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } } : undefined
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border   = { top: isFirst ? outerMed : innerThin, bottom: isLast ? outerMed : innerThin, left: outerMed, right: outerMed }
+    r.height      = (size || 11) * 2.2
+  })
+
+  // ── Report title row ───────────────────────────────────────────
+  const titleRowNum = titleLines.length + 1
   ws.addRow(['', '', '', '', '', '', ''])
-  ws.mergeCells('A1:G1')
-  const tc = ws.getCell('A1')
+  ws.mergeCells(`A${titleRowNum}:G${titleRowNum}`)
+  const tc = ws.getCell(`A${titleRowNum}`)
   tc.value = title
   tc.font      = { bold: true, size: 13, name: 'Calibri', color: { argb: HEADER_FG } }
   tc.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
   tc.alignment = { horizontal: 'center', vertical: 'middle' }
   tc.border    = { top: outerMed, bottom: outerMed, left: outerMed, right: outerMed }
-  ws.getRow(1).height = 28
+  ws.getRow(titleRowNum).height = 28
 
-  // ── Row 2: Column headers ──────────────────────────────────────
+  // ── Column headers ─────────────────────────────────────────────
+  const hdrRowNum = titleLines.length + 2
   ws.addRow([leftLabel, 'DETAIL', 'AMOUNT', '', rightLabel, 'DETAIL', 'AMOUNT'])
-  const hr = ws.getRow(2)
+  const hr = ws.getRow(hdrRowNum)
   hr.height = 22
   ;[1, 2, 3, 5, 6, 7].forEach(c => {
     const cell = hr.getCell(c)
@@ -292,6 +310,7 @@ export async function exportTwoColumn(
     })
   }
 
+  const dataStartRow = titleLines.length + 3
   for (let i = 0; i < n; i++) {
     const l = leftRows[i]  || { label: '' }
     const r = rightRows[i] || { label: '' }
@@ -302,12 +321,12 @@ export async function exportTwoColumn(
     const rd = r.inner ?? r.detail ?? null
 
     ws.addRow([l.label || '', ld ?? '', la ?? '', '', r.label || '', rd ?? '', ra ?? ''])
-    styleDataRow(i + 3, l, r, i === n - 1 && leftTotal == null)
+    styleDataRow(dataStartRow + i, l, r, i === n - 1 && leftTotal == null)
   }
 
   // ── TOTAL row ──────────────────────────────────────────────────
   if (leftTotal != null || rightTotal != null) {
-    const totRowNum = n + 3
+    const totRowNum = n + titleLines.length + 3
     ws.addRow(['TOTAL', '', leftTotal ?? '', '', 'TOTAL', '', rightTotal ?? ''])
     const tr2 = ws.getRow(totRowNum)
     tr2.height = 20

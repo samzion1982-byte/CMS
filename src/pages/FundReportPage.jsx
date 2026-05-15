@@ -9,6 +9,7 @@ import {
   getFY, fyOptions, fmtAmt, getFundReport,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
+import { useEntity } from '../lib/EntityContext'
 import {
   ArrowLeft, Loader2, RefreshCw, ChevronDown, Wallet,
   TrendingUp, TrendingDown, Target, ChevronRight,
@@ -19,6 +20,7 @@ const LABEL_TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, textTrans
 export default function FundReportPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId } = useEntity()
 
   const [fy,           setFy]           = useState(getFY())
   const [fyOpen,       setFyOpen]       = useState(false)
@@ -32,11 +34,11 @@ export default function FundReportPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const report = await getFundReport(fy)
+      const report = await getFundReport(fy, currentEntityId)
       setFunds(report)
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
-  }, [fy, toast])
+  }, [fy, currentEntityId, toast])
 
   useEffect(() => { load() }, [load])
 

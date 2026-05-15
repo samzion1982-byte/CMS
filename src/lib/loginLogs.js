@@ -70,9 +70,8 @@ async function fetchByIP() {
     // ipinfo.io with auth token — primary, best database
     ipFetch(`https://ipinfo.io/json?token=${IPINFO_TOKEN}`, d =>
       d.ip ? { ipAddress: d.ip, city: d.city || null, region: d.region || null, country: d.country || null } : null),
-    ipFetch('https://get.geojs.io/v1/ip/geo.json',   d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country || null })),
-    ipFetch('https://freeipapi.com/api/json',          d => d.ipAddress ? { ipAddress: d.ipAddress, city: d.cityName || null, region: d.regionName || null, country: d.countryName || null } : null),
-    ipFetch('https://ipapi.co/json/',                  d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country_name || null })),
+    ipFetch('https://get.geojs.io/v1/ip/geo.json', d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country || null })),
+    ipFetch('https://ipapi.co/json/',               d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country_name || null })),
   ]).catch(() => null)
   return race
 }

@@ -17,7 +17,8 @@ import {
   ChevronDown, ChevronRight, FileText, Search, X, Scale,
   ArrowUp, ArrowDown, FileSpreadsheet,
 } from 'lucide-react'
-import { exportToExcel } from '../lib/exportExcel'
+import { exportToExcel, exportToExcelWithTitle } from '../lib/exportExcel'
+import { useEntity } from '../lib/EntityContext'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ function TabBtn({ active, onClick, children }) {
 export default function AccountingReportsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const [tab, setTab] = useState('daybook') // 'daybook' | 'account-summary' | 'group-report'
 
@@ -86,16 +88,17 @@ export default function AccountingReportsPage() {
     setDbLoading(true)
     try {
       const entries = await getJournalEntries({
-        from:   dbFrom,
-        to:     dbTo,
-        type:   dbType || undefined,
-        posted: dbPosted === '' ? undefined : dbPosted === 'true',
+        from:     dbFrom,
+        to:       dbTo,
+        type:     dbType || undefined,
+        posted:   dbPosted === '' ? undefined : dbPosted === 'true',
+        entityId: currentEntityId,
       })
       setDbEntries(entries)
       setDbLines({})
     } catch (e) { toast(e.message, 'error') }
     setDbLoading(false)
-  }, [dbFrom, dbTo, dbType, dbPosted, toast])
+  }, [dbFrom, dbTo, dbType, dbPosted, currentEntityId, toast])
 
   useEffect(() => { if (tab === 'daybook') loadDayBook() }, [tab, loadDayBook])
 
@@ -105,7 +108,7 @@ export default function AccountingReportsPage() {
     try {
       // Use trial balance (reads from journal_entry_lines directly) so balances
       // are always accurate regardless of the account_balances cache state.
-      const tb = await getTrialBalance(fy)
+      const tb = await getTrialBalance(fy, currentEntityId)
       const active = tb.filter(a => a.is_active !== false)
       setAllAccounts(active)
       setBalances(active.map(t => ({
@@ -116,7 +119,7 @@ export default function AccountingReportsPage() {
       })))
     } catch (e) { toast(e.message, 'error') }
     setAcLoading(false)
-  }, [fy, toast])
+  }, [fy, currentEntityId, toast])
 
   useEffect(() => { if (tab === 'account-summary' || tab === 'group-report') loadAccountSummary() }, [tab, loadAccountSummary])
 
@@ -324,7 +327,15 @@ export default function AccountingReportsPage() {
       status: e.is_posted ? 'Posted' : 'Draft',
     }))
     rows.push({ date: '', entry: 'TOTAL', type: '', narr: '', ref: '', debit: dbTotalDebit, credit: dbTotalCredit, status: '' })
-    await exportToExcel(cols, rows, 'Day Book', `DayBook_${dbFrom}_${dbTo}.xlsx`)
+    const titleLines = [
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
+      { text: 'DAY BOOK', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+      { text: `${dbFrom}  to  ${dbTo}`, size: 10 },
+    ].filter(Boolean)
+    await exportToExcelWithTitle(cols, rows, 'Day Book', `DayBook_${dbFrom}_${dbTo}.xlsx`, titleLines)
   }
 
   async function doExportAccountSummary() {
@@ -358,7 +369,14 @@ export default function AccountingReportsPage() {
         })
       })
     })
-    await exportToExcel(cols, rows, `Account Summary FY ${fy}`, `AccountSummary_FY${fy}.xlsx`)
+    const titleLines = [
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
+      { text: `ACCOUNT SUMMARY — FY ${fy}`, bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+    ].filter(Boolean)
+    await exportToExcelWithTitle(cols, rows, `Account Summary FY ${fy}`, `AccountSummary_FY${fy}.xlsx`, titleLines)
   }
 
   async function doExportGroupReport() {
@@ -427,7 +445,14 @@ export default function AccountingReportsPage() {
       rows.push({ name: '', debit: '', credit: '', net: '' })
     })
 
-    await exportToExcel(cols, rows, `Group Report FY ${fy}`, `GroupReport_FY${fy}.xlsx`)
+    const titleLines = [
+      currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+      (currentEntity?.address || currentEntity?.city) ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 } : null,
+      currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+      currentEntity?.description ? { text: currentEntity.description, size: 10, italic: true } : null,
+      { text: `GROUP REPORT — FY ${fy}`, bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+    ].filter(Boolean)
+    await exportToExcelWithTitle(cols, rows, `Group Report FY ${fy}`, `GroupReport_FY${fy}.xlsx`, titleLines)
   }
 
   const TYPE_COLOR_MAP = {

@@ -13,6 +13,7 @@ import {
   PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
   CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer,
 } from 'lucide-react'
+import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { getChurch } from '../lib/supabase'
@@ -132,6 +133,7 @@ export default function PaymentVoucherPage() {
   const { user }   = useAuth()
   const navigate   = useNavigate()
   const toast      = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null
 
@@ -147,7 +149,6 @@ export default function PaymentVoucherPage() {
   const [creditLabel,   setCreditLabel]   = useState('')
   const [lines,         setLines]         = useState(() => [blankLine(), blankLine()])
   const [lineNarration, setLineNarration] = useState('')
-  const [church,        setChurch]        = useState(null)
   const [showPrint,     setShowPrint]     = useState(false)
   const [funds,         setFunds]         = useState([])
   const [fundId,        setFundId]        = useState('')
@@ -170,11 +171,10 @@ export default function PaymentVoucherPage() {
   const isValid = creditCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
   const busy    = saving || posting
 
-  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
 
   useEffect(() => {
-    const promises = [getChartOfAccounts(true), getAccountingSettings()]
+    const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existing]) => {
       setAllCoa(coa)
@@ -197,7 +197,7 @@ export default function PaymentVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Payment: s.accounting_prefix_payment || 'PV' }
-        setVoucherNo(await nextEntryNumber(fy, 'Payment', pfx))
+        setVoucherNo(await nextEntryNumber(fy, 'Payment', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
@@ -221,7 +221,7 @@ export default function PaymentVoucherPage() {
       const entry = {
         entry_number: voucherNo, entry_date: entryDate, financial_year: fy,
         voucher_type: 'Payment', narration: lineNarration || null, reference_no: refNo || null,
-        fund_id: fundId || null,
+        fund_id: fundId || null, entity_id: currentEntityId,
       }
       const jLines = [
         { account_id: creditCoaId, debit_amount: 0, credit_amount: total, description: paidTo || null },
@@ -431,7 +431,7 @@ export default function PaymentVoucherPage() {
       )}
       <VoucherPrint
         open={showPrint} onClose={() => setShowPrint(false)}
-        church={church}
+        entity={currentEntity}
         voucherType="Payment"
         voucherNo={voucherNo}
         date={entryDate}
