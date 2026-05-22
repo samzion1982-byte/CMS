@@ -94,15 +94,6 @@ export default function ReportsPage() {
   const [payheadRows,  setPayheadRows]  = useState([])
   const [payheadTotal, setPayheadTotal] = useState(0)
 
-  // Dirty tracking
-  const [lastGen, setLastGen] = useState({ fy: '', from: '', to: '', cat: '' })
-  const anyGenerated = lastGen.fy !== ''
-  const fyDirty   = anyGenerated && filterFY !== lastGen.fy
-  const fromDirty = anyGenerated && dateFrom  !== lastGen.from
-  const toDirty   = anyGenerated && dateTo    !== lastGen.to
-  const catDirty  = anyGenerated && activeTab === 'payhead' && selCat !== lastGen.cat
-  const dc = (dirty) => dirty ? 'field-input field-dirty' : 'field-input'
-
   const fromRef = useRef(null)
   const toRef   = useRef(null)
 
@@ -150,7 +141,6 @@ export default function ReportsPage() {
       if (activeTab === 'full') await generateFull()
       else                       await generatePayHead()
       setGenerated(true)
-      setLastGen({ fy: filterFY, from: dateFrom, to: dateTo, cat: selCat })
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -431,7 +421,7 @@ export default function ReportsPage() {
             <select
               value={filterFY}
               onChange={e => handleFYChange(e.target.value)}
-              className={dc(fyDirty)}
+              className="field-input"
               style={{ width: '100%', appearance: 'none', paddingRight: 28 }}
             >
               <option value="">— select —</option>
@@ -445,17 +435,17 @@ export default function ReportsPage() {
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>From</label>
-          <input ref={fromRef} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} onBlur={() => toRef.current?.focus()} className={dc(fromDirty)} />
+          <input ref={fromRef} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} onBlur={() => toRef.current?.focus()} className="field-input" />
         </div>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>To</label>
-          <input ref={toRef} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={dc(toDirty)} />
+          <input ref={toRef} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="field-input" />
         </div>
 
         {activeTab === 'payhead' && (
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Payment Head</label>
-            <select value={selCat} onChange={e => setSelCat(e.target.value)} className={dc(catDirty)} style={{ minWidth: 190 }}>
+            <select value={selCat} onChange={e => setSelCat(e.target.value)} className="field-input" style={{ minWidth: 190 }}>
               <option value="">— select —</option>
               {allCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>

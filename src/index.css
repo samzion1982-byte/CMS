@@ -842,11 +842,6 @@ html { zoom: 0.95; }
 
   .field-input::placeholder { color: var(--text-3); }
 
-  .field-input.field-dirty {
-    background: #fef3c7 !important;
-    border-color: #f59e0b !important;
-  }
-
   /* ── Pills ── */
   .pill {
     display: inline-flex;
