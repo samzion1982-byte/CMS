@@ -156,7 +156,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                         onClick={() => collapsed ? navigate(item.children[0].path) : toggleExpand(item.label)}
                       />
                       {!collapsed && isExpanded && item.children.map(child => {
-                        const childActive = location.pathname === child.path || location.pathname.startsWith(child.path + '/')
+                        const childActive = location.pathname === child.path
                         return (
                           <SubNavItem
                             key={child.path}
@@ -336,6 +336,12 @@ function SubNavItem({ label, isActive, onClick }) {
         fontSize: 12, fontWeight: isActive ? 700 : 400,
         outline: 'none', textAlign: 'left',
         transition: 'all 0.15s ease',
+        transform: hov && !isActive ? 'translateX(4px) translateY(-1px)' : 'none',
+        boxShadow: isActive
+          ? '0 2px 6px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.08)'
+          : hov
+          ? '0 4px 12px rgba(0,0,0,0.2), 0 1px 3px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.1)'
+          : '0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.04)',
       }}
     >
       <span style={{
