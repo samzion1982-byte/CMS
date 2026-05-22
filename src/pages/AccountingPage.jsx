@@ -19,7 +19,7 @@ import {
   FileText, PlusCircle, List, ChevronRight, AlertCircle,
   BarChart2, ClipboardList, Wallet, RefreshCw,
   ChevronDown, Landmark, Lock, Loader2, CreditCard, ArrowLeftRight,
-  CheckSquare, BarChart, Target, Building2, Layers,
+  CheckSquare, BarChart, Target, Building2, Layers, BookOpen,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -872,6 +872,7 @@ export default function AccountingPage() {
               <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Statements</p>
             </div>
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <QuickBtn icon={BookOpen}      label="Chart of Accounts"    desc="View & manage account hierarchy"  onClick={() => navigate('/accounting/chart-of-accounts')}   color="#374151" />
               <QuickBtn icon={BarChart2}     label="Financial Statements" desc="R&P, I&E, Balance Sheet"          onClick={() => navigate('/accounting/statements')}           color="#0891b2" />
               <QuickBtn icon={Scale}         label="Trial Balance"        desc="Verify debits = credits"          onClick={() => navigate('/accounting/trial-balance')}        color="#7c3aed" />
               <QuickBtn icon={ClipboardList} label="Ledger"               desc="Account-wise transactions"        onClick={() => navigate('/accounting/ledger')}               color="#2563eb" />

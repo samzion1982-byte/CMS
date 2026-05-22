@@ -8,7 +8,7 @@ import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import {
   Gavel, Upload, RefreshCw, Loader2, FileSpreadsheet,
-  FileText, CheckCircle, XCircle, AlertCircle, Info,
+  FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown,
 } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────
@@ -128,7 +128,25 @@ async function parseAuctionFile(file) {
 
 // ── PDF export ───────────────────────────────────────────────────
 
-async function exportAuctionPDF({ rows, filterFY, church, summary }) {
+// Plain-ASCII Indian number formatter — safe for jsPDF built-in fonts (no ₹, no unicode chars)
+function fmtPDF(n, decimals = 2) {
+  if (n == null || n === '' || Number(n) === 0) return '—'
+  const v   = Math.abs(Number(n))
+  const s   = v.toFixed(decimals)
+  const [intPart, decPart] = s.split('.')
+  let result = ''
+  if (intPart.length > 3) {
+    result = intPart.slice(-3)
+    let rem = intPart.slice(0, -3)
+    while (rem.length > 2) { result = rem.slice(-2) + ',' + result; rem = rem.slice(0, -2) }
+    if (rem) result = rem + ',' + result
+  } else {
+    result = intPart
+  }
+  return decimals > 0 ? result + '.' + decPart : result
+}
+
+async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMap = {} }) {
   const { jsPDF } = await import('jspdf')
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -178,9 +196,9 @@ async function exportAuctionPDF({ rows, filterFY, church, summary }) {
   const cardH  = 14
   const cards  = [
     { label: 'Total Members', value: String(summary.totalMembers) },
-    { label: 'Total Due',     value: '₹' + summary.totalDue.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
-    { label: 'Total Paid',    value: '₹' + summary.totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
-    { label: 'Balance Due',   value: '₹' + summary.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
+    { label: 'Total Due',     value: fmtPDF(summary.totalDue) },
+    { label: 'Total Paid',    value: fmtPDF(summary.totalPaid) },
+    { label: 'Balance Due',   value: fmtPDF(summary.totalBalance) },
   ]
   cards.forEach((c, i) => {
     const cx = ML + i * (cardW + 4)
@@ -240,82 +258,149 @@ async function exportAuctionPDF({ rows, filterFY, church, summary }) {
     doc.text(`Page ${pageNum}`, PW - MR, PH - 6, { align: 'right' })
   }
 
-  rows.forEach((row, idx) => {
-    if (y + ROW_H > pageBottom) {
-      addPageFooter()
-      doc.addPage()
-      pageNum++
-      y = MT
-      // repeat header on new page
-      doc.setFillColor(...NAVY)
-      doc.rect(ML, y, UW, HDR_H, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7.5)
-      doc.setTextColor(...WHITE)
-      let hx = ML
-      COLS.forEach(col => {
-        const tx = col.align === 'C' ? hx + col.w / 2
-                 : col.align === 'R' ? hx + col.w - 2
-                 : hx + 2
-        doc.text(col.label, tx, y + 6, { align: col.align === 'C' ? 'center' : col.align === 'R' ? 'right' : 'left' })
-        hx += col.w
-      })
-      y += HDR_H
+  const SUB_H  = 5.5  // receipt sub-row height
+  const SUB_BG = [235, 245, 255]
+  const SUB_HD = [210, 230, 250]
+  const BLUE   = [37,  99,  235]
+  const TEXT3  = [120, 130, 150]
+
+  // helper: draw repeat header at top of new page
+  const drawPageHeader = () => {
+    doc.setFillColor(...NAVY)
+    doc.rect(ML, y, UW, HDR_H, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...WHITE)
+    let hx = ML
+    COLS.forEach(col => {
+      const tx = col.align === 'C' ? hx + col.w / 2 : col.align === 'R' ? hx + col.w - 2 : hx + 2
+      doc.text(col.label, tx, y + 6, { align: col.align === 'C' ? 'center' : col.align === 'R' ? 'right' : 'left' })
+      hx += col.w
+    })
+    y += HDR_H
+  }
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageBottom) {
+      addPageFooter(); doc.addPage(); pageNum++; y = MT; drawPageHeader()
     }
+  }
+
+  rows.forEach((row, idx) => {
+    ensureSpace(ROW_H)
 
     const balance = (row.total || 0) - (row.paid || 0)
     const isAlt   = idx % 2 === 1
+    const details = paidDetailsMap[row.member_id] || []
 
-    // row background
+    // ── main member row ──
     if (isAlt) { doc.setFillColor(...ALT); doc.rect(ML, y, UW, ROW_H, 'F') }
 
-    // status badge background
     const statusX = ML + COLS.slice(0, -1).reduce((s, c) => s + c.w, 0)
     const statusW = COLS[COLS.length - 1].w
-    if (balance <= 0) {
-      doc.setFillColor(...GRN_BG)
-      doc.roundedRect(statusX + 1, y + 1, statusW - 2, ROW_H - 2, 1.5, 1.5, 'F')
-    } else {
-      doc.setFillColor(...RED_BG)
-      doc.roundedRect(statusX + 1, y + 1, statusW - 2, ROW_H - 2, 1.5, 1.5, 'F')
-    }
+    if (balance <= 0) { doc.setFillColor(...GRN_BG); doc.roundedRect(statusX + 1, y + 1, statusW - 2, ROW_H - 2, 1.5, 1.5, 'F') }
+    else              { doc.setFillColor(...RED_BG); doc.roundedRect(statusX + 1, y + 1, statusW - 2, ROW_H - 2, 1.5, 1.5, 'F') }
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(7.5)
     let rx = ML
     COLS.forEach(col => {
       let val = ''
-      if (col.key === '_sno')                val = String(idx + 1)
-      else if (col.key === 'member_id')      val = row.member_id || ''
-      else if (col.key === 'member_name')    val = row.member_name || ''
-      else if (col.key === 'previous_pending') val = row.previous_pending > 0 ? row.previous_pending.toLocaleString('en-IN') : '—'
-      else if (col.key === 'current_year_purchase') val = row.current_year_purchase > 0 ? row.current_year_purchase.toLocaleString('en-IN') : '—'
-      else if (col.key === 'total')          val = row.total > 0 ? row.total.toLocaleString('en-IN') : '—'
-      else if (col.key === 'paid')           val = row.paid > 0 ? row.paid.toLocaleString('en-IN') : '—'
-      else if (col.key === 'balance') {
-        val = balance !== 0 ? Math.abs(balance).toLocaleString('en-IN') : '—'
-      } else if (col.key === 'status') {
-        val = balance <= 0 ? 'Cleared' : 'Pending'
-      }
+      if      (col.key === '_sno')                val = String(idx + 1)
+      else if (col.key === 'member_id')           val = row.member_id || ''
+      else if (col.key === 'member_name')         val = row.member_name || ''
+      else if (col.key === 'previous_pending')      val = fmtPDF(row.previous_pending, 0)
+      else if (col.key === 'current_year_purchase') val = fmtPDF(row.current_year_purchase, 0)
+      else if (col.key === 'total')                 val = fmtPDF(row.total, 0)
+      else if (col.key === 'paid')                  val = row.paid > 0 ? `${fmtPDF(row.paid, 0)} (${details.length})` : '—'
+      else if (col.key === 'balance')               val = balance !== 0 ? fmtPDF(Math.abs(balance), 0) : '—'
+      else if (col.key === 'status')              val = balance <= 0 ? 'Cleared' : 'Pending'
 
       const ty = y + ROW_H / 2 + 2.5
-      const tx = col.align === 'C' ? rx + col.w / 2
-               : col.align === 'R' ? rx + col.w - 2
-               : rx + 2
+      const tx = col.align === 'C' ? rx + col.w / 2 : col.align === 'R' ? rx + col.w - 2 : rx + 2
 
-      if (col.key === 'balance' && balance > 0)      doc.setTextColor(...RED_TXT)
-      else if (col.key === 'status' && balance <= 0)  doc.setTextColor(...GRN_TXT)
+      if      (col.key === 'balance' && balance > 0) doc.setTextColor(...RED_TXT)
+      else if (col.key === 'status'  && balance <= 0) doc.setTextColor(...GRN_TXT)
       else if (col.key === 'status')                  doc.setTextColor(...RED_TXT)
       else                                            doc.setTextColor(...TEXT1)
 
       doc.text(val, tx, ty, { align: col.align === 'C' ? 'center' : col.align === 'R' ? 'right' : 'left' })
       rx += col.w
     })
-
-    // thin bottom border
     doc.setDrawColor(200, 210, 230)
     doc.line(ML, y + ROW_H, ML + UW, y + ROW_H)
     y += ROW_H
+
+    // ── receipt sub-rows ──
+    if (!details.length) return
+
+    // Sub-rows span the full table width (same as main rows) — no indent
+    const SX  = ML       // start x: same left edge as main table
+    const SW  = UW       // full table width
+    const TX  = SX + 14  // text start x: skip past the # column area
+
+    // sub-header
+    ensureSpace(SUB_H)
+    doc.setFillColor(...SUB_HD)
+    doc.rect(SX, y, SW, SUB_H, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...BLUE)
+    const subCols = [
+      { label: 'Receipt No',    x: TX,          align: 'L' },
+      { label: 'Date',          x: TX + 30,     align: 'L' },
+      { label: 'Month(s) Paid', x: TX + 54,     align: 'L' },
+      { label: 'Mode',          x: TX + 116,    align: 'L' },
+      { label: 'Amount',        x: SX + SW - 2, align: 'R' },
+    ]
+    subCols.forEach(sc => {
+      doc.text(sc.label, sc.x, y + SUB_H / 2 + 2, { align: sc.align === 'R' ? 'right' : 'left' })
+    })
+    y += SUB_H
+
+    details.forEach((d, di) => {
+      ensureSpace(SUB_H)
+      doc.setFillColor(...SUB_BG)
+      doc.rect(SX, y, SW, SUB_H, 'F')
+
+      const fmtD = d.receipt_date ? (() => { const [yr,mm,dd] = d.receipt_date.split('-'); return `${dd}/${mm}/${yr}` })() : '—'
+      const ty   = y + SUB_H / 2 + 2
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(6.5)
+
+      doc.setTextColor(...BLUE)
+      doc.text(d.receipt_number || '—', TX, ty)
+
+      doc.setTextColor(...TEXT2)
+      doc.text(fmtD,                    TX + 30,  ty)
+      doc.text(d.month_paid    || '—',  TX + 54,  ty)
+
+      doc.setTextColor(...TEXT1)
+      doc.text(d.payment_mode  || '—',  TX + 116, ty)
+
+      doc.setTextColor(...GRN_TXT)
+      doc.setFont('helvetica', 'bold')
+      doc.text(fmtPDF(d.amount), SX + SW - 2, ty, { align: 'right' })
+
+      doc.setDrawColor(210, 225, 245)
+      doc.line(SX, y + SUB_H, SX + SW, y + SUB_H)
+      y += SUB_H
+    })
+
+    // receipt subtotal
+    ensureSpace(SUB_H + 1)
+    doc.setFillColor(209, 250, 229)
+    doc.rect(SX, y, SW, SUB_H, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    doc.setTextColor(...TEXT3)
+    doc.text(`Total Paid (${details.length} receipt${details.length !== 1 ? 's' : ''})`, TX, y + SUB_H / 2 + 2)
+    doc.setTextColor(...GRN_TXT)
+    doc.text(fmtPDF(row.paid), SX + SW - 2, y + SUB_H / 2 + 2, { align: 'right' })
+    doc.setDrawColor(180, 220, 180)
+    doc.line(SX, y + SUB_H, SX + SW, y + SUB_H)
+    y += SUB_H + 2
   })
 
   // ── totals row ─────────────────────────────────────────────────
@@ -328,13 +413,13 @@ async function exportAuctionPDF({ rows, filterFY, church, summary }) {
   doc.setFontSize(8)
   doc.setTextColor(...WHITE)
   const totCols = [
-    { label: 'TOTAL', w: COLS[0].w + COLS[1].w + COLS[2].w, align: 'L' },
-    { label: summary.totalPrevPending > 0 ? summary.totalPrevPending.toLocaleString('en-IN') : '—', w: COLS[3].w, align: 'R' },
-    { label: summary.totalCurrYear > 0 ? summary.totalCurrYear.toLocaleString('en-IN') : '—',  w: COLS[4].w, align: 'R' },
-    { label: summary.totalDue > 0 ? summary.totalDue.toLocaleString('en-IN') : '—',      w: COLS[5].w, align: 'R' },
-    { label: summary.totalPaid > 0 ? summary.totalPaid.toLocaleString('en-IN') : '—',     w: COLS[6].w, align: 'R' },
-    { label: summary.totalBalance > 0 ? summary.totalBalance.toLocaleString('en-IN') : '—', w: COLS[7].w, align: 'R' },
-    { label: '',                                                                            w: COLS[8].w, align: 'C' },
+    { label: 'TOTAL',                     w: COLS[0].w + COLS[1].w + COLS[2].w, align: 'L' },
+    { label: fmtPDF(summary.totalPrevPending, 0), w: COLS[3].w, align: 'R' },
+    { label: fmtPDF(summary.totalCurrYear, 0),    w: COLS[4].w, align: 'R' },
+    { label: fmtPDF(summary.totalDue, 0),         w: COLS[5].w, align: 'R' },
+    { label: fmtPDF(summary.totalPaid, 0),        w: COLS[6].w, align: 'R' },
+    { label: fmtPDF(summary.totalBalance, 0),     w: COLS[7].w, align: 'R' },
+    { label: '',                                  w: COLS[8].w, align: 'C' },
   ]
   let tx2 = ML
   totCols.forEach(tc => {
@@ -361,13 +446,15 @@ export default function AuctionReportPage() {
   const [filterFY,      setFilterFY]      = useState(() => getFY())
   const [trackerRows,   setTrackerRows]   = useState([])   // imported data from auction_tracker
   const [reportRows,    setReportRows]    = useState([])   // after Check Status
-  const [generated,     setGenerated]     = useState(false)
-  const [loadingImport, setLoadingImport] = useState(false)
-  const [loadingCheck,  setLoadingCheck]  = useState(false)
-  const [loadingData,   setLoadingData]   = useState(false)
-  const [exporting,     setExporting]     = useState(false)
-  const [preview,       setPreview]       = useState(null) // { rows, fileName } before confirm
-  const [church,        setChurch]        = useState(null)
+  const [generated,       setGenerated]       = useState(false)
+  const [loadingImport,   setLoadingImport]   = useState(false)
+  const [loadingCheck,    setLoadingCheck]    = useState(false)
+  const [loadingData,     setLoadingData]     = useState(false)
+  const [exporting,       setExporting]       = useState(false)
+  const [preview,         setPreview]         = useState(null) // { rows, fileName } before confirm
+  const [church,          setChurch]          = useState(null)
+  const [paidDetailsMap,  setPaidDetailsMap]  = useState({})  // member_id → [{receipt_number,receipt_date,month_paid,payment_mode,amount}]
+  const [expandedMember,  setExpandedMember]  = useState(null)
 
   useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
 
@@ -451,6 +538,7 @@ export default function AuctionReportPage() {
   const checkStatus = async () => {
     if (!trackerRows.length) { toast('Import the Auction Payment Tracker first', 'error'); return }
     setLoadingCheck(true)
+    setExpandedMember(null)
     try {
       // Find payment categories containing "auction"
       const { data: cats, error: catErr } = await supabase
@@ -459,21 +547,23 @@ export default function AuctionReportPage() {
         .ilike('name', '%auction%')
       if (catErr) throw catErr
 
-      let paidMap = {}   // member_id → paid amount
+      let paidMap     = {}  // member_id → total paid
+      let detailsMap  = {}  // member_id → [{receipt_number, receipt_date, month_paid, payment_mode, amount}]
 
       if (cats?.length) {
         const catIds = cats.map(c => c.id)
 
-        // Get all receipts for this FY
+        // Get all receipts for this FY with full detail fields
         const { data: recs, error: recErr } = await supabase
           .from('receipts')
-          .select('id,member_id')
+          .select('id,member_id,receipt_number,receipt_date,month_paid,payment_mode')
           .eq('financial_year', filterFY)
         if (recErr) throw recErr
 
         if (recs?.length) {
+          // Build lookup: receipt_id → full receipt row
           const recMap = {}
-          recs.forEach(r => { recMap[r.id] = r.member_id })
+          recs.forEach(r => { recMap[r.id] = r })
           const recIds = recs.map(r => r.id)
 
           // Get receipt_items for those receipts and auction categories
@@ -490,23 +580,41 @@ export default function AuctionReportPage() {
           }
 
           allItems.forEach(item => {
-            const mId = recMap[item.receipt_id]
-            if (mId) paidMap[mId] = (paidMap[mId] || 0) + (item.total || 0)
+            const rec = recMap[item.receipt_id]
+            if (!rec) return
+            const mId = rec.member_id
+            // accumulate total
+            paidMap[mId] = (paidMap[mId] || 0) + (item.total || 0)
+            // accumulate detail entry
+            if (!detailsMap[mId]) detailsMap[mId] = []
+            detailsMap[mId].push({
+              receipt_number: rec.receipt_number || '—',
+              receipt_date:   rec.receipt_date   || '',
+              month_paid:     rec.month_paid      || '',
+              payment_mode:   rec.payment_mode    || '',
+              amount:         item.total          || 0,
+            })
           })
+
+          // Sort each member's receipts by date ascending
+          Object.values(detailsMap).forEach(arr =>
+            arr.sort((a, b) => (a.receipt_date || '').localeCompare(b.receipt_date || ''))
+          )
         }
       }
 
       // Build report rows
       const rows = trackerRows.map(tr => ({
         ...tr,
-        previous_pending:     Number(tr.previous_pending)     || 0,
+        previous_pending:      Number(tr.previous_pending)      || 0,
         current_year_purchase: Number(tr.current_year_purchase) || 0,
-        total:                Number(tr.total)                || 0,
-        paid:     paidMap[tr.member_id] || 0,
-        balance:  (Number(tr.total) || 0) - (paidMap[tr.member_id] || 0),
+        total:                 Number(tr.total)                 || 0,
+        paid:    paidMap[tr.member_id] || 0,
+        balance: (Number(tr.total) || 0) - (paidMap[tr.member_id] || 0),
       }))
 
       setReportRows(rows)
+      setPaidDetailsMap(detailsMap)
       setGenerated(true)
     } catch (e) {
       toast(e.message, 'error')
@@ -526,61 +634,188 @@ export default function AuctionReportPage() {
     countPending:     reportRows.filter(r => r.balance > 0).length,
   }
 
-  // ── Excel export ───────────────────────────────────────────────
+  // ── Excel export (custom ExcelJS — includes receipt sub-rows) ──
   const exportExcel = async () => {
     if (!reportRows.length) return
     setExporting(true)
     try {
+      const ExcelJS    = (await import('exceljs')).default
       const churchName = church?.church_name || 'Church'
       const now        = new Date()
       const dateStr    = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      const NCOLS      = 9
 
-      const titleLines = [
-        { text: churchName,                       bold: true,  size: 14, bg: '1E3A5F', color: 'FFFFFF' },
-        { text: `Auction Payment Report — FY ${filterFY}`, bold: true,  size: 12, bg: '0070C0', color: 'FFFFFF' },
-        { text: `Generated: ${dateStr}`,           bold: false, size: 10, bg: 'EEF3FA', color: '374151' },
-      ]
+      // ── colours ──
+      const C_HDR   = '1E3A5F'  // dark navy
+      const C_SUB   = '0070C0'  // report title blue
+      const C_WHITE = 'FFFFFF'
+      const C_ALT   = 'EEF3FA'
+      const C_TOTAL = 'D6E4F7'
+      const C_RCHDR = 'D6EAF8'  // receipt sub-section header
+      const C_RCROW = 'EBF5FB'  // receipt detail row
+      const C_GRAY3 = '6B7280'
 
-      const columns = [
-        { header: '#',                   key: 'sno',                    align: 'center' },
-        { header: 'Member ID',           key: 'member_id',              align: 'center' },
-        { header: 'Member Name',         key: 'member_name',            align: 'left'   },
-        { header: 'Prev. Pending (₹)',   key: 'previous_pending_fmt',   align: 'right'  },
-        { header: 'Curr. Year (₹)',      key: 'current_year_fmt',       align: 'right'  },
-        { header: 'Total Due (₹)',       key: 'total_fmt',              align: 'right'  },
-        { header: 'Amount Paid (₹)',     key: 'paid_fmt',               align: 'right'  },
-        { header: 'Balance (₹)',         key: 'balance_fmt',            align: 'right'  },
-        { header: 'Status',              key: 'status',                 align: 'center' },
-      ]
-
-      const dataRows = reportRows.map((r, i) => ({
-        sno:                  i + 1,
-        member_id:            r.member_id,
-        member_name:          r.member_name,
-        previous_pending_fmt: r.previous_pending || '',
-        current_year_fmt:     r.current_year_purchase || '',
-        total_fmt:            r.total || '',
-        paid_fmt:             r.paid || '',
-        balance_fmt:          r.balance || '',
-        status:               r.balance <= 0 ? 'Cleared' : 'Pending',
-      }))
-
-      // totals row
-      dataRows.push({
-        _bold: true,
-        sno: '',
-        member_id: '',
-        member_name: 'TOTAL',
-        previous_pending_fmt: summary.totalPrevPending || '',
-        current_year_fmt:     summary.totalCurrYear    || '',
-        total_fmt:            summary.totalDue         || '',
-        paid_fmt:             summary.totalPaid        || '',
-        balance_fmt:          summary.totalBalance     || '',
-        status: `${summary.countCleared} Cleared / ${summary.countPending} Pending`,
+      const outerMed = { style: 'medium', color: { argb: C_HDR } }
+      const innerThn = { style: 'thin',   color: { argb: 'C5CEE0' } }
+      const border = (top, bot, left, right) => ({
+        top: top ? outerMed : innerThn, bottom: bot ? outerMed : innerThn,
+        left: left ? outerMed : innerThn, right: right ? outerMed : innerThn,
       })
 
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Church CMS'
+      wb.created = now
+      const ws = wb.addWorksheet('Auction Report', { views: [{ state: 'frozen', ySplit: 4 }] })
+
+      ws.columns = [
+        { key: 'a', width: 7  },  // #
+        { key: 'b', width: 18 },  // Member ID / Receipt No
+        { key: 'c', width: 32 },  // Member Name / Date
+        { key: 'd', width: 18 },  // Prev Pending / Month(s)
+        { key: 'e', width: 18 },  // Curr Year / Mode
+        { key: 'f', width: 18 },  // Total Due
+        { key: 'g', width: 18 },  // Amount Paid / Receipt Amount
+        { key: 'h', width: 18 },  // Balance
+        { key: 'i', width: 16 },  // Status
+      ]
+
+      // ── title block ──
+      const titles = [
+        { text: churchName,                              bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
+        { text: `Auction Payment Report — FY ${filterFY}`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
+        { text: `Generated: ${dateStr}`,                  bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
+      ]
+      titles.forEach(({ text, bold, size, bg, fg }, idx) => {
+        const r = ws.addRow([text, ...Array(NCOLS - 1).fill('')])
+        ws.mergeCells(r.number, 1, r.number, NCOLS)
+        const cell = ws.getCell(r.number, 1)
+        cell.value = text
+        cell.font  = { bold, size, name: 'Calibri', color: { argb: fg } }
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell.border = {
+          top:    idx === 0 ? outerMed : innerThn,
+          bottom: idx === titles.length - 1 ? outerMed : innerThn,
+          left: outerMed, right: outerMed,
+        }
+        r.height = size * 2.1
+      })
+
+      // ── column headers ──
+      const hdrs = ['#', 'Member ID', 'Member Name', 'Prev. Pending (₹)', 'Curr. Year (₹)', 'Total Due (₹)', 'Amount Paid (₹)', 'Balance (₹)', 'Status']
+      const hr = ws.addRow(hdrs)
+      hr.height = 24
+      hr.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.font      = { bold: true, color: { argb: C_WHITE }, size: 11, name: 'Calibri' }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        cell.border    = border(true, false, ci === 1, ci === NCOLS)
+      })
+
+      // ── data rows ──
+      const fmtDate = s => {
+        if (!s) return ''
+        const [y, m, d] = s.split('-')
+        return `${d}/${m}/${y}`
+      }
+      const numFmt = '#,##0.00'
+
+      reportRows.forEach((row, i) => {
+        const details  = paidDetailsMap[row.member_id] || []
+        const isLast   = i === reportRows.length - 1 && details.length === 0
+        const isAlt    = i % 2 === 1
+        const cleared  = row.balance <= 0
+
+        // main member row
+        const dr = ws.addRow([
+          i + 1,
+          row.member_id,
+          row.member_name,
+          row.previous_pending || null,
+          row.current_year_purchase || null,
+          row.total || null,
+          row.paid || null,
+          row.balance || null,
+          cleared ? 'Cleared' : 'Pending',
+        ])
+        dr.height = 18
+        dr.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { size: 10, name: 'Calibri' }
+          cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? (ci === 1 ? 'center' : 'left') : 'right' }
+          cell.border    = border(false, isLast, ci === 1, ci === NCOLS)
+          if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_ALT } }
+          if ([4,5,6,7,8].includes(ci) && cell.value != null) cell.numFmt = numFmt
+          // status colouring
+          if (ci === 9) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' }
+            cell.font = { ...cell.font, bold: true, color: { argb: cleared ? '15803D' : 'DC2626' } }
+          }
+          // balance colouring
+          if (ci === 8 && row.balance > 0) cell.font = { ...cell.font, color: { argb: 'DC2626' } }
+        })
+
+        if (!details.length) return
+
+        // receipt sub-section header
+        const sh = ws.addRow(['', 'Receipt No', 'Date', 'Month(s) Paid', 'Mode', '', 'Amount (₹)', '', ''])
+        sh.height = 16
+        sh.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { bold: true, size: 9, name: 'Calibri', color: { argb: C_HDR } }
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_RCHDR } }
+          cell.alignment = { vertical: 'middle', horizontal: ci === 7 ? 'right' : ci === 1 ? 'center' : 'left', indent: ci === 2 ? 1 : 0 }
+          cell.border    = border(false, false, ci === 1, ci === NCOLS)
+        })
+
+        // individual receipt rows
+        details.forEach((d, di) => {
+          const isLastDetail = di === details.length - 1
+          const rr = ws.addRow(['', d.receipt_number, fmtDate(d.receipt_date), d.month_paid || '', d.payment_mode || '', '', d.amount || null, '', ''])
+          rr.height = 16
+          rr.eachCell({ includeEmpty: true }, (cell, ci) => {
+            cell.font      = { size: 9, name: 'Calibri', color: { argb: ci === 2 ? '2563EB' : '111827' } }
+            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_RCROW } }
+            cell.alignment = { vertical: 'middle', horizontal: ci === 7 ? 'right' : ci === 1 ? 'center' : 'left', indent: ci === 2 ? 1 : 0 }
+            cell.border    = border(false, isLastDetail && isLast, ci === 1, ci === NCOLS)
+            if (ci === 7 && cell.value != null) cell.numFmt = numFmt
+          })
+        })
+
+        // receipt subtotal row
+        const st = ws.addRow(['', '', `Total Paid (${details.length} receipt${details.length !== 1 ? 's' : ''})`, '', '', '', row.paid || null, '', ''])
+        ws.mergeCells(st.number, 2, st.number, 6)
+        st.height = 17
+        st.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { bold: true, size: 9, name: 'Calibri', color: { argb: ci === 7 ? '15803D' : C_GRAY3 } }
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D1FAE5' } }
+          cell.alignment = { vertical: 'middle', horizontal: ci === 7 ? 'right' : 'left', indent: ci === 2 ? 1 : 0 }
+          cell.border    = border(false, true, ci === 1, ci === NCOLS)
+          if (ci === 7 && cell.value != null) cell.numFmt = numFmt
+        })
+      })
+
+      // ── grand total row ──
+      const tr = ws.addRow([
+        '', 'TOTAL', '', summary.totalPrevPending || null, summary.totalCurrYear || null,
+        summary.totalDue || null, summary.totalPaid || null, summary.totalBalance || null,
+        `${summary.countCleared}✓ / ${summary.countPending}✗`,
+      ])
+      tr.height = 22
+      tr.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: C_WHITE } }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+        cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? 'left' : 'right' }
+        cell.border    = border(true, true, ci === 1, ci === NCOLS)
+        if ([4,5,6,7,8].includes(ci) && cell.value != null) cell.numFmt = numFmt
+      })
+
+      // ── download ──
+      const buf = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
       const safeChurch = churchName.replace(/[^a-zA-Z0-9]/g, '_')
-      await exportToExcelWithTitle(columns, dataRows, 'Auction Report', `Auction_Report_${safeChurch}_FY${filterFY}.xlsx`, titleLines)
+      a.href = url; a.download = `Auction_Report_${safeChurch}_FY${filterFY}.xlsx`; a.click()
+      URL.revokeObjectURL(url)
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -592,7 +827,7 @@ export default function AuctionReportPage() {
     if (!reportRows.length) return
     setExporting(true)
     try {
-      await exportAuctionPDF({ rows: reportRows, filterFY, church, summary })
+      await exportAuctionPDF({ rows: reportRows, filterFY, church, summary, paidDetailsMap })
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -765,12 +1000,13 @@ export default function AuctionReportPage() {
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>Auction Payment Status</h3>
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>FY {filterFY} · {reportRows.length} members</span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>FY {filterFY} · {reportRows.length} members · Click a row to see receipt details</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr style={{ background: 'var(--table-header-bg)' }}>
+                    <th style={{ width: 32, padding: '9px 8px' }} />
                     {['#', 'Member ID', 'Member Name', 'Prev. Pending', 'Curr. Year', 'Total Due', 'Amount Paid', 'Balance', 'Status'].map(h => (
                       <th key={h} style={{
                         padding: '9px 12px',
@@ -783,47 +1019,138 @@ export default function AuctionReportPage() {
                 </thead>
                 <tbody>
                   {reportRows.map((row, i) => {
-                    const cleared = row.balance <= 0
+                    const cleared    = row.balance <= 0
+                    const isExpanded = expandedMember === row.member_id
+                    const details    = paidDetailsMap[row.member_id] || []
+                    const rowBg      = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'
+
                     return (
-                      <tr key={row.member_id} style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
-                        <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
-                        <td style={{ padding: '9px 12px', fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-1)' }}>{row.member_id}</td>
-                        <td style={{ padding: '9px 12px', fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>{row.member_name}</td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: row.previous_pending > 0 ? '#b45309' : 'var(--text-3)' }}>
-                          {row.previous_pending > 0 ? row.previous_pending.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: row.current_year_purchase > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
-                          {row.current_year_purchase > 0 ? row.current_year_purchase.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
-                          {row.total > 0 ? row.total.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: row.paid > 0 ? '#16a34a' : 'var(--text-3)' }}>
-                          {row.paid > 0 ? row.paid.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: row.balance > 0 ? '#dc2626' : row.balance < 0 ? '#7c3aed' : 'var(--text-3)' }}>
-                          {row.balance !== 0 ? Math.abs(row.balance).toLocaleString('en-IN') : '—'}
-                          {row.balance < 0 && <span style={{ fontSize: 10, marginLeft: 3 }}>↑</span>}
-                        </td>
-                        <td style={{ padding: '9px 12px' }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
-                            background: cleared ? '#dcfce7' : '#fee2e2',
-                            color:      cleared ? '#15803d' : '#dc2626',
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                          }}>
-                            {cleared
-                              ? <><CheckCircle size={11} /> Cleared</>
-                              : <><XCircle    size={11} /> Pending</>
-                            }
-                          </span>
-                        </td>
-                      </tr>
+                      <>
+                        {/* ── main data row ── */}
+                        <tr
+                          key={row.member_id}
+                          onClick={() => setExpandedMember(isExpanded ? null : row.member_id)}
+                          style={{
+                            borderTop: '1px solid var(--table-border)',
+                            background: isExpanded ? 'rgba(37,99,235,0.06)' : rowBg,
+                            cursor: 'pointer',
+                            transition: 'background 0.12s',
+                          }}
+                        >
+                          {/* expand chevron */}
+                          <td style={{ padding: '9px 8px', textAlign: 'center' }}>
+                            <ChevronDown
+                              size={13}
+                              style={{
+                                color: 'var(--text-3)',
+                                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s ease',
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-1)' }}>{row.member_id}</td>
+                          <td style={{ padding: '9px 12px', fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>{row.member_name}</td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: row.previous_pending > 0 ? '#b45309' : 'var(--text-3)' }}>
+                            {row.previous_pending > 0 ? row.previous_pending.toLocaleString('en-IN') : '—'}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', color: row.current_year_purchase > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
+                            {row.current_year_purchase > 0 ? row.current_year_purchase.toLocaleString('en-IN') : '—'}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
+                            {row.total > 0 ? row.total.toLocaleString('en-IN') : '—'}
+                          </td>
+                          {/* Amount Paid — shows receipt count badge when paid > 0 */}
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace' }}>
+                            {row.paid > 0 ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#16a34a' }}>
+                                {row.paid.toLocaleString('en-IN')}
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 10, background: '#dcfce7', color: '#15803d', fontFamily: 'var(--font-ui)' }}>
+                                  {details.length} rcpt
+                                </span>
+                              </span>
+                            ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: row.balance > 0 ? '#dc2626' : row.balance < 0 ? '#7c3aed' : 'var(--text-3)' }}>
+                            {row.balance !== 0 ? Math.abs(row.balance).toLocaleString('en-IN') : '—'}
+                            {row.balance < 0 && <span style={{ fontSize: 10, marginLeft: 3 }}>↑</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px' }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
+                              background: cleared ? '#dcfce7' : '#fee2e2',
+                              color:      cleared ? '#15803d' : '#dc2626',
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                            }}>
+                              {cleared ? <><CheckCircle size={11} /> Cleared</> : <><XCircle size={11} /> Pending</>}
+                            </span>
+                          </td>
+                        </tr>
+
+                        {/* ── expanded receipt detail sub-row ── */}
+                        {isExpanded && (
+                          <tr key={`${row.member_id}-detail`} style={{ background: 'rgba(37,99,235,0.04)', borderTop: '1px solid rgba(37,99,235,0.12)' }}>
+                            <td colSpan={10} style={{ padding: '0 0 12px 52px' }}>
+                              {details.length === 0 ? (
+                                <div style={{ padding: '10px 0', fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic' }}>
+                                  No auction receipts found for this member in FY {filterFY}
+                                </div>
+                              ) : (
+                                <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8 }}>
+                                  <thead>
+                                    <tr>
+                                      {['Receipt No', 'Date', 'Month(s) Paid', 'Mode', 'Amount (₹)'].map(h => (
+                                        <th key={h} style={{
+                                          padding: '5px 14px', textAlign: h === 'Amount (₹)' ? 'right' : 'left',
+                                          fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
+                                          textTransform: 'uppercase', letterSpacing: '0.07em',
+                                          borderBottom: '1px solid var(--table-border)', whiteSpace: 'nowrap',
+                                        }}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {details.map((d, di) => (
+                                      <tr key={di} style={{ borderBottom: '1px solid var(--table-border)' }}>
+                                        <td style={{ padding: '5px 14px', fontFamily: 'monospace', fontWeight: 600, color: '#2563eb', fontSize: 12 }}>{d.receipt_number}</td>
+                                        <td style={{ padding: '5px 14px', color: 'var(--text-2)', fontSize: 12 }}>
+                                          {d.receipt_date ? (() => { const [y,m,dd] = d.receipt_date.split('-'); return `${dd}/${m}/${y}` })() : '—'}
+                                        </td>
+                                        <td style={{ padding: '5px 14px', color: 'var(--text-1)', fontSize: 12 }}>
+                                          {d.month_paid || <span style={{ color: 'var(--text-3)' }}>—</span>}
+                                        </td>
+                                        <td style={{ padding: '5px 14px', fontSize: 12 }}>
+                                          <span style={{ padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: d.payment_mode === 'Cash' ? '#f0fdf4' : '#eff6ff', color: d.payment_mode === 'Cash' ? '#15803d' : '#1d4ed8' }}>
+                                            {d.payment_mode || '—'}
+                                          </span>
+                                        </td>
+                                        <td style={{ padding: '5px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#16a34a', fontSize: 12 }}>
+                                          {d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                    {/* subtotal */}
+                                    <tr style={{ background: 'rgba(22,163,74,0.06)', borderTop: '2px solid rgba(22,163,74,0.3)' }}>
+                                      <td colSpan={4} style={{ padding: '5px 14px', fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Total Paid ({details.length} receipt{details.length !== 1 ? 's' : ''})
+                                      </td>
+                                      <td style={{ padding: '5px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, color: '#15803d', fontSize: 13 }}>
+                                        {row.paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     )
                   })}
                 </tbody>
                 <tfoot>
                   <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
+                    <td />
                     <td colSpan={3} style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Grand Total</td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#b45309' }}>
                       {summary.totalPrevPending > 0 ? summary.totalPrevPending.toLocaleString('en-IN') : '—'}
