@@ -634,7 +634,7 @@ export default function AuctionReportPage() {
     countPending:     reportRows.filter(r => r.balance > 0).length,
   }
 
-  // ── Excel export (custom ExcelJS — includes receipt sub-rows) ──
+  // ── Excel export — two sheets: Summary + Detailed ────────────────
   const exportExcel = async () => {
     if (!reportRows.length) return
     setExporting(true)
@@ -646,13 +646,12 @@ export default function AuctionReportPage() {
       const NCOLS      = 9
 
       // ── colours ──
-      const C_HDR   = '1E3A5F'  // dark navy
-      const C_SUB   = '0070C0'  // report title blue
+      const C_HDR   = '1E3A5F'
+      const C_SUB   = '0070C0'
       const C_WHITE = 'FFFFFF'
       const C_ALT   = 'EEF3FA'
-      const C_TOTAL = 'D6E4F7'
-      const C_RCHDR = 'D6EAF8'  // receipt sub-section header
-      const C_RCROW = 'EBF5FB'  // receipt detail row
+      const C_RCHDR = 'D6EAF8'
+      const C_RCROW = 'EBF5FB'
       const C_GRAY3 = '6B7280'
 
       const outerMed = { style: 'medium', color: { argb: C_HDR } }
@@ -662,80 +661,68 @@ export default function AuctionReportPage() {
         left: left ? outerMed : innerThn, right: right ? outerMed : innerThn,
       })
 
-      const wb = new ExcelJS.Workbook()
-      wb.creator = 'Church CMS'
-      wb.created = now
-      const ws = wb.addWorksheet('Auction Report', { views: [{ state: 'frozen', ySplit: 4 }] })
+      const numFmt  = '#,##0.00'
+      const COL_W   = [7, 18, 32, 18, 18, 18, 18, 18, 16]
+      const HDR_LABELS = ['#', 'Member ID', 'Member Name', 'Prev. Pending (₹)', 'Curr. Year (₹)', 'Total Due (₹)', 'Amount Paid (₹)', 'Balance (₹)', 'Status']
+      const fmtDate = s => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
 
-      ws.columns = [
-        { key: 'a', width: 7  },  // #
-        { key: 'b', width: 18 },  // Member ID / Receipt No
-        { key: 'c', width: 32 },  // Member Name / Date
-        { key: 'd', width: 18 },  // Prev Pending / Month(s)
-        { key: 'e', width: 18 },  // Curr Year / Mode
-        { key: 'f', width: 18 },  // Total Due
-        { key: 'g', width: 18 },  // Amount Paid / Receipt Amount
-        { key: 'h', width: 18 },  // Balance
-        { key: 'i', width: 16 },  // Status
-      ]
+      // ── shared: build title block + col headers on a worksheet ──
+      const buildSheetHeader = (ws, sheetTitle) => {
+        ws.columns = COL_W.map((w, i) => ({ key: String.fromCharCode(97 + i), width: w }))
+        ws.views = [{ state: 'frozen', ySplit: 4 }]
 
-      // ── title block ──
-      const titles = [
-        { text: churchName,                              bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
-        { text: `Auction Payment Report — FY ${filterFY}`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
-        { text: `Generated: ${dateStr}`,                  bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
-      ]
-      titles.forEach(({ text, bold, size, bg, fg }, idx) => {
-        const r = ws.addRow([text, ...Array(NCOLS - 1).fill('')])
-        ws.mergeCells(r.number, 1, r.number, NCOLS)
-        const cell = ws.getCell(r.number, 1)
-        cell.value = text
-        cell.font  = { bold, size, name: 'Calibri', color: { argb: fg } }
-        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
-        cell.alignment = { horizontal: 'center', vertical: 'middle' }
-        cell.border = {
-          top:    idx === 0 ? outerMed : innerThn,
-          bottom: idx === titles.length - 1 ? outerMed : innerThn,
-          left: outerMed, right: outerMed,
-        }
-        r.height = size * 2.1
-      })
+        const titles = [
+          { text: churchName,                                    bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
+          { text: `${sheetTitle} — FY ${filterFY}`,             bold: true,  size: 12, bg: C_SUB, fg: C_WHITE },
+          { text: `Generated: ${dateStr}`,                       bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
+        ]
+        titles.forEach(({ text, bold, size, bg, fg }, idx) => {
+          const r = ws.addRow([text, ...Array(NCOLS - 1).fill('')])
+          ws.mergeCells(r.number, 1, r.number, NCOLS)
+          const cell = ws.getCell(r.number, 1)
+          cell.value = text
+          cell.font  = { bold, size, name: 'Calibri', color: { argb: fg } }
+          cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+          cell.border = { top: idx === 0 ? outerMed : innerThn, bottom: idx === titles.length - 1 ? outerMed : innerThn, left: outerMed, right: outerMed }
+          r.height = size * 2.1
+        })
 
-      // ── column headers ──
-      const hdrs = ['#', 'Member ID', 'Member Name', 'Prev. Pending (₹)', 'Curr. Year (₹)', 'Total Due (₹)', 'Amount Paid (₹)', 'Balance (₹)', 'Status']
-      const hr = ws.addRow(hdrs)
-      hr.height = 24
-      hr.eachCell({ includeEmpty: true }, (cell, ci) => {
-        cell.font      = { bold: true, color: { argb: C_WHITE }, size: 11, name: 'Calibri' }
-        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
-        cell.alignment = { vertical: 'middle', horizontal: 'center' }
-        cell.border    = border(true, false, ci === 1, ci === NCOLS)
-      })
-
-      // ── data rows ──
-      const fmtDate = s => {
-        if (!s) return ''
-        const [y, m, d] = s.split('-')
-        return `${d}/${m}/${y}`
+        const hr = ws.addRow(HDR_LABELS)
+        hr.height = 24
+        hr.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { bold: true, color: { argb: C_WHITE }, size: 11, name: 'Calibri' }
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+          cell.alignment = { vertical: 'middle', horizontal: 'center' }
+          cell.border    = border(true, false, ci === 1, ci === NCOLS)
+        })
       }
-      const numFmt = '#,##0.00'
 
-      reportRows.forEach((row, i) => {
-        const details  = paidDetailsMap[row.member_id] || []
-        const isLast   = i === reportRows.length - 1 && details.length === 0
-        const isAlt    = i % 2 === 1
-        const cleared  = row.balance <= 0
+      // ── shared: grand total row ──
+      const addTotalRow = (ws) => {
+        const tr = ws.addRow([
+          '', 'TOTAL', '', summary.totalPrevPending || null, summary.totalCurrYear || null,
+          summary.totalDue || null, summary.totalPaid || null, summary.totalBalance || null,
+          `${summary.countCleared}✓ / ${summary.countPending}✗`,
+        ])
+        tr.height = 22
+        tr.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: C_WHITE } }
+          cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+          cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? 'left' : 'right' }
+          cell.border    = border(true, true, ci === 1, ci === NCOLS)
+          if ([4,5,6,7,8].includes(ci) && cell.value != null) cell.numFmt = numFmt
+        })
+      }
 
-        // main member row
+      // ── shared: write one main member row ──
+      const addMemberRow = (ws, row, i, isLast) => {
+        const isAlt   = i % 2 === 1
+        const cleared = row.balance <= 0
         const dr = ws.addRow([
-          i + 1,
-          row.member_id,
-          row.member_name,
-          row.previous_pending || null,
-          row.current_year_purchase || null,
-          row.total || null,
-          row.paid || null,
-          row.balance || null,
+          i + 1, row.member_id, row.member_name,
+          row.previous_pending || null, row.current_year_purchase || null,
+          row.total || null, row.paid || null, row.balance || null,
           cleared ? 'Cleared' : 'Pending',
         ])
         dr.height = 18
@@ -745,19 +732,40 @@ export default function AuctionReportPage() {
           cell.border    = border(false, isLast, ci === 1, ci === NCOLS)
           if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_ALT } }
           if ([4,5,6,7,8].includes(ci) && cell.value != null) cell.numFmt = numFmt
-          // status colouring
-          if (ci === 9) {
-            cell.alignment = { vertical: 'middle', horizontal: 'center' }
-            cell.font = { ...cell.font, bold: true, color: { argb: cleared ? '15803D' : 'DC2626' } }
-          }
-          // balance colouring
+          if (ci === 9) { cell.alignment = { vertical: 'middle', horizontal: 'center' }; cell.font = { ...cell.font, bold: true, color: { argb: cleared ? '15803D' : 'DC2626' } } }
           if (ci === 8 && row.balance > 0) cell.font = { ...cell.font, color: { argb: 'DC2626' } }
         })
+      }
+
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Church CMS'
+      wb.created = now
+
+      // ════════════════════════════════
+      //  Sheet 1 — Summary (no receipt breakup)
+      // ════════════════════════════════
+      const wsSummary = wb.addWorksheet('Summary')
+      buildSheetHeader(wsSummary, 'Auction Payment Report (Summary)')
+      reportRows.forEach((row, i) => {
+        addMemberRow(wsSummary, row, i, i === reportRows.length - 1)
+      })
+      addTotalRow(wsSummary)
+
+      // ════════════════════════════════
+      //  Sheet 2 — Detailed (with receipt sub-rows)
+      // ════════════════════════════════
+      const wsDetail = wb.addWorksheet('Detailed')
+      buildSheetHeader(wsDetail, 'Auction Payment Report (Detailed)')
+
+      reportRows.forEach((row, i) => {
+        const details = paidDetailsMap[row.member_id] || []
+        const isLast  = i === reportRows.length - 1 && details.length === 0
+        addMemberRow(wsDetail, row, i, isLast)
 
         if (!details.length) return
 
-        // receipt sub-section header
-        const sh = ws.addRow(['', 'Receipt No', 'Date', 'Month(s) Paid', 'Mode', '', 'Amount (₹)', '', ''])
+        // receipt sub-header
+        const sh = wsDetail.addRow(['', 'Receipt No', 'Date', 'Month(s) Paid', 'Mode', '', 'Amount (₹)', '', ''])
         sh.height = 16
         sh.eachCell({ includeEmpty: true }, (cell, ci) => {
           cell.font      = { bold: true, size: 9, name: 'Calibri', color: { argb: C_HDR } }
@@ -766,10 +774,10 @@ export default function AuctionReportPage() {
           cell.border    = border(false, false, ci === 1, ci === NCOLS)
         })
 
-        // individual receipt rows
+        // receipt detail rows
         details.forEach((d, di) => {
           const isLastDetail = di === details.length - 1
-          const rr = ws.addRow(['', d.receipt_number, fmtDate(d.receipt_date), d.month_paid || '', d.payment_mode || '', '', d.amount || null, '', ''])
+          const rr = wsDetail.addRow(['', d.receipt_number, fmtDate(d.receipt_date), d.month_paid || '', d.payment_mode || '', '', d.amount || null, '', ''])
           rr.height = 16
           rr.eachCell({ includeEmpty: true }, (cell, ci) => {
             cell.font      = { size: 9, name: 'Calibri', color: { argb: ci === 2 ? '2563EB' : '111827' } }
@@ -780,9 +788,9 @@ export default function AuctionReportPage() {
           })
         })
 
-        // receipt subtotal row
-        const st = ws.addRow(['', '', `Total Paid (${details.length} receipt${details.length !== 1 ? 's' : ''})`, '', '', '', row.paid || null, '', ''])
-        ws.mergeCells(st.number, 2, st.number, 6)
+        // receipt subtotal
+        const st = wsDetail.addRow(['', '', `Total Paid (${details.length} receipt${details.length !== 1 ? 's' : ''})`, '', '', '', row.paid || null, '', ''])
+        wsDetail.mergeCells(st.number, 2, st.number, 6)
         st.height = 17
         st.eachCell({ includeEmpty: true }, (cell, ci) => {
           cell.font      = { bold: true, size: 9, name: 'Calibri', color: { argb: ci === 7 ? '15803D' : C_GRAY3 } }
@@ -793,20 +801,7 @@ export default function AuctionReportPage() {
         })
       })
 
-      // ── grand total row ──
-      const tr = ws.addRow([
-        '', 'TOTAL', '', summary.totalPrevPending || null, summary.totalCurrYear || null,
-        summary.totalDue || null, summary.totalPaid || null, summary.totalBalance || null,
-        `${summary.countCleared}✓ / ${summary.countPending}✗`,
-      ])
-      tr.height = 22
-      tr.eachCell({ includeEmpty: true }, (cell, ci) => {
-        cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: C_WHITE } }
-        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
-        cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? 'left' : 'right' }
-        cell.border    = border(true, true, ci === 1, ci === NCOLS)
-        if ([4,5,6,7,8].includes(ci) && cell.value != null) cell.numFmt = numFmt
-      })
+      addTotalRow(wsDetail)
 
       // ── download ──
       const buf = await wb.xlsx.writeBuffer()
