@@ -24,6 +24,7 @@ const NAV = [
     { label: 'Accounts',          path: '/accounting',        icon: Landmark,    accountingOnly: true },
     { label: 'Simple Accounts',   path: '/simple-accounts',   icon: Wallet,      simpleOnly: true },
     { label: 'Reports', icon: BarChart3, children: [
+      { label: 'Member Report',  path: '/reports/member'  },
       { label: 'Receipt Report', path: '/reports'         },
       { label: 'Auction Report', path: '/reports/auction' },
     ]},

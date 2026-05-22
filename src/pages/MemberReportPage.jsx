@@ -1,0 +1,949 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Users, Download, MessageSquare, ChevronUp, ChevronDown, RefreshCw, Send, ListFilter, Clock, Trash2, FileSpreadsheet, Calendar } from 'lucide-react'
+import { supabase, getChurch } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
+import { useToast } from '../lib/toast'
+import { exportToExcelWithTitle } from '../lib/exportExcel'
+
+/* ── Column definitions ───────────────────────────────────────── */
+const ALL_COLS = [
+  { label: 'S.No',               key: 'sno',                    align: 'center' },
+  { label: 'Family ID',          key: 'family_id',              align: 'center' },
+  { label: 'Member ID',          key: 'member_id',              align: 'center' },
+  { label: 'Title',              key: 'title',                  align: 'center' },
+  { label: 'Member Name',        key: 'member_name',            align: 'left'   },
+  { label: 'Father Name',        key: 'father_name',            align: 'left'   },
+  { label: 'Gender',             key: 'gender',                 align: 'center' },
+  { label: 'Aadhaar',            key: 'aadhaar',                align: 'center' },
+  { label: 'DOB',                key: 'dob_actual',             align: 'center', fmt: 'date' },
+  { label: 'Age',                key: 'age',                    align: 'center' },
+  { label: 'DOBC',               key: 'dob_certificate',        align: 'center', fmt: 'date' },
+  { label: 'Marital Status',     key: 'marital_status',         align: 'center' },
+  { label: 'Date of Marriage',   key: 'date_of_marriage',       align: 'center', fmt: 'date' },
+  { label: 'Spouse',             key: 'spouse_name',            align: 'left'   },
+  { label: 'Address',            key: 'address_street',         align: 'left'   },
+  { label: 'Area 1',             key: 'area_1',                 align: 'left'   },
+  { label: 'Area 2',             key: 'area_2',                 align: 'left'   },
+  { label: 'City',               key: 'city',                   align: 'left'   },
+  { label: 'State',              key: 'state',                  align: 'left'   },
+  { label: 'Zonal Area',         key: 'zonal_area',             align: 'left'   },
+  { label: 'Mobile',             key: 'mobile',                 align: 'center' },
+  { label: 'WhatsApp',           key: 'whatsapp',               align: 'center' },
+  { label: 'Email',              key: 'email',                  align: 'left'   },
+  { label: 'Qualification',      key: 'qualification',          align: 'left'   },
+  { label: 'Profession',         key: 'profession',             align: 'left'   },
+  { label: 'Working Sector',     key: 'working_sector',         align: 'left'   },
+  { label: 'Family Head',        key: 'is_family_head',         align: 'center', fmt: 'bool' },
+  { label: 'Relationship',       key: 'relationship_with_fh',   align: 'left'   },
+  { label: 'Mem. Type',          key: 'membership_type',        align: 'center' },
+  { label: 'Church',             key: 'primary_church_name',    align: 'left'   },
+  { label: 'Denomination',       key: 'denomination',           align: 'center' },
+  { label: 'Mem. Since',         key: 'membership_from_year',   align: 'center' },
+  { label: 'Baptism Type',       key: 'baptism_type',           align: 'center' },
+  { label: 'Baptism Date',       key: 'baptism_date',           align: 'center', fmt: 'date' },
+  { label: 'Confirmed',          key: 'confirmation_taken',     align: 'center', fmt: 'bool' },
+  { label: 'Confirm Date',       key: 'confirmation_date',      align: 'center', fmt: 'date' },
+  { label: 'Is FBRF',            key: 'is_fbrf_member',         align: 'center', fmt: 'bool' },
+  { label: "Men's Fellowship",   key: 'act_mens_fellowship',    align: 'center', fmt: 'bool' },
+  { label: "Women's Fellowship", key: 'act_womens_fellowship',  align: 'center', fmt: 'bool' },
+  { label: 'Youth Assoc.',       key: 'act_youth_association',  align: 'center', fmt: 'bool' },
+  { label: 'Sunday School',      key: 'act_sunday_school',      align: 'center', fmt: 'bool' },
+  { label: 'Choir',              key: 'act_choir',              align: 'center', fmt: 'bool' },
+  { label: 'Pastorate Comm.',    key: 'act_pastorate_committee',align: 'center', fmt: 'bool' },
+  { label: 'Village Ministry',   key: 'act_village_ministry',   align: 'center', fmt: 'bool' },
+  { label: 'DCC',                key: 'act_dcc',                align: 'center', fmt: 'bool' },
+  { label: 'DC',                 key: 'act_dc',                 align: 'center', fmt: 'bool' },
+  { label: 'Volunteers',         key: 'act_volunteers',         align: 'center', fmt: 'bool' },
+]
+const ALL_KEYS = ALL_COLS.map(c => c.key)
+
+/* ── Slicer library — 4 groups covering ALL column headers ───── */
+// type: 'multi' | 'bool' | 'age' | 'range' | 'text' | 'disabled'
+const SLICER_GROUPS = [
+  {
+    label: 'Personal & Identification',
+    color: '#7c3aed',
+    slicers: [
+      { key: 'sno_d',         label: 'S.No',         type: 'disabled' },
+      { key: 'familyIdTxt',   label: 'Family ID',    type: 'text',  field: 'family_id'  },
+      { key: 'memberIdTxt',   label: 'Member ID',    type: 'text',  field: 'member_id'  },
+      { key: 'titleFilter',   label: 'Title',        type: 'multi', optsKey: 'titles',        showBlank: false },
+      { key: 'memberNameTxt', label: 'Member Name',  type: 'text',  field: 'member_name' },
+      { key: 'fatherNameTxt', label: 'Father Name',  type: 'text',  field: 'father_name' },
+      { key: 'gender',        label: 'Gender',       type: 'multi', optsKey: 'genders',       showBlank: true  },
+      { key: 'aadhaarTxt',    label: 'Aadhaar',      type: 'text',  field: 'aadhaar'    },
+      { key: 'dob_d',         label: 'DOB',          type: 'disabled' },
+      { key: 'age',           label: 'Age',          type: 'age'   },
+      { key: 'dobc_d',        label: 'DOBC',         type: 'disabled' },
+    ],
+  },
+  {
+    label: 'Family, Address & Contact',
+    color: '#0891b2',
+    slicers: [
+      { key: 'maritalStatus', label: 'Marital Status',  type: 'multi', optsKey: 'maritalStatuses', showBlank: true  },
+      { key: 'dom_d',         label: 'Date of Marriage',type: 'disabled' },
+      { key: 'spouseTxt',     label: 'Spouse',          type: 'text',  field: 'spouse_name' },
+      { key: 'isFamilyHead',  label: 'Family Head',     type: 'bool'  },
+      { key: 'relationship',  label: 'Relationship',    type: 'multi', optsKey: 'relationships',   showBlank: true  },
+      { key: 'addressTxt',    label: 'Address',         type: 'text',  field: 'address_street' },
+      { key: 'area1Txt',      label: 'Area 1',          type: 'text',  field: 'area_1' },
+      { key: 'area2Txt',      label: 'Area 2',          type: 'text',  field: 'area_2' },
+      { key: 'city',          label: 'City',            type: 'multi', optsKey: 'cities',          showBlank: true  },
+      { key: 'stateFilter',   label: 'State',           type: 'multi', optsKey: 'states',          showBlank: true  },
+      { key: 'zonalArea',     label: 'Zonal Area',      type: 'multi', optsKey: 'zonalAreas',      showBlank: true  },
+      { key: 'mobileTxt',     label: 'Mobile',          type: 'text',  field: 'mobile'   },
+      { key: 'whatsappTxt',   label: 'WhatsApp',        type: 'text',  field: 'whatsapp' },
+      { key: 'emailTxt',      label: 'Email',           type: 'text',  field: 'email'    },
+    ],
+  },
+  {
+    label: 'Professional & Church Membership',
+    color: '#059669',
+    slicers: [
+      { key: 'qualFilter',      label: 'Qualification', type: 'multi', optsKey: 'qualifications',  showBlank: false },
+      { key: 'profTxt',         label: 'Profession',    type: 'text',  field: 'profession' },
+      { key: 'workingSector',   label: 'Working Sector',type: 'multi', optsKey: 'workingSectors',  showBlank: false },
+      { key: 'membershipType',  label: 'Mem. Type',     type: 'multi', optsKey: 'membershipTypes', showBlank: false },
+      { key: 'church',          label: 'Church',        type: 'multi', optsKey: 'churches',        showBlank: false },
+      { key: 'denomination',    label: 'Denomination',  type: 'multi', optsKey: 'denominations',   showBlank: false },
+      { key: 'memSince',        label: 'Mem. Since',    type: 'range' },
+      { key: 'baptismType',     label: 'Baptism Type',  type: 'multi', optsKey: 'baptismTypes',    showBlank: false },
+      { key: 'bapt_d',          label: 'Baptism Date',  type: 'disabled' },
+      { key: 'confirmationTaken',label: 'Confirmed',    type: 'bool'  },
+      { key: 'conf_d',          label: 'Confirm Date',  type: 'disabled' },
+      { key: 'isFBRF',          label: 'Is FBRF',       type: 'bool'  },
+    ],
+  },
+  {
+    label: 'Activities',
+    color: '#d97706',
+    slicers: [
+      { key: 'actMens',   label: "Men's Fellowship",   type: 'bool' },
+      { key: 'actWomens', label: "Women's Fellowship", type: 'bool' },
+      { key: 'actYouth',  label: 'Youth Assoc.',       type: 'bool' },
+      { key: 'actSS',     label: 'Sunday School',      type: 'bool' },
+      { key: 'actChoir',  label: 'Choir',              type: 'bool' },
+      { key: 'actPC',     label: 'Pastorate Comm.',    type: 'bool' },
+      { key: 'actVM',     label: 'Village Ministry',   type: 'bool' },
+      { key: 'actDCC',    label: 'DCC',                type: 'bool' },
+      { key: 'actDC',     label: 'DC',                 type: 'bool' },
+      { key: 'actVol',    label: 'Volunteers',         type: 'bool' },
+    ],
+  },
+]
+
+const SLICER_DEFS = SLICER_GROUPS.flatMap(g => g.slicers)
+
+/* ── Default filter state ─────────────────────────────────────── */
+const EMPTY_FILTERS = {
+  // multi-select
+  gender: [], maritalStatus: [], relationship: [], membershipType: [],
+  denomination: [], zonalArea: [], church: [], city: [], stateFilter: [],
+  baptismType: [], workingSector: [], titleFilter: [], qualFilter: [],
+  // bool
+  isFamilyHead: 'all', confirmationTaken: 'all', isFBRF: 'all',
+  actMens: 'all', actWomens: 'all', actYouth: 'all', actSS: 'all',
+  actChoir: 'all', actPC: 'all', actVM: 'all', actDCC: 'all', actDC: 'all', actVol: 'all',
+  // range
+  ageFrom: '', ageTo: '', memSinceFrom: '', memSinceTo: '',
+  // text
+  familyIdTxt: '', memberIdTxt: '', memberNameTxt: '', fatherNameTxt: '',
+  aadhaarTxt: '', spouseTxt: '', addressTxt: '', area1Txt: '', area2Txt: '',
+  mobileTxt: '', whatsappTxt: '', emailTxt: '', profTxt: '',
+}
+
+/* ── Helpers ──────────────────────────────────────────────────── */
+function fmtDate(v) {
+  if (!v) return ''
+  const d = new Date(v)
+  return isNaN(d) ? String(v) : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+function fmtCell(col, row, idx) {
+  if (col.key === 'sno') return String(idx + 1)
+  const v = row[col.key]
+  if (col.fmt === 'bool') return v === true ? 'Yes' : v === false ? 'No' : ''
+  if (col.fmt === 'date') return fmtDate(v)
+  return v == null ? '' : String(v)
+}
+
+/* ── Shared slicer header ─────────────────────────────────────── */
+function SlicerHeader({ title, active, onClear, onRemove }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '4px 7px', background: active ? '#dbeafe' : '#f1f5f9',
+      borderBottom: `1px solid ${active ? '#93c5fd' : '#e2e8f0'}`,
+      minHeight: 28, gap: 4,
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: active ? '#1d4ed8' : '#374151', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {title}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 2, border: `1px solid ${active ? '#93c5fd' : '#d1d5db'}`, color: active ? '#2563eb' : '#9ca3af', lineHeight: 1.4 }}>≡✓</span>
+        <button onClick={e => { e.stopPropagation(); onClear() }} title="Clear filter"
+          style={{ background: 'none', border: 'none', cursor: active ? 'pointer' : 'default', padding: '1px 2px', display: 'flex', alignItems: 'center' }}>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M2 3h12l-5 6v4l-2-1V9L2 3z" fill={active ? '#ef4444' : '#d1d5db'} />
+            {active && <><line x1="10" y1="10" x2="15" y2="15" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" /><line x1="15" y1="10" x2="10" y2="15" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" /></>}
+          </svg>
+        </button>
+        <RemoveBtn onRemove={onRemove} />
+      </div>
+    </div>
+  )
+}
+
+function RemoveBtn({ onRemove }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <button onClick={e => { e.stopPropagation(); onRemove() }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      title="Remove slicer"
+      style={{ background: hov ? '#fee2e2' : 'none', border: 'none', cursor: 'pointer', padding: '1px 3px', borderRadius: 3, fontSize: 12, color: hov ? '#ef4444' : '#9ca3af', transition: 'all 0.1s', display: 'flex', alignItems: 'center' }}>
+      ✕
+    </button>
+  )
+}
+
+/* ── Multi-select slicer ──────────────────────────────────────── */
+function Slicer({ title, options, selected, onToggle, onClear, showBlank, onRemove }) {
+  const active  = selected.length > 0
+  const allOpts = showBlank ? [...options, '(blank)'] : options
+  return (
+    <div style={{ border: `1px solid ${active ? '#2563eb' : '#c8d3e0'}`, borderRadius: 4, background: '#fff', display: 'flex', flexDirection: 'column', flex: '1 1 148px', minWidth: 140, maxWidth: 210, overflow: 'hidden', boxShadow: active ? '0 0 0 2px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <SlicerHeader title={title} active={active} onClear={onClear} onRemove={onRemove} />
+      <div style={{ maxHeight: 148, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#c8d3e0 transparent' }}>
+        {allOpts.length === 0 && <div style={{ padding: '8px 10px', fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>No data</div>}
+        {allOpts.map((opt, i) => {
+          const isSel = selected.includes(opt)
+          return (
+            <button key={opt} onClick={() => onToggle(opt)}
+              style={{ display: 'block', width: '100%', padding: '5px 10px', border: 'none', borderBottom: i < allOpts.length - 1 ? '1px solid #f0f4f8' : 'none', background: isSel ? '#2563eb' : '#fff', color: isSel ? '#fff' : '#1e293b', fontSize: 12, textAlign: 'left', cursor: 'pointer', transition: 'background 0.08s' }}
+              onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#eff6ff' }}
+              onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = '#fff' }}>
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ── Bool slicer ──────────────────────────────────────────────── */
+function BoolSlicer({ title, value, onChange, onRemove }) {
+  const active = value !== 'all'
+  const opts   = [{ val: 'all', label: '(All)' }, { val: 'yes', label: 'Yes' }, { val: 'no', label: 'No' }]
+  return (
+    <div style={{ border: `1px solid ${active ? '#2563eb' : '#c8d3e0'}`, borderRadius: 4, background: '#fff', display: 'flex', flexDirection: 'column', flex: '1 1 110px', minWidth: 108, maxWidth: 148, overflow: 'hidden', boxShadow: active ? '0 0 0 2px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <SlicerHeader title={title} active={active} onClear={() => onChange('all')} onRemove={onRemove} />
+      <div>
+        {opts.map((o, i) => (
+          <button key={o.val} onClick={() => onChange(o.val)}
+            style={{ display: 'block', width: '100%', padding: '5px 10px', border: 'none', borderBottom: i < opts.length - 1 ? '1px solid #f0f4f8' : 'none', background: value === o.val ? '#2563eb' : '#fff', color: value === o.val ? '#fff' : '#1e293b', fontSize: 12, textAlign: 'left', cursor: 'pointer', transition: 'background 0.08s' }}
+            onMouseEnter={e => { if (value !== o.val) e.currentTarget.style.background = '#eff6ff' }}
+            onMouseLeave={e => { if (value !== o.val) e.currentTarget.style.background = '#fff' }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Range slicer (Age / Mem. Since) ──────────────────────────── */
+function RangeSlicer({ title, from, to, onFrom, onTo, onClear, onRemove }) {
+  const active = from !== '' || to !== ''
+  return (
+    <div style={{ border: `1px solid ${active ? '#2563eb' : '#c8d3e0'}`, borderRadius: 4, background: '#fff', display: 'flex', flexDirection: 'column', flex: '0 0 168px', minWidth: 164, overflow: 'hidden', boxShadow: active ? '0 0 0 2px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <SlicerHeader title={title} active={active} onClear={onClear} onRemove={onRemove} />
+      <div style={{ padding: '10px' }}>
+        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Range</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input type="number" placeholder="From" value={from} onChange={e => onFrom(e.target.value)}
+            style={{ width: 56, padding: '5px 7px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, textAlign: 'center' }} />
+          <span style={{ fontSize: 12, color: '#9ca3af' }}>–</span>
+          <input type="number" placeholder="To" value={to} onChange={e => onTo(e.target.value)}
+            style={{ width: 56, padding: '5px 7px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, textAlign: 'center' }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Text search slicer ───────────────────────────────────────── */
+function TextSlicer({ title, value, onChange, onClear, onRemove }) {
+  const active = value.trim() !== ''
+  return (
+    <div style={{ border: `1px solid ${active ? '#2563eb' : '#c8d3e0'}`, borderRadius: 4, background: '#fff', display: 'flex', flexDirection: 'column', flex: '0 0 168px', minWidth: 164, overflow: 'hidden', boxShadow: active ? '0 0 0 2px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <SlicerHeader title={title} active={active} onClear={onClear} onRemove={onRemove} />
+      <div style={{ padding: '8px 10px' }}>
+        <input type="text" placeholder="Search…" value={value} onChange={e => onChange(e.target.value)}
+          style={{ width: '100%', padding: '5px 8px', border: `1px solid ${active ? '#93c5fd' : '#d1d5db'}`, borderRadius: 4, fontSize: 12, boxSizing: 'border-box', outline: 'none' }} />
+      </div>
+    </div>
+  )
+}
+
+/* ── Library chip ─────────────────────────────────────────────── */
+function SlicerChip({ def, isActive, onClick, onDragStart, onDragEnd, isDragging }) {
+  const [hov, setHov] = useState(false)
+  const disabled = def.type === 'disabled'
+  return (
+    <div
+      draggable={!disabled && !isActive}
+      onClick={!disabled ? onClick : undefined}
+      onDragStart={!disabled && !isActive ? e => { e.dataTransfer.setData('slicerKey', def.key); onDragStart() } : undefined}
+      onDragEnd={!disabled ? onDragEnd : undefined}
+      onMouseEnter={() => !disabled && setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      title={disabled ? 'Not filterable' : isActive ? 'Click to remove' : 'Click or drag to add'}
+      style={{
+        padding: '4px 10px', borderRadius: 20,
+        border: `1px solid ${disabled ? '#e5e7eb' : isActive ? '#93c5fd' : hov ? '#94a3b8' : '#d1d5db'}`,
+        background: disabled ? '#f9fafb' : isActive ? '#dbeafe' : hov ? '#f8fafc' : '#f9fafb',
+        color: disabled ? '#c9d1da' : isActive ? '#1d4ed8' : '#374151',
+        fontSize: 12, fontWeight: isActive ? 600 : 400,
+        cursor: disabled ? 'default' : isActive ? 'pointer' : 'grab',
+        opacity: isDragging ? 0.35 : disabled ? 0.55 : 1,
+        display: 'flex', alignItems: 'center', gap: 4,
+        transition: 'all 0.1s', userSelect: 'none',
+        textDecoration: disabled ? 'line-through' : 'none',
+      }}>
+      {disabled
+        ? null
+        : isActive
+          ? <span style={{ fontSize: 10, color: '#2563eb' }}>✓</span>
+          : <span style={{ fontSize: 9, color: '#9ca3af', letterSpacing: '-1px' }}>⠿</span>}
+      {def.label}
+    </div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Main page
+══════════════════════════════════════════════════════════════ */
+export default function MemberReportPage() {
+  const toast = useToast()
+
+  const [filters, setFilters]             = useState({ ...EMPTY_FILTERS })
+  const [filterOpts, setFilterOpts]       = useState({
+    genders: [], maritalStatuses: [], relationships: [], membershipTypes: [],
+    denominations: [], zonalAreas: [], churches: [], cities: [], states: [],
+    baptismTypes: [], workingSectors: [], titles: [], qualifications: [],
+  })
+
+  const [activeSlicerKeys, setActiveSlicerKeys] = useState([])
+  const [dragKey, setDragKey]                   = useState(null)
+  const [dropOver, setDropOver]                 = useState(false)
+
+  const [availKeys, setAvailKeys]   = useState([...ALL_KEYS])
+  const [selKeys, setSelKeys]       = useState([])
+  const [hlAvail, setHlAvail]       = useState([])
+  const [hlSel, setHlSel]           = useState([])
+
+  const { user } = useAuth()
+
+  const [reportTitle, setReportTitle]     = useState('')
+  const [reportData, setReportData]       = useState(null)
+  const [loading, setLoading]             = useState(false)
+  const [exporting, setExporting]         = useState(false)
+  const [churchName, setChurchName]       = useState('')
+  const [churchMeta, setChurchMeta]       = useState({ address: '', city: '' })
+  const [activeTab, setActiveTab]         = useState('report')
+  const [hoveredTab, setHoveredTab]       = useState(null)
+  const [waMsg, setWaMsg]                 = useState('Dear {MemberName},\n\nGrace and peace to you from our church family.')
+  const [savedReports, setSavedReports]   = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [deletingId, setDeletingId]       = useState(null)
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true)
+    try {
+      const { data } = await supabase
+        .from('member_report_history')
+        .select('*')
+        .order('generated_at', { ascending: false })
+      setSavedReports(data || [])
+    } catch {}
+    finally { setHistoryLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    async function load() {
+      const church = await getChurch()
+      setChurchName(church?.church_name || '')
+      setChurchMeta({ address: church?.address || '', city: church?.city || '' })
+      const { data } = await supabase
+        .from('members')
+        .select('gender,marital_status,zonal_area,city,state,primary_church_name,relationship_with_fh,denomination,membership_type,baptism_type,working_sector,title,qualification')
+        .eq('is_active', true)
+      if (data) {
+        const uniq = key => [...new Set(data.map(m => m[key]).filter(Boolean))].sort()
+        setFilterOpts({
+          genders:         uniq('gender'),
+          maritalStatuses: uniq('marital_status'),
+          relationships:   uniq('relationship_with_fh'),
+          membershipTypes: uniq('membership_type'),
+          denominations:   uniq('denomination'),
+          zonalAreas:      uniq('zonal_area'),
+          churches:        uniq('primary_church_name'),
+          cities:          uniq('city'),
+          states:          uniq('state'),
+          baptismTypes:    uniq('baptism_type'),
+          workingSectors:  uniq('working_sector'),
+          titles:          uniq('title'),
+          qualifications:  uniq('qualification'),
+        })
+      }
+    }
+    load()
+    fetchHistory()
+  }, [fetchHistory])
+
+  /* Slicer management */
+  function addSlicer(key) { setActiveSlicerKeys(prev => prev.includes(key) ? prev : [...prev, key]) }
+  function removeSlicer(key) {
+    setActiveSlicerKeys(prev => prev.filter(k => k !== key))
+    const def = SLICER_DEFS.find(d => d.key === key)
+    if (!def) return
+    if (def.type === 'multi')    setFilters(p => ({ ...p, [key]: [] }))
+    else if (def.type === 'bool') setFilters(p => ({ ...p, [key]: 'all' }))
+    else if (def.type === 'text') setFilters(p => ({ ...p, [key]: '' }))
+    else if (def.type === 'age')  setFilters(p => ({ ...p, ageFrom: '', ageTo: '' }))
+    else if (def.type === 'range') setFilters(p => ({ ...p, memSinceFrom: '', memSinceTo: '' }))
+  }
+  function toggleSlicer(key) { activeSlicerKeys.includes(key) ? removeSlicer(key) : addSlicer(key) }
+
+  function toggleMulti(field, val) {
+    setFilters(prev => ({ ...prev, [field]: prev[field].includes(val) ? prev[field].filter(v => v !== val) : [...prev[field], val] }))
+  }
+  function clearField(field) { setFilters(prev => ({ ...prev, [field]: [] })) }
+
+  function applyFilters(members) {
+    const chk = (arr, dbField, hasBlank) => {
+      if (!arr.length) return true
+      return (hasBlank && arr.includes('(blank)') && !members) || // dummy
+             (hasBlank && arr.includes('(blank)') && !members[dbField]) ||
+             arr.includes(members[dbField])
+    }
+    return members.filter(m => {
+      const mc = (arr, dbf, blank) => !arr.length || (blank && arr.includes('(blank)') && !m[dbf]) || arr.includes(m[dbf])
+      if (!mc(filters.gender,        'gender',               true))  return false
+      if (!mc(filters.maritalStatus, 'marital_status',       true))  return false
+      if (!mc(filters.relationship,  'relationship_with_fh', true))  return false
+      if (!mc(filters.membershipType,'membership_type',      false)) return false
+      if (!mc(filters.denomination,  'denomination',         false)) return false
+      if (!mc(filters.zonalArea,     'zonal_area',           true))  return false
+      if (!mc(filters.church,        'primary_church_name',  false)) return false
+      if (!mc(filters.city,          'city',                 true))  return false
+      if (!mc(filters.stateFilter,   'state',                true))  return false
+      if (!mc(filters.baptismType,   'baptism_type',         false)) return false
+      if (!mc(filters.workingSector, 'working_sector',       false)) return false
+      if (!mc(filters.titleFilter,   'title',                false)) return false
+      if (!mc(filters.qualFilter,    'qualification',        false)) return false
+      if (filters.ageFrom      !== '' && (m.age                  || 0) < parseInt(filters.ageFrom))      return false
+      if (filters.ageTo        !== '' && (m.age                  || 0) > parseInt(filters.ageTo))        return false
+      if (filters.memSinceFrom !== '' && (m.membership_from_year || 0) < parseInt(filters.memSinceFrom)) return false
+      if (filters.memSinceTo   !== '' && (m.membership_from_year || 0) > parseInt(filters.memSinceTo))   return false
+      const bools = [
+        ['isFamilyHead','is_family_head'],['confirmationTaken','confirmation_taken'],['isFBRF','is_fbrf_member'],
+        ['actMens','act_mens_fellowship'],['actWomens','act_womens_fellowship'],['actYouth','act_youth_association'],
+        ['actSS','act_sunday_school'],['actChoir','act_choir'],['actPC','act_pastorate_committee'],
+        ['actVM','act_village_ministry'],['actDCC','act_dcc'],['actDC','act_dc'],['actVol','act_volunteers'],
+      ]
+      for (const [fk, dbf] of bools) if (filters[fk] !== 'all' && !!m[dbf] !== (filters[fk] === 'yes')) return false
+      const texts = [
+        ['familyIdTxt','family_id'],['memberIdTxt','member_id'],['memberNameTxt','member_name'],
+        ['fatherNameTxt','father_name'],['aadhaarTxt','aadhaar'],['spouseTxt','spouse_name'],
+        ['addressTxt','address_street'],['area1Txt','area_1'],['area2Txt','area_2'],
+        ['mobileTxt','mobile'],['whatsappTxt','whatsapp'],['emailTxt','email'],['profTxt','profession'],
+      ]
+      for (const [fk, dbf] of texts) {
+        if (filters[fk]?.trim()) {
+          if (!String(m[dbf] || '').toLowerCase().includes(filters[fk].toLowerCase())) return false
+        }
+      }
+      return true
+    })
+  }
+
+  /* Active filter count — computed dynamically from SLICER_DEFS */
+  const activeFilterCount = SLICER_DEFS.reduce((count, def) => {
+    if (def.type === 'disabled') return count
+    if (def.type === 'multi'  && filters[def.key]?.length > 0)  return count + 1
+    if (def.type === 'bool'   && filters[def.key] !== 'all')     return count + 1
+    if (def.type === 'text'   && filters[def.key]?.trim())       return count + 1
+    if (def.type === 'age'    && (filters.ageFrom || filters.ageTo)) return count + 1
+    if (def.type === 'range'  && (filters.memSinceFrom || filters.memSinceTo)) return count + 1
+    return count
+  }, 0)
+
+  /* Render a single active slicer by key */
+  function renderSlicer(key) {
+    const def = SLICER_DEFS.find(d => d.key === key)
+    if (!def || def.type === 'disabled') return null
+    if (def.type === 'multi') return (
+      <Slicer key={key} title={def.label} options={filterOpts[def.optsKey] || []}
+        selected={filters[key]} onToggle={v => toggleMulti(key, v)}
+        onClear={() => clearField(key)} showBlank={def.showBlank} onRemove={() => removeSlicer(key)} />
+    )
+    if (def.type === 'bool') return (
+      <BoolSlicer key={key} title={def.label}
+        value={filters[key]} onChange={v => setFilters(p => ({ ...p, [key]: v }))}
+        onRemove={() => removeSlicer(key)} />
+    )
+    if (def.type === 'age') return (
+      <RangeSlicer key={key} title="Age"
+        from={filters.ageFrom} to={filters.ageTo}
+        onFrom={v => setFilters(p => ({ ...p, ageFrom: v }))}
+        onTo={v => setFilters(p => ({ ...p, ageTo: v }))}
+        onClear={() => setFilters(p => ({ ...p, ageFrom: '', ageTo: '' }))}
+        onRemove={() => removeSlicer(key)} />
+    )
+    if (def.type === 'range') return (
+      <RangeSlicer key={key} title={def.label}
+        from={filters.memSinceFrom} to={filters.memSinceTo}
+        onFrom={v => setFilters(p => ({ ...p, memSinceFrom: v }))}
+        onTo={v => setFilters(p => ({ ...p, memSinceTo: v }))}
+        onClear={() => setFilters(p => ({ ...p, memSinceFrom: '', memSinceTo: '' }))}
+        onRemove={() => removeSlicer(key)} />
+    )
+    if (def.type === 'text') return (
+      <TextSlicer key={key} title={def.label}
+        value={filters[key]}
+        onChange={v => setFilters(p => ({ ...p, [key]: v }))}
+        onClear={() => setFilters(p => ({ ...p, [key]: '' }))}
+        onRemove={() => removeSlicer(key)} />
+    )
+    return null
+  }
+
+  async function buildAndSave(filteredData) {
+    if (selKeys.length === 0 || filteredData.length === 0) return
+    const cols  = selKeys.map(key => { const d = ALL_COLS.find(c => c.key === key); return { header: d.label, key, align: d.align || 'center' } })
+    const rows  = filteredData.map((m, i) => { const row = {}; selKeys.forEach(key => { const d = ALL_COLS.find(c => c.key === key); row[key] = fmtCell(d, m, i) }); return row })
+    const title = reportTitle.trim() || 'Member Report'
+    const date  = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    const addrParts = [churchMeta.address, churchMeta.city].filter(Boolean)
+    const titleLines = [
+      { text: churchName, bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+      ...(addrParts.length ? [{ text: addrParts.join(', '), size: 11, bg: '1E3A5F', color: 'FFFFFF' }] : []),
+      { text: title, bold: true, size: 12 },
+      { text: `Generated on: ${date}  |  Total Members: ${filteredData.length}`, italic: true, size: 10 },
+    ]
+    const buffer = await exportToExcelWithTitle(cols, rows, 'Member Report', `${title}.xlsx`, titleLines)
+
+    const ts       = new Date().toISOString().replace(/[:.]/g, '-')
+    const safe     = title.replace(/[^a-zA-Z0-9 _-]/g, '').trim().replace(/\s+/g, '_')
+    const filePath = `${ts}_${safe}.xlsx`
+    let storedPath = null
+    const { error: upErr } = await supabase.storage
+      .from('member-reports')
+      .upload(filePath, buffer, { contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', upsert: false })
+    if (upErr) {
+      toast(`Cloud storage error: ${upErr.message}`, 'error')
+    } else {
+      storedPath = filePath
+    }
+    const { error: dbErr } = await supabase.from('member_report_history').insert({
+      report_title:  title,
+      file_path:     storedPath,
+      file_name:     `${title}.xlsx`,
+      total_members: filteredData.length,
+      has_whatsapp:  selKeys.includes('whatsapp'),
+      created_by:    user?.id || null,
+    })
+    if (dbErr) {
+      toast(`History not saved: ${dbErr.message}`, 'error')
+    } else {
+      await fetchHistory()
+    }
+  }
+
+  async function generate() {
+    if (selKeys.length === 0) { toast('Select at least one column to include', 'error'); return }
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.from('members').select('*').eq('is_active', true).order('member_id')
+      if (error) throw error
+      const filtered = applyFilters(data || [])
+      setReportData(filtered)
+      if (filtered.length > 0) {
+        await buildAndSave(filtered)
+        toast(`${filtered.length} member${filtered.length !== 1 ? 's' : ''} — report exported & saved`, 'success')
+      } else {
+        toast('No members match the selected filters', 'error')
+      }
+    } catch (e) { toast(e.message, 'error') }
+    finally { setLoading(false) }
+  }
+
+  async function exportExcel() {
+    if (!reportData || reportData.length === 0) { toast('No report data to export', 'error'); return }
+    setExporting(true)
+    try { await buildAndSave(reportData) }
+    catch (e) { toast('Export failed: ' + e.message, 'error') }
+    finally { setExporting(false) }
+  }
+
+  async function downloadSavedReport(filePath, fileName) {
+    if (!filePath) { toast('File not stored in cloud — re-export to save', 'error'); return }
+    const { data, error } = await supabase.storage
+      .from('member-reports')
+      .createSignedUrl(filePath, 3600)
+    if (error) { toast('Download link failed: ' + error.message, 'error'); return }
+    try {
+      const res  = await fetch(data.signedUrl)
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url; a.download = fileName; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { toast('Download failed: ' + e.message, 'error') }
+  }
+
+  async function deleteSavedReport(id, filePath) {
+    setDeletingId(id)
+    try {
+      await supabase.storage.from('member-reports').remove([filePath])
+      await supabase.from('member_report_history').delete().eq('id', id)
+      setSavedReports(prev => prev.filter(r => r.id !== id))
+      toast('Report deleted', 'success')
+    } catch { toast('Delete failed', 'error') }
+    finally { setDeletingId(null) }
+  }
+
+  function downloadWaCSV() {
+    if (!reportData) { toast('Generate report first', 'error'); return }
+    const members = reportData.filter(m => m.whatsapp || m.mobile)
+    if (!members.length) { toast('No members with WhatsApp/mobile in this report', 'error'); return }
+    const rows = members.map(m => {
+      const msg = waMsg.replace(/{MemberName}/g, m.member_name||'').replace(/{MemberID}/g, m.member_id||'').replace(/{FamilyID}/g, m.family_id||'').replace(/{Mobile}/g, m.mobile||'')
+      return ['Member Name','Member ID','Mobile','WhatsApp','Message'].map((_, ci) => [m.member_name, m.member_id, m.mobile, m.whatsapp, msg][ci]).map(v => `"${(v||'').replace(/"/g,'""')}"`).join(',')
+    })
+    const blob = new Blob(['﻿' + ['Member Name,Member ID,Mobile,WhatsApp Number,Message', ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'whatsapp-contacts.csv'; a.click(); URL.revokeObjectURL(url)
+  }
+
+  /* Column list helpers */
+  function colLabel(key) { return ALL_COLS.find(c => c.key === key)?.label || key }
+  function moveToCols()   { if (!hlAvail.length) return; setSelKeys(p => [...p, ...hlAvail.filter(k => !p.includes(k))]); setAvailKeys(p => p.filter(k => !hlAvail.includes(k))); setHlAvail([]) }
+  function removeFromCols(){ if (!hlSel.length)  return; setAvailKeys(() => ALL_KEYS.filter(k => !selKeys.includes(k) || hlSel.includes(k))); setSelKeys(p => p.filter(k => !hlSel.includes(k))); setHlSel([]) }
+  function moveAllToCols() { setSelKeys(p => [...p, ...availKeys]); setAvailKeys([]); setHlAvail([]) }
+  function removeAll()     { setAvailKeys([...ALL_KEYS]); setSelKeys([]); setHlSel([]); setHlAvail([]) }
+  function moveUp()   { if (hlSel.length !== 1) return; const i = selKeys.indexOf(hlSel[0]); if (i <= 0) return; const a=[...selKeys];[a[i-1],a[i]]=[a[i],a[i-1]];setSelKeys(a) }
+  function moveDown() { if (hlSel.length !== 1) return; const i = selKeys.indexOf(hlSel[0]); if (i >= selKeys.length-1) return; const a=[...selKeys];[a[i],a[i+1]]=[a[i+1],a[i]];setSelKeys(a) }
+  function clickAvail(key,e){ if(e.ctrlKey||e.metaKey)setHlAvail(p=>p.includes(key)?p.filter(k=>k!==key):[...p,key]);else setHlAvail([key]) }
+  function clickSel(key,e)  { if(e.ctrlKey||e.metaKey)setHlSel(p=>p.includes(key)?p.filter(k=>k!==key):[...p,key]);  else setHlSel([key])   }
+
+  const waMembers   = (reportData||[]).filter(m => m.whatsapp || m.mobile)
+  const PREVIEW_MAX = 200
+
+  const card    = { background:'var(--card-bg)', border:'1px solid var(--card-border)', borderRadius:10, padding:'16px 18px', marginBottom:16 }
+  const lbl     = { fontSize:11, fontWeight:700, color:'var(--text-2)', textTransform:'uppercase', letterSpacing:'0.08em' }
+  const btn     = (pri,danger) => ({ padding:'7px 16px', borderRadius:7, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, background:danger?'var(--danger)':pri?'var(--accent)':'var(--card-bg)', color:(pri||danger)?'var(--accent-text)':'var(--text-1)', border: (!pri&&!danger)?'1px solid var(--card-border)':'none', display:'flex', alignItems:'center', gap:6 })
+  const listBox = { border:'1px solid var(--card-border)', borderRadius:7, height:260, overflowY:'auto', background:'var(--card-bg)' }
+  const listItm = hl => ({ padding:'5px 10px', fontSize:12, cursor:'pointer', background:hl?'var(--accent)':'transparent', color:hl?'var(--accent-text)':'var(--text-1)' })
+  const th      = { padding:'8px 10px', background:'var(--accent)', color:'var(--accent-text)', fontSize:11, fontWeight:700, whiteSpace:'nowrap', textAlign:'center', borderRight:'1px solid rgba(255,255,255,0.1)' }
+  const td      = i => ({ padding:'6px 10px', fontSize:12, color:'var(--text-1)', borderBottom:'1px solid var(--card-border)', background:i%2===0?'var(--card-bg)':'var(--card-header-bg)', whiteSpace:'nowrap' })
+
+  return (
+    <div style={{ padding:'24px 28px', maxWidth:1400, margin:'0 auto' }}>
+
+      {/* Header */}
+      <div style={{ marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
+        <div style={{ width:44, height:44, borderRadius:10, background:'linear-gradient(135deg,var(--accent),var(--accent-hover))', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <Users size={22} color="var(--accent-text)" />
+        </div>
+        <div>
+          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--text-1)', margin:0 }}>Member Report</h1>
+          <p style={{ fontSize:13, color:'var(--text-2)', margin:'2px 0 0' }}>Custom filtered member list with column selection</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display:'flex', gap:2, marginBottom:16, borderBottom:'2px solid var(--card-border)' }}>
+        {[
+          { id:'report',   label:'Custom Report',  Icon:ListFilter   },
+          { id:'history',  label:'Saved Reports',  Icon:Clock,       badge: savedReports.length || null },
+          { id:'whatsapp', label:'WhatsApp Blast',  Icon:MessageSquare },
+        ].map(({id,label,Icon,badge})=>(
+          <button key={id}
+            onClick={()=>setActiveTab(id)}
+            onMouseEnter={()=>setHoveredTab(id)}
+            onMouseLeave={()=>setHoveredTab(null)}
+            className="no-lift"
+            style={{
+              padding:'9px 18px', border:'none', outline:'none', cursor:'pointer',
+              fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6,
+              borderRadius: (activeTab===id || hoveredTab===id) ? '7px 7px 0 0' : 4,
+              background: (activeTab===id || hoveredTab===id) ? 'var(--accent)' : 'transparent',
+              color: (activeTab===id || hoveredTab===id) ? '#fff' : 'var(--text-2)',
+              borderBottom: activeTab===id ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: -2,
+              transition: 'background 0.15s, color 0.15s',
+            }}>
+            <Icon size={14}/>{label}
+            {badge != null && <span style={{
+              background: (activeTab===id || hoveredTab===id) ? 'rgba(255,255,255,0.2)' : 'var(--card-header-bg)',
+              color: (activeTab===id || hoveredTab===id) ? '#fff' : 'var(--text-2)',
+              borderRadius:10, padding:'0px 7px', fontSize:11, fontWeight:700,
+            }}>{badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ REPORT TAB ═══ */}
+      {activeTab === 'report' && (<>
+
+        {/* Slicer Library */}
+        <div style={card}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:'#1e293b', marginBottom:2 }}>Slicer Library</div>
+              <div style={{ fontSize:11, color:'#64748b' }}>Click or drag any slicer into the filter area below &nbsp;·&nbsp; <span style={{ textDecoration:'line-through', color:'#c9d1da' }}>strikethrough</span> = not filterable</div>
+            </div>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {SLICER_GROUPS.map(group => (
+              <div key={group.label}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <span style={{ fontSize:10, fontWeight:700, color:group.color, textTransform:'uppercase', letterSpacing:'0.1em', whiteSpace:'nowrap' }}>{group.label}</span>
+                  <div style={{ flex:1, height:1, background:'#f0f4f8' }} />
+                </div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                  {group.slicers.map(def => (
+                    <SlicerChip key={def.key} def={def}
+                      isActive={activeSlicerKeys.includes(def.key)}
+                      onClick={() => def.type !== 'disabled' && toggleSlicer(def.key)}
+                      onDragStart={() => setDragKey(def.key)}
+                      onDragEnd={() => setDragKey(null)}
+                      isDragging={dragKey === def.key} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Active Slicers drop zone */}
+        <div style={{ ...card, padding:0 }}>
+          <div style={{ padding:'10px 16px', borderBottom: activeSlicerKeys.length>0 ? '1px solid #e2e8f0' : 'none', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <ListFilter size={14} color="#2563eb" />
+              <span style={{ fontSize:13, fontWeight:700, color:'#1e293b' }}>Active Slicers</span>
+              {activeSlicerKeys.length > 0 && <span style={{ background:'#e0e7ff', color:'#3730a3', borderRadius:10, padding:'1px 8px', fontSize:11, fontWeight:700 }}>{activeSlicerKeys.length}</span>}
+              {activeFilterCount > 0 && <span style={{ background:'#2563eb', color:'#fff', borderRadius:10, padding:'1px 8px', fontSize:11, fontWeight:700 }}>{activeFilterCount} filter{activeFilterCount!==1?'s':''} active</span>}
+            </div>
+            {(activeSlicerKeys.length>0 || activeFilterCount>0) && (
+              <button onClick={() => { setActiveSlicerKeys([]); setFilters({...EMPTY_FILTERS}) }} style={{ ...btn(false,false), padding:'4px 12px', fontSize:12, color:'#ef4444' }}>Clear All</button>
+            )}
+          </div>
+          <div
+            onDragOver={e => { e.preventDefault(); setDropOver(true) }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropOver(false) }}
+            onDrop={e => { e.preventDefault(); const key=e.dataTransfer.getData('slicerKey')||dragKey; if(key)addSlicer(key); setDragKey(null);setDropOver(false) }}
+            style={{ padding: activeSlicerKeys.length===0 ? '28px 20px' : '14px', minHeight: activeSlicerKeys.length===0 ? 90 : 'auto', border: dropOver ? '2px dashed #2563eb' : '2px dashed transparent', borderRadius:'0 0 10px 10px', background: dropOver ? '#eff6ff' : 'transparent', transition:'all 0.15s' }}>
+            {activeSlicerKeys.length===0 && <div style={{ textAlign:'center', color:dropOver?'#2563eb':'#94a3b8', fontSize:13, pointerEvents:'none' }}>{dropOver ? '↓ Drop slicer here' : 'Drag slicers here, or click chips in the library above'}</div>}
+            {activeSlicerKeys.length>0 && <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'flex-start' }}>{activeSlicerKeys.map(key=>renderSlicer(key))}</div>}
+          </div>
+        </div>
+
+        {/* Column selection */}
+        <div style={card}>
+          <div style={{ fontSize:14, fontWeight:700, color:'#1e293b', marginBottom:14, display:'flex', alignItems:'center', gap:6 }}>
+            Column Selection <span style={{ fontSize:12, color:'#64748b', fontWeight:400 }}>(Ctrl+click for multiple · double-click to move)</span>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'stretch' }}>
+            <div style={{ flex:1 }}>
+              <div style={{ ...lbl, marginBottom:5 }}>Available ({availKeys.length})</div>
+              <div style={listBox} onDoubleClick={moveToCols}>
+                {availKeys.map(key=><div key={key} onClick={e=>clickAvail(key,e)} style={listItm(hlAvail.includes(key))}>{colLabel(key)}</div>)}
+              </div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', gap:6, padding:'0 4px' }}>
+              <button onClick={moveToCols}    style={{ ...btn(true,false),  padding:'6px 12px', fontSize:14 }} title="Move selected">⇒</button>
+              <button onClick={removeFromCols} style={{ ...btn(false,false), padding:'6px 12px', fontSize:14 }} title="Remove selected">⇐</button>
+              <div style={{ height:8 }} />
+              <button onClick={moveAllToCols} style={{ ...btn(false,false), padding:'5px 10px', fontSize:11 }} title="Select All">All ⇒</button>
+              <button onClick={removeAll}      style={{ ...btn(false,false), padding:'5px 10px', fontSize:11 }} title="Deselect All">⇐ All</button>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ ...lbl, marginBottom:5 }}>Selected ({selKeys.length})</div>
+              <div style={listBox} onDoubleClick={removeFromCols}>
+                {selKeys.map(key=><div key={key} onClick={e=>clickSel(key,e)} style={listItm(hlSel.includes(key))}>{colLabel(key)}</div>)}
+              </div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', justifyContent:'center', gap:6, padding:'0 4px' }}>
+              <button onClick={moveUp}   style={{ ...btn(false,false), padding:'6px 10px' }} title="Move up"><ChevronUp   size={14}/></button>
+              <button onClick={moveDown} style={{ ...btn(false,false), padding:'6px 10px' }} title="Move down"><ChevronDown size={14}/></button>
+            </div>
+          </div>
+        </div>
+
+        {/* Title + Generate */}
+        <div style={{ ...card, display:'flex', gap:12, alignItems:'flex-end', flexWrap:'wrap' }}>
+          <div style={{ flex:1, minWidth:220 }}>
+            <div style={{ ...lbl, marginBottom:6 }}>Report Title</div>
+            <input type="text" placeholder="e.g. Unmarried Women aged 20–25" value={reportTitle} onChange={e=>setReportTitle(e.target.value)}
+              style={{ width:'100%', padding:'8px 12px', border:'1px solid #cbd5e1', borderRadius:7, fontSize:13, boxSizing:'border-box' }} />
+          </div>
+          <button onClick={generate} disabled={loading} className="action-btn" style={{ background:'var(--accent)', opacity:loading?0.7:1, padding:'9px 22px', fontSize:14 }}>
+            {loading ? <><RefreshCw size={14} style={{animation:'spin .7s linear infinite'}}/> Generating…</> : <><ListFilter size={14}/> Generate &amp; Export</>}
+          </button>
+        </div>
+
+        {/* Results */}
+        {reportData===null && <div style={{ textAlign:'center', padding:'48px 0', color:'#94a3b8', fontSize:14 }}>Add slicers, select columns, then click Generate Report</div>}
+        {reportData!==null && reportData.length===0 && <div style={{ textAlign:'center', padding:'48px 0', color:'#94a3b8', fontSize:14 }}>No members match the selected filters</div>}
+        {reportData!==null && reportData.length>0 && (
+          <div style={card}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+              <div>
+                <span style={{ fontWeight:700, color:'#1e293b', fontSize:15 }}>{reportTitle||'Member Report'}</span>
+                <span style={{ marginLeft:10, fontSize:13, color:'#64748b' }}>{reportData.length} member{reportData.length!==1?'s':''}{reportData.length>PREVIEW_MAX?` (showing first ${PREVIEW_MAX})`:''}</span>
+              </div>
+              <button onClick={exportExcel} disabled={exporting||selKeys.length===0} className="action-btn" style={{ background:'#16a34a', opacity:(exporting||selKeys.length===0)?0.6:1 }}>
+                {exporting?<><RefreshCw size={13} style={{animation:'spin .7s linear infinite'}}/> Exporting…</>:<><FileSpreadsheet size={13}/> Excel Export</>}
+              </button>
+            </div>
+            {selKeys.length===0
+              ? <div style={{ color:'#94a3b8', fontSize:13, textAlign:'center', padding:24 }}>Select columns above to view the report</div>
+              : <div style={{ overflowX:'auto' }}>
+                  <table style={{ borderCollapse:'collapse', width:'100%', minWidth:400 }}>
+                    <thead><tr>{selKeys.map(k=><th key={k} style={th}>{colLabel(k)}</th>)}</tr></thead>
+                    <tbody>
+                      {reportData.slice(0,PREVIEW_MAX).map((row,i)=>(
+                        <tr key={row.member_id||i}>
+                          {selKeys.map(k=>{ const d=ALL_COLS.find(c=>c.key===k); return <td key={k} style={{...td(i),textAlign:d.align||'center'}}>{fmtCell(d,row,i)}</td> })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {reportData.length>PREVIEW_MAX && <div style={{ textAlign:'center', padding:'10px 0', fontSize:12, color:'#94a3b8' }}>Showing {PREVIEW_MAX} of {reportData.length} — Export to Excel for full list</div>}
+                </div>}
+          </div>
+        )}
+      </>)}
+
+      {/* ═══ SAVED REPORTS TAB ═══ */}
+      {activeTab === 'history' && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+            <div style={{ fontSize:13, color:'var(--text-2)' }}>Reports are saved automatically on Generate. Newest first.</div>
+            <button onClick={fetchHistory} style={{ ...btn(false,false), padding:'6px 12px', fontSize:12 }}><RefreshCw size={13}/> Refresh</button>
+          </div>
+          {historyLoading && (
+            <div style={{ textAlign:'center', padding:'48px 0', color:'var(--text-3)', fontSize:14 }}>
+              <RefreshCw size={18} style={{ animation:'spin .7s linear infinite', marginBottom:8 }}/><br/>Loading saved reports…
+            </div>
+          )}
+          {!historyLoading && savedReports.length === 0 && (
+            <div style={{ textAlign:'center', padding:'48px 0', color:'var(--text-3)', fontSize:14 }}>
+              No saved reports yet. Click Generate &amp; Export on the Custom Report tab.
+            </div>
+          )}
+          {!historyLoading && savedReports.map((r) => {
+            const dt      = new Date(r.generated_at)
+            const dateStr = dt.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+            const timeStr = dt.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12: true })
+            return (
+              <div key={r.id} style={{ ...card, display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                <div style={{ width:42, height:42, borderRadius:9, background:'linear-gradient(135deg,var(--accent),var(--accent-hover))', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <FileSpreadsheet size={18} color="var(--accent-text)"/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:700, fontSize:14, color:'var(--text-1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                    {r.report_title}
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--text-2)', marginTop:4, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <Calendar size={11} style={{ color:'var(--accent)', flexShrink:0 }}/>
+                    <span>{dateStr}</span>
+                    <Clock size={11} style={{ color:'var(--accent)', flexShrink:0 }}/>
+                    <span>{timeStr}</span>
+                    <span style={{ color:'var(--text-3)' }}>·</span>
+                    <span style={{ fontWeight:600, color:'var(--accent)' }}>{r.total_members}</span>
+                    <span>member{r.total_members !== 1 ? 's' : ''}</span>
+                    {r.has_whatsapp && (
+                      <svg title="Includes WhatsApp column" width="13" height="13" viewBox="0 0 24 24" fill="#25d366" style={{ flexShrink:0 }}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+                  <button onClick={() => downloadSavedReport(r.file_path, r.file_name)}
+                    title={r.file_path ? 'Download Excel to computer' : 'File not stored — re-export to save'}
+                    className="action-btn"
+                    style={{ background:'#16a34a', opacity: r.file_path ? 1 : 0.4 }}>
+                    <Download size={13}/> Download
+                  </button>
+                  <button onClick={() => deleteSavedReport(r.id, r.file_path)} disabled={deletingId === r.id}
+                    style={{ ...btn(false,false), padding:'7px 10px', fontSize:12, color:'var(--danger)', opacity: deletingId===r.id ? 0.5 : 1 }}>
+                    {deletingId === r.id ? <RefreshCw size={13} style={{animation:'spin .7s linear infinite'}}/> : <Trash2 size={13}/>}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ═══ WHATSAPP TAB ═══ */}
+      {activeTab === 'whatsapp' && (<>
+        <div style={{ ...card, background:'var(--accent-subtle)', border:'1px solid var(--info-border)' }}>
+          <p style={{ margin:0, fontSize:13, color:'var(--accent)' }}>
+            Uses the same slicer filters as the Report tab.
+            {reportData ? ` Current report: ${reportData.length} member${reportData.length!==1?'s':''} — ${waMembers.length} have a WhatsApp/mobile number.` : ' Run "Generate Report" on the Report tab first.'}
+          </p>
+          {!reportData && <button onClick={()=>setActiveTab('report')} className="action-btn" style={{ background:'var(--accent)', marginTop:10 }}>Go to Report tab →</button>}
+        </div>
+        <div style={card}>
+          <div style={{ fontSize:14, fontWeight:700, color:'#1e293b', marginBottom:10 }}>Message Template</div>
+          <div style={{ fontSize:12, color:'#64748b', marginBottom:8 }}>
+            Placeholders:&nbsp;{['{MemberName}','{MemberID}','{FamilyID}','{Mobile}'].map(p=><code key={p} style={{ background:'#f1f5f9', padding:'1px 5px', borderRadius:3, marginRight:5 }}>{p}</code>)}
+          </div>
+          <textarea rows={5} value={waMsg} onChange={e=>setWaMsg(e.target.value)}
+            style={{ width:'100%', padding:'10px 12px', border:'1px solid #cbd5e1', borderRadius:7, fontSize:13, resize:'vertical', boxSizing:'border-box', fontFamily:'inherit' }} />
+        </div>
+        <div style={{ display:'flex', gap:10, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+          <button onClick={downloadWaCSV} style={btn(false,false)}><Download size={13}/> Download CSV</button>
+          <span style={{ fontSize:12, color:'#94a3b8' }}>CSV contains number + personalised message per member</span>
+        </div>
+        {reportData && waMembers.length>0 && (
+          <div style={card}>
+            <div style={{ fontSize:14, fontWeight:700, color:'#1e293b', marginBottom:12 }}>Send Messages — {waMembers.length} member{waMembers.length!==1?'s':''}</div>
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ borderCollapse:'collapse', width:'100%' }}>
+                <thead><tr>{['#','Member ID','Name','Mobile','WhatsApp','Send'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {waMembers.slice(0,PREVIEW_MAX).map((m,i)=>{
+                    const num=( m.whatsapp||m.mobile||'').replace(/\D/g,'')
+                    const e91=num?(num.startsWith('91')?num:`91${num}`):null
+                    const msg=waMsg.replace(/{MemberName}/g,m.member_name||'').replace(/{MemberID}/g,m.member_id||'').replace(/{FamilyID}/g,m.family_id||'').replace(/{Mobile}/g,m.mobile||'')
+                    const link=e91?`https://wa.me/${e91}?text=${encodeURIComponent(msg)}`:null
+                    return (
+                      <tr key={m.member_id||i}>
+                        <td style={{...td(i),textAlign:'center'}}>{i+1}</td>
+                        <td style={{...td(i),textAlign:'center'}}>{m.member_id}</td>
+                        <td style={{...td(i),textAlign:'left'}}>{m.member_name}</td>
+                        <td style={{...td(i),textAlign:'center'}}>{m.mobile||'—'}</td>
+                        <td style={{...td(i),textAlign:'center'}}>{m.whatsapp||'—'}</td>
+                        <td style={{...td(i),textAlign:'center'}}>
+                          {link?<a href={link} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'4px 10px', background:'#25d366', color:'#fff', borderRadius:5, fontSize:12, fontWeight:600, textDecoration:'none' }}><Send size={11}/> WhatsApp</a>:'—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {waMembers.length>PREVIEW_MAX && <div style={{ textAlign:'center', padding:'10px 0', fontSize:12, color:'#94a3b8' }}>Showing {PREVIEW_MAX} of {waMembers.length} — Download CSV for full list</div>}
+            </div>
+          </div>
+        )}
+        {reportData && waMembers.length===0 && <div style={{ textAlign:'center', padding:'48px 0', color:'#94a3b8', fontSize:14 }}>No members in the current report have a WhatsApp or mobile number</div>}
+      </>)}
+    </div>
+  )
+}

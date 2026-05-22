@@ -19,7 +19,8 @@ import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
 import ReportsPage       from './pages/ReportsPage'
-import AuctionReportPage from './pages/AuctionReportPage'
+import AuctionReportPage  from './pages/AuctionReportPage'
+import MemberReportPage  from './pages/MemberReportPage'
 import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
 import PaymentSchedulePage    from './pages/PaymentSchedulePage'
 import PaymentPage            from './pages/PaymentPage'
@@ -371,6 +372,9 @@ function AppRoutes() {
       />
       <Route path="/reports/auction"
         element={<PrivateRoute><AppLayout><AuctionReportPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/reports/member"
+        element={<PrivateRoute><AppLayout><MemberReportPage /></AppLayout></PrivateRoute>}
       />
 
       <Route

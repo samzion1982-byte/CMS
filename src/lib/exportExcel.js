@@ -145,7 +145,9 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
     })
   })
 
-  downloadBuffer(await wb.xlsx.writeBuffer(), fileName)
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBuffer(buffer, fileName)
+  return buffer
 }
 
 // ─────────────────────────────────────────────────────────────────
