@@ -18,7 +18,8 @@ import LoginLogsPage from './pages/LoginLogsPage'
 import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
-import ReportsPage from './pages/ReportsPage'
+import ReportsPage       from './pages/ReportsPage'
+import AuctionReportPage from './pages/AuctionReportPage'
 import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
 import PaymentSchedulePage    from './pages/PaymentSchedulePage'
 import PaymentPage            from './pages/PaymentPage'
@@ -367,6 +368,9 @@ function AppRoutes() {
       />
       <Route path="/reports"
         element={<PrivateRoute><AppLayout><ReportsPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/reports/auction"
+        element={<PrivateRoute><AppLayout><AuctionReportPage /></AppLayout></PrivateRoute>}
       />
 
       <Route

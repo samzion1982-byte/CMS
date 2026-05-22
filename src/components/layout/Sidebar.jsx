@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { ChevronLeft, ChevronRight,
+import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
@@ -23,7 +23,10 @@ const NAV = [
     { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Accounts',          path: '/accounting',        icon: Landmark,    accountingOnly: true },
     { label: 'Simple Accounts',   path: '/simple-accounts',   icon: Wallet,      simpleOnly: true },
-    { label: 'Reports',           path: '/reports',           icon: BarChart3   },
+    { label: 'Reports', icon: BarChart3, children: [
+      { label: 'Receipt Report', path: '/reports'         },
+      { label: 'Auction Report', path: '/reports/auction' },
+    ]},
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
     { label: 'Church Setup',      path: '/church-setup',    icon: Church,         superOnly: true },
@@ -47,6 +50,8 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
 
   const [accountingEnabled,       setAccountingEnabled]       = useState(false)
   const [simpleAccountingEnabled, setSimpleAccountingEnabled] = useState(false)
+  const [expandedItems, setExpandedItems] = useState(new Set())
+
   const loadFlags = useCallback(() => {
     supabase.from('churches').select('accounting_enabled, simple_accounting_enabled').limit(1).single()
       .then(({ data }) => {
@@ -60,6 +65,26 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
     window.addEventListener('church-settings-updated', loadFlags)
     return () => window.removeEventListener('church-settings-updated', loadFlags)
   }, [loadFlags])
+
+  // Auto-expand parent items whose child is currently active
+  useEffect(() => {
+    NAV.forEach(group => {
+      group.items?.forEach(item => {
+        if (item.children) {
+          const childActive = item.children.some(c => location.pathname === c.path || location.pathname.startsWith(c.path + '/'))
+          if (childActive) setExpandedItems(prev => new Set([...prev, item.label]))
+        }
+      })
+    })
+  }, [location.pathname])
+
+  const toggleExpand = (label) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label); else next.add(label)
+      return next
+    })
+  }
 
   return (
     <aside style={{
@@ -116,6 +141,35 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                 if (item.superOnly && !isSuperAdmin) return null
                 if (item.accountingOnly && !accountingEnabled) return null
                 if (item.simpleOnly    && !simpleAccountingEnabled) return null
+
+                if (item.children) {
+                  const isExpanded = expandedItems.has(item.label)
+                  const isActive   = item.children.some(c => location.pathname === c.path || location.pathname.startsWith(c.path + '/'))
+                  return (
+                    <div key={item.label}>
+                      <NavItem
+                        item={item}
+                        isActive={isActive}
+                        collapsed={collapsed}
+                        hasChildren
+                        isExpanded={isExpanded}
+                        onClick={() => collapsed ? navigate(item.children[0].path) : toggleExpand(item.label)}
+                      />
+                      {!collapsed && isExpanded && item.children.map(child => {
+                        const childActive = location.pathname === child.path || location.pathname.startsWith(child.path + '/')
+                        return (
+                          <SubNavItem
+                            key={child.path}
+                            label={child.label}
+                            isActive={childActive}
+                            onClick={() => navigate(child.path)}
+                          />
+                        )
+                      })}
+                    </div>
+                  )
+                }
+
                 const isActive = location.pathname === item.path ||
                   location.pathname.startsWith(item.path + '/')
                 return (
@@ -167,10 +221,9 @@ function CollapseBtn({ collapsed, onToggle }) {
 }
 
 /* ── Nav item ─────────────────────────────────────────────────── */
-function NavItem({ item, isActive, collapsed, onClick }) {
+function NavItem({ item, isActive, collapsed, onClick, hasChildren, isExpanded }) {
   const [hov, setHov] = useState(false)
   const Icon = item.icon
-  const isSub = item.sub && !collapsed
 
   return (
     <button
@@ -184,7 +237,7 @@ function NavItem({ item, isActive, collapsed, onClick }) {
         gap: collapsed ? 0 : 8,
         justifyContent: collapsed ? 'center' : 'flex-start',
         width: '100%',
-        padding: collapsed ? '11px 0' : isSub ? '7px 10px 7px 22px' : '10px 10px',
+        padding: collapsed ? '11px 0' : '10px 10px',
         borderRadius: 8,
         border: 'none',
         borderLeft: !collapsed && isActive
@@ -205,7 +258,7 @@ function NavItem({ item, isActive, collapsed, onClick }) {
         outline: 'none', textAlign: 'left',
         transition: 'all 0.15s ease',
         transform: hov && !item.soon && !isActive ? 'translateX(4px) translateY(-1px)' : 'none',
-        boxShadow: item.soon 
+        boxShadow: item.soon
           ? 'none'
           : isActive
           ? '0 2px 6px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.08)'
@@ -226,6 +279,17 @@ function NavItem({ item, isActive, collapsed, onClick }) {
       {!collapsed && (
         <>
           <span style={{ flex: 1, letterSpacing: '0.01em' }}>{item.label}</span>
+          {hasChildren && (
+            <ChevronDown
+              size={12}
+              style={{
+                flexShrink: 0,
+                opacity: 0.6,
+                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+              }}
+            />
+          )}
           {item.soon && (
             <span style={{
               fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4,
@@ -237,6 +301,48 @@ function NavItem({ item, isActive, collapsed, onClick }) {
           )}
         </>
       )}
+    </button>
+  )
+}
+
+/* ── Sub-nav item ──────────────────────────────────────────────── */
+function SubNavItem({ label, isActive, onClick }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        width: '100%',
+        padding: '7px 10px 7px 30px',
+        borderRadius: 7,
+        border: 'none',
+        borderLeft: isActive
+          ? '3px solid var(--sidebar-item-active-border)'
+          : '3px solid transparent',
+        marginBottom: 2,
+        cursor: 'pointer',
+        background: isActive
+          ? 'var(--sidebar-item-active-bg)'
+          : hov ? 'var(--sidebar-item-hover)' : 'transparent',
+        color: isActive
+          ? 'var(--sidebar-text-active)'
+          : hov ? '#ffffff' : 'rgba(255,255,255,0.55)',
+        fontFamily: 'var(--font-ui)',
+        fontSize: 12, fontWeight: isActive ? 700 : 400,
+        outline: 'none', textAlign: 'left',
+        transition: 'all 0.15s ease',
+      }}
+    >
+      <span style={{
+        width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+        background: isActive ? 'var(--sidebar-item-active-border)' : 'rgba(255,255,255,0.3)',
+      }} />
+      <span style={{ letterSpacing: '0.01em' }}>{label}</span>
     </button>
   )
 }
