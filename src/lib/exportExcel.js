@@ -140,6 +140,7 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
       cell.border    = isBold
         ? cellBorder(true, true, colIdx === 1, colIdx === colCount)
         : cellBorder(false, isLastRow, colIdx === 1, colIdx === colCount)
+      if (col?.numFmt) cell.numFmt = col.numFmt
       if (isBold)     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } }
       else if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
     })
@@ -164,17 +165,19 @@ export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
 
   for (const { name, columns, rows, titleLines = [] } of sheetConfigs) {
     const colCount  = columns.length
+    const hasGroups = columns.some(c => c.group)
     const frozenRow = titleLines.length + 1
 
     const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: frozenRow }] })
 
-    // Column widths (derived from content)
+    // Column widths — auto-fit using formatted value length for numeric columns
     ws.columns = columns.map(c => {
-      const maxContent = Math.max(
-        c.header.length,
-        ...rows.map(r => String(r[c.key] ?? '').length),
-      )
-      return { key: c.key, width: Math.min(Math.max(maxContent + 4, 12), 50) }
+      const fmtLen = v =>
+        (c.numFmt && typeof v === 'number')
+          ? Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }).length
+          : String(v ?? '').length
+      const maxContent = Math.max(c.header.length, ...rows.map(r => fmtLen(r[c.key])))
+      return { key: c.key, width: Math.min(maxContent + 2, 50) }
     })
 
     // Title block rows
@@ -199,12 +202,22 @@ export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
       r.height = (size || 11) * 2.2
     })
 
+    // Column grouping (collapse/expand) — applied after ws.columns, before rows
+    if (hasGroups) {
+      columns.forEach((col, i) => {
+        if (col.group) ws.getColumn(i + 1).outlineLevel = 1
+      })
+    }
+
     // Column header row
     const headerRow = ws.addRow(columns.map(c => c.header))
     headerRow.height = 22
     headerRow.eachCell({ includeEmpty: true }, (cell, colIdx) => {
-      cell.font      = { bold: true, color: { argb: HEADER_FG }, size: 10, name: 'Calibri' }
-      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+      const col = columns[colIdx - 1]
+      const bg  = col?.headerBg || HEADER_BG
+      const fg  = col?.headerFg || HEADER_FG
+      cell.font      = { bold: true, color: { argb: fg }, size: 10, name: 'Calibri' }
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
       cell.border    = cellBorder(true, false, colIdx === 1, colIdx === colCount)
     })

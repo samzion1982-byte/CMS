@@ -187,9 +187,8 @@ export default function ReportsPage() {
       }
     })
 
-    // Category list ordered by sort_order
-    const orderedCats = [...new Set(rows.map(r => r.cat_name).filter(Boolean))]
-      .sort((a, b) => (catSortMap[a] ?? 999) - (catSortMap[b] ?? 999))
+    // Always show all active categories (ordered by sort_order from DB)
+    const orderedCats = allCats.map(c => c.name)
     setReportCats(orderedCats)
 
     // Breakup rows (one per receipt, preserving DB order)
@@ -279,15 +278,16 @@ export default function ReportsPage() {
       ]
 
       // ── Sheet 2: Summary ───────────────────────────────────────
+      const BANK_HDR = { group: 'bank', headerBg: '1D4ED8', headerFg: 'FFFFFF' }
       const summaryCols = [
-        { header: 'Payment Head', key: 'cat_name',    align: 'left'   },
-        { header: 'Cash',         key: 'Cash',        align: 'right',  numFmt: '#,##0' },
-        { header: 'Cheque',       key: 'Cheque',      align: 'right',  numFmt: '#,##0' },
-        { header: 'DD',           key: 'DD',          align: 'right',  numFmt: '#,##0' },
-        { header: 'Net Banking',  key: 'Net Banking', align: 'right',  numFmt: '#,##0' },
-        { header: 'UPI',          key: 'UPI',         align: 'right',  numFmt: '#,##0' },
-        { header: 'Bank Total',   key: 'bank_total',  align: 'right',  numFmt: '#,##0' },
-        { header: 'Total',        key: 'row_total',   align: 'right',  numFmt: '#,##0' },
+        { header: 'Payment Head', key: 'cat_name',    align: 'left'  },
+        { header: 'Cash',         key: 'Cash',        align: 'right', numFmt: '#,##0' },
+        { header: 'Cheque',       key: 'Cheque',      align: 'right', numFmt: '#,##0', ...BANK_HDR },
+        { header: 'DD',           key: 'DD',          align: 'right', numFmt: '#,##0', ...BANK_HDR },
+        { header: 'Net Banking',  key: 'Net Banking', align: 'right', numFmt: '#,##0', ...BANK_HDR },
+        { header: 'UPI',          key: 'UPI',         align: 'right', numFmt: '#,##0', ...BANK_HDR },
+        { header: 'Bank Total',   key: 'bank_total',  align: 'right', numFmt: '#,##0' },
+        { header: 'Total',        key: 'row_total',   align: 'right', numFmt: '#,##0' },
       ]
 
       const sTotalRow = {
