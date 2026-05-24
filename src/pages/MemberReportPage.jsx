@@ -7,41 +7,35 @@ import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
 import lamejs from 'lamejs'
 
-/* Convert any browser audio blob to MP3 via Web Audio API + lamejs.
-   WhatsApp supports audio/mpeg (MP3); webm/ogg are not universally accepted. */
-async function convertToMp3(blob) {
-  const arrayBuffer = await blob.arrayBuffer()
-  const audioCtx    = new AudioContext()
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
-  await audioCtx.close()
-
-  const sampleRate = audioBuffer.sampleRate
-  const numCh      = Math.min(audioBuffer.numberOfChannels, 2)
-  const leftF32    = audioBuffer.getChannelData(0)
-  const rightF32   = numCh > 1 ? audioBuffer.getChannelData(1) : audioBuffer.getChannelData(0)
-
-  function f32ToI16(f) {
-    const out = new Int16Array(f.length)
-    for (let i = 0; i < f.length; i++) out[i] = Math.max(-32768, Math.min(32767, f[i] * 32768))
-    return out
-  }
-  const leftI16  = f32ToI16(leftF32)
-  const rightI16 = f32ToI16(rightF32)
-
-  const encoder    = new lamejs.Mp3Encoder(numCh, sampleRate, 96)
-  const mp3Parts   = []
-  const BLOCK      = 1152
-
-  for (let i = 0; i < leftI16.length; i += BLOCK) {
-    const l = leftI16.subarray(i, i + BLOCK)
-    const r = rightI16.subarray(i, i + BLOCK)
-    const d = numCh === 2 ? encoder.encodeBuffer(l, r) : encoder.encodeBuffer(l)
-    if (d.length > 0) mp3Parts.push(new Uint8Array(d))
+/* Encode raw mono Float32 PCM to MP3 using lamejs — no WebM decoding needed */
+function pcmToMp3(pcm, sampleRate) {
+  const int16 = new Int16Array(pcm.length)
+  for (let i = 0; i < pcm.length; i++) int16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32768))
+  const encoder = new lamejs.Mp3Encoder(1, sampleRate, 96)
+  const parts   = []
+  const BLOCK   = 1152
+  for (let i = 0; i < int16.length; i += BLOCK) {
+    const d = encoder.encodeBuffer(int16.subarray(i, i + BLOCK))
+    if (d.length > 0) parts.push(new Uint8Array(d))
   }
   const flush = encoder.flush()
-  if (flush.length > 0) mp3Parts.push(new Uint8Array(flush))
+  if (flush.length > 0) parts.push(new Uint8Array(flush))
+  return new Blob(parts, { type: 'audio/mpeg' })
+}
 
-  return new Blob(mp3Parts, { type: 'audio/mpeg' })
+/* Build a minimal WAV blob for local browser playback preview */
+function pcmToWav(pcm, sampleRate) {
+  const buf = new ArrayBuffer(44 + pcm.length * 2)
+  const dv  = new DataView(buf)
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)) }
+  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true)
+  str(8, 'WAVE'); str(12, 'fmt ')
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true)
+  dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true)
+  dv.setUint16(32, 2, true); dv.setUint16(34, 16, true)
+  str(36, 'data'); dv.setUint32(40, pcm.length * 2, true)
+  for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7FFF, true)
+  return new Blob([buf], { type: 'audio/wav' })
 }
 
 /* ── Column definitions ───────────────────────────────────────── */
@@ -423,8 +417,9 @@ export default function MemberReportPage() {
   const [waRecordSecs, setWaRecordSecs]   = useState(0)
   const textareaRef                       = useRef(null)
   const fileInputRef                      = useRef(null)
-  const mediaRecorderRef                  = useRef(null)
-  const audioChunksRef                    = useRef([])
+  const mediaRecorderRef                  = useRef(null)  // holds { stream, source, processor }
+  const audioChunksRef                    = useRef([])    // Float32Array PCM chunks
+  const audioCtxRef                       = useRef(null)
   const timerIntervalRef                  = useRef(null)
   const recordSecsRef                     = useRef(0)
 
@@ -801,44 +796,23 @@ export default function MemberReportPage() {
   async function startRecording() {
     if (waRecording) return
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-        ? 'audio/ogg;codecs=opus'
-        : ''
-      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      audioChunksRef.current = []
+      const stream    = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const audioCtx  = new AudioContext()
+      const source    = audioCtx.createMediaStreamSource(stream)
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1)
+
+      audioChunksRef.current = []   // Float32Array PCM chunks
       recordSecsRef.current  = 0
-      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        clearInterval(timerIntervalRef.current)
-        const dur      = recordSecsRef.current
-        const rawMime  = mr.mimeType || 'audio/webm'
-        const rawBlob  = new Blob(audioChunksRef.current, { type: rawMime })
-        const localUrl = URL.createObjectURL(rawBlob)   // local preview uses raw (instant)
-        setWaRecording(false)
-        setWaRecordSecs(0)
-        setWaUploading(true)
-        try {
-          // Convert to MP3 (audio/mpeg) — the only audio format WhatsApp reliably accepts
-          const mp3Blob = await convertToMp3(rawBlob)
-          const path    = `blast-media/${Date.now()}-voice.mp3`
-          const { error: upErr } = await supabase.storage
-            .from('member-reports')
-            .upload(path, mp3Blob, { contentType: 'audio/mpeg', upsert: true })
-          if (upErr) throw upErr
-          setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: 'audio/mpeg', size: mp3Blob.size, localBlob: localUrl })
-        } catch (err) {
-          toast('Voice upload failed: ' + err.message, 'error')
-          URL.revokeObjectURL(localUrl)
-        } finally {
-          setWaUploading(false)
-        }
+
+      processor.onaudioprocess = e => {
+        audioChunksRef.current.push(new Float32Array(e.inputBuffer.getChannelData(0)))
       }
-      mr.start(200)
-      mediaRecorderRef.current = mr
+      source.connect(processor)
+      processor.connect(audioCtx.destination)
+
+      audioCtxRef.current     = audioCtx
+      mediaRecorderRef.current = { stream, source, processor }
+
       setWaRecording(true)
       setWaRecordSecs(0)
       timerIntervalRef.current = setInterval(() => {
@@ -851,9 +825,48 @@ export default function MemberReportPage() {
   }
 
   function stopRecording() {
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
-    }
+    if (!waRecording) return
+    clearInterval(timerIntervalRef.current)
+    const dur = recordSecsRef.current
+
+    const { stream, source, processor } = mediaRecorderRef.current || {}
+    const audioCtx = audioCtxRef.current
+
+    processor?.disconnect()
+    source?.disconnect()
+    stream?.getTracks().forEach(t => t.stop())
+    audioCtx?.close()
+
+    setWaRecording(false)
+    setWaRecordSecs(0)
+    setWaUploading(true)
+
+    // Encode PCM → MP3 off the main thread deadline
+    setTimeout(async () => {
+      const chunks = audioChunksRef.current
+      const sampleRate = audioCtx?.sampleRate || 44100
+      const totalLen   = chunks.reduce((a, c) => a + c.length, 0)
+      const pcm        = new Float32Array(totalLen)
+      let off = 0; chunks.forEach(c => { pcm.set(c, off); off += c.length })
+
+      // WAV for local playback (instant, no upload needed)
+      const localUrl = URL.createObjectURL(pcmToWav(pcm, sampleRate))
+
+      try {
+        const mp3Blob = pcmToMp3(pcm, sampleRate)
+        const path    = `blast-media/${Date.now()}-voice.mp3`
+        const { error: upErr } = await supabase.storage
+          .from('member-reports')
+          .upload(path, mp3Blob, { contentType: 'audio/mpeg', upsert: true })
+        if (upErr) throw upErr
+        setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: 'audio/mpeg', size: mp3Blob.size, localBlob: localUrl })
+      } catch (err) {
+        toast('Voice upload failed: ' + err.message, 'error')
+        URL.revokeObjectURL(localUrl)
+      } finally {
+        setWaUploading(false)
+      }
+    }, 0)
   }
 
   async function sendBlast() {
@@ -1165,8 +1178,8 @@ export default function MemberReportPage() {
                   )}
                   <button onClick={() => downloadSavedReport(r.file_path, r.file_name)}
                     title={r.file_path ? 'Download Excel to computer' : 'File not stored — re-export to save'}
-                    className="action-btn"
-                    style={{ background:'#16a34a', opacity: r.file_path ? 1 : 0.4 }}>
+                    className="no-lift"
+                    style={{ ...btn(false, false), padding:'7px 14px', opacity: r.file_path ? 1 : 0.4 }}>
                     <Download size={13}/> Download
                   </button>
                   <button onClick={() => deleteSavedReport(r.id, r.file_path)} disabled={deletingId === r.id}
