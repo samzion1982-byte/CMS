@@ -5,6 +5,44 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
+import lamejs from 'lamejs'
+
+/* Convert any browser audio blob to MP3 via Web Audio API + lamejs.
+   WhatsApp supports audio/mpeg (MP3); webm/ogg are not universally accepted. */
+async function convertToMp3(blob) {
+  const arrayBuffer = await blob.arrayBuffer()
+  const audioCtx    = new AudioContext()
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
+  await audioCtx.close()
+
+  const sampleRate = audioBuffer.sampleRate
+  const numCh      = Math.min(audioBuffer.numberOfChannels, 2)
+  const leftF32    = audioBuffer.getChannelData(0)
+  const rightF32   = numCh > 1 ? audioBuffer.getChannelData(1) : audioBuffer.getChannelData(0)
+
+  function f32ToI16(f) {
+    const out = new Int16Array(f.length)
+    for (let i = 0; i < f.length; i++) out[i] = Math.max(-32768, Math.min(32767, f[i] * 32768))
+    return out
+  }
+  const leftI16  = f32ToI16(leftF32)
+  const rightI16 = f32ToI16(rightF32)
+
+  const encoder    = new lamejs.Mp3Encoder(numCh, sampleRate, 96)
+  const mp3Parts   = []
+  const BLOCK      = 1152
+
+  for (let i = 0; i < leftI16.length; i += BLOCK) {
+    const l = leftI16.subarray(i, i + BLOCK)
+    const r = rightI16.subarray(i, i + BLOCK)
+    const d = numCh === 2 ? encoder.encodeBuffer(l, r) : encoder.encodeBuffer(l)
+    if (d.length > 0) mp3Parts.push(new Uint8Array(d))
+  }
+  const flush = encoder.flush()
+  if (flush.length > 0) mp3Parts.push(new Uint8Array(flush))
+
+  return new Blob(mp3Parts, { type: 'audio/mpeg' })
+}
 
 /* ── Column definitions ───────────────────────────────────────── */
 const ALL_COLS = [
@@ -776,19 +814,22 @@ export default function MemberReportPage() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop())
         clearInterval(timerIntervalRef.current)
-        const dur     = recordSecsRef.current
-        const mime    = mr.mimeType || 'audio/webm'
-        const blob    = new Blob(audioChunksRef.current, { type: mime })
-        const localUrl = URL.createObjectURL(blob)
+        const dur      = recordSecsRef.current
+        const rawMime  = mr.mimeType || 'audio/webm'
+        const rawBlob  = new Blob(audioChunksRef.current, { type: rawMime })
+        const localUrl = URL.createObjectURL(rawBlob)   // local preview uses raw (instant)
         setWaRecording(false)
         setWaRecordSecs(0)
         setWaUploading(true)
         try {
-          const ext  = mime.includes('ogg') ? 'ogg' : 'webm'
-          const path = `blast-media/${Date.now()}-voice.${ext}`
-          const { error: upErr } = await supabase.storage.from('member-reports').upload(path, blob, { contentType: mime, upsert: true })
+          // Convert to MP3 (audio/mpeg) — the only audio format WhatsApp reliably accepts
+          const mp3Blob = await convertToMp3(rawBlob)
+          const path    = `blast-media/${Date.now()}-voice.mp3`
+          const { error: upErr } = await supabase.storage
+            .from('member-reports')
+            .upload(path, mp3Blob, { contentType: 'audio/mpeg', upsert: true })
           if (upErr) throw upErr
-          setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: mime, size: blob.size, localBlob: localUrl })
+          setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: 'audio/mpeg', size: mp3Blob.size, localBlob: localUrl })
         } catch (err) {
           toast('Voice upload failed: ' + err.message, 'error')
           URL.revokeObjectURL(localUrl)

@@ -44,6 +44,8 @@ serve(async (req) => {
     const apiType = church.whatsapp_api_type || 'soft7'
     const kind    = classifyMedia(mediaUrl, mediaType)
 
+    console.log('[send-whatsapp] mediaType:', mediaType, '| kind:', kind, '| apiType:', apiType, '| mediaUrl:', mediaUrl?.slice(0, 80))
+
     let result: unknown
 
     /* ── Official Meta / WhatsApp Cloud API ── */
@@ -107,6 +109,8 @@ serve(async (req) => {
         ...(mediaUrl && { media_url: mediaUrl }),
         ...(kind === 'document' && { filename: fname }),
       }
+
+      console.log('[send-whatsapp] soft7 payload:', JSON.stringify({ ...payload, access_token: '***', instance_id: payload.instance_id }))
 
       const resp = await fetch(apiUrl, {
         method: 'POST',
