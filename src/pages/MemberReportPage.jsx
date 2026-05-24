@@ -5,13 +5,13 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
-import lamejs from 'lamejs'
+import { Mp3Encoder } from '@breezystack/lamejs'
 
-/* Encode raw mono Float32 PCM to MP3 using lamejs — no WebM decoding needed */
+/* Encode raw mono Float32 PCM to MP3 — no WebM decoding needed */
 function pcmToMp3(pcm, sampleRate) {
   const int16 = new Int16Array(pcm.length)
   for (let i = 0; i < pcm.length; i++) int16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32768))
-  const encoder = new lamejs.Mp3Encoder(1, sampleRate, 96)
+  const encoder = new Mp3Encoder(1, sampleRate, 96)
   const parts   = []
   const BLOCK   = 1152
   for (let i = 0; i < int16.length; i += BLOCK) {
@@ -1178,8 +1178,8 @@ export default function MemberReportPage() {
                   )}
                   <button onClick={() => downloadSavedReport(r.file_path, r.file_name)}
                     title={r.file_path ? 'Download Excel to computer' : 'File not stored — re-export to save'}
-                    className="no-lift"
-                    style={{ ...btn(false, false), padding:'7px 14px', opacity: r.file_path ? 1 : 0.4 }}>
+                    className="action-btn"
+                    style={{ background:'var(--sidebar-bg)', color:'#ffffff', opacity: r.file_path ? 1 : 0.4 }}>
                     <Download size={13}/> Download
                   </button>
                   <button onClick={() => deleteSavedReport(r.id, r.file_path)} disabled={deletingId === r.id}
