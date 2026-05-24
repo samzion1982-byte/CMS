@@ -885,15 +885,42 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
 
     console.log('[ReceiptImport] col indices:', { rcptNoIdx, memberIdIdx, memberNmIdx, dateIdx, modeIdx, monthIdx, totalIdx, modByIdx, modAtIdx })
 
+    // Known alternate spellings in Excel headers for DB category names
+    const CAT_EXCEL_ALIASES = {
+      'youthassociation':  ['youthassoiciation'],  // Excel typo: "Youth Assoiciation"
+      'missionarysupport': ['missionerysupport'],  // Excel typo: "Missionery Support"
+      'other':             ['anyother'],            // Excel: "Any Other"
+    }
+
     // Category column detection — amt / months / total per category
     const catCols = {}
     cats.forEach(cat => {
-      const nc     = normalizeCol(cat.name)
-      const amtIdx = hdrMap[nc] ?? hdrMap[nc + 'amt'] ?? hdrMap[nc + 'amount'] ?? -1
-      const monIdx = hdrMap[nc + 'months'] ?? hdrMap[nc + 'month'] ?? -1
-      const totIdx = hdrMap[nc + 'total'] ?? -1
+      const nc      = normalizeCol(cat.name)
+      const aliases = [nc, ...(CAT_EXCEL_ALIASES[nc] || [])]
+
+      let amtIdx = -1, monIdx = -1, totIdx = -1
+      for (const a of aliases) {
+        if (amtIdx < 0) amtIdx = hdrMap[a] ?? hdrMap[a + 'amt'] ?? hdrMap[a + 'amount'] ?? -1
+        if (monIdx < 0) monIdx = hdrMap[a + 'months'] ?? hdrMap[a + 'month'] ?? -1
+        if (totIdx < 0) totIdx = hdrMap[a + 'total'] ?? hdrMap[a + 'tamount'] ?? -1
+      }
       if (amtIdx >= 0) catCols[cat.id] = { amtIdx, monIdx, totIdx }
     })
+
+    // Diagnostic: show which categories matched Excel columns and which didn't
+    console.group('[ReceiptImport] Category → Column Mapping')
+    cats.forEach(cat => {
+      const nc      = normalizeCol(cat.name)
+      const aliases = [nc, ...(CAT_EXCEL_ALIASES[nc] || [])]
+      if (catCols[cat.id]) {
+        const { amtIdx, monIdx, totIdx } = catCols[cat.id]
+        console.log(`  ✅ "${cat.name}" (norm: "${nc}") → amt col ${amtIdx}, mon col ${monIdx}, tot col ${totIdx}`)
+      } else {
+        const candidates = Object.keys(hdrMap).filter(k => aliases.some(a => k.startsWith(a.slice(0, 4))))
+        console.warn(`  ❌ "${cat.name}" (norm: "${nc}") → NO MATCH. Nearest headers: ${candidates.join(', ') || 'none'}`)
+      }
+    })
+    console.groupEnd()
 
     // Debug: log first row's raw date value to help diagnose format issues
     if (rows.length > 0) {
