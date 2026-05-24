@@ -14,36 +14,59 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
+type MediaKind = 'audio' | 'image' | 'video' | 'document' | 'none'
+
+/** Classify media from MIME type first, then URL extension as fallback */
+function classifyMedia(url: string | undefined, mime: string | undefined): MediaKind {
+  if (!url) return 'none'
+  if (mime?.startsWith('audio/')) return 'audio'
+  if (mime?.startsWith('image/')) return 'image'
+  if (mime?.startsWith('video/')) return 'video'
+  if (mime === 'application/pdf' || mime?.startsWith('application/')) return 'document'
+  // URL extension fallback (strip query string first)
+  const path = url.split('?')[0].toLowerCase()
+  if (/\.(mp3|ogg|opus|webm|aac|amr|m4a|wav)$/.test(path)) return 'audio'
+  if (/\.(jpg|jpeg|png|gif|webp)$/.test(path)) return 'image'
+  if (/\.(mp4|mov|avi|mkv)$/.test(path)) return 'video'
+  if (/\.(pdf|doc|docx|xls|xlsx|ppt|pptx)$/.test(path)) return 'document'
+  return 'image' // safe default for unknown binary
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
   try {
-    const { to, message, mediaUrl, church } = await req.json()
+    const { to, message, mediaUrl, mediaType, church } = await req.json()
     if (!to)     throw new Error('Recipient number is required')
     if (!church) throw new Error('Church config is required')
 
     const phone   = String(to).replace(/\D/g, '')
     const apiType = church.whatsapp_api_type || 'soft7'
+    const kind    = classifyMedia(mediaUrl, mediaType)
 
     let result: unknown
 
-    const isDoc = mediaUrl && (mediaUrl.toLowerCase().includes('.pdf') || mediaUrl.toLowerCase().includes('.html'))
-    const docFilename = (mediaUrl || '').toLowerCase().includes('.html') ? 'payment.html' : 'Receipt.pdf'
-
+    /* ── Official Meta / WhatsApp Cloud API ── */
     if (apiType === 'official') {
       const phoneId = church.official_phone_number_id
       const token   = church.official_bearer_token
       if (!phoneId || !token) throw new Error('Official WhatsApp API credentials not configured')
 
       let body: unknown
-      if (!mediaUrl) {
+      if (kind === 'none') {
         body = { messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: message || '' } }
-      } else if (isDoc) {
-        body = { messaging_product: 'whatsapp', to: phone, type: 'document',
-                 document: { link: mediaUrl, filename: docFilename, caption: message || '' } }
+      } else if (kind === 'audio') {
+        // Official API: audio has no caption field
+        body = { messaging_product: 'whatsapp', to: phone, type: 'audio', audio: { link: mediaUrl } }
+      } else if (kind === 'image') {
+        body = { messaging_product: 'whatsapp', to: phone, type: 'image', image: { link: mediaUrl, caption: message || '' } }
+      } else if (kind === 'video') {
+        body = { messaging_product: 'whatsapp', to: phone, type: 'video', video: { link: mediaUrl, caption: message || '' } }
       } else {
-        body = { messaging_product: 'whatsapp', to: phone, type: 'image',
-                 image: { link: mediaUrl, caption: message || '' } }
+        // document
+        const fname = (mediaUrl || '').split('?')[0].split('/').pop() || 'file'
+        body = { messaging_product: 'whatsapp', to: phone, type: 'document',
+                 document: { link: mediaUrl, filename: fname, caption: message || '' } }
       }
 
       const resp = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
@@ -57,23 +80,34 @@ serve(async (req) => {
       }
       result = await resp.json().catch(() => ({ ok: true }))
 
+    /* ── Soft7 (unofficial / hosted) API ── */
     } else {
-      // Soft7 (or compatible unofficial API)
-      if (!church.instance_id || !church.access_token) throw new Error('Soft7 instance_id / access_token not configured')
+      if (!church.instance_id || !church.access_token)
+        throw new Error('Soft7 instance_id / access_token not configured')
 
       const apiUrl = ((church.whatsapp_url || '').trim().replace(/\/+$/, '')) || 'https://cloud.soft7.in/api/send'
 
-      const isHtml = (mediaUrl || '').toLowerCase().includes('.html')
-      const payload = {
+      // Map kind → soft7 type field
+      const soft7Type: Record<MediaKind, string> = {
+        none:     'text',
+        audio:    'audio',
+        image:    'media',
+        video:    'media',
+        document: 'document',
+      }
+
+      const fname = (mediaUrl || '').split('?')[0].split('/').pop() || 'file'
+
+      const payload: Record<string, unknown> = {
         number:       phone,
-        type:         mediaUrl ? (isDoc ? 'document' : 'media') : 'text',
+        type:         soft7Type[kind],
         message:      message || '',
         instance_id:  church.instance_id,
         access_token: church.access_token,
-        ...(mediaUrl  && { media_url: mediaUrl }),
-        ...(isDoc     && { filename: docFilename }),
-        ...(isHtml    && { mime_type: 'text/html' }),
+        ...(mediaUrl && { media_url: mediaUrl }),
+        ...(kind === 'document' && { filename: fname }),
       }
+
       const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,7 +123,6 @@ serve(async (req) => {
         throw new Error(`Soft7 error: ${parsed.message || parsed.error || parsed.reason || rawText}`)
       }
 
-      // Soft7 sometimes returns status:"success" but message indicates the instance isn't ready
       const softMsg = String(parsed.message || '').toLowerCase()
       if (softMsg.includes('not ready') || softMsg.includes('connection') || softMsg.includes('stabilize')) {
         throw new Error(`WhatsApp not connected: ${parsed.message}`)

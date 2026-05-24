@@ -859,7 +859,7 @@ export default function MemberReportPage() {
       if (!to) { status = 'skipped'; errText = 'No number' }
       else {
         try {
-          await sendWhatsAppMessage(churchData, { to, message: msg, mediaUrl: blastMediaUrl })
+          await sendWhatsAppMessage(churchData, { to, message: msg, mediaUrl: blastMediaUrl, mediaType: waAttachment?.type })
           status = 'sent'
         } catch (e) { errText = e.message }
       }

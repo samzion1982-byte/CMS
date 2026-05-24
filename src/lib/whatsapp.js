@@ -7,7 +7,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 
 const EDGE_FN = `${SUPABASE_URL}/functions/v1/send-whatsapp`
 
-export async function sendWhatsAppMessage(church, { to, message, mediaUrl }) {
+export async function sendWhatsAppMessage(church, { to, message, mediaUrl, mediaType }) {
   if (!to) throw new Error('Recipient number is required')
 
   const resp = await fetch(EDGE_FN, {
@@ -17,7 +17,7 @@ export async function sendWhatsAppMessage(church, { to, message, mediaUrl }) {
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
       'apikey': SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ to, message, mediaUrl, church }),
+    body: JSON.stringify({ to, message, mediaUrl, mediaType, church }),
   })
 
   const data = await resp.json().catch(() => ({}))
