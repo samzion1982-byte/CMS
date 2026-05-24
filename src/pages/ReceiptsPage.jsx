@@ -1497,7 +1497,7 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', marginBottom: 3 }}>Receipt Date</div>
                     <input ref={dateRef} type="date" value={form.receipt_date}
-                      onChange={e => { sf('receipt_date')(e.target.value); setDateIsCarryForward(false) }}
+                      onChange={e => { const d = e.target.value; setForm(f => ({ ...f, receipt_date: d, financial_year: d ? getFY(d) : f.financial_year })); setDateIsCarryForward(false) }}
                       className={`field-input${dateIsCarryForward ? ' date-carry-forward' : ''}`}
                       style={{ height: 31, width: '100%', color: 'var(--accent)', fontWeight: 700 }}/>
                   </div>

@@ -471,7 +471,8 @@ export default function JournalEntryModal({ fy: propFY, entryId, onClose, onSave
             {/* Date — full width, auto-focused */}
             <div>
               <label style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Entry Date *</label>
-              <input id="je-modal-date" type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)}
+              <input id="je-modal-date" type="date" value={header.entry_date}
+                onChange={e => { const d = e.target.value; setHeader(h => ({ ...h, entry_date: d, financial_year: d ? getFY(d) : h.financial_year })) }}
                 style={{ width: '100%', height: 36, padding: '0 10px', border: `1.5px solid ${VCOL.text}66`, borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.25s' }} />
             </div>
 

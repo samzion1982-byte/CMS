@@ -160,8 +160,9 @@ export default function JournalVoucherPage() {
   const [showPrint,  setShowPrint] = useState(false)
   const [funds,   setFunds]   = useState([])
   const [fundId,  setFundId]  = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const [posting, setPosting] = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [posting,    setPosting]    = useState(false)
+  const [voucherPfx, setVoucherPfx] = useState(null)
 
   const accounts = useMemo(() => getPostableAccountsWithPath(allCoa), [allCoa])
 
@@ -198,11 +199,18 @@ export default function JournalVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Journal: s.accounting_prefix_journal || 'JV' }
+        setVoucherPfx(s.accounting_prefix_journal || 'JV')
         setVoucherNo(await nextEntryNumber(fy, 'Journal', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
+
+  useEffect(() => {
+    if (editId || !voucherPfx || !currentEntityId) return
+    nextEntryNumber(getFY(entryDate), 'Journal', currentEntityId, { Journal: voucherPfx })
+      .then(setVoucherNo).catch(() => {})
+  }, [entryDate])
 
   function updateLine(setter, idx, field, value, name) {
     setter(prev => prev.map((l, i) => {

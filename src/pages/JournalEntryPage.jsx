@@ -8,7 +8,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
-  getFY, fyOptions, fmtAmt, fmtDate,
+  getFY, fmtAmt, fmtDate,
   getJournalEntries, getJournalEntryWithLines, createJournalEntry,
   updateJournalEntry, updatePostedJournalEntry, postJournalEntry,
   softDeleteJournalEntry, restoreJournalEntry, permanentDeleteJournalEntry,
@@ -23,6 +23,7 @@ import {
   FileSpreadsheet, Printer, ChevronLeft, ChevronRight, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
@@ -286,17 +287,15 @@ function JournalEntryList() {
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
   }, [showNewEntry])
-  const [fy,          setFy]          = useState(getFY())
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [search,      setSearch]      = useState('')
   const [filterType,  setFilterType]  = useState('')
   const [filterPost,  setFilterPost]  = useState('')
   const [showTrash,   setShowTrash]   = useState(false)
   const [permDeleteEntry, setPermDeleteEntry] = useState(null)
-  const [fyOpen,      setFyOpen]      = useState(false)
   const [page,        setPage]        = useState(0)
   const [dateSort,    setDateSort]    = useState('desc') // 'asc' | 'desc'
   const PAGE_SIZE = 25
-  const FYS = fyOptions()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -876,7 +875,12 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>Entry Date *</label>
-              <input ref={dateInputRef} type="date" value={header.entry_date} onChange={e => sh('entry_date', e.target.value)} disabled={formReadOnly}
+              <input ref={dateInputRef} type="date" value={header.entry_date}
+                onChange={e => {
+                  const d = e.target.value
+                  setHeader(h => ({ ...h, entry_date: d, financial_year: d ? getFY(d) : h.financial_year }))
+                }}
+                disabled={formReadOnly}
                 style={{ width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
           </div>

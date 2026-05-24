@@ -162,8 +162,9 @@ export default function ContraVoucherPage() {
   const [toLabel,   setToLabel]   = useState('')
   const [amount,    setAmount]    = useState('')
   const [showPrint,  setShowPrint] = useState(false)
-  const [saving,    setSaving]    = useState(false)
-  const [posting,   setPosting]   = useState(false)
+  const [saving,     setSaving]    = useState(false)
+  const [posting,    setPosting]   = useState(false)
+  const [voucherPfx, setVoucherPfx] = useState(null)
 
   // Only leaf cash/bank asset accounts; exclude bare group names like "Bank" / "Cash"
   const cashBankAccounts = useMemo(() => {
@@ -201,11 +202,18 @@ export default function ContraVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Contra: s.accounting_prefix_contra || 'CT' }
+        setVoucherPfx(s.accounting_prefix_contra || 'CT')
         setVoucherNo(await nextEntryNumber(fy, 'Contra', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
+
+  useEffect(() => {
+    if (editId || !voucherPfx || !currentEntityId) return
+    nextEntryNumber(getFY(entryDate), 'Contra', currentEntityId, { Contra: voucherPfx })
+      .then(setVoucherNo).catch(() => {})
+  }, [entryDate])
 
   function selectFrom(id, name) {
     setFromId(id); setFromLabel(name)

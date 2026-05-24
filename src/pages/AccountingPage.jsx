@@ -8,8 +8,9 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
-  getFY, fyOptions, fmtAmt,
+  fmtAmt,
   getAccountingStats, getJournalEntries, getChartOfAccounts,
   isAccountingEnabled, getEntrySystemStatus, lockEntrySystem,
   TYPE_COLOR, VOUCHER_COLOR, displayAccountType,
@@ -473,13 +474,11 @@ export default function AccountingPage() {
   const [entrySystem,     setEntrySystem]     = useState(null)
   const [setupDismissed,  setSetupDismissed]  = useState(() => !!sessionStorage.getItem('ac_setup_skipped'))
   const [showNewEntry,    setShowNewEntry]    = useState(false)
-  const [fy,            setFy]            = useState(getFY())
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [stats,         setStats]         = useState(null)
   const [accounts,      setAccounts]      = useState([])
   const [entries,       setEntries]       = useState([])
   const [loading,       setLoading]       = useState(true)
-  const [fyOpen,        setFyOpen]        = useState(false)
-  const FYS = fyOptions()
 
   const load = useCallback(async () => {
     if (!currentEntityId) { setLoading(false); return }
@@ -672,36 +671,34 @@ export default function AccountingPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* Entity Switcher */}
-          {entities.length > 1 && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setEntityOpen(o => !o)}
-                className="no-lift ac-entity-btn"
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 9, fontSize: 15, fontWeight: 700, color: '#1d4ed8', cursor: 'pointer' }}
-              >
-                <Layers size={15} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentEntity?.name || 'Select Entity'}</span>
-                <ChevronDown size={15} style={{ flexShrink: 0 }} />
-              </button>
-              {entityOpen && (
-                <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 220, overflow: 'hidden' }}>
-                  {entities.filter(e => e.is_active).map(e => (
-                    <button key={e.id}
-                      onClick={() => {
-                        setEntityOpen(false)
-                        if (e.id === currentEntityId) return
-                        setSwitchTarget(e); setSwitchPwInput(''); setSwitchPwError('')
-                      }}
-                      className="no-lift"
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: e.id === currentEntityId ? 'var(--sidebar-item-active-bg)' : 'transparent', color: e.id === currentEntityId ? 'var(--accent)' : 'var(--text-1)', fontWeight: e.id === currentEntityId ? 700 : 400, border: 'none', cursor: e.id === currentEntityId ? 'default' : 'pointer' }}>
-                      <Layers size={12} style={{ flexShrink: 0 }} /> {e.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Entity Switcher — always visible */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setEntityOpen(o => !o)}
+              className="no-lift ac-entity-btn"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 9, fontSize: 13, fontWeight: 700, color: '#1d4ed8', cursor: 'pointer', maxWidth: 260 }}
+            >
+              <Layers size={14} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentEntity?.name || 'Select Book'}</span>
+              <ChevronDown size={13} style={{ flexShrink: 0 }} />
+            </button>
+            {entityOpen && (
+              <div style={{ position: 'absolute', top: '110%', left: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 240, overflow: 'hidden' }}>
+                {entities.filter(e => e.is_active).map(e => (
+                  <button key={e.id}
+                    onClick={() => {
+                      setEntityOpen(false)
+                      if (e.id === currentEntityId) return
+                      setSwitchTarget(e); setSwitchPwInput(''); setSwitchPwError('')
+                    }}
+                    className="no-lift"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: e.id === currentEntityId ? 'var(--sidebar-item-active-bg)' : 'transparent', color: e.id === currentEntityId ? 'var(--accent)' : 'var(--text-1)', fontWeight: e.id === currentEntityId ? 700 : 400, border: 'none', cursor: e.id === currentEntityId ? 'default' : 'pointer' }}>
+                    <Layers size={12} style={{ flexShrink: 0 }} /> {e.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* FY Selector */}
           <div style={{ position: 'relative' }}>
@@ -749,7 +746,8 @@ export default function AccountingPage() {
         </div>
       )}
 
-      {/* ── Current book title ──────────────────────────────────── */}
+
+      {/* ── Current book banner ─────────────────────────────────── */}
       {currentEntity?.name && (
         <div style={{ textAlign: 'center', margin: '-6px 0 20px' }}>
           <span className="ac-entity-badge">

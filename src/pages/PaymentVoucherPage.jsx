@@ -154,6 +154,7 @@ export default function PaymentVoucherPage() {
   const [fundId,        setFundId]        = useState('')
   const [saving,        setSaving]        = useState(false)
   const [posting,       setPosting]       = useState(false)
+  const [voucherPfx,    setVoucherPfx]    = useState(null)
 
   const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
   const cashAccounts  = useMemo(() => {
@@ -197,11 +198,18 @@ export default function PaymentVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Payment: s.accounting_prefix_payment || 'PV' }
+        setVoucherPfx(s.accounting_prefix_payment || 'PV')
         setVoucherNo(await nextEntryNumber(fy, 'Payment', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
+
+  useEffect(() => {
+    if (editId || !voucherPfx || !currentEntityId) return
+    nextEntryNumber(getFY(entryDate), 'Payment', currentEntityId, { Payment: voucherPfx })
+      .then(setVoucherNo).catch(() => {})
+  }, [entryDate])
 
   function chooseType(type) { setPaymentType(type); setCreditCoaId(''); setCreditLabel(''); setStep(2) }
   function chooseAccount(acc) { setCreditCoaId(acc.id); setCreditLabel(acc.name); setStep(3) }

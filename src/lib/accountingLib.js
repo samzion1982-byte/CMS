@@ -18,12 +18,12 @@ export function fyDateRange(fy) {
   return { from: `${startY}-04-01`, to: `${startY + 1}-03-31` }
 }
 
-export function fyOptions() {
-  const START_YEAR = 2026            // 2026-27 is the earliest FY in use
-  const currentFY = getFY()
-  const currentStartYear = parseInt(currentFY.split('-')[0])
+// startFy: entity's fy_start (e.g. "2026-27") — options begin from that year
+export function fyOptions(startFy) {
+  const startYear = startFy ? parseInt(startFy.split('-')[0]) : 2026
+  const currentStartYear = parseInt(getFY().split('-')[0])
   const options = []
-  for (let y = START_YEAR; y <= currentStartYear; y++) {
+  for (let y = startYear; y <= currentStartYear + 1; y++) {
     options.push(`${y}-${String(y + 1).slice(2)}`)
   }
   return options.sort().reverse()   // newest first

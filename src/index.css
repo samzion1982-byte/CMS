@@ -1056,12 +1056,15 @@ input[type="radio"]                    { cursor: pointer; user-select: none; }
 }
 
 /* Entity name badge — animated accent pill */
-@keyframes entity-badge-pulse {
+@keyframes entity-badge-glow {
   0%, 100% {
-    box-shadow: 0 3px 12px var(--accent-ring), 0 0 0 0 var(--accent-ring);
+    box-shadow: 0 4px 16px var(--accent-ring),
+                0 0 8px  color-mix(in srgb, var(--accent) 30%, transparent);
   }
   50% {
-    box-shadow: 0 6px 24px var(--accent-ring), 0 0 0 5px var(--accent-ring);
+    box-shadow: 0 6px 24px var(--accent-ring),
+                0 0 22px color-mix(in srgb, var(--accent) 55%, transparent),
+                0 0 40px color-mix(in srgb, var(--accent) 20%, transparent);
   }
 }
 .ac-entity-badge {
@@ -1076,7 +1079,7 @@ input[type="radio"]                    { cursor: pointer; user-select: none; }
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.01em;
-  animation: entity-badge-pulse 3s ease-in-out infinite;
+  animation: entity-badge-glow 2.8s ease-in-out infinite;
   user-select: none;
 }
 

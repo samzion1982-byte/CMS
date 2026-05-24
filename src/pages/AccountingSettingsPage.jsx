@@ -5,10 +5,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { supabase } from '../lib/supabase'
+import { supabase, getChurch } from '../lib/supabase'
 import {
   flushJournalEntries, resetEntrySystemLock, lockEntrySystem,
   getChartOfAccounts, getPostableAccountsWithPath, VOUCHER_TYPES,
+  getFY, fyOptions,
 } from '../lib/accountingLib'
 import {
   exportAccountingBackup,
@@ -22,11 +23,15 @@ import {
   Link2, Eye, EyeOff, Hash, Calendar,
   Download, Upload, Database, ShieldCheck, XCircle, AlertCircle,
   Plus, Pencil, X, Tag, ShieldAlert, BookOpen, Scale, Copy, Wallet, Archive, ChevronRight, BarChart2, Layers, Star,
+  Church, MapPin,
 } from 'lucide-react'
 import { displayAccountType } from '../lib/accountingLib'
 import { useEntity } from '../lib/EntityContext'
 
 const MASTER_PASSWORD = 'Master007))&'
+
+const SETUP_FY_OPTIONS = fyOptions('2020-21')
+function isValidFY(v) { return /^\d{4}-\d{2}$/.test(v.trim()) }
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -677,76 +682,135 @@ export default function AccountingSettingsPage() {
   // ── Inline entity add/edit modal ─────────────────────────────
   function EntityFormModal({ editing, onSave, onCancel }) {
     const isEdit = !!editing
-    const [name,        setName]        = useState(editing?.name        || '')
-    const [entityType,  setEntityType]  = useState(editing?.entity_type || 'Church')
-    const [address,     setAddress]     = useState(editing?.address     || '')
-    const [city,        setCity]        = useState(editing?.city        || '')
-    const [dioceseVal,  setDioceseVal]  = useState(editing?.diocese     || '')
-    const [description, setDescription] = useState(editing?.description || '')
-    const [saving,      setSaving2]     = useState(false)
+    const [name,       setName]       = useState(editing?.name        || '')
+    const [entityType, setEntityType] = useState(editing?.entity_type || 'Church')
+    const [fyStart,    setFyStart]    = useState(editing?.fy_start    || getFY())
+    const [diocese,    setDiocese]    = useState(editing?.diocese     || '')
+    const [address,    setAddress]    = useState(editing?.address     || '')
+    const [city,       setCity]       = useState(editing?.city        || '')
+    const [stateVal,   setStateVal]   = useState(editing?.state       || '')
+    const [phone,      setPhone]      = useState(editing?.phone       || '')
+    const [email,      setEmail]      = useState(editing?.email       || '')
+    const [saving2,    setSaving2]    = useState(false)
+
+    useEffect(() => {
+      if (isEdit) return
+      getChurch().then(ch => {
+        if (!ch) return
+        if (ch.church_name)     setName(n  => n  || ch.church_name)
+        if (ch.diocese)         setDiocese(d => d || ch.diocese)
+        if (ch.address)         setAddress(a => a || ch.address)
+        if (ch.city)            setCity(c  => c  || ch.city)
+        if (ch.state)           setStateVal(s => s || ch.state)
+        if (ch.whatsapp_number) setPhone(p => p  || ch.whatsapp_number)
+        if (ch.email)           setEmail(e => e  || ch.email)
+      })
+    }, [isEdit])
+
+    const canSave = name.trim().length > 0 && isValidFY(fyStart)
 
     async function doSave() {
-      const n = name.trim()
-      if (!n) return
+      if (!canSave) return
       setSaving2(true)
       await onSave({
-        name: n,
+        name:        name.trim(),
         entity_type: entityType,
-        address:     address.trim()     || null,
-        city:        city.trim()        || null,
-        diocese:     dioceseVal.trim()  || null,
-        description: description.trim() || null,
+        fy_start:    fyStart,
+        diocese:     diocese.trim()  || null,
+        address:     address.trim()  || null,
+        city:        city.trim()     || null,
+        state:       stateVal.trim() || null,
+        phone:       phone.trim()    || null,
+        email:       email.trim()    || null,
       })
       setSaving2(false)
     }
 
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
+        <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 540, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', overflow: 'hidden', margin: 'auto' }}>
           <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Layers size={15} style={{ color: 'var(--accent)' }} />
-              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{isEdit ? 'Edit Accounting Book' : 'Add Accounting Book'}</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{isEdit ? 'Edit Accounting Book' : 'New Accounting Book'}</p>
             </div>
             <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={16} /></button>
           </div>
-          <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <FL>Book Name *</FL>
-              <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="e.g. CSI St.Paul's Church…" style={{ ...INPUT_STYLE }} />
+          <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Book Identity */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Church size={11} /> Book Identity
+              </p>
+              <div>
+                <FL>Book Name *</FL>
+                <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="e.g. CSI St. Paul's Church" style={{ ...INPUT_STYLE }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <FL>Type</FL>
+                  <select value={entityType} onChange={e => setEntityType(e.target.value)} style={{ ...INPUT_STYLE }}>
+                    {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <FL>Books Beginning From *</FL>
+                  <input list="fy-suggestions-settings" value={fyStart}
+                    onChange={e => setFyStart(e.target.value)}
+                    placeholder="e.g. 2026-27"
+                    style={{ ...INPUT_STYLE, borderColor: fyStart && !isValidFY(fyStart) ? '#f87171' : undefined }} />
+                  <datalist id="fy-suggestions-settings">
+                    {SETUP_FY_OPTIONS.map(f => <option key={f} value={f} />)}
+                  </datalist>
+                  {fyStart && !isValidFY(fyStart) && (
+                    <p style={{ fontSize: 10, color: '#ef4444', margin: '4px 0 0' }}>Format must be YYYY-YY (e.g. 2026-27)</p>
+                  )}
+                </div>
+              </div>
             </div>
-            <div>
-              <FL>Type</FL>
-              <select value={entityType} onChange={e => setEntityType(e.target.value)} style={{ ...INPUT_STYLE }}>
-                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+            {/* Contact & Report Header */}
+            <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <MapPin size={11} /> Contact & Report Header
+              </p>
+              <div>
+                <FL>Diocese / Association</FL>
+                <input value={diocese} onChange={e => setDiocese(e.target.value)} placeholder="e.g. Diocese of Madras" style={{ ...INPUT_STYLE }} />
+              </div>
               <div>
                 <FL>Address</FL>
-                <input value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. 12 Church Road" style={{ ...INPUT_STYLE }} />
+                <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Street address" style={{ ...INPUT_STYLE }} />
               </div>
-              <div>
-                <FL>City</FL>
-                <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Chennai" style={{ ...INPUT_STYLE }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <FL>City</FL>
+                  <input value={city} onChange={e => setCity(e.target.value)} placeholder="City" style={{ ...INPUT_STYLE }} />
+                </div>
+                <div>
+                  <FL>State</FL>
+                  <input value={stateVal} onChange={e => setStateVal(e.target.value)} placeholder="State" style={{ ...INPUT_STYLE }} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <FL>Phone</FL>
+                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 …" style={{ ...INPUT_STYLE }} />
+                </div>
+                <div>
+                  <FL>Email</FL>
+                  <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@church.org" type="email" style={{ ...INPUT_STYLE }} />
+                </div>
               </div>
             </div>
-            <div>
-              <FL>Diocese</FL>
-              <input value={dioceseVal} onChange={e => setDioceseVal(e.target.value)} placeholder="e.g. Diocese of Madras" style={{ ...INPUT_STYLE }} />
-            </div>
-            <div>
-              <FL>Description (optional)</FL>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
-                placeholder="Brief description of this accounting book…"
-                style={{ ...INPUT_STYLE, height: 'auto', padding: '8px 12px', resize: 'vertical' }} />
-            </div>
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={onCancel} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
-              <button onClick={doSave} disabled={!name.trim() || saving}
-                style={{ flex: 2, height: 40, background: name.trim() ? 'var(--accent)' : '#e5e7eb', color: name.trim() ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: name.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Book')}
+              <button onClick={doSave} disabled={!canSave || saving2}
+                style={{ flex: 2, height: 40, background: canSave ? 'var(--accent)' : '#e5e7eb', color: canSave ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: canSave ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                {saving2 ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {saving2 ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Book')}
               </button>
             </div>
           </div>

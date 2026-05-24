@@ -24,6 +24,14 @@ export default function ChurchSetupPage() {
   const [flushPassword,     setFlushPassword]     = useState('')
   const [flushPwErr,        setFlushPwErr]        = useState(false)
   const flushPwRef = useRef(null)
+
+  const [showFlushAc,  setShowFlushAc]  = useState(false)
+  const [flushAcStep,  setFlushAcStep]  = useState(1)       // 1 = choose, 2 = confirm
+  const [flushAcTarget,setFlushAcTarget]= useState(null)    // 'simple' | 'advanced'
+  const [flushAcPw,    setFlushAcPw]    = useState('')
+  const [flushAcPwErr, setFlushAcPwErr] = useState(false)
+  const [flushingAc,   setFlushingAc]   = useState(false)
+  const flushAcPwRef = useRef(null)
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -39,6 +47,7 @@ export default function ChurchSetupPage() {
 
   const [form, setForm] = useState({
     church_name: '', church_code: '', diocese: '', denomination: 'CSI',
+    email: '',
     address: '', city: '', state: 'Tamil Nadu', pincode: '',
     whatsapp_number: '', whatsapp_url: '', instance_id: '', access_token: '',
     whatsapp_api_type: 'soft7', official_phone_number_id: '', official_bearer_token: '',
@@ -65,6 +74,7 @@ export default function ChurchSetupPage() {
         church_code:    data.church_code    || '',
         diocese:        data.diocese        || '',
         denomination:   data.denomination   || 'CSI',
+        email:          data.email          || '',
         address:        data.address        || '',
         city:           data.city           || '',
         state:          data.state          || 'Tamil Nadu',
@@ -241,6 +251,7 @@ export default function ChurchSetupPage() {
       // Reset all text fields in the DB row
       const blank = {
         church_name:'', church_code:'', diocese:'', denomination:'CSI',
+        email:'',
         address:'', city:'', state:'', pincode:'',
         whatsapp_number:'', whatsapp_url:'', instance_id:'', access_token:'',
         whatsapp_api_type:'soft7', official_phone_number_id:'', official_bearer_token:'',
@@ -270,6 +281,31 @@ export default function ChurchSetupPage() {
       toast('Flush failed: ' + err.message, 'error')
     } finally {
       setFlushing(false)
+    }
+  }
+
+  async function doFlushAccounts() {
+    if (flushAcPw !== 'Master007))&' || flushingAc) {
+      setFlushAcPwErr(true)
+      setTimeout(() => flushAcPwRef.current?.focus(), 30)
+      return
+    }
+    setFlushAcPwErr(false)
+    setFlushingAc(true)
+    try {
+      const rpc = flushAcTarget === 'simple' ? 'flush_simple_accounts' : 'flush_accounting_data'
+      const { error } = await supabase.rpc(rpc)
+      if (error) throw error
+      if (flushAcTarget === 'advanced') {
+        Object.keys(sessionStorage).filter(k => k.startsWith('ac_')).forEach(k => sessionStorage.removeItem(k))
+      }
+      setShowFlushAc(false)
+      const label = flushAcTarget === 'simple' ? 'Simple Accounts' : 'Advanced Accounts'
+      toast(`${label} flushed. Start fresh from the Accounts page.`, 'success')
+    } catch (err) {
+      toast('Flush failed: ' + err.message, 'error')
+    } finally {
+      setFlushingAc(false)
     }
   }
 
@@ -374,6 +410,10 @@ export default function ChurchSetupPage() {
                     {DENOMS.map(d=><option key={d}>{d}</option>)}
                   </select>
                 </div>
+              </div>
+              <div className="field-group">
+                <label className="field-label">Church Email ID</label>
+                <input className="field-input" type="email" value={form.email} onChange={e=>s('email',e.target.value)} placeholder="e.g. stpauls@example.com"/>
               </div>
             </div>
 
@@ -553,6 +593,19 @@ export default function ChurchSetupPage() {
                     })}
                   </div>
                 )}
+
+                {/* Flush Accounts */}
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
+                    Erase all accounting books, chart of accounts and journal entries — resets to first-time setup.
+                  </p>
+                  <button
+                    onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcTarget(null); setFlushAcStep(1); setShowFlushAc(true) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#fff5f5', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#b91c1c', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    <Trash2 size={12} /> Flush Accounts
+                  </button>
+                </div>
               </>
             )
           })()}
@@ -719,6 +772,114 @@ export default function ChurchSetupPage() {
         <div style={{maxWidth:560, display:'flex', flexDirection:'column', gap:16}}>
           <ZonesPanel profile={profile} toast={toast} />
           <PaymentCategoriesPanel profile={profile} toast={toast} />
+        </div>
+      )}
+
+      {/* ── Flush Accounts modal (2-step) ── */}
+      {showFlushAc && (
+        <div onClick={e => { if (e.target === e.currentTarget && !flushingAc) setShowFlushAc(false) }}
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.72)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:9999, padding:16 }}>
+          <div style={{ background:'var(--card-bg)', borderRadius:16, width:'100%', maxWidth:460, boxShadow:'0 32px 80px rgba(0,0,0,0.5)', overflow:'hidden' }}>
+
+            {/* ── Step 1: Choose module ── */}
+            {flushAcStep === 1 && (<>
+              <div style={{ padding:'18px 22px', borderBottom:'1px solid var(--card-border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div>
+                  <p style={{ margin:0, fontSize:15, fontWeight:800, color:'var(--text-1)', fontFamily:'var(--font-ui)' }}>Flush Accounts</p>
+                  <p style={{ margin:0, fontSize:12, color:'var(--text-3)', fontFamily:'var(--font-ui)' }}>Choose which module to flush</p>
+                </div>
+                <button onClick={() => setShowFlushAc(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:20, lineHeight:1, padding:'2px 6px' }}>×</button>
+              </div>
+              <div style={{ padding:'20px 22px', display:'flex', flexDirection:'column', gap:12 }}>
+                {[
+                  { key:'simple',   emoji:'💰', title:'Simple Accounts',   sub:'Cash-book style',      items:['All transactions', 'All cash/bank accounts', 'All categories', 'Resets to default accounts & categories'] },
+                  { key:'advanced', emoji:'📊', title:'Advanced Accounts',  sub:'Double-entry bookkeeping', items:['All accounting books (entities)', 'Chart of accounts', 'All journal entries & balances', 'Resets accounting method lock'] },
+                ].map(opt => {
+                  const sel = flushAcTarget === opt.key
+                  return (
+                    <button key={opt.key} onClick={() => setFlushAcTarget(opt.key)}
+                      style={{ display:'flex', alignItems:'flex-start', gap:14, padding:'14px 16px', borderRadius:12, border:`2px solid ${sel ? '#dc2626' : 'var(--card-border)'}`, background: sel ? '#fff5f5' : 'var(--table-header-bg)', cursor:'pointer', textAlign:'left', transition:'all 0.15s' }}>
+                      <span style={{ fontSize:26, lineHeight:1, flexShrink:0, marginTop:2 }}>{opt.emoji}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:6 }}>
+                          <p style={{ margin:0, fontSize:14, fontWeight:700, color: sel ? '#b91c1c' : 'var(--text-1)', fontFamily:'var(--font-ui)' }}>{opt.title}</p>
+                          <span style={{ fontSize:11, color:'var(--text-3)', fontFamily:'var(--font-ui)' }}>{opt.sub}</span>
+                        </div>
+                        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                          {opt.items.map(item => (
+                            <div key={item} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                              <div style={{ width:4, height:4, borderRadius:'50%', background: sel ? '#dc2626' : '#94a3b8', flexShrink:0 }}/>
+                              <span style={{ fontSize:11, color: sel ? '#b91c1c' : 'var(--text-3)', fontFamily:'var(--font-ui)' }}>{item}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ width:18, height:18, borderRadius:'50%', border:`2px solid ${sel ? '#dc2626' : 'var(--card-border)'}`, background: sel ? '#dc2626' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:2 }}>
+                        {sel && <div style={{ width:7, height:7, borderRadius:'50%', background:'#fff' }}/>}
+                      </div>
+                    </button>
+                  )
+                })}
+                <div style={{ display:'flex', gap:10, marginTop:4 }}>
+                  <button onClick={() => setShowFlushAc(false)}
+                    style={{ flex:1, height:40, background:'var(--card-bg)', border:'1.5px solid var(--card-border)', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--text-2)', fontFamily:'var(--font-ui)' }}>
+                    Cancel
+                  </button>
+                  <button onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcStep(2); setTimeout(() => flushAcPwRef.current?.focus(), 80) }}
+                    disabled={!flushAcTarget}
+                    style={{ flex:2, height:40, background:flushAcTarget ? '#dc2626' : '#e5e7eb', color:flushAcTarget ? '#fff' : '#9ca3af', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:flushAcTarget ? 'pointer' : 'not-allowed', fontFamily:'var(--font-ui)' }}>
+                    Continue →
+                  </button>
+                </div>
+              </div>
+            </>)}
+
+            {/* ── Step 2: Severe warning + master password ── */}
+            {flushAcStep === 2 && (<>
+              <div style={{ background:'#7f1d1d', padding:'16px 22px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                  <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:8, padding:7, display:'flex' }}>
+                    <AlertTriangle size={18} color="#fca5a5"/>
+                  </div>
+                  <div>
+                    <p style={{ margin:0, fontSize:15, fontWeight:800, color:'#fff', fontFamily:'var(--font-ui)' }}>
+                      Permanently erase {flushAcTarget === 'simple' ? 'Simple Accounts' : 'Advanced Accounts'}?
+                    </p>
+                    <p style={{ margin:0, fontSize:11, color:'#fca5a5', fontFamily:'var(--font-ui)' }}>This action is irreversible — there is no undo</p>
+                  </div>
+                  {!flushingAc && <button onClick={() => setShowFlushAc(false)} style={{ marginLeft:'auto', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer', color:'#fff', fontSize:16, fontWeight:700 }}>×</button>}
+                </div>
+                <div style={{ background:'rgba(0,0,0,0.25)', borderRadius:8, padding:'10px 14px' }}>
+                  {flushAcTarget === 'simple'
+                    ? <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>All transactions, cash/bank accounts and categories will be <strong style={{color:'#fff'}}>permanently deleted</strong>. Default accounts and categories will be re-seeded. Your church members and payment records are not affected.</p>
+                    : <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>All accounting books, chart of accounts, every journal entry and all opening balances will be <strong style={{color:'#fff'}}>permanently deleted</strong>. The accounting method lock will be reset. You will need to create a new accounting book from scratch.</p>
+                  }
+                </div>
+              </div>
+              <div style={{ padding:'20px 22px' }}>
+                <p style={{ margin:'0 0 10px', fontSize:12, fontWeight:700, color:'var(--text-2)', textTransform:'uppercase', letterSpacing:'0.06em', fontFamily:'var(--font-ui)' }}>Enter master password to confirm</p>
+                <input ref={flushAcPwRef} type="password" value={flushAcPw}
+                  onChange={e => { setFlushAcPw(e.target.value); setFlushAcPwErr(false) }}
+                  onKeyDown={e => e.key === 'Enter' && doFlushAccounts()}
+                  placeholder="Master password"
+                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 14px', borderRadius:8, border:`2px solid ${flushAcPwErr ? '#dc2626' : 'var(--card-border)'}`, background:'var(--input-bg)', color:'var(--text-1)', fontSize:14, fontFamily:'var(--font-ui)', outline:'none', marginBottom: flushAcPwErr ? 6 : 16 }}
+                />
+                {flushAcPwErr && <p style={{ margin:'0 0 12px', fontSize:12, color:'#dc2626', fontWeight:600, fontFamily:'var(--font-ui)' }}>Incorrect master password. Try again.</p>}
+                <div style={{ display:'flex', gap:10 }}>
+                  <button onClick={() => setFlushAcStep(1)} disabled={flushingAc}
+                    style={{ flex:1, height:42, background:'var(--card-bg)', border:'1.5px solid var(--card-border)', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--text-2)', fontFamily:'var(--font-ui)' }}>
+                    ← Back
+                  </button>
+                  <button onClick={doFlushAccounts} disabled={!flushAcPw || flushingAc}
+                    style={{ flex:2, height:42, background:(flushAcPw && !flushingAc) ? '#b91c1c' : '#e5e7eb', color:(flushAcPw && !flushingAc) ? '#fff' : '#9ca3af', border:'none', borderRadius:8, fontSize:13, fontWeight:800, cursor:(flushAcPw && !flushingAc) ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'var(--font-ui)', letterSpacing:'0.01em' }}>
+                    {flushingAc ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>}
+                    {flushingAc ? 'Flushing…' : `Erase ${flushAcTarget === 'simple' ? 'Simple' : 'Advanced'} Accounts`}
+                  </button>
+                </div>
+              </div>
+            </>)}
+
+          </div>
         </div>
       )}
 

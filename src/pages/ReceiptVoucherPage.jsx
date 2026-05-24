@@ -188,6 +188,7 @@ export default function ReceiptVoucherPage() {
   // ── Save state
   const [saving,  setSaving]  = useState(false)
   const [posting, setPosting] = useState(false)
+  const [voucherPfx, setVoucherPfx] = useState(null)
 
   // ── Derived
   const assetAccounts = useMemo(() => getPostableAccountsWithPath(allCoa).filter(a => a.account_type === 'Asset'), [allCoa])
@@ -237,11 +238,18 @@ export default function ReceiptVoucherPage() {
       } else {
         const fy  = getFY()
         const pfx = { Receipt: s.accounting_prefix_receipt || 'RV' }
+        setVoucherPfx(s.accounting_prefix_receipt || 'RV')
         setReceiptNo(await nextEntryNumber(fy, 'Receipt', currentEntityId, pfx))
       }
       setLoaded(true)
     }).catch(() => { toast('Failed to load data', 'error'); setLoaded(true) })
   }, [])
+
+  useEffect(() => {
+    if (editId || !voucherPfx || !currentEntityId) return
+    nextEntryNumber(getFY(entryDate), 'Receipt', currentEntityId, { Receipt: voucherPfx })
+      .then(setReceiptNo).catch(() => {})
+  }, [entryDate])
 
   // ── Wizard navigation ─────────────────────────────────────────
   function chooseType(type) {
