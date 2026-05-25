@@ -1,41 +1,224 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Users, Download, MessageSquare, ChevronUp, ChevronDown, RefreshCw, Send, ListFilter, Clock, Trash2, FileSpreadsheet, Calendar, Bold, Italic, Strikethrough, Code, List, Indent, CornerDownLeft, Paperclip, X, Music, FileText, ImageIcon, Mic, Square } from 'lucide-react'
+import lamejs from '@breezystack/lamejs'
+import { Users, Download, MessageSquare, ChevronUp, ChevronDown, RefreshCw, Send, ListFilter, Clock, Trash2, FileSpreadsheet, Calendar, Bold, Italic, Underline, Strikethrough, Code, List, Indent, CornerDownLeft, Paperclip, X, Music, FileText, ImageIcon, Mic, Square, Play, Pause } from 'lucide-react'
 import { supabase, getChurch } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
-import { Mp3Encoder } from '@breezystack/lamejs'
 
-/* Encode raw mono Float32 PCM to MP3 — no WebM decoding needed */
-function pcmToMp3(pcm, sampleRate) {
-  const int16 = new Int16Array(pcm.length)
-  for (let i = 0; i < pcm.length; i++) int16[i] = Math.max(-32768, Math.min(32767, pcm[i] * 32768))
-  const encoder = new Mp3Encoder(1, sampleRate, 96)
-  const parts   = []
-  const BLOCK   = 1152
-  for (let i = 0; i < int16.length; i += BLOCK) {
-    const d = encoder.encodeBuffer(int16.subarray(i, i + BLOCK))
-    if (d.length > 0) parts.push(new Uint8Array(d))
+/** Walk a contentEditable DOM tree → WhatsApp markdown string */
+function htmlToWaMd(el) {
+  function walk(node) {
+    if (node.nodeType === 3) return node.textContent
+    if (node.nodeType !== 1) return ''
+    const tag   = node.tagName.toLowerCase()
+    const inner = Array.from(node.childNodes).map(walk).join('')
+    switch (tag) {
+      case 'br':                           return '\n'
+      case 'strong': case 'b':            return `*${inner}*`
+      case 'em':     case 'i':            return `_${inner}_`
+      case 's': case 'del': case 'strike': return `~${inner}~`
+      case 'code':                         return '`' + inner + '`'
+      case 'u': case 'ins':               return inner  // WhatsApp has no underline; strip tag, keep text
+      case 'li':                           return '• ' + inner + '\n'
+      case 'ul': case 'ol':               return inner
+      case 'div': case 'p':               return inner + '\n'
+      default:                             return inner
+    }
   }
-  const flush = encoder.flush()
-  if (flush.length > 0) parts.push(new Uint8Array(flush))
-  return new Blob(parts, { type: 'audio/mpeg' })
+  return walk(el).replace(/\n$/, '')
 }
 
-/* Build a minimal WAV blob for local browser playback preview */
-function pcmToWav(pcm, sampleRate) {
-  const buf = new ArrayBuffer(44 + pcm.length * 2)
-  const dv  = new DataView(buf)
-  const str = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)) }
-  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true)
-  str(8, 'WAVE'); str(12, 'fmt ')
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true)
-  dv.setUint32(24, sampleRate, true); dv.setUint32(28, sampleRate * 2, true)
-  dv.setUint16(32, 2, true); dv.setUint16(34, 16, true)
-  str(36, 'data'); dv.setUint32(40, pcm.length * 2, true)
-  for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7FFF, true)
-  return new Blob([buf], { type: 'audio/wav' })
+/** Render WhatsApp markdown as formatted JSX for the preview pane */
+function renderWaText(raw) {
+  const escaped = raw
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const html = escaped
+    .replace(/\*([^*\n]+)\*/g,  '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g,    '<em>$1</em>')
+    .replace(/~([^~\n]+)~/g,    '<s>$1</s>')
+    .replace(/`([^`\n]+)`/g,    '<code style="font-family:monospace;background:#f1f5f9;padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/\n/g, '<br/>')
+  // eslint-disable-next-line react/no-danger
+  return <span dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+function MiniAudioPlayer({ src }) {
+  const audioRef = useRef(null)
+  const [playing, setPlaying]   = useState(false)
+  const [current, setCurrent]   = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  const fmt = s => {
+    if (!isFinite(s)) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  const toggle = () => {
+    const a = audioRef.current
+    if (!a) return
+    playing ? a.pause() : a.play()
+  }
+
+  const seek = e => {
+    const a = audioRef.current
+    if (!a || !duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    a.currentTime = ((e.clientX - rect.left) / rect.width) * duration
+  }
+
+  const pct = duration ? (current / duration) * 100 : 0
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
+      <audio ref={audioRef} src={src}
+        onLoadedMetadata={e => setDuration(e.target.duration)}
+        onTimeUpdate={e  => setCurrent(e.target.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrent(0); if (audioRef.current) audioRef.current.currentTime = 0 }}
+      />
+      <button onClick={toggle} className="no-lift" style={{ width:28, height:28, borderRadius:'50%', border:'none', background:'#7c3aed', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor:'pointer', padding:0 }}>
+        {playing ? <Pause size={12} fill="#fff"/> : <Play size={12} fill="#fff" style={{ marginLeft:1 }}/>}
+      </button>
+      <div onClick={seek} style={{ flex:1, height:4, background:'var(--card-border)', borderRadius:2, cursor:'pointer', position:'relative' }}>
+        <div style={{ width:`${pct}%`, height:'100%', background:'#7c3aed', borderRadius:2, transition:'width 0.1s linear' }}/>
+      </div>
+      <span style={{ fontSize:11, color:'var(--text-2)', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>
+        {fmt(current)} / {fmt(duration)}
+      </span>
+    </div>
+  )
+}
+
+/* ── OGG Opus encoding (Chrome → OGG via WebCodecs + custom muxer) ─ */
+
+/** OGG CRC32: forward, polynomial 0x04c11db7, init 0 */
+const OGG_CRC_LUT = (() => {
+  const t = new Uint32Array(256)
+  for (let i = 0; i < 256; i++) {
+    let c = i << 24
+    for (let j = 0; j < 8; j++) c = (c & 0x80000000) ? (c << 1) ^ 0x04c11db7 : c << 1
+    t[i] = c >>> 0
+  }
+  return t
+})()
+
+function oggCrc32(bytes) {
+  let crc = 0
+  for (let i = 0; i < bytes.length; i++)
+    crc = (OGG_CRC_LUT[((crc >>> 24) ^ bytes[i]) & 0xff] ^ (crc << 8)) >>> 0
+  return crc
+}
+
+/**
+ * Pack raw Opus packets (Uint8Array[]) into a valid OGG Opus file (RFC 7845).
+ * inputSampleRate is written into OpusHead so the decoder knows the original rate.
+ */
+function muxOggOpus(opusPackets, inputSampleRate = 48000, channels = 1) {
+  const serial   = (Math.random() * 0xffffffff) >>> 0
+  const PRE_SKIP = 312   // standard encoder algorithmic delay at 48 kHz
+  let   pageSeq  = 0
+  const pages    = []
+
+  function writePage(packet, headerType, granule) {
+    const segs = []
+    let rem = packet.length
+    while (rem > 0) { segs.push(Math.min(255, rem)); rem -= 255 }
+    if (packet.length % 255 === 0) segs.push(0)   // end-of-packet sentinel
+
+    const hdrLen = 27 + segs.length
+    const page   = new Uint8Array(hdrLen + packet.length)
+    const dv     = new DataView(page.buffer)
+
+    page[0]=0x4f; page[1]=0x67; page[2]=0x67; page[3]=0x53  // "OggS"
+    page[4] = 0; page[5] = headerType
+    dv.setUint32(6,  granule >>> 0,                         true)  // granule lo
+    dv.setUint32(10, Math.floor(granule / 0x100000000) >>> 0, true) // granule hi
+    dv.setUint32(14, serial,  true)
+    dv.setUint32(18, pageSeq++, true)
+    dv.setUint32(22, 0, true)   // checksum placeholder
+    page[26] = segs.length
+    for (let i = 0; i < segs.length; i++) page[27 + i] = segs[i]
+    page.set(packet, hdrLen)
+    dv.setUint32(22, oggCrc32(page), true)
+    pages.push(page)
+  }
+
+  // OpusHead identification header
+  const head = new Uint8Array(19)
+  const hdv  = new DataView(head.buffer)
+  head.set([0x4f,0x70,0x75,0x73,0x48,0x65,0x61,0x64])  // "OpusHead"
+  head[8] = 1; head[9] = channels
+  hdv.setUint16(10, PRE_SKIP, true)
+  hdv.setUint32(12, inputSampleRate, true)
+  hdv.setInt16(16, 0, true)
+  head[18] = 0
+  writePage(head, 0x02, 0)   // BOS
+
+  // OpusTags comment header
+  const vendor = new TextEncoder().encode('ChurchCMS')
+  const tags   = new Uint8Array(8 + 4 + vendor.length + 4)
+  const tdv    = new DataView(tags.buffer)
+  tags.set([0x4f,0x70,0x75,0x73,0x54,0x61,0x67,0x73])  // "OpusTags"
+  tdv.setUint32(8, vendor.length, true)
+  tags.set(vendor, 12)
+  tdv.setUint32(12 + vendor.length, 0, true)
+  writePage(tags, 0x00, 0)
+
+  // Audio pages — one Opus packet per page, 20 ms = 960 samples at 48 kHz
+  let granule = 0
+  for (let i = 0; i < opusPackets.length; i++) {
+    granule += 960
+    writePage(opusPackets[i], i === opusPackets.length - 1 ? 0x04 : 0x00, granule)
+  }
+
+  const total  = pages.reduce((s, p) => s + p.length, 0)
+  const result = new Uint8Array(total)
+  let   off    = 0
+  for (const p of pages) { result.set(p, off); off += p.length }
+  return new Blob([result], { type: 'audio/ogg' })
+}
+
+/**
+ * Decode a browser-recorded WebM blob and re-encode as OGG Opus using the
+ * WebCodecs AudioEncoder API (Chrome 94+).  Returns null if unavailable.
+ */
+async function rawBlobToOggOpus(rawBlob) {
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null
+
+  const arrayBuf = await rawBlob.arrayBuffer()
+  const ctx      = new AudioContext({ sampleRate: 48000 })
+  let decoded
+  try { decoded = await ctx.decodeAudioData(arrayBuf) } finally { ctx.close() }
+
+  const pcm      = decoded.getChannelData(0)   // mono Float32 at 48000 Hz
+  const FRAME    = 960                          // 20 ms per Opus frame
+  const opusPkts = []
+
+  const encoder = new AudioEncoder({
+    output: chunk => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); opusPkts.push(d) },
+    error:  e => { throw e },
+  })
+  encoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1, bitrate: 32000 })
+
+  for (let i = 0; i < pcm.length; i += FRAME) {
+    let frame = pcm.subarray(i, i + FRAME)
+    if (frame.length < FRAME) { const p = new Float32Array(FRAME); p.set(frame); frame = p }
+    const ad = new AudioData({
+      format: 'f32', sampleRate: 48000, numberOfFrames: FRAME,
+      numberOfChannels: 1, timestamp: Math.round(i / 48000 * 1e6), data: frame,
+    })
+    encoder.encode(ad); ad.close()
+  }
+  await encoder.flush()
+  encoder.close()
+
+  if (opusPkts.length === 0) return null
+  return muxOggOpus(opusPkts, 48000, 1)
 }
 
 /* ── Column definitions ───────────────────────────────────────── */
@@ -413,13 +596,13 @@ export default function MemberReportPage() {
   const [waProgress, setWaProgress]       = useState(null)   // { current, total, results[] }
   const [waAttachment, setWaAttachment]   = useState(null)   // { name, url, type, size, localBlob? }
   const [waUploading, setWaUploading]     = useState(false)
+  const [waEditorFocused, setWaEditorFocused] = useState(false)
   const [waRecording, setWaRecording]     = useState(false)
   const [waRecordSecs, setWaRecordSecs]   = useState(0)
   const textareaRef                       = useRef(null)
   const fileInputRef                      = useRef(null)
   const mediaRecorderRef                  = useRef(null)  // holds { stream, source, processor }
   const audioChunksRef                    = useRef([])    // Float32Array PCM chunks
-  const audioCtxRef                       = useRef(null)
   const timerIntervalRef                  = useRef(null)
   const recordSecsRef                     = useRef(0)
 
@@ -692,6 +875,7 @@ export default function MemberReportPage() {
     setWaSearch('')
     setWaInvalidPrompt(null)
     setWaMsg('')
+    setTimeout(() => { if (textareaRef.current) textareaRef.current.innerHTML = '' }, 0)
     setWaProgress(null)
     setWaAttachment(null)
     setActiveTab('whatsapp')
@@ -720,52 +904,47 @@ export default function MemberReportPage() {
         (m.whatsapp || m.mobile || '').includes(waSearch))
     : waAvail
 
-  /* Toolbar: wrap selected textarea text with WhatsApp markdown */
-  function formatText(prefix, suffix) {
-    const ta = textareaRef.current
-    if (!ta) return
-    const start = ta.selectionStart
-    const end   = ta.selectionEnd
-    const sfx   = suffix ?? prefix
-    const before = waMsg.slice(0, start)
-    const sel    = waMsg.slice(start, end)
-    const after  = waMsg.slice(end)
-    const newVal = before + prefix + sel + sfx + after
-    setWaMsg(newVal)
-    setTimeout(() => {
-      ta.focus()
-      ta.setSelectionRange(start + prefix.length, end + prefix.length)
-    }, 0)
-  }
-
-  /* Toolbar: prepend each selected line with a prefix string */
-  function prefixLines(linePrefix) {
-    const ta = textareaRef.current
-    if (!ta) return
-    const start  = ta.selectionStart
-    const end    = ta.selectionEnd
-    const lines  = waMsg.split('\n')
-    let charCount = 0, startLine = 0, endLine = 0
-    for (let i = 0; i < lines.length; i++) {
-      if (charCount <= start) startLine = i
-      if (charCount <= end)   endLine   = i
-      charCount += lines[i].length + 1
+  /* Toolbar: apply rich formatting via execCommand (bold/italic/strikethrough/code) */
+  function formatText(marker) {
+    const el = textareaRef.current
+    if (!el) return
+    el.focus()
+    if (marker === '*') document.execCommand('bold', false, null)
+    else if (marker === '_') document.execCommand('italic', false, null)
+    else if (marker === 'u') document.execCommand('underline', false, null)
+    else if (marker === '~') document.execCommand('strikeThrough', false, null)
+    else if (marker === '`') {
+      const sel = window.getSelection()
+      if (!sel || !sel.rangeCount) return
+      const range = sel.getRangeAt(0)
+      const code  = document.createElement('code')
+      code.style.cssText = 'font-family:monospace;background:rgba(100,100,100,.12);padding:1px 5px;border-radius:3px'
+      if (range.toString()) {
+        try { range.surroundContents(code) } catch { document.execCommand('insertText', false, '`' + range.toString() + '`') }
+      } else {
+        range.insertNode(code)
+      }
     }
-    const newLines = lines.map((l, i) =>
-      i >= startLine && i <= endLine ? linePrefix + l : l
-    )
-    setWaMsg(newLines.join('\n'))
-    setTimeout(() => { ta.focus() }, 0)
+    setWaMsg(htmlToWaMd(el))
   }
 
-  /* Toolbar: insert extra blank line after selection */
+  /* Toolbar: prefix selected lines (bullet / indent) */
+  function prefixLines(linePrefix) {
+    const el = textareaRef.current
+    if (!el) return
+    el.focus()
+    document.execCommand('insertText', false, linePrefix)
+    setWaMsg(htmlToWaMd(el))
+  }
+
+  /* Toolbar: insert blank paragraph */
   function addLineBreak() {
-    const ta = textareaRef.current
-    if (!ta) return
-    const pos    = ta.selectionEnd
-    const newVal = waMsg.slice(0, pos) + '\n\n' + waMsg.slice(pos)
-    setWaMsg(newVal)
-    setTimeout(() => { ta.focus(); ta.setSelectionRange(pos + 2, pos + 2) }, 0)
+    const el = textareaRef.current
+    if (!el) return
+    el.focus()
+    document.execCommand('insertParagraph', false, null)
+    document.execCommand('insertParagraph', false, null)
+    setWaMsg(htmlToWaMd(el))
   }
 
   /* File attachment: upload to bucket, get signed URL */
@@ -796,23 +975,18 @@ export default function MemberReportPage() {
   async function startRecording() {
     if (waRecording) return
     try {
-      const stream    = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const audioCtx  = new AudioContext()
-      const source    = audioCtx.createMediaStreamSource(stream)
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1)
-
-      audioChunksRef.current = []   // Float32Array PCM chunks
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Prefer OGG Opus — WhatsApp's native voice-note format, works on mobile without re-encoding.
+      // Fall back to WebM on browsers that don't support OGG in MediaRecorder (most desktop Chrome).
+      const preferOgg = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+      const recorder  = preferOgg
+        ? new MediaRecorder(stream, { mimeType: 'audio/ogg;codecs=opus' })
+        : new MediaRecorder(stream)
+      audioChunksRef.current = []
       recordSecsRef.current  = 0
-
-      processor.onaudioprocess = e => {
-        audioChunksRef.current.push(new Float32Array(e.inputBuffer.getChannelData(0)))
-      }
-      source.connect(processor)
-      processor.connect(audioCtx.destination)
-
-      audioCtxRef.current     = audioCtx
-      mediaRecorderRef.current = { stream, source, processor }
-
+      recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      recorder.start()
+      mediaRecorderRef.current = { stream, recorder }
       setWaRecording(true)
       setWaRecordSecs(0)
       timerIntervalRef.current = setInterval(() => {
@@ -828,45 +1002,64 @@ export default function MemberReportPage() {
     if (!waRecording) return
     clearInterval(timerIntervalRef.current)
     const dur = recordSecsRef.current
-
-    const { stream, source, processor } = mediaRecorderRef.current || {}
-    const audioCtx = audioCtxRef.current
-
-    processor?.disconnect()
-    source?.disconnect()
-    stream?.getTracks().forEach(t => t.stop())
-    audioCtx?.close()
-
+    const { stream, recorder } = mediaRecorderRef.current || {}
     setWaRecording(false)
     setWaRecordSecs(0)
     setWaUploading(true)
 
-    // Encode PCM → MP3 off the main thread deadline
-    setTimeout(async () => {
-      const chunks = audioChunksRef.current
-      const sampleRate = audioCtx?.sampleRate || 44100
-      const totalLen   = chunks.reduce((a, c) => a + c.length, 0)
-      const pcm        = new Float32Array(totalLen)
-      let off = 0; chunks.forEach(c => { pcm.set(c, off); off += c.length })
-
-      // WAV for local playback (instant, no upload needed)
-      const localUrl = URL.createObjectURL(pcmToWav(pcm, sampleRate))
-
+    recorder.onstop = async () => {
       try {
-        const mp3Blob = pcmToMp3(pcm, sampleRate)
-        const path    = `blast-media/${Date.now()}-voice.mp3`
+        const recMime = recorder.mimeType || 'audio/webm'
+        const rawBlob = new Blob(audioChunksRef.current, { type: recMime })
+
+        let uploadBlob, ext, contentType
+
+        if (recMime.includes('ogg')) {
+          // Firefox records OGG Opus natively — use directly
+          uploadBlob = rawBlob; ext = '.ogg'; contentType = 'audio/ogg'
+        } else {
+          // Chrome/Edge records WebM — convert to OGG Opus via WebCodecs (Chrome 94+)
+          const ogg = await rawBlobToOggOpus(rawBlob)
+          if (ogg) {
+            uploadBlob = ogg; ext = '.ogg'; contentType = 'audio/ogg'
+          } else {
+            // Fallback: encode to MP3 (Safari / older browsers — plays as document)
+            const arrayBuf = await rawBlob.arrayBuffer()
+            const ctx      = new AudioContext({ sampleRate: 44100 })
+            const decoded  = await ctx.decodeAudioData(arrayBuf).finally(() => ctx.close())
+            const pcmF     = decoded.getChannelData(0)
+            const pcmI16   = new Int16Array(pcmF.length)
+            for (let i = 0; i < pcmF.length; i++)
+              pcmI16[i] = Math.max(-32768, Math.min(32767, Math.round(pcmF[i] * 32767)))
+            const enc   = new lamejs.Mp3Encoder(1, 44100, 128)
+            const parts = []
+            for (let i = 0; i < pcmI16.length; i += 1152) {
+              const chunk = enc.encodeBuffer(pcmI16.subarray(i, i + 1152))
+              if (chunk.length > 0) parts.push(new Uint8Array(chunk))
+            }
+            const tail = enc.flush()
+            if (tail.length > 0) parts.push(new Uint8Array(tail))
+            uploadBlob = new Blob(parts, { type: 'audio/mpeg' })
+            ext = '.mp3'; contentType = 'audio/mpeg'
+          }
+        }
+
+        const localUrl = URL.createObjectURL(uploadBlob)
+        const path     = `blast-media/${Date.now()}-voice${ext}`
         const { error: upErr } = await supabase.storage
           .from('member-reports')
-          .upload(path, mp3Blob, { contentType: 'audio/mpeg', upsert: true })
+          .upload(path, uploadBlob, { contentType, upsert: true })
         if (upErr) throw upErr
-        setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: 'audio/mpeg', size: mp3Blob.size, localBlob: localUrl })
+        setWaAttachment({ name: `Voice message (${fmtDur(dur)})`, storagePath: path, type: contentType, size: uploadBlob.size, localBlob: localUrl })
       } catch (err) {
         toast('Voice upload failed: ' + err.message, 'error')
-        URL.revokeObjectURL(localUrl)
       } finally {
         setWaUploading(false)
+        stream?.getTracks().forEach(t => t.stop())
       }
-    }, 0)
+    }
+
+    recorder.stop()
   }
 
   async function sendBlast() {
@@ -1282,11 +1475,11 @@ export default function MemberReportPage() {
             Placeholders:&nbsp;{['{MemberName}','{MemberID}','{Mobile}'].map(p =>
               <code key={p} style={{ background:'var(--accent-subtle)', color:'var(--accent)', padding:'1px 6px', borderRadius:4, marginRight:5, fontSize:11, cursor:'pointer' }}
                 onClick={() => {
-                  const ta = textareaRef.current
-                  if (!ta) return
-                  const pos = ta.selectionStart
-                  setWaMsg(v => v.slice(0,pos) + p + v.slice(pos))
-                  setTimeout(() => { ta.focus(); ta.setSelectionRange(pos+p.length, pos+p.length) }, 0)
+                  const el = textareaRef.current
+                  if (!el) return
+                  el.focus()
+                  document.execCommand('insertText', false, p)
+                  setWaMsg(htmlToWaMd(el))
                 }}>{p}</code>
             )}
           </div>
@@ -1294,10 +1487,11 @@ export default function MemberReportPage() {
           {/* Formatting toolbar */}
           <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap', padding:'6px 8px', background:'var(--card-header-bg)', border:'1px solid var(--card-border)', borderBottom:'none', borderRadius:'7px 7px 0 0' }}>
             {[
-              { title:'Bold (*text*)',       Icon:Bold,          action:() => formatText('*') },
-              { title:'Italic (_text_)',      Icon:Italic,        action:() => formatText('_') },
-              { title:'Strikethrough',        Icon:Strikethrough, action:() => formatText('~') },
-              { title:'Monospace (`text`)',   Icon:Code,          action:() => formatText('`') },
+              { title:'Bold',          Icon:Bold,          action:() => formatText('*') },
+              { title:'Italic',        Icon:Italic,        action:() => formatText('_') },
+              { title:'Underline',     Icon:Underline,     action:() => formatText('u') },
+              { title:'Strikethrough', Icon:Strikethrough, action:() => formatText('~') },
+              { title:'Monospace',     Icon:Code,          action:() => formatText('`') },
             ].map(({ title, Icon, action }) => (
               <button key={title} title={title} onClick={action} className="no-lift"
                 style={{ padding:'4px 7px', borderRadius:5, border:'1px solid var(--card-border)', background:'var(--card-bg)', color:'var(--text-1)', cursor:'pointer', display:'flex', alignItems:'center' }}>
@@ -1305,7 +1499,7 @@ export default function MemberReportPage() {
               </button>
             ))}
             <div style={{ width:1, height:18, background:'var(--card-border)', margin:'0 2px' }}/>
-            <button title="Bullet list (- item)" onClick={() => prefixLines('- ')} className="no-lift"
+            <button title="Bullet point" onClick={() => prefixLines('• ')} className="no-lift"
               style={{ padding:'4px 7px', borderRadius:5, border:'1px solid var(--card-border)', background:'var(--card-bg)', color:'var(--text-1)', cursor:'pointer', display:'flex', alignItems:'center' }}>
               <List size={13}/>
             </button>
@@ -1355,9 +1549,35 @@ export default function MemberReportPage() {
             </div>
           )}
 
-          {/* Textarea */}
-          <textarea ref={textareaRef} rows={6} value={waMsg} onChange={e => setWaMsg(e.target.value)}
-            style={{ width:'100%', padding:'10px 12px', border:'1px solid var(--card-border)', borderTop: (waRecording || waUploading) ? '1px solid var(--card-border)' : 'none', borderRadius: waAttachment ? '0' : '0 0 7px 7px', fontSize:13, resize:'vertical', boxSizing:'border-box', fontFamily:'inherit', background:'var(--card-bg)', color:'var(--text-1)', outline:'none', marginTop: (waRecording || waUploading) ? 0 : 0 }} />
+          {/* Rich-text compose area — contentEditable so formatting appears visually */}
+          <div
+            ref={textareaRef}
+            contentEditable
+            suppressContentEditableWarning
+            onFocus={() => setWaEditorFocused(true)}
+            onBlur={() => setWaEditorFocused(false)}
+            onInput={e => setWaMsg(htmlToWaMd(e.currentTarget))}
+            onPaste={e => {
+              e.preventDefault()
+              const text = e.clipboardData.getData('text/plain')
+              document.execCommand('insertText', false, text)
+              setWaMsg(htmlToWaMd(e.currentTarget))
+            }}
+            style={{
+              width:'100%', minHeight:130, padding:'10px 12px',
+              border: waEditorFocused
+                ? '2px solid var(--accent)'
+                : '1px solid var(--card-border)',
+              borderTop: (waRecording || waUploading || waAttachment) ? undefined : 'none',
+              borderRadius: waAttachment ? '0' : '0 0 7px 7px',
+              fontSize:13, boxSizing:'border-box',
+              fontFamily:'inherit', background:'var(--card-bg)',
+              color:'var(--text-1)', outline:'none',
+              caretColor:'var(--accent)',
+              lineHeight:1.6, overflowY:'auto', whiteSpace:'pre-wrap', wordBreak:'break-word',
+              cursor:'text',
+            }}
+          />
 
           {/* Attachment strip */}
           {waAttachment && !waUploading && (
@@ -1376,7 +1596,7 @@ export default function MemberReportPage() {
               {/* Inline audio player for voice recordings */}
               {waAttachment.localBlob && (
                 <div style={{ padding:'0 12px 10px' }}>
-                  <audio controls src={waAttachment.localBlob} style={{ width:'100%', height:36 }}/>
+                  <MiniAudioPlayer src={waAttachment.localBlob}/>
                 </div>
               )}
             </div>
@@ -1393,8 +1613,13 @@ export default function MemberReportPage() {
                 </div>
               )}
               {waMsg.trim() && (
-                <div style={{ marginTop:4, whiteSpace:'pre-wrap' }}>
-                  {waMsg.replace(/{MemberName}/g, waSelected[0]?.member_name||'').replace(/{MemberID}/g, waSelected[0]?.member_id||'').replace(/{Mobile}/g, waSelected[0]?.mobile||'')}
+                <div style={{ marginTop:4, whiteSpace:'pre-wrap', lineHeight:1.5 }}>
+                  {renderWaText(
+                    waMsg
+                      .replace(/{MemberName}/g, waSelected[0]?.member_name||'')
+                      .replace(/{MemberID}/g,   waSelected[0]?.member_id||'')
+                      .replace(/{Mobile}/g,      waSelected[0]?.mobile||'')
+                  )}
                 </div>
               )}
             </div>

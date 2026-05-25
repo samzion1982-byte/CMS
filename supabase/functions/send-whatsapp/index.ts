@@ -89,25 +89,31 @@ serve(async (req) => {
 
       const apiUrl = ((church.whatsapp_url || '').trim().replace(/\/+$/, '')) || 'https://cloud.soft7.in/api/send'
 
-      // Map kind → soft7 type field
-      const soft7Type: Record<MediaKind, string> = {
+      // OGG Opus audio → soft7 'audio' type (PTT voice note, plays inline on mobile).
+      // Any other audio (MP3 fallback) → 'document' (inline on desktop, download on mobile).
+      const isOggAudio = kind === 'audio' &&
+        (mediaType?.includes('ogg') || (mediaUrl || '').split('?')[0].toLowerCase().endsWith('.ogg'))
+
+      const soft7MsgType: Record<MediaKind, string> = {
         none:     'text',
-        audio:    'audio',
+        audio:    isOggAudio ? 'audio' : 'document',
         image:    'media',
         video:    'media',
         document: 'document',
       }
 
-      const fname = (mediaUrl || '').split('?')[0].split('/').pop() || 'file'
+      const fname        = (mediaUrl || '').split('?')[0].split('/').pop() || 'file'
+      const msgType      = soft7MsgType[kind]
+      const needFilename = msgType === 'document'
 
       const payload: Record<string, unknown> = {
         number:       phone,
-        type:         soft7Type[kind],
+        type:         msgType,
         message:      message || '',
         instance_id:  church.instance_id,
         access_token: church.access_token,
         ...(mediaUrl && { media_url: mediaUrl }),
-        ...(kind === 'document' && { filename: fname }),
+        ...(needFilename && { filename: fname }),
       }
 
       console.log('[send-whatsapp] soft7 payload:', JSON.stringify({ ...payload, access_token: '***', instance_id: payload.instance_id }))

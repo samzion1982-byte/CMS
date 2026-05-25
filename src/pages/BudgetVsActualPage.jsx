@@ -8,8 +8,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
-  getFY, fyOptions, fmtAmt,
+  fmtAmt,
   getChartOfAccounts, getPostableAccountsWithPath,
   getTrialBalance, displayAccountType, TYPE_COLOR,
 } from '../lib/accountingLib'
@@ -34,8 +35,7 @@ export default function BudgetVsActualPage() {
   const { currentEntityId } = useEntity()
 
   const [tab,         setTab]         = useState('setup')   // 'setup' | 'report'
-  const [fy,          setFy]          = useState(getFY())
-  const [fyOpen,      setFyOpen]      = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [accounts,    setAccounts]    = useState([])         // postable accounts
   const [budgets,     setBudgets]     = useState({})         // { [accountId]: amount string }
   const [pcts,        setPcts]        = useState({})         // { [accountId]: pct string }
@@ -44,8 +44,6 @@ export default function BudgetVsActualPage() {
   const [churchId,    setChurchId]    = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
-  const FYS = fyOptions()
-
   const load = useCallback(async () => {
     setLoading(true)
     try {

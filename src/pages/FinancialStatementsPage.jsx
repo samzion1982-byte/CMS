@@ -14,9 +14,10 @@ import {
   getReceiptsAndPayments,
   getIncomeStatement,
   getBalanceSheet,
-  getFY, fyOptions, fyDateRange, fmtAmt,
+  fyDateRange, fmtAmt,
 } from '../lib/accountingLib'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   BarChart2, ArrowLeft, Loader2, Printer, ChevronDown, ChevronRight,
   RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink, FileSpreadsheet,
@@ -771,11 +772,10 @@ export default function FinancialStatementsPage() {
   const { currentEntityId, currentEntity } = useEntity()
 
   const [tab,        setTab]        = useState('rp')
-  const [fy,         setFy]         = useState(getFY())
-  const [fyOpen,     setFyOpen]     = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [rangeMode,  setRangeMode]  = useState('full')   // 'full' | 'custom'
-  const [fromDate,   setFromDate]   = useState(() => fyDateRange(getFY()).from)
-  const [toDate,     setToDate]     = useState(() => fyDateRange(getFY()).to)
+  const [fromDate,   setFromDate]   = useState(() => fyDateRange(fy).from)
+  const [toDate,     setToDate]     = useState(() => fyDateRange(fy).to)
   const [loading,    setLoading]    = useState(false)
   const [generated,  setGenerated]  = useState(false)
   const [rp,         setRp]         = useState(null)
@@ -784,15 +784,17 @@ export default function FinancialStatementsPage() {
   const [genFrom,    setGenFrom]    = useState(null)   // dates used for last generate (for display)
   const [genTo,      setGenTo]      = useState(null)
   const [showZero,   setShowZero]   = useState(false)
-  const FYS = fyOptions()
+  // Sync date range when FY changes (entity switch or manual picker)
+  useEffect(() => {
+    const { from, to } = fyDateRange(fy)
+    setFromDate(from)
+    setToDate(to)
+    setGenerated(false)
+  }, [fy])
 
   function handleFyChange(f) {
     setFy(f)
     setFyOpen(false)
-    setGenerated(false)
-    const { from, to } = fyDateRange(f)
-    setFromDate(from)
-    setToDate(to)
   }
 
   function handlePrint() {

@@ -9,11 +9,12 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
-  getFY, fmtAmt, getChartOfAccounts, getPostableAccountsWithPath,
+  fmtAmt, getChartOfAccounts, getPostableAccountsWithPath,
   createJournalEntry, nextEntryNumber, fyDateRange, VOUCHER_TYPES,
 } from '../lib/accountingLib'
 import { supabase, getChurch } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Plus, Trash2, Edit2, Loader2,
   X, Save, Play, Copy,
@@ -210,7 +211,7 @@ function UseTemplateModal({ template, onClose, onCreated }) {
   const toast    = useToast()
   const { profile } = useAuth()
   const { currentEntityId } = useEntity()
-  const [fy,        setFy]        = useState(getFY())
+  const { fy } = useEntityFY()
   const [date,      setDate]      = useState(localISO(new Date()))
   const [narration, setNarration] = useState(template.narration || '')
   const [saving,    setSaving]    = useState(false)

@@ -2,12 +2,13 @@
    TrialBalancePage.jsx — Trial Balance (Indian Format)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getTrialBalance, getFY, fyOptions, fyDateRange, fmtAmt, displayAccountType } from '../lib/accountingLib'
+import { getTrialBalance, fyDateRange, fmtAmt, displayAccountType } from '../lib/accountingLib'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   Scale, ArrowLeft, Loader2, FileSpreadsheet,
   Printer, ChevronDown, CheckCircle2, AlertTriangle,
@@ -39,26 +40,26 @@ export default function TrialBalancePage() {
   const toast    = useToast()
   const { currentEntityId, currentEntity } = useEntity()
 
-  const defaultFY = getFY()
-  const { from: defaultFrom, to: defaultTo } = fyDateRange(defaultFY)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
 
-  const [fy,        setFy]        = useState(defaultFY)
-  const [dateFrom,  setDateFrom]  = useState(defaultFrom)
-  const [dateTo,    setDateTo]    = useState(defaultTo)
+  const [dateFrom,  setDateFrom]  = useState(() => fyDateRange(fy).from)
+  const [dateTo,    setDateTo]    = useState(() => fyDateRange(fy).to)
   const [rows,      setRows]      = useState([])
   const [loading,   setLoading]   = useState(false)
   const [generated, setGenerated] = useState(false)
   const [showZero,  setShowZero]  = useState(false)
-  const [fyOpen,    setFyOpen]    = useState(false)
-  const FYS = fyOptions()
+
+  // Sync date range when FY changes (entity switch or manual picker)
+  useEffect(() => {
+    const { from, to } = fyDateRange(fy)
+    setDateFrom(from)
+    setDateTo(to)
+    setGenerated(false)
+  }, [fy])
 
   function handleFyChange(f) {
     setFy(f)
-    const { from, to } = fyDateRange(f)
-    setDateFrom(from)
-    setDateTo(to)
     setFyOpen(false)
-    setGenerated(false)
   }
 
   const generate = useCallback(async () => {

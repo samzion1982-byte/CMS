@@ -4,14 +4,16 @@
    entries. Examples: "St. Paul's Church", "St. Paul's Trust".
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { useEntity } from '../lib/EntityContext'
-import { supabase } from '../lib/supabase'
+import { supabase, getChurch } from '../lib/supabase'
+import { getFY, fyOptions } from '../lib/accountingLib'
 import {
   ArrowLeft, Layers, Plus, Pencil, X, Save,
   Loader2, CheckCircle, Power, Check, Trash2,
+  Calendar, MapPin, Phone, Mail, Church,
 } from 'lucide-react'
 
 const ENTITY_TYPES = ['Church', 'Trust', 'School', 'Complex', 'Other']
@@ -38,34 +40,74 @@ function FL({ children }) {
   )
 }
 
+// Suggested FY options for the datalist (user can also type any value freely)
+const SETUP_FY_OPTIONS = fyOptions('2020-21')
+
+function isValidFY(v) {
+  return /^\d{4}-\d{2}$/.test(v.trim())
+}
+
 // ── Add / Edit modal ──────────────────────────────────────────────
 
 function EntityModal({ editing, onSave, onCancel }) {
   const isEdit = !!editing
 
-  const [name,        setName]        = useState(editing?.name        || '')
-  const [entityType,  setEntityType]  = useState(editing?.entity_type || 'Church')
-  const [description, setDescription] = useState(editing?.description || '')
-  const [saving,      setSaving]      = useState(false)
+  const [name,       setName]       = useState(editing?.name        || '')
+  const [entityType, setEntityType] = useState(editing?.entity_type || 'Church')
+  const [fyStart,    setFyStart]    = useState(editing?.fy_start    || getFY())
+  const [diocese,    setDiocese]    = useState(editing?.diocese     || '')
+  const [address,    setAddress]    = useState(editing?.address     || '')
+  const [city,       setCity]       = useState(editing?.city        || '')
+  const [state,      setState]      = useState(editing?.state       || '')
+  const [phone,      setPhone]      = useState(editing?.phone       || '')
+  const [email,      setEmail]      = useState(editing?.email       || '')
+  const [saving,     setSaving]     = useState(false)
+
+  // Auto-populate from Church Setup when creating a new book
+  useEffect(() => {
+    if (isEdit) return
+    getChurch().then(ch => {
+      if (!ch) return
+      if (ch.church_name)    setName(n    => n || ch.church_name)
+      if (ch.diocese)        setDiocese(d => d || ch.diocese)
+      if (ch.address)        setAddress(a => a || ch.address)
+      if (ch.city)           setCity(c    => c || ch.city)
+      if (ch.state)          setState(s   => s || ch.state)
+      if (ch.whatsapp_number) setPhone(p  => p || ch.whatsapp_number)
+      if (ch.email)           setEmail(e  => e || ch.email)
+    })
+  }, [isEdit])
 
   async function handleSave() {
     const n = name.trim()
     if (!n) return
     setSaving(true)
-    await onSave({ name: n, entity_type: entityType, description: description.trim() || null })
+    await onSave({
+      name:        n,
+      entity_type: entityType,
+      fy_start:    fyStart,
+      diocese:     diocese.trim() || null,
+      address:     address.trim() || null,
+      city:        city.trim()    || null,
+      state:       state.trim()   || null,
+      phone:       phone.trim()   || null,
+      email:       email.trim()   || null,
+    })
     setSaving(false)
   }
 
-  const canSave = name.trim().length > 0
+  const canSave = name.trim().length > 0 && isValidFY(fyStart)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 460, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 540, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden', margin: 'auto' }}>
+
+        {/* Header */}
         <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <Layers size={15} style={{ color: 'var(--accent)' }} />
             <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
-              {isEdit ? 'Edit Accounting Book' : 'Add Accounting Book'}
+              {isEdit ? 'Edit Accounting Book' : 'New Accounting Book'}
             </p>
           </div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
@@ -73,28 +115,100 @@ function EntityModal({ editing, onSave, onCancel }) {
           </button>
         </div>
 
-        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
-            <FL>Book Name *</FL>
-            <input value={name} onChange={e => setName(e.target.value)}
-              placeholder="e.g. St. Paul's Church, St. Paul's Trust…"
-              style={INPUT_STYLE} autoFocus />
+        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* ── Section: Identity ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Church size={11} /> Book Identity
+            </p>
+
+            <div>
+              <FL>Book Name *</FL>
+              <input value={name} onChange={e => setName(e.target.value)}
+                placeholder="e.g. CSI St. Paul's Church"
+                style={INPUT_STYLE} autoFocus />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <FL>Type</FL>
+                <select value={entityType} onChange={e => setEntityType(e.target.value)} style={INPUT_STYLE}>
+                  {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <FL>Books Beginning From *</FL>
+                <input
+                  list="fy-suggestions"
+                  value={fyStart}
+                  onChange={e => setFyStart(e.target.value)}
+                  placeholder="e.g. 2026-27"
+                  style={{ ...INPUT_STYLE, borderColor: fyStart && !isValidFY(fyStart) ? '#f87171' : undefined }}
+                />
+                <datalist id="fy-suggestions">
+                  {SETUP_FY_OPTIONS.map(f => <option key={f} value={f} />)}
+                </datalist>
+                {fyStart && !isValidFY(fyStart) && (
+                  <p style={{ fontSize: 10, color: '#ef4444', margin: '4px 0 0' }}>Format must be YYYY-YY (e.g. 2026-27)</p>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div>
-            <FL>Type</FL>
-            <select value={entityType} onChange={e => setEntityType(e.target.value)} style={INPUT_STYLE}>
-              {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+          {/* ── Section: Contact / Header ── */}
+          <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MapPin size={11} /> Contact & Report Header
+            </p>
+
+            <div>
+              <FL>Diocese / Association</FL>
+              <input value={diocese} onChange={e => setDiocese(e.target.value)}
+                placeholder="e.g. Diocese of Madras"
+                style={INPUT_STYLE} />
+            </div>
+
+            <div>
+              <FL>Address</FL>
+              <input value={address} onChange={e => setAddress(e.target.value)}
+                placeholder="Street address"
+                style={INPUT_STYLE} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <FL>City</FL>
+                <input value={city} onChange={e => setCity(e.target.value)}
+                  placeholder="City"
+                  style={INPUT_STYLE} />
+              </div>
+              <div>
+                <FL>State</FL>
+                <input value={state} onChange={e => setState(e.target.value)}
+                  placeholder="State"
+                  style={INPUT_STYLE} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <FL>Phone</FL>
+                <input value={phone} onChange={e => setPhone(e.target.value)}
+                  placeholder="+91 …"
+                  style={INPUT_STYLE} />
+              </div>
+              <div>
+                <FL>Email</FL>
+                <input value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="email@church.org"
+                  type="email"
+                  style={INPUT_STYLE} />
+              </div>
+            </div>
           </div>
 
-          <div>
-            <FL>Description (optional)</FL>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              rows={2} placeholder="Brief description of this accounting book…"
-              style={{ ...INPUT_STYLE, height: 'auto', padding: '8px 12px', resize: 'vertical' }} />
-          </div>
-
+          {/* ── Footer ── */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={onCancel} style={{ flex: 1, height: 40, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
               Cancel
@@ -102,7 +216,7 @@ function EntityModal({ editing, onSave, onCancel }) {
             <button onClick={handleSave} disabled={!canSave || saving}
               style={{ flex: 2, height: 40, background: canSave ? 'var(--accent)' : '#e5e7eb', color: canSave ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: canSave ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
               {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Book')}
+              {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Book')}
             </button>
           </div>
         </div>
@@ -284,7 +398,7 @@ export default function EntityManagementPage() {
 
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                       <p style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>{entity.name}</p>
                       <select
                         value={entity.entity_type}
@@ -294,6 +408,11 @@ export default function EntityManagementPage() {
                       >
                         {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+                      {entity.fy_start && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#f0fdf4', color: '#15803d', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Calendar size={9} /> FY {entity.fy_start}
+                        </span>
+                      )}
                       {isCurrent && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#dbeafe', color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Check size={10} /> Active Book
@@ -303,8 +422,21 @@ export default function EntityManagementPage() {
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: '#f3f4f6', color: 'var(--text-3)' }}>INACTIVE</span>
                       )}
                     </div>
-                    {entity.description && (
-                      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{entity.description}</p>
+                    {entity.diocese && (
+                      <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 1px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Church size={10} /> {entity.diocese}
+                      </p>
+                    )}
+                    {(entity.address || entity.city) && (
+                      <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 1px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <MapPin size={10} /> {[entity.address, entity.city, entity.state].filter(Boolean).join(', ')}
+                      </p>
+                    )}
+                    {(entity.phone || entity.email) && (
+                      <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 1px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {entity.phone && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={10} /> {entity.phone}</span>}
+                        {entity.email && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={10} /> {entity.email}</span>}
+                      </p>
                     )}
                     <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
                       Created {new Date(entity.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}

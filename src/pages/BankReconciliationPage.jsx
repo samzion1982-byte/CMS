@@ -9,8 +9,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
-  getFY, fyOptions, fyDateRange, fmtAmt, fmtDate,
+  fyDateRange, fmtAmt, fmtDate,
   getChartOfAccounts,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
@@ -27,15 +28,13 @@ export default function BankReconciliationPage() {
   const { profile } = useAuth()
   const { currentEntityId } = useEntity()
 
-  const [fy,          setFy]          = useState(getFY())
-  const [fyOpen,      setFyOpen]      = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [accounts,    setAccounts]    = useState([])
   const [accountId,   setAccountId]   = useState('')
   const [lines,       setLines]       = useState([])
   const [loading,     setLoading]     = useState(false)
   const [toggling,    setToggling]    = useState(null) // line id being toggled
   const [showAll,     setShowAll]     = useState(false) // false = unreconciled only
-  const FYS = fyOptions()
   const { from: fyFrom, to: fyTo } = fyDateRange(fy)
 
   // Load bank/cash asset accounts

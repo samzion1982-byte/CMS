@@ -6,10 +6,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import {
-  getFY, fyOptions, fmtAmt, getFundReport,
+  fmtAmt, getFundReport,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, RefreshCw, ChevronDown, Wallet,
   TrendingUp, TrendingDown, Target, ChevronRight,
@@ -22,14 +23,12 @@ export default function FundReportPage() {
   const toast    = useToast()
   const { currentEntityId } = useEntity()
 
-  const [fy,           setFy]           = useState(getFY())
-  const [fyOpen,       setFyOpen]       = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [loading,      setLoading]      = useState(true)
   const [funds,        setFunds]        = useState([])
   const [selectedFund, setSelectedFund] = useState(null)
   const [txnLoading,   setTxnLoading]   = useState(false)
   const [transactions, setTransactions] = useState([])
-  const FYS = fyOptions()
 
   const load = useCallback(async () => {
     setLoading(true)

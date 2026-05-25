@@ -8,12 +8,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
-  getFY, fyOptions, fyDateRange, fmtAmt,
+  fyDateRange, fmtAmt,
   getChartOfAccounts, getPostableAccounts, getPostableAccountsWithPath,
   TYPE_COLOR, displayAccountType, getEntrySystemStatus,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, Save, Scale, ChevronDown, ChevronRight, Info,
 } from 'lucide-react'
@@ -26,8 +27,7 @@ export default function OpeningBalancesPage() {
   const { profile } = useAuth()
   const { currentEntityId } = useEntity()
 
-  const [fy,              setFy]            = useState(getFY())
-  const [fyOpen,          setFyOpen]        = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [allAccounts,     setAllAccounts]   = useState([])
   const [accounts,        setAccounts]      = useState([])   // postable (level 3/4) only
   const [balances,        setBalances]      = useState({})   // { [accountId]: { debit, credit } }
@@ -35,7 +35,6 @@ export default function OpeningBalancesPage() {
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
-  const FYS = fyOptions()
 
   const { from: fyFrom } = fyDateRange(fy)
 

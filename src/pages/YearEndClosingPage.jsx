@@ -8,16 +8,22 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
-  getFY, fyOptions, fyDateRange, fmtAmt,
-  getIncomeStatement, getChartOfAccounts,
+  fyDateRange, fmtAmt,
+  getIncomeStatement, getChartOfAccounts, getTrialBalance,
   createJournalEntry, nextEntryNumber,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, CheckCircle, AlertTriangle, RefreshCw,
-  ChevronDown, Archive,
+  ChevronDown, Archive, ArrowRight, ChevronsRight,
 } from 'lucide-react'
+
+function nextFY(fy) {
+  const y = parseInt(fy.split('-')[0]) + 1
+  return `${y}-${String(y + 1).slice(2)}`
+}
 
 const LABEL_TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }
 
@@ -27,19 +33,23 @@ export default function YearEndClosingPage() {
   const { profile } = useAuth()
   const { currentEntityId } = useEntity()
 
-  const [fy,          setFy]          = useState(getFY())
-  const [fyOpen,      setFyOpen]      = useState(false)
-  const [loading,     setLoading]     = useState(false)
-  const [saving,      setSaving]      = useState(false)
-  const [preview,     setPreview]     = useState(null) // { income, expenses, surplus, equityAccounts }
-  const [equityId,    setEquityId]    = useState('')
-  const [alreadyDone, setAlreadyDone] = useState(false)
-  const FYS = fyOptions()
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
+  const [loading,       setLoading]       = useState(false)
+  const [saving,        setSaving]        = useState(false)
+  const [preview,       setPreview]       = useState(null)
+  const [equityId,      setEquityId]      = useState('')
+  const [alreadyDone,   setAlreadyDone]   = useState(false)
+  const [cfPreview,     setCfPreview]     = useState(null)  // B/S accounts for carry-forward
+  const [cfLoading,     setCfLoading]     = useState(false)
+  const [cfSaving,      setCfSaving]      = useState(false)
+  const [cfDone,        setCfDone]        = useState(false) // opening balances already created
 
   const loadPreview = useCallback(async () => {
     setLoading(true)
     setPreview(null)
     setAlreadyDone(false)
+    setCfPreview(null)
+    setCfDone(false)
     try {
       const [stmt, all] = await Promise.all([
         getIncomeStatement(fy, currentEntityId),
@@ -53,7 +63,21 @@ export default function YearEndClosingPage() {
         .eq('financial_year', fy)
         .eq('narration', `Year-End Closing entries for FY ${fy}`)
         .eq('is_deleted', false)
-      if (existing?.length > 0) setAlreadyDone(true)
+      if (existing?.length > 0) {
+        setAlreadyDone(true)
+        // Check if opening balances for next FY already carried forward
+        const nfy = nextFY(fy)
+        const { data: cfExisting } = await supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('financial_year', nfy)
+          .eq('voucher_type', 'Opening Balance')
+          .ilike('narration', `%b/f from FY ${fy}%`)
+          .eq('is_deleted', false)
+        setCfDone((cfExisting?.length || 0) > 0)
+      } else {
+        setCfDone(false)
+      }
 
       const equityAccounts = all.filter(a => a.account_type === 'Equity' && !a.parent_id === false || a.account_level >= 3)
         .filter(a => a.account_type === 'Equity')
@@ -131,6 +155,61 @@ export default function YearEndClosingPage() {
     setSaving(false)
   }
 
+  // Load B/S closing balances for carry-forward preview
+  async function loadCfPreview() {
+    setCfLoading(true)
+    setCfPreview(null)
+    try {
+      const tb = await getTrialBalance(fy, currentEntityId)
+      const bs = tb
+        .filter(a => ['Asset', 'Liability', 'Equity'].includes(a.account_type))
+        .filter(a => Math.abs(a.total_debit - a.total_credit) > 0.005)
+        .map(a => ({
+          ...a,
+          closingBalance: a.total_debit - a.total_credit, // positive = Dr, negative = Cr
+        }))
+      setCfPreview(bs)
+    } catch (e) { toast(e.message, 'error') }
+    setCfLoading(false)
+  }
+
+  // Create Opening Balance entries for the new FY
+  async function handleCarryForward() {
+    if (!cfPreview?.length) return
+    const nfy = nextFY(fy)
+    const { from: newFyFrom } = fyDateRange(nfy)
+
+    const lines = cfPreview.map((a, i) => ({
+      account_id:    a.id,
+      debit_amount:  a.closingBalance > 0 ? a.closingBalance : 0,
+      credit_amount: a.closingBalance < 0 ? Math.abs(a.closingBalance) : 0,
+      description:   a.name,
+      line_number:   i + 1,
+    }))
+
+    const totalDr = lines.reduce((s, l) => s + l.debit_amount, 0)
+    const totalCr = lines.reduce((s, l) => s + l.credit_amount, 0)
+
+    setCfSaving(true)
+    try {
+      const entry = {
+        entry_number:   `OB-${nfy}`,
+        entry_date:     newFyFrom,
+        financial_year: nfy,
+        voucher_type:   'Opening Balance',
+        narration:      `Opening Balances b/f from FY ${fy}`,
+        total_debit:    totalDr,
+        total_credit:   totalCr,
+        is_posted:      true,
+        entity_id:      currentEntityId,
+      }
+      await createJournalEntry(entry, lines, profile?.email || 'admin')
+      toast(`Opening balances for FY ${nfy} created successfully!`, 'success')
+      setCfDone(true)
+    } catch (e) { toast(e.message, 'error') }
+    setCfSaving(false)
+  }
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -170,6 +249,88 @@ export default function YearEndClosingPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Step 2: Carry Forward (shown after closing entry exists) ── */}
+      {alreadyDone && (
+        <div className="card" style={{ marginBottom: 20, overflow: 'hidden', border: '2px solid var(--accent)' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--card-border)', background: 'var(--sidebar-item-active-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <ChevronsRight size={16} style={{ color: 'var(--accent)' }} />
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+                  Step 2 — Carry Forward to FY {nextFY(fy)}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0' }}>
+                  Transfer all Balance Sheet closing balances as Opening Balances for FY {nextFY(fy)}
+                </p>
+              </div>
+            </div>
+            {cfDone ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '5px 12px', borderRadius: 7 }}>
+                <CheckCircle size={13} /> Opening Balances Created
+              </span>
+            ) : !cfPreview ? (
+              <button onClick={loadCfPreview} disabled={cfLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {cfLoading ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
+                Preview Carry Forward
+              </button>
+            ) : (
+              <button onClick={handleCarryForward} disabled={cfSaving || !cfPreview?.length}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#15803d', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {cfSaving ? <Loader2 size={13} className="animate-spin" /> : <ChevronsRight size={13} />}
+                Create Opening Balances for FY {nextFY(fy)}
+              </button>
+            )}
+          </div>
+
+          {cfPreview && !cfDone && (
+            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead style={{ background: 'var(--table-header-bg)', position: 'sticky', top: 0 }}>
+                  <tr>
+                    <th style={{ ...LABEL_TH }}>Account</th>
+                    <th style={{ ...LABEL_TH, width: 90 }}>Type</th>
+                    <th style={{ ...LABEL_TH, textAlign: 'right', width: 160, color: '#2563eb' }}>Opening Dr (₹)</th>
+                    <th style={{ ...LABEL_TH, textAlign: 'right', width: 160, color: '#16a34a' }}>Opening Cr (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cfPreview.map((a, i) => {
+                    const typeColor = { Asset: '#2563eb', Liability: '#7c3aed', Equity: '#0891b2' }[a.account_type] || '#475569'
+                    const typeBg   = { Asset: '#dbeafe', Liability: '#ede9fe', Equity: '#cffafe' }[a.account_type] || '#f1f5f9'
+                    return (
+                      <tr key={a.id} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
+                        <td style={{ padding: '7px 14px', color: 'var(--text-1)' }}>{a.name}</td>
+                        <td style={{ padding: '7px 14px' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: typeBg, color: typeColor }}>{a.account_type}</span>
+                        </td>
+                        <td style={{ padding: '7px 14px', fontFamily: 'monospace', textAlign: 'right', color: '#2563eb', fontWeight: a.closingBalance > 0 ? 600 : 400 }}>
+                          {a.closingBalance > 0 ? fmtAmt(a.closingBalance) : '—'}
+                        </td>
+                        <td style={{ padding: '7px 14px', fontFamily: 'monospace', textAlign: 'right', color: '#16a34a', fontWeight: a.closingBalance < 0 ? 600 : 400 }}>
+                          {a.closingBalance < 0 ? fmtAmt(Math.abs(a.closingBalance)) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot style={{ background: 'var(--table-header-bg)', borderTop: '2px solid var(--card-border)' }}>
+                  <tr>
+                    <td colSpan={2} style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>TOTAL</td>
+                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 800, color: '#2563eb' }}>
+                      {fmtAmt(cfPreview.filter(a => a.closingBalance > 0).reduce((s, a) => s + a.closingBalance, 0))}
+                    </td>
+                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', textAlign: 'right', fontWeight: 800, color: '#16a34a' }}>
+                      {fmtAmt(cfPreview.filter(a => a.closingBalance < 0).reduce((s, a) => s + Math.abs(a.closingBalance), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Already done warning */}
       {alreadyDone && (

@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
 import {
-  getFY, fyOptions, fmtAmt, fmtDate,
+  fmtAmt, fmtDate,
   getJournalEntries, getChartOfAccounts, getTrialBalance,
   VOUCHER_COLOR, displayAccountType,
 } from '../lib/accountingLib'
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { exportToExcel, exportToExcelWithTitle } from '../lib/exportExcel'
 import { useEntity } from '../lib/EntityContext'
+import { useEntityFY } from '../lib/useEntityFY'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -68,8 +69,7 @@ export default function AccountingReportsPage() {
   const [dbDateSort, setDbDateSort] = useState('desc') // 'asc' | 'desc'
 
   // ── Account Summary state ─────────────────────────────────────
-  const [fy,          setFy]          = useState(getFY())
-  const [fyOpen,      setFyOpen]      = useState(false)
+  const { fy, setFy, fyOpen, setFyOpen, FYS } = useEntityFY()
   const [acTypeFilter, setAcTypeFilter] = useState('')
   const [allAccounts, setAllAccounts] = useState([])
   const [balances,    setBalances]    = useState([])
@@ -79,7 +79,6 @@ export default function AccountingReportsPage() {
   const [grpExpanded, setGrpExpanded] = useState(new Set())
   const [grShowZero,  setGrShowZero]  = useState(false)
 
-  const FYS = fyOptions()
   const AC_TYPES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
 
   // ── Load Day Book ─────────────────────────────────────────────
