@@ -548,6 +548,12 @@ function validatePhone(raw) {
   return { valid: true }
 }
 
+/* Extract first name — drops single-letter initials from start/end */
+function firstNameOf(fullName = '') {
+  const parts = fullName.trim().split(/\s+/).filter(p => p.length > 1)
+  return parts[0] || fullName.trim()
+}
+
 /* ══════════════════════════════════════════════════════════════
    Main page
 ══════════════════════════════════════════════════════════════ */
@@ -1099,9 +1105,11 @@ export default function MemberReportPage() {
       const raw = (m.whatsapp || m.mobile || '').replace(/\D/g, '')
       const to  = raw ? (raw.startsWith('91') ? raw : `91${raw}`) : null
       const msg = waMsg
-        .replace(/{MemberName}/g, m.member_name || '')
-        .replace(/{MemberID}/g,   m.member_id   || '')
-        .replace(/{Mobile}/g,     m.mobile      || '')
+        .replace(/{Title}/g,      m.title                    || '')
+        .replace(/{FirstName}/g,  firstNameOf(m.member_name))
+        .replace(/{MemberName}/g, m.member_name              || '')
+        .replace(/{MemberID}/g,   m.member_id                || '')
+        .replace(/{Mobile}/g,     m.mobile                   || '')
       let status = 'failed'; let errText = ''
       if (!to) { status = 'skipped'; errText = 'No number' }
       else {
@@ -1472,7 +1480,7 @@ export default function MemberReportPage() {
 
           {/* Placeholders */}
           <div style={{ fontSize:12, color:'var(--text-2)', marginBottom:10 }}>
-            Placeholders:&nbsp;{['{MemberName}','{MemberID}','{Mobile}'].map(p =>
+            Placeholders:&nbsp;{['{Title}','{FirstName}','{MemberName}','{MemberID}','{Mobile}'].map(p =>
               <code key={p} style={{ background:'var(--accent-subtle)', color:'var(--accent)', padding:'1px 6px', borderRadius:4, marginRight:5, fontSize:11, cursor:'pointer' }}
                 onClick={() => {
                   const el = textareaRef.current
@@ -1616,6 +1624,8 @@ export default function MemberReportPage() {
                 <div style={{ marginTop:4, whiteSpace:'pre-wrap', lineHeight:1.5 }}>
                   {renderWaText(
                     waMsg
+                      .replace(/{Title}/g,      waSelected[0]?.title||'')
+                      .replace(/{FirstName}/g,  firstNameOf(waSelected[0]?.member_name))
                       .replace(/{MemberName}/g, waSelected[0]?.member_name||'')
                       .replace(/{MemberID}/g,   waSelected[0]?.member_id||'')
                       .replace(/{Mobile}/g,      waSelected[0]?.mobile||'')
