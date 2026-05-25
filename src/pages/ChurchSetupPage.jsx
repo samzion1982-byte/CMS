@@ -297,11 +297,14 @@ export default function ChurchSetupPage() {
       const { error } = await supabase.rpc(rpc)
       if (error) throw error
       if (flushAcTarget === 'advanced') {
+        // Clear all cached entity references so EntityProvider starts fresh
         Object.keys(sessionStorage).filter(k => k.startsWith('ac_')).forEach(k => sessionStorage.removeItem(k))
+        Object.keys(localStorage).filter(k => k.startsWith('ac_')).forEach(k => localStorage.removeItem(k))
       }
       setShowFlushAc(false)
       const label = flushAcTarget === 'simple' ? 'Simple Accounts' : 'Advanced Accounts'
-      toast(`${label} flushed. Start fresh from the Accounts page.`, 'success')
+      toast(`${label} flushed. Reloading…`, 'success')
+      setTimeout(() => window.location.reload(), 1200)
     } catch (err) {
       toast('Flush failed: ' + err.message, 'error')
     } finally {
