@@ -550,7 +550,7 @@ export async function getLedger(accountId, entityId, from, to) {
     let obQ = supabase
       .from('journal_entries')
       .select('journal_entry_lines!inner(account_id)')
-      .eq('voucher_type', 'Opening Balance')
+      .eq('voucher_type', 'Opening')
       .eq('is_posted', true)
       .eq('is_deleted', false)
       .eq('journal_entry_lines.account_id', accountId)

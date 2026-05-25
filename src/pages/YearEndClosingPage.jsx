@@ -71,7 +71,7 @@ export default function YearEndClosingPage() {
           .from('journal_entries')
           .select('id')
           .eq('financial_year', nfy)
-          .eq('voucher_type', 'Opening Balance')
+          .eq('voucher_type', 'Opening')
           .ilike('narration', `%b/f from FY ${fy}%`)
           .eq('is_deleted', false)
         setCfDone((cfExisting?.length || 0) > 0)
@@ -196,7 +196,7 @@ export default function YearEndClosingPage() {
         entry_number:   `OB-${nfy}`,
         entry_date:     newFyFrom,
         financial_year: nfy,
-        voucher_type:   'Opening Balance',
+        voucher_type:   'Opening',
         narration:      `Opening Balances b/f from FY ${fy}`,
         total_debit:    totalDr,
         total_credit:   totalCr,

@@ -51,7 +51,7 @@ export default function OpeningBalancesPage() {
         .from('journal_entries')
         .select('id, journal_entry_lines(account_id, debit_amount, credit_amount)')
         .eq('financial_year', fy)
-        .eq('voucher_type', 'Opening Balance')
+        .eq('voucher_type', 'Opening')
         .eq('is_deleted', false)
       if (currentEntityId) obQ = obQ.eq('entity_id', currentEntityId)
       const { data: entries } = await obQ
@@ -159,7 +159,7 @@ export default function OpeningBalancesPage() {
         .from('journal_entries')
         .select('id')
         .eq('financial_year', fy)
-        .eq('voucher_type', 'Opening Balance')
+        .eq('voucher_type', 'Opening')
         .eq('is_deleted', false)
       if (currentEntityId) existQ = existQ.eq('entity_id', currentEntityId)
       const { data: existing } = await existQ
@@ -177,7 +177,7 @@ export default function OpeningBalancesPage() {
           entry_number:   `OB-${fy}`,
           entry_date:     fyFrom,
           financial_year: fy,
-          voucher_type:   'Opening Balance',
+          voucher_type:   'Opening',
           narration:      `Opening balances for FY ${fy}`,
           total_debit:    totalDr,
           total_credit:   totalCr,
