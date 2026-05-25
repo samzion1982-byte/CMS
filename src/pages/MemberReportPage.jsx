@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import lamejs from '@breezystack/lamejs'
-import { Users, Download, MessageSquare, ChevronUp, ChevronDown, RefreshCw, Send, ListFilter, Clock, Trash2, FileSpreadsheet, Calendar, Bold, Italic, Underline, Strikethrough, List, Indent, CornerDownLeft, Paperclip, X, Music, FileText, ImageIcon, Mic, Square, Play, Pause } from 'lucide-react'
+import { Users, Download, MessageSquare, ChevronUp, ChevronDown, RefreshCw, Send, ListFilter, Clock, Trash2, FileSpreadsheet, Calendar, Bold, Italic, Strikethrough, List, Indent, CornerDownLeft, Paperclip, X, Music, FileText, ImageIcon, Mic, Square, Play, Pause } from 'lucide-react'
 import { supabase, getChurch } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -16,12 +16,12 @@ function htmlToWaMd(el) {
     const inner = Array.from(node.childNodes).map(walk).join('')
     switch (tag) {
       case 'br':                           return '\n'
-      case 'strong': case 'b':            return `*${inner}*`
-      case 'em':     case 'i':            return `_${inner}_`
-      case 's': case 'del': case 'strike': return `~${inner}~`
+      case 'strong': case 'b':            return `*${inner.replace(/\*/g, '')}*`
+      case 'em':     case 'i':            return `_${inner.replace(/_/g, '')}_`
+      case 's': case 'del': case 'strike': return `~${inner.replace(/~/g, '')}~`
       case 'code':                         return '`' + inner + '`'
-      case 'u': case 'ins':               return inner  // WhatsApp has no underline; strip tag, keep text
-      case 'li':                           return '• ' + inner + '\n'
+      case 'u': case 'ins':               return inner
+      case 'li':                           return '- ' + inner + '\n'
       case 'ul': case 'ol':               return inner
       case 'div': case 'p':               return inner + '\n'
       default:                             return inner
@@ -917,7 +917,6 @@ export default function MemberReportPage() {
     el.focus()
     if (marker === '*') document.execCommand('bold', false, null)
     else if (marker === '_') document.execCommand('italic', false, null)
-    else if (marker === 'u') document.execCommand('underline', false, null)
     else if (marker === '~') document.execCommand('strikeThrough', false, null)
     else if (marker === '`') {
       const sel = window.getSelection()
@@ -1497,7 +1496,6 @@ export default function MemberReportPage() {
             {[
               { title:'Bold',          Icon:Bold,          action:() => formatText('*') },
               { title:'Italic',        Icon:Italic,        action:() => formatText('_') },
-              { title:'Underline',     Icon:Underline,     action:() => formatText('u') },
               { title:'Strikethrough', Icon:Strikethrough, action:() => formatText('~') },
             ].map(({ title, Icon, action }) => (
               <button key={title} title={title} onClick={action} className="no-lift"
@@ -1506,7 +1504,7 @@ export default function MemberReportPage() {
               </button>
             ))}
             <div style={{ width:1, height:18, background:'var(--card-border)', margin:'0 2px' }}/>
-            <button title="Bullet point" onClick={() => prefixLines('• ')} className="no-lift"
+            <button title="Bullet point" onClick={() => prefixLines('- ')} className="no-lift"
               style={{ padding:'4px 7px', borderRadius:5, border:'1px solid var(--card-border)', background:'var(--card-bg)', color:'var(--text-1)', cursor:'pointer', display:'flex', alignItems:'center' }}>
               <List size={13}/>
             </button>
