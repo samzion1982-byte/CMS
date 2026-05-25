@@ -597,7 +597,7 @@ export default function ChurchSetupPage() {
                 {/* Flush Accounts */}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
-                    Erase all accounting books, chart of accounts and journal entries — resets to first-time setup.
+                    Erase all journal entries, balances and entities — resets to first-time setup. Chart of Accounts is preserved.
                   </p>
                   <button
                     onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcTarget(null); setFlushAcStep(1); setShowFlushAc(true) }}
