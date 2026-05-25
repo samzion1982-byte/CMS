@@ -25,12 +25,15 @@ export default function ChurchSetupPage() {
   const [flushPwErr,        setFlushPwErr]        = useState(false)
   const flushPwRef = useRef(null)
 
-  const [showFlushAc,  setShowFlushAc]  = useState(false)
-  const [flushAcStep,  setFlushAcStep]  = useState(1)       // 1 = choose, 2 = confirm
-  const [flushAcTarget,setFlushAcTarget]= useState(null)    // 'simple' | 'advanced'
-  const [flushAcPw,    setFlushAcPw]    = useState('')
-  const [flushAcPwErr, setFlushAcPwErr] = useState(false)
-  const [flushingAc,   setFlushingAc]   = useState(false)
+  const [showFlushAc,          setShowFlushAc]          = useState(false)
+  const [flushAcStep,          setFlushAcStep]          = useState(1)   // 1=choose 2=select books 3=confirm
+  const [flushAcTarget,        setFlushAcTarget]        = useState(null) // 'simple'|'advanced'
+  const [flushAcPw,            setFlushAcPw]            = useState('')
+  const [flushAcPwErr,         setFlushAcPwErr]         = useState(false)
+  const [flushingAc,           setFlushingAc]           = useState(false)
+  const [flushAcEntities,      setFlushAcEntities]      = useState([])
+  const [flushAcSelected,      setFlushAcSelected]      = useState(new Set())
+  const [flushAcEntitiesLoading, setFlushAcEntitiesLoading] = useState(false)
   const flushAcPwRef = useRef(null)
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
@@ -293,12 +296,25 @@ export default function ChurchSetupPage() {
     setFlushAcPwErr(false)
     setFlushingAc(true)
     try {
-      const rpc = flushAcTarget === 'simple' ? 'flush_simple_accounts' : 'flush_accounting_data'
-      const { error } = await supabase.rpc(rpc)
-      if (error) throw error
+      if (flushAcTarget === 'simple') {
+        const { error } = await supabase.rpc('flush_simple_accounts')
+        if (error) throw error
+        toast('Simple Accounts flushed. Default accounts & categories restored.', 'success')
+      } else {
+        const ids = Array.from(flushAcSelected)
+        if (ids.length === 0) { toast('No books selected.', 'error'); setFlushingAc(false); return }
+        const { error } = await supabase.rpc('flush_selected_entities', { p_entity_ids: ids })
+        if (error) throw error
+        const allCleared = ids.length === flushAcEntities.length
+        const names = flushAcEntities.filter(e => flushAcSelected.has(e.id)).map(e => e.name).join(', ')
+        toast(`Flushed: ${names}. ${allCleared ? 'All books cleared.' : 'Other books untouched.'}`, 'success')
+        if (allCleared) {
+          Object.keys(sessionStorage).filter(k => k.startsWith('ac_')).forEach(k => sessionStorage.removeItem(k))
+          Object.keys(localStorage).filter(k => k.startsWith('ac_')).forEach(k => localStorage.removeItem(k))
+          setTimeout(() => window.location.reload(), 1000)
+        }
+      }
       setShowFlushAc(false)
-      const label = flushAcTarget === 'simple' ? 'Simple Accounts' : 'Advanced Accounts'
-      toast(`${label} flushed. Journal entries cleared and standard COA restored.`, 'success')
     } catch (err) {
       toast('Flush failed: ' + err.message, 'error')
     } finally {
@@ -597,7 +613,7 @@ export default function ChurchSetupPage() {
                     Clears all journal entries, balances and COA. Accounting Books are preserved. Standard COA is auto-restored for each book.
                   </p>
                   <button
-                    onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcTarget(null); setFlushAcStep(1); setShowFlushAc(true) }}
+                    onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcTarget(null); setFlushAcStep(1); setFlushAcEntities([]); setFlushAcSelected(new Set()); setShowFlushAc(true) }}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#fff5f5', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#b91c1c', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                   >
                     <Trash2 size={12} /> Flush Accounts
@@ -822,8 +838,21 @@ export default function ChurchSetupPage() {
                     style={{ flex:1, height:40, background:'var(--card-bg)', border:'1.5px solid var(--card-border)', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--text-2)', fontFamily:'var(--font-ui)' }}>
                     Cancel
                   </button>
-                  <button onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcStep(2); setTimeout(() => flushAcPwRef.current?.focus(), 80) }}
+                  <button
                     disabled={!flushAcTarget}
+                    onClick={async () => {
+                      if (flushAcTarget === 'simple') {
+                        setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcStep(3)
+                        setTimeout(() => flushAcPwRef.current?.focus(), 80)
+                      } else {
+                        setFlushAcEntitiesLoading(true); setFlushAcStep(2)
+                        const { data } = await supabase.from('accounting_entities').select('id,name,entity_type,is_active').order('created_at')
+                        const list = data || []
+                        setFlushAcEntities(list)
+                        setFlushAcSelected(new Set(list.map(e => e.id)))
+                        setFlushAcEntitiesLoading(false)
+                      }
+                    }}
                     style={{ flex:2, height:40, background:flushAcTarget ? '#dc2626' : '#e5e7eb', color:flushAcTarget ? '#fff' : '#9ca3af', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:flushAcTarget ? 'pointer' : 'not-allowed', fontFamily:'var(--font-ui)' }}>
                     Continue →
                   </button>
@@ -831,8 +860,75 @@ export default function ChurchSetupPage() {
               </div>
             </>)}
 
-            {/* ── Step 2: Severe warning + master password ── */}
+            {/* ── Step 2: Select Accounting Books (Advanced only) ── */}
             {flushAcStep === 2 && (<>
+              <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--card-border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div>
+                  <p style={{ margin:0, fontSize:15, fontWeight:800, color:'var(--text-1)', fontFamily:'var(--font-ui)' }}>Select Accounting Books to Flush</p>
+                  <p style={{ margin:0, fontSize:12, color:'var(--text-3)', fontFamily:'var(--font-ui)' }}>Unchecked books will be kept intact</p>
+                </div>
+                <button onClick={() => setShowFlushAc(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:20, lineHeight:1, padding:'2px 6px' }}>×</button>
+              </div>
+              <div style={{ padding:'16px 22px' }}>
+                {flushAcEntitiesLoading ? (
+                  <div style={{ display:'flex', justifyContent:'center', padding:'24px 0' }}>
+                    <Loader2 size={22} style={{ animation:'spin 0.7s linear infinite', color:'var(--accent)' }} />
+                  </div>
+                ) : flushAcEntities.length === 0 ? (
+                  <p style={{ fontSize:13, color:'var(--text-3)', textAlign:'center', padding:'16px 0', fontFamily:'var(--font-ui)' }}>No accounting books found.</p>
+                ) : (<>
+                  {/* Select All toggle */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                    <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)', fontFamily:'var(--font-ui)' }}>
+                      {flushAcSelected.size} of {flushAcEntities.length} selected
+                    </span>
+                    <button onClick={() => {
+                      if (flushAcSelected.size === flushAcEntities.length)
+                        setFlushAcSelected(new Set())
+                      else
+                        setFlushAcSelected(new Set(flushAcEntities.map(e => e.id)))
+                    }} style={{ fontSize:12, fontWeight:600, color:'#dc2626', background:'none', border:'none', cursor:'pointer', fontFamily:'var(--font-ui)', textDecoration:'underline' }}>
+                      {flushAcSelected.size === flushAcEntities.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                  {/* Book list */}
+                  <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16, maxHeight:220, overflowY:'auto' }}>
+                    {flushAcEntities.map(entity => {
+                      const checked = flushAcSelected.has(entity.id)
+                      return (
+                        <label key={entity.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, border:`2px solid ${checked ? '#fca5a5' : 'var(--card-border)'}`, background: checked ? '#fff5f5' : 'var(--table-header-bg)', cursor:'pointer', transition:'all 0.15s' }}>
+                          <input type="checkbox" checked={checked} onChange={e => {
+                            const next = new Set(flushAcSelected)
+                            e.target.checked ? next.add(entity.id) : next.delete(entity.id)
+                            setFlushAcSelected(next)
+                          }} style={{ width:16, height:16, accentColor:'#dc2626', flexShrink:0 }} />
+                          <div style={{ flex:1 }}>
+                            <p style={{ margin:0, fontSize:13, fontWeight:700, color: checked ? '#b91c1c' : 'var(--text-1)', fontFamily:'var(--font-ui)' }}>{entity.name}</p>
+                            <p style={{ margin:0, fontSize:11, color:'var(--text-3)', fontFamily:'var(--font-ui)' }}>{entity.entity_type || 'Church'}{!entity.is_active ? ' · Inactive' : ''}</p>
+                          </div>
+                          {checked && <span style={{ fontSize:10, fontWeight:700, color:'#dc2626', background:'#fee2e2', padding:'2px 8px', borderRadius:99, flexShrink:0, fontFamily:'var(--font-ui)' }}>WILL ERASE</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </>)}
+                <div style={{ display:'flex', gap:10 }}>
+                  <button onClick={() => setFlushAcStep(1)} disabled={flushingAc}
+                    style={{ flex:1, height:40, background:'var(--card-bg)', border:'1.5px solid var(--card-border)', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--text-2)', fontFamily:'var(--font-ui)' }}>
+                    ← Back
+                  </button>
+                  <button
+                    disabled={flushAcSelected.size === 0}
+                    onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcStep(3); setTimeout(() => flushAcPwRef.current?.focus(), 80) }}
+                    style={{ flex:2, height:40, background: flushAcSelected.size > 0 ? '#dc2626' : '#e5e7eb', color: flushAcSelected.size > 0 ? '#fff' : '#9ca3af', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor: flushAcSelected.size > 0 ? 'pointer' : 'not-allowed', fontFamily:'var(--font-ui)' }}>
+                    Continue → ({flushAcSelected.size} book{flushAcSelected.size !== 1 ? 's' : ''})
+                  </button>
+                </div>
+              </div>
+            </>)}
+
+            {/* ── Step 3: Severe warning + master password ── */}
+            {flushAcStep === 3 && (<>
               <div style={{ background:'#7f1d1d', padding:'16px 22px' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
                   <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:8, padding:7, display:'flex' }}>
@@ -849,7 +945,11 @@ export default function ChurchSetupPage() {
                 <div style={{ background:'rgba(0,0,0,0.25)', borderRadius:8, padding:'10px 14px' }}>
                   {flushAcTarget === 'simple'
                     ? <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>All transactions, cash/bank accounts and categories will be <strong style={{color:'#fff'}}>permanently deleted</strong>. Default accounts and categories will be re-seeded. Your church members and payment records are not affected.</p>
-                    : <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>All accounting books, chart of accounts, every journal entry and all opening balances will be <strong style={{color:'#fff'}}>permanently deleted</strong>. The accounting method lock will be reset. You will need to create a new accounting book from scratch.</p>
+                    : <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>
+                        The following {flushAcSelected.size} book{flushAcSelected.size !== 1 ? 's' : ''} will be <strong style={{color:'#fff'}}>permanently erased</strong> — chart of accounts, all journal entries and balances:{' '}
+                        <strong style={{color:'#fff'}}>{flushAcEntities.filter(e => flushAcSelected.has(e.id)).map(e => e.name).join(', ')}</strong>.
+                        {flushAcSelected.size < flushAcEntities.length && <span> Other books will remain intact.</span>}
+                      </p>
                   }
                 </div>
               </div>
@@ -863,14 +963,14 @@ export default function ChurchSetupPage() {
                 />
                 {flushAcPwErr && <p style={{ margin:'0 0 12px', fontSize:12, color:'#dc2626', fontWeight:600, fontFamily:'var(--font-ui)' }}>Incorrect master password. Try again.</p>}
                 <div style={{ display:'flex', gap:10 }}>
-                  <button onClick={() => setFlushAcStep(1)} disabled={flushingAc}
+                  <button onClick={() => setFlushAcStep(flushAcTarget === 'advanced' ? 2 : 1)} disabled={flushingAc}
                     style={{ flex:1, height:42, background:'var(--card-bg)', border:'1.5px solid var(--card-border)', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--text-2)', fontFamily:'var(--font-ui)' }}>
                     ← Back
                   </button>
                   <button onClick={doFlushAccounts} disabled={!flushAcPw || flushingAc}
                     style={{ flex:2, height:42, background:(flushAcPw && !flushingAc) ? '#b91c1c' : '#e5e7eb', color:(flushAcPw && !flushingAc) ? '#fff' : '#9ca3af', border:'none', borderRadius:8, fontSize:13, fontWeight:800, cursor:(flushAcPw && !flushingAc) ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'var(--font-ui)', letterSpacing:'0.01em' }}>
                     {flushingAc ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>}
-                    {flushingAc ? 'Flushing…' : `Erase ${flushAcTarget === 'simple' ? 'Simple' : 'Advanced'} Accounts`}
+                    {flushingAc ? 'Flushing…' : flushAcTarget === 'simple' ? 'Erase Simple Accounts' : `Erase ${flushAcSelected.size} Book${flushAcSelected.size !== 1 ? 's' : ''}`}
                   </button>
                 </div>
               </div>
