@@ -330,7 +330,7 @@ export default function ChartOfAccountsPage() {
   const { profile } = useAuth()
   const toast       = useToast()
   const navigate    = useNavigate()
-  const { currentEntityId } = useEntity()
+  const { currentEntityId, currentEntity } = useEntity()
 
   const [accounts,    setAccounts]    = useState([])
   const [tree,        setTree]        = useState([])
@@ -422,15 +422,15 @@ export default function ChartOfAccountsPage() {
       // Title
       ws.mergeCells('A1:E1')
       const title = ws.getCell('A1')
-      title.value = 'Chart of Accounts'
+      title.value = `Chart of Accounts — ${currentEntity?.name || 'Unknown Entity'}`
       title.font  = { bold: true, size: 16, color: { argb: 'FF1E3A5F' } }
       title.alignment = { horizontal: 'center', vertical: 'middle' }
       ws.getRow(1).height = 38
 
-      // Date
+      // Entity + Date
       ws.mergeCells('A2:E2')
       const sub = ws.getCell('A2')
-      sub.value = `Exported on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`
+      sub.value = `Entity: ${currentEntity?.name || '—'}   |   Exported on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`
       sub.font  = { size: 10, italic: true, color: { argb: 'FF64748B' } }
       sub.alignment = { horizontal: 'center' }
       ws.getRow(2).height = 18
@@ -506,7 +506,8 @@ export default function ChartOfAccountsPage() {
       const url    = URL.createObjectURL(blob)
       const a      = document.createElement('a')
       a.href       = url
-      a.download   = `Chart-of-Accounts-${new Date().toISOString().slice(0, 10)}.xlsx`
+      const entitySlug = (currentEntity?.name || 'Entity').replace(/[^a-z0-9]/gi, '-')
+      a.download   = `COA-${entitySlug}-${new Date().toISOString().slice(0, 10)}.xlsx`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

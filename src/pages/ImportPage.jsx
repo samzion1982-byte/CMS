@@ -1928,7 +1928,7 @@ function normalizeCol(s) {
 
 const COA_LEVEL_FROM_LABEL = { 'Main Account': 1, 'Account Group': 2, 'Ledger': 3, 'Sub-Ledger': 4 }
 
-function COAImportTab({ currentEntityId }) {
+function COAImportTab({ currentEntityId, currentEntity }) {
   const toast = useToast()
   const fileRef = useRef(null)
   const [parsing,      setParsing]      = useState(false)
@@ -2041,9 +2041,15 @@ function COAImportTab({ currentEntityId }) {
           <BookOpen size={18} color="#7c3aed" />
           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#4c1d95' }}>Import Chart of Accounts</p>
         </div>
+        {currentEntityId && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#ede9fe', borderRadius: 8, padding: '4px 12px', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: '#5b21b6', fontWeight: 700 }}>Importing into:</span>
+            <span style={{ fontSize: 12, color: '#4c1d95', fontWeight: 800 }}>{currentEntity?.name || currentEntityId}</span>
+          </div>
+        )}
         <p style={{ margin: '0 0 16px', fontSize: 12, color: '#6d28d9', lineHeight: 1.6 }}>
           Upload an Excel file exported from the Chart of Accounts page.
-          The file must have columns: <strong>Level · Account Type · Account Name · Postable</strong> starting at row 2 (or after a header row).
+          Switch the entity badge (top of page) before importing to target a different book.
           Accounts that already exist (matched by name + parent) will be skipped.
         </p>
         <button
@@ -2068,7 +2074,7 @@ function COAImportTab({ currentEntityId }) {
                 <Upload size={16} color="#7c3aed" />
               </div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Import Chart of Accounts</p>
+                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Import Chart of Accounts → <span style={{ color: '#7c3aed' }}>{currentEntity?.name || 'Entity'}</span></p>
                 <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{importModal.fileName}</p>
               </div>
               <button onClick={() => setImportModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={18} /></button>
@@ -2118,7 +2124,7 @@ function COAImportTab({ currentEntityId }) {
 export default function ImportPage() {
   const { profile } = useAuth()
   const toast = useToast()
-  const { currentEntityId } = useEntity()
+  const { currentEntityId, currentEntity } = useEntity()
   const [tab, setTab] = useState('import')
   const [stats, setStats] = useState([])   // [{ label, count, icon }]
   const [history, setHistory] = useState([])
@@ -2286,7 +2292,7 @@ export default function ImportPage() {
             {tab === 'import'    && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
             {tab === 'photos'    && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
             {tab === 'autoflush' && <AutoFlushTab />}
-            {tab === 'coa'       && <COAImportTab currentEntityId={currentEntityId} />}
+            {tab === 'coa'       && <COAImportTab currentEntityId={currentEntityId} currentEntity={currentEntity} />}
           </div>
 
           {/* RIGHT: sticky import board */}
