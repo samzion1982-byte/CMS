@@ -3,8 +3,10 @@ import ReactDOM from 'react-dom'
 import { supabase, adminSupabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
-import { Upload, FileSpreadsheet, CheckCircle, Loader2, RefreshCw, Camera, Trash2, Database, ShieldAlert, AlertTriangle, Zap, XCircle, Clock, IndianRupee } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle, Loader2, RefreshCw, Camera, Trash2, Database, ShieldAlert, AlertTriangle, Zap, XCircle, Clock, IndianRupee, BookOpen, X } from 'lucide-react'
 import { getActiveCategories } from '../lib/paymentCategories'
+import { useEntity } from '../lib/EntityContext'
+import { getChartOfAccounts, TYPE_COLOR } from '../lib/accountingLib'
 
 // ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
 // Add any table names here that should never appear in the Flush All modal
@@ -1922,9 +1924,201 @@ function normalizeCol(s) {
 }
 
 
+// ── COA Import Tab ────────────────────────────────────────────────────────────
+
+const COA_LEVEL_FROM_LABEL = { 'Main Account': 1, 'Account Group': 2, 'Ledger': 3, 'Sub-Ledger': 4 }
+
+function COAImportTab({ currentEntityId }) {
+  const toast = useToast()
+  const fileRef = useRef(null)
+  const [parsing,      setParsing]      = useState(false)
+  const [importModal,  setImportModal]  = useState(null)  // { rows, fileName }
+  const [saving,       setSaving]       = useState(false)
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setParsing(true)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      await wb.xlsx.load(await file.arrayBuffer())
+      const ws = wb.worksheets[0]
+
+      let headerRow = 0
+      ws.eachRow((row, n) => {
+        if (row.getCell(4).text?.trim() === 'Account Name') headerRow = n
+      })
+      if (!headerRow) throw new Error('Invalid file — could not find header row with "Account Name" in column D')
+
+      const rows = []
+      ws.eachRow((row, n) => {
+        if (n <= headerRow) return
+        const levelLabel = row.getCell(2).text?.trim()
+        const type       = row.getCell(3).text?.trim()
+        const rawName    = row.getCell(4).text || ''
+        const postable   = row.getCell(5).text?.trim() === '✓'
+        const name       = rawName.trim()
+        if (!name || !levelLabel || !type) return
+        const level = COA_LEVEL_FROM_LABEL[levelLabel]
+        if (!level) return
+        rows.push({ level, name, account_type: type, is_postable: postable })
+      })
+
+      if (rows.length === 0) throw new Error('No valid rows found in file')
+
+      const current = await getChartOfAccounts(false, currentEntityId)
+      const stack   = []
+      const preview = rows.map(row => {
+        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
+        const parentId = stack.length ? stack[stack.length - 1].id : null
+        const exists   = current.find(a =>
+          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
+        )
+        const entry = { ...row, parentId, exists: !!exists, existingId: exists?.id || null }
+        stack.push({ level: row.level, name: row.name, id: exists?.id || null })
+        return entry
+      })
+
+      setImportModal({ rows: preview, fileName: file.name })
+    } catch (err) { toast('Parse failed: ' + err.message, 'error') }
+    setParsing(false)
+  }
+
+  async function doImport() {
+    if (!importModal) return
+    setSaving(true)
+    try {
+      const current = await getChartOfAccounts(false, currentEntityId)
+      const stack   = []
+      let created = 0, skipped = 0
+
+      for (const row of importModal.rows) {
+        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
+        const parent   = stack.length ? stack[stack.length - 1] : null
+        const parentId = parent?.id || null
+
+        const exists = current.find(a =>
+          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
+        )
+        if (exists) {
+          stack.push({ level: row.level, name: row.name, id: exists.id, code: exists.code })
+          skipped++
+          continue
+        }
+
+        const uid  = Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase()
+        const code = parent?.code ? `${parent.code}-${uid}` : uid
+
+        const { data, error } = await supabase.from('chart_of_accounts').insert({
+          code, name: row.name, account_type: row.account_type, level: row.level,
+          is_postable: row.is_postable, parent_id: parentId, entity_id: currentEntityId,
+          sort_order: 0, is_active: true,
+        }).select().single()
+
+        if (error) throw error
+        current.push(data)
+        stack.push({ level: row.level, name: row.name, id: data.id, code: data.code })
+        created++
+      }
+
+      toast(`Import complete — ${created} created, ${skipped} already existed`, 'success')
+      setImportModal(null)
+    } catch (err) { toast('Import failed: ' + err.message, 'error') }
+    setSaving(false)
+  }
+
+  const newCount  = importModal?.rows.filter(r => !r.exists).length ?? 0
+  const skipCount = importModal?.rows.filter(r =>  r.exists).length ?? 0
+
+  return (
+    <div style={{ maxWidth: 600 }}>
+      <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleFile} />
+
+      <div style={{ background: '#f3e8ff', border: '1.5px solid #c4b5fd', borderRadius: 12, padding: '20px 24px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <BookOpen size={18} color="#7c3aed" />
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#4c1d95' }}>Import Chart of Accounts</p>
+        </div>
+        <p style={{ margin: '0 0 16px', fontSize: 12, color: '#6d28d9', lineHeight: 1.6 }}>
+          Upload an Excel file exported from the Chart of Accounts page.
+          The file must have columns: <strong>Level · Account Type · Account Name · Postable</strong> starting at row 2 (or after a header row).
+          Accounts that already exist (matched by name + parent) will be skipped.
+        </p>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={parsing || !currentEntityId}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 20px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: parsing || !currentEntityId ? 'not-allowed' : 'pointer', opacity: parsing || !currentEntityId ? 0.6 : 1 }}>
+          {parsing ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
+          {parsing ? 'Reading file…' : 'Choose Excel File'}
+        </button>
+        {!currentEntityId && (
+          <p style={{ margin: '10px 0 0', fontSize: 11, color: '#dc2626' }}>No accounting entity selected. Set up an entity in the Accounting module first.</p>
+        )}
+      </div>
+
+      {/* Preview Modal */}
+      {importModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Upload size={16} color="#7c3aed" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Import Chart of Accounts</p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{importModal.fileName}</p>
+              </div>
+              <button onClick={() => setImportModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', gap: 10 }}>
+              <span style={{ padding: '4px 12px', background: '#dcfce7', color: '#16a34a', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>{newCount} to import</span>
+              {skipCount > 0 && (
+                <span style={{ padding: '4px 12px', background: '#f1f5f9', color: '#64748b', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{skipCount} already exist (will skip)</span>
+              )}
+              <span style={{ padding: '4px 12px', background: '#eff6ff', color: '#2563eb', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{importModal.rows.length} total rows</span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {importModal.rows.map((row, i) => {
+                const indent = (row.level - 1) * 20
+                const c = TYPE_COLOR[row.account_type] || { bg: '#f1f5f9', text: '#475569' }
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 22px', paddingLeft: 22 + indent, borderBottom: '1px solid var(--card-border)', opacity: row.exists ? 0.45 : 1 }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: c.bg, color: c.text, flexShrink: 0 }}>{row.account_type}</span>
+                    <span style={{ fontSize: 12, fontWeight: row.level <= 2 ? 700 : 400, color: 'var(--text-1)', flex: 1 }}>{row.name}</span>
+                    {row.exists
+                      ? <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>exists</span>
+                      : <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>new</span>
+                    }
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+              {newCount === 0 && <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>All accounts already exist — nothing to import.</span>}
+              <button onClick={() => setImportModal(null)} style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
+              <button onClick={doImport} disabled={saving || newCount === 0}
+                style={{ padding: '8px 22px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: newCount === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: saving || newCount === 0 ? 0.6 : 1 }}>
+                {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
+                {saving ? 'Importing…' : `Import ${newCount} account${newCount !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ImportPage() {
   const { profile } = useAuth()
   const toast = useToast()
+  const { currentEntityId } = useEntity()
   const [tab, setTab] = useState('import')
   const [stats, setStats] = useState([])   // [{ label, count, icon }]
   const [history, setHistory] = useState([])
@@ -2079,7 +2273,7 @@ export default function ImportPage() {
           <div>
             {/* Tab bar */}
             <div style={{display:'flex',gap:4,marginBottom:20,background:'#f1f5f9',padding:4,borderRadius:10,width:'fit-content'}}>
-              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap]].map(([id,label,Icon])=>(
+              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap],['coa','Import COA',BookOpen]].map(([id,label,Icon])=>(
                 <button key={id} onClick={()=>setTab(id)} className="imp-tab-btn"
                   style={{display:'flex',alignItems:'center',gap:7,padding:'7px 16px',fontSize:13,fontWeight:500,borderRadius:7,border:'none',cursor:'pointer',
                     background: tab===id ? '#fff' : 'transparent',
@@ -2092,6 +2286,7 @@ export default function ImportPage() {
             {tab === 'import'    && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
             {tab === 'photos'    && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
             {tab === 'autoflush' && <AutoFlushTab />}
+            {tab === 'coa'       && <COAImportTab currentEntityId={currentEntityId} />}
           </div>
 
           {/* RIGHT: sticky import board */}

@@ -3,7 +3,7 @@
    Main Account → Account Group → Ledger (3 levels)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -15,7 +15,7 @@ import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
 import {
   ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
-  BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download, Upload,
+  BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 
@@ -340,12 +340,6 @@ export default function ChartOfAccountsPage() {
   const [deleting,    setDeleting]    = useState(null)
   const [search,      setSearch]      = useState('')
   const [showNewEntry, setShowNewEntry] = useState(false)
-
-  // ── Import state ──────────────────────────────────────────────
-  const importFileRef                   = useRef(null)
-  const [importing,    setImporting]    = useState(false)
-  const [importModal,  setImportModal]  = useState(null)  // { rows, fileName }
-  const [importSaving, setImportSaving] = useState(false)
 
   // ── Drag-and-drop state ────────────────────────────────────────
   const [dragNode, setDragNode] = useState(null)
@@ -680,115 +674,6 @@ export default function ChartOfAccountsPage() {
     handleDragEnd()
   }
 
-  // ── Import handlers ───────────────────────────────────────────
-
-  const LEVEL_FROM_LABEL = { 'Main Account': 1, 'Account Group': 2, 'Ledger': 3, 'Sub-Ledger': 4 }
-
-  async function handleImportFile(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-    setImporting(true)
-    try {
-      const ExcelJS = (await import('exceljs')).default
-      const wb = new ExcelJS.Workbook()
-      await wb.xlsx.load(await file.arrayBuffer())
-      const ws = wb.worksheets[0]
-
-      // Find header row (has 'Account Name' in col D)
-      let headerRow = 0
-      ws.eachRow((row, n) => {
-        if (row.getCell(4).text?.trim() === 'Account Name') headerRow = n
-      })
-      if (!headerRow) throw new Error('Invalid file — could not find header row')
-
-      const rows = []
-      ws.eachRow((row, n) => {
-        if (n <= headerRow) return
-        const levelLabel = row.getCell(2).text?.trim()
-        const type       = row.getCell(3).text?.trim()
-        const rawName    = row.getCell(4).text || ''
-        const postable   = row.getCell(5).text?.trim() === '✓'
-        const name       = rawName.trim()
-        if (!name || !levelLabel || !type) return
-        const level = LEVEL_FROM_LABEL[levelLabel]
-        if (!level) return
-        rows.push({ level, name, account_type: type, is_postable: postable })
-      })
-
-      if (rows.length === 0) throw new Error('No valid rows found in file')
-
-      // Preview pass — mark new vs existing
-      const current = await getChartOfAccounts(false, currentEntityId)
-      const stack = []  // { level, name, id }
-      const preview = rows.map(row => {
-        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
-        const parentId = stack.length ? stack[stack.length - 1].id : null
-        const exists   = current.find(a =>
-          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
-        )
-        const entry = { ...row, parentId, exists: !!exists, existingId: exists?.id || null }
-        stack.push({ level: row.level, name: row.name, id: exists?.id || null })
-        return entry
-      })
-
-      setImportModal({ rows: preview, fileName: file.name })
-    } catch (e) { toast('Parse failed: ' + e.message, 'error') }
-    setImporting(false)
-  }
-
-  async function doImport() {
-    if (!importModal) return
-    setImportSaving(true)
-    try {
-      const current = await getChartOfAccounts(false, currentEntityId)
-      const stack   = []  // { level, name, id, code }
-      let created = 0, skipped = 0
-
-      for (const row of importModal.rows) {
-        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
-        const parent   = stack.length ? stack[stack.length - 1] : null
-        const parentId = parent?.id || null
-
-        // Check existing by name + parent
-        const exists = current.find(a =>
-          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
-        )
-        if (exists) {
-          stack.push({ level: row.level, name: row.name, id: exists.id, code: exists.code })
-          skipped++
-          continue
-        }
-
-        // Generate unique code
-        const uid  = Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase()
-        const code = parent?.code ? `${parent.code}-${uid}` : uid
-
-        const { data, error } = await supabase.from('chart_of_accounts').insert({
-          code,
-          name:         row.name,
-          account_type: row.account_type,
-          level:        row.level,
-          is_postable:  row.is_postable,
-          parent_id:    parentId,
-          entity_id:    currentEntityId,
-          sort_order:   0,
-          is_active:    true,
-        }).select().single()
-
-        if (error) throw error
-        current.push(data)
-        stack.push({ level: row.level, name: row.name, id: data.id, code: data.code })
-        created++
-      }
-
-      toast(`Import complete — ${created} created, ${skipped} already existed`, 'success')
-      setImportModal(null)
-      load()
-    } catch (e) { toast('Import failed: ' + e.message, 'error') }
-    setImportSaving(false)
-  }
-
   return (
     <div className="page-container">
 
@@ -809,13 +694,6 @@ export default function ChartOfAccountsPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* Hidden file input for import */}
-          <input ref={importFileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleImportFile} />
-          <button onClick={() => importFileRef.current?.click()} disabled={importing || loading}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#7c3aed', border: '1.5px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: importing || loading ? 'not-allowed' : 'pointer', opacity: importing || loading ? 0.6 : 1 }}>
-            {importing ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
-            {importing ? 'Reading…' : 'Import Excel'}
-          </button>
           <button onClick={exportExcel} disabled={exporting || loading}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#16a34a', border: '1.5px solid #16a34a', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading ? 0.6 : 1 }}>
             {exporting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Download size={14} />}
@@ -934,86 +812,6 @@ export default function ChartOfAccountsPage() {
       )}
       {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={() => {}} />}
 
-      {/* ── Import Preview Modal ───────────────────────────────── */}
-      {importModal && (() => {
-        const newCount  = importModal.rows.filter(r => !r.exists).length
-        const skipCount = importModal.rows.filter(r =>  r.exists).length
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-
-              {/* Header */}
-              <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Upload size={16} color="#7c3aed" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Import Chart of Accounts</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{importModal.fileName}</p>
-                </div>
-                <button onClick={() => setImportModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={18} /></button>
-              </div>
-
-              {/* Summary badges */}
-              <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', gap: 10 }}>
-                <span style={{ padding: '4px 12px', background: '#dcfce7', color: '#16a34a', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>
-                  {newCount} to import
-                </span>
-                {skipCount > 0 && (
-                  <span style={{ padding: '4px 12px', background: '#f1f5f9', color: '#64748b', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>
-                    {skipCount} already exist (will skip)
-                  </span>
-                )}
-                <span style={{ padding: '4px 12px', background: '#eff6ff', color: '#2563eb', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>
-                  {importModal.rows.length} total rows
-                </span>
-              </div>
-
-              {/* Preview list */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-                {importModal.rows.map((row, i) => {
-                  const indent = (row.level - 1) * 20
-                  const c = TYPE_COLOR[row.account_type] || { bg: '#f1f5f9', text: '#475569' }
-                  return (
-                    <div key={i} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '5px 22px', paddingLeft: 22 + indent,
-                      borderBottom: '1px solid var(--card-border)',
-                      opacity: row.exists ? 0.45 : 1,
-                    }}>
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: c.bg, color: c.text, flexShrink: 0 }}>
-                        {row.account_type}
-                      </span>
-                      <span style={{ fontSize: 12, fontWeight: row.level <= 2 ? 700 : 400, color: 'var(--text-1)', flex: 1 }}>
-                        {row.name}
-                      </span>
-                      {row.exists
-                        ? <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>exists</span>
-                        : <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>new</span>
-                      }
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Footer */}
-              <div style={{ padding: '14px 22px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
-                {newCount === 0 && (
-                  <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>All accounts already exist — nothing to import.</span>
-                )}
-                <button onClick={() => setImportModal(null)} style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
-                  Cancel
-                </button>
-                <button onClick={doImport} disabled={importSaving || newCount === 0}
-                  style={{ padding: '8px 22px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: newCount === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: importSaving || newCount === 0 ? 0.6 : 1 }}>
-                  {importSaving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
-                  {importSaving ? 'Importing…' : `Import ${newCount} account${newCount !== 1 ? 's' : ''}`}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
     </div>
   )
 }
