@@ -537,9 +537,11 @@ export default function AccountingSettingsPage() {
       if (error) { toast('Save failed: ' + error.message, 'error'); return }
       toast('Book updated.', 'success')
     } else {
-      const { error } = await supabase.from('accounting_entities').insert(formData)
+      const { data: newEntity, error } = await supabase.from('accounting_entities').insert(formData).select().single()
       if (error) { toast('Save failed: ' + error.message, 'error'); return }
-      toast('Accounting book added.', 'success')
+      // Auto-seed standard COA for the new entity
+      await supabase.rpc('seed_standard_coa', { p_entity_id: newEntity.id })
+      toast('Accounting book created with standard Chart of Accounts.', 'success')
     }
     setEntityModal(null)
     reloadEntities()

@@ -1,13 +1,9 @@
 -- RPC functions to flush accounting data
 -- Called from Church Setup → Accounts Module → Flush Accounts
--- NOTE: chart_of_accounts is intentionally NOT flushed — it is structural
---       configuration, not transactional data. Users manage it separately.
--- NOTE: accounting_entities is intentionally NOT flushed — it has a FK
---       referenced by chart_of_accounts, so TRUNCATE CASCADE would wipe COA.
---       Entities are configuration, not transactions.
+-- Flushes everything including chart_of_accounts and accounting_entities.
+-- Standard COA is automatically re-seeded when a new Accounting Book is created.
 
--- Advanced Accounts flush: wipes journal entries, balances, resets method lock
--- chart_of_accounts and accounting_entities are preserved
+-- Advanced Accounts flush: wipes ALL accounting data and resets to first-time setup
 CREATE OR REPLACE FUNCTION flush_accounting_data()
 RETURNS void
 LANGUAGE plpgsql
@@ -19,7 +15,9 @@ BEGIN
     account_balances,
     journal_entry_lines,
     journal_entries,
-    bank_accounts
+    bank_accounts,
+    chart_of_accounts,
+    accounting_entities
   RESTART IDENTITY CASCADE;
 
   UPDATE churches
