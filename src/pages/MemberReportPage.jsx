@@ -810,7 +810,7 @@ export default function MemberReportPage() {
       has_whatsapp:  selKeys.includes('whatsapp'),
       members_json:  filteredData
         .filter(m => m.whatsapp || m.mobile)
-        .map(m => ({ member_id: m.member_id, member_name: m.member_name, whatsapp: m.whatsapp, mobile: m.mobile })),
+        .map(m => ({ member_id: m.member_id, member_name: m.member_name, title: m.title, whatsapp: m.whatsapp, mobile: m.mobile })),
       created_by:    user?.id || null,
     })
     if (dbErr) {
