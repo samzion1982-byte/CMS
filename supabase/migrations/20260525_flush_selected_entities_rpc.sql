@@ -1,15 +1,13 @@
 -- RPC: flush_selected_entities(p_entity_ids uuid[])
--- Clears all financial data for the selected entities and re-seeds standard COA.
--- The accounting entities (books) themselves are PRESERVED.
--- To permanently delete a book, use the Entity Management page.
+-- Deletes all data AND the entity itself for each selected book.
+-- Entities NOT in the list are completely untouched.
+-- Standard COA is auto-seeded when the user creates a new Accounting Book.
 
 CREATE OR REPLACE FUNCTION flush_selected_entities(p_entity_ids uuid[])
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
-DECLARE
-  v_eid uuid;
 BEGIN
   -- Audit log entries for selected entities' journals and COA
   DELETE FROM accounting_audit_log
@@ -29,16 +27,14 @@ BEGIN
   DELETE FROM journal_entries  WHERE entity_id = ANY(p_entity_ids);
   DELETE FROM account_balances WHERE entity_id = ANY(p_entity_ids);
   DELETE FROM chart_of_accounts WHERE entity_id = ANY(p_entity_ids);
+  DELETE FROM accounting_entities WHERE id = ANY(p_entity_ids);
 
-  -- Re-seed standard COA for every flushed entity
-  FOREACH v_eid IN ARRAY p_entity_ids LOOP
-    PERFORM seed_standard_coa(v_eid);
-  END LOOP;
-
-  -- Reset entry system lock (allows switching Single/Double after flush)
-  UPDATE churches
-  SET accounting_entry_system_locked = false,
-      accounting_entry_system        = 'double'
-  WHERE id IS NOT NULL;
+  -- Reset method lock if no books remain
+  IF NOT EXISTS (SELECT 1 FROM accounting_entities LIMIT 1) THEN
+    UPDATE churches
+    SET accounting_entry_system_locked = false,
+        accounting_entry_system        = 'double'
+    WHERE id IS NOT NULL;
+  END IF;
 END;
 $$;

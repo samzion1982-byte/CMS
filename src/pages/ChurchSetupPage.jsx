@@ -306,7 +306,13 @@ export default function ChurchSetupPage() {
         const { error } = await supabase.rpc('flush_selected_entities', { p_entity_ids: ids })
         if (error) throw error
         const names = flushAcEntities.filter(e => flushAcSelected.has(e.id)).map(e => e.name).join(', ')
-        toast(`Flushed: ${names}. Journal entries cleared and standard COA restored.`, 'success')
+        const allCleared = ids.length === flushAcEntities.length
+        toast(`Flushed: ${names}. Create a new Accounting Book to get started.`, 'success')
+        if (allCleared) {
+          Object.keys(sessionStorage).filter(k => k.startsWith('ac_')).forEach(k => sessionStorage.removeItem(k))
+          Object.keys(localStorage).filter(k => k.startsWith('ac_')).forEach(k => localStorage.removeItem(k))
+          setTimeout(() => window.location.reload(), 1200)
+        }
       }
       setShowFlushAc(false)
     } catch (err) {
@@ -940,10 +946,10 @@ export default function ChurchSetupPage() {
                   {flushAcTarget === 'simple'
                     ? <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>All transactions, cash/bank accounts and categories will be <strong style={{color:'#fff'}}>permanently deleted</strong>. Default accounts and categories will be re-seeded. Your church members and payment records are not affected.</p>
                     : <p style={{ margin:0, fontSize:12, color:'#fca5a5', lineHeight:1.6, fontFamily:'var(--font-ui)' }}>
-                        All journal entries, balances and COA will be <strong style={{color:'#fff'}}>permanently cleared</strong> for:{' '}
+                        The following {flushAcSelected.size} book{flushAcSelected.size !== 1 ? 's' : ''} will be <strong style={{color:'#fff'}}>permanently deleted</strong> — all journal entries, balances and COA:{' '}
                         <strong style={{color:'#fff'}}>{flushAcEntities.filter(e => flushAcSelected.has(e.id)).map(e => e.name).join(', ')}</strong>.
-                        {' '}The books themselves are kept and standard COA will be auto-restored.
-                        {flushAcSelected.size < flushAcEntities.length && <span> Other books are untouched.</span>}
+                        {' '}Standard COA auto-restores when you create a new Accounting Book.
+                        {flushAcSelected.size < flushAcEntities.length && <span> Other books will remain intact.</span>}
                       </p>
                   }
                 </div>
