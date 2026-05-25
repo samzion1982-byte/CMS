@@ -296,15 +296,9 @@ export default function ChurchSetupPage() {
       const rpc = flushAcTarget === 'simple' ? 'flush_simple_accounts' : 'flush_accounting_data'
       const { error } = await supabase.rpc(rpc)
       if (error) throw error
-      if (flushAcTarget === 'advanced') {
-        // Clear all cached entity references so EntityProvider starts fresh
-        Object.keys(sessionStorage).filter(k => k.startsWith('ac_')).forEach(k => sessionStorage.removeItem(k))
-        Object.keys(localStorage).filter(k => k.startsWith('ac_')).forEach(k => localStorage.removeItem(k))
-      }
       setShowFlushAc(false)
       const label = flushAcTarget === 'simple' ? 'Simple Accounts' : 'Advanced Accounts'
-      toast(`${label} flushed. Reloading…`, 'success')
-      setTimeout(() => window.location.reload(), 1200)
+      toast(`${label} flushed. Journal entries cleared and standard COA restored.`, 'success')
     } catch (err) {
       toast('Flush failed: ' + err.message, 'error')
     } finally {
@@ -600,7 +594,7 @@ export default function ChurchSetupPage() {
                 {/* Flush Accounts */}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
-                    Erase all accounting data and start fresh. Standard Chart of Accounts is auto-restored when you create a new Accounting Book.
+                    Clears all journal entries, balances and COA. Accounting Books are preserved. Standard COA is auto-restored for each book.
                   </p>
                   <button
                     onClick={() => { setFlushAcPw(''); setFlushAcPwErr(false); setFlushAcTarget(null); setFlushAcStep(1); setShowFlushAc(true) }}

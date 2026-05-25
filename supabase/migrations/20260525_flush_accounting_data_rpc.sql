@@ -1,14 +1,17 @@
 -- RPC functions to flush accounting data
 -- Called from Church Setup → Accounts Module → Flush Accounts
--- Flushes everything including chart_of_accounts and accounting_entities.
--- Standard COA is automatically re-seeded when a new Accounting Book is created.
 
--- Advanced Accounts flush: wipes ALL accounting data and resets to first-time setup
+-- Advanced Accounts flush:
+--   Clears all journal entries, balances, bank accounts, and COA.
+--   Accounting Books (entities) are PRESERVED.
+--   Standard COA is immediately re-seeded for each existing entity.
 CREATE OR REPLACE FUNCTION flush_accounting_data()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_entity RECORD;
 BEGIN
   TRUNCATE
     accounting_audit_log,
@@ -16,9 +19,13 @@ BEGIN
     journal_entry_lines,
     journal_entries,
     bank_accounts,
-    chart_of_accounts,
-    accounting_entities
+    chart_of_accounts
   RESTART IDENTITY CASCADE;
+
+  -- Re-seed standard COA for every surviving entity
+  FOR v_entity IN SELECT id FROM accounting_entities LOOP
+    PERFORM seed_standard_coa(v_entity.id);
+  END LOOP;
 
   UPDATE churches
   SET accounting_entry_system_locked = false,
@@ -37,7 +44,6 @@ BEGIN
   TRUNCATE simple_transactions, simple_accounts, simple_categories
   RESTART IDENTITY CASCADE;
 
-  -- Re-seed default categories
   INSERT INTO simple_categories (name, type, is_default, sort_order) VALUES
     ('Sunday Offering',       'income',  true, 10),
     ('Tithes',                'income',  true, 20),
@@ -53,7 +59,6 @@ BEGIN
     ('Travel & Transport',    'expense', true, 60),
     ('Miscellaneous',         'expense', true, 70);
 
-  -- Re-seed default accounts
   INSERT INTO simple_accounts (name, account_type, sort_order) VALUES
     ('Cash', 'cash', 10),
     ('Bank', 'bank', 20);
