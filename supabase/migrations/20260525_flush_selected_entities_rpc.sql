@@ -11,8 +11,11 @@ AS $$
 BEGIN
   -- Delete in FK dependency order
   DELETE FROM accounting_audit_log
-    WHERE journal_entry_id IN (
+    WHERE entity_id IN (
       SELECT id FROM journal_entries WHERE entity_id = ANY(p_entity_ids)
+    )
+    OR entity_id IN (
+      SELECT id FROM chart_of_accounts WHERE entity_id = ANY(p_entity_ids)
     );
 
   DELETE FROM journal_entry_lines
