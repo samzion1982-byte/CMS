@@ -1,17 +1,17 @@
 -- RPC: flush_selected_entities(p_entity_ids uuid[])
--- Deletes all data for the specified accounting entities only.
--- Entities NOT in the list are completely untouched.
--- NOTE: bank_accounts has no entity_id column so cannot be entity-scoped;
---       its COA link (coa_account_id) is SET NULL automatically via FK cascade
---       when chart_of_accounts rows are deleted.
+-- Clears all financial data for the selected entities and re-seeds standard COA.
+-- The accounting entities (books) themselves are PRESERVED.
+-- To permanently delete a book, use the Entity Management page.
 
 CREATE OR REPLACE FUNCTION flush_selected_entities(p_entity_ids uuid[])
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_eid uuid;
 BEGIN
-  -- Audit log: generic entity_id references journals and COA
+  -- Audit log entries for selected entities' journals and COA
   DELETE FROM accounting_audit_log
     WHERE entity_id IN (
       SELECT id FROM journal_entries WHERE entity_id = ANY(p_entity_ids)
@@ -20,7 +20,7 @@ BEGIN
       SELECT id FROM chart_of_accounts WHERE entity_id = ANY(p_entity_ids)
     );
 
-  -- journal_entry_lines references journal_entries via journal_entry_id
+  -- journal_entry_lines via journal_entry_id FK
   DELETE FROM journal_entry_lines
     WHERE journal_entry_id IN (
       SELECT id FROM journal_entries WHERE entity_id = ANY(p_entity_ids)
@@ -28,18 +28,17 @@ BEGIN
 
   DELETE FROM journal_entries  WHERE entity_id = ANY(p_entity_ids);
   DELETE FROM account_balances WHERE entity_id = ANY(p_entity_ids);
-
-  -- chart_of_accounts: ON DELETE SET NULL on bank_accounts.coa_account_id handles cleanup
   DELETE FROM chart_of_accounts WHERE entity_id = ANY(p_entity_ids);
 
-  DELETE FROM accounting_entities WHERE id = ANY(p_entity_ids);
+  -- Re-seed standard COA for every flushed entity
+  FOREACH v_eid IN ARRAY p_entity_ids LOOP
+    PERFORM seed_standard_coa(v_eid);
+  END LOOP;
 
-  -- Reset method lock only when no books remain
-  IF NOT EXISTS (SELECT 1 FROM accounting_entities LIMIT 1) THEN
-    UPDATE churches
-    SET accounting_entry_system_locked = false,
-        accounting_entry_system        = 'double'
-    WHERE id IS NOT NULL;
-  END IF;
+  -- Reset entry system lock (allows switching Single/Double after flush)
+  UPDATE churches
+  SET accounting_entry_system_locked = false,
+      accounting_entry_system        = 'double'
+  WHERE id IS NOT NULL;
 END;
 $$;
