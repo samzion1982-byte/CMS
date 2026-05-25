@@ -353,7 +353,9 @@ function AppRoutes() {
         path="/import"
         element={
           <PrivateRoute>
-            <AppLayout><ImportPage /></AppLayout>
+            <EntityProvider>
+              <AppLayout><ImportPage /></AppLayout>
+            </EntityProvider>
           </PrivateRoute>
         }
       />
