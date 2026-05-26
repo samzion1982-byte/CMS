@@ -930,6 +930,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                         const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
                         const c = e.target.closest('[data-lines]')
                         if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > i + 1) ps[i + 1].focus() }; return }
+                        if (!line.account_id && !parseFloat(line.debit_amount) && !parseFloat(line.credit_amount)) { document.querySelector('input[data-narration]:not([disabled])')?.focus(); return }
                         flushSync(addLine)
                         if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
                       }}

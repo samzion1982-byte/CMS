@@ -362,6 +362,7 @@ export default function PaymentVoucherPage() {
                     const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
                     const c = e.target.closest('[data-lines]')
                     if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > idx + 1) ps[idx + 1].focus() }; return }
+                    if (!line.account_id && !parseFloat(line.amount)) { document.querySelector('input[data-narration]:not([disabled])')?.focus(); return }
                     flushSync(addLine)
                     if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
                   }}
