@@ -154,18 +154,17 @@ export default function OpeningBalancesPage() {
 
     setSaving(true)
     try {
-      // Delete any existing opening balance entries for this FY
+      // Hard-delete any existing opening balance entries for this FY (lines cascade)
       let existQ = supabase
         .from('journal_entries')
         .select('id')
         .eq('financial_year', fy)
         .eq('voucher_type', 'Opening')
-        .eq('is_deleted', false)
       if (currentEntityId) existQ = existQ.eq('entity_id', currentEntityId)
       const { data: existing } = await existQ
 
       if (existing?.length > 0) {
-        await supabase.from('journal_entries').update({ is_deleted: true }).in('id', existing.map(e => e.id))
+        await supabase.from('journal_entries').delete().in('id', existing.map(e => e.id))
       }
 
       const totalDr = lines.reduce((s, l) => s + l.debit_amount,  0)
