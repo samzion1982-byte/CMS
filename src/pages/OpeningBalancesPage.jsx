@@ -154,17 +154,23 @@ export default function OpeningBalancesPage() {
 
     setSaving(true)
     try {
-      // Hard-delete any existing opening balance entries for this FY (lines cascade)
-      let existQ = supabase
-        .from('journal_entries')
-        .select('id')
-        .eq('financial_year', fy)
-        .eq('voucher_type', 'Opening')
-      if (currentEntityId) existQ = existQ.eq('entity_id', currentEntityId)
-      const { data: existing } = await existQ
+      // entry_number is globally unique; include entity suffix to avoid cross-entity conflicts
+      const entitySuffix = currentEntityId ? `-${currentEntityId.slice(-8)}` : ''
+      const obEntryNumber = `OB-${fy}${entitySuffix}`
 
-      if (existing?.length > 0) {
-        await supabase.from('journal_entries').delete().in('id', existing.map(e => e.id))
+      // Hard-delete by exact entry_number (covers all is_deleted states; lines cascade)
+      await supabase.from('journal_entries').delete().eq('entry_number', obEntryNumber)
+      // Also clean up any old-format entries (OB-YYYY-YY without entity suffix)
+      if (currentEntityId) {
+        const { data: oldFmt } = await supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('financial_year', fy)
+          .eq('voucher_type', 'Opening')
+          .eq('entity_id', currentEntityId)
+        if (oldFmt?.length > 0) {
+          await supabase.from('journal_entries').delete().in('id', oldFmt.map(e => e.id))
+        }
       }
 
       const totalDr = lines.reduce((s, l) => s + l.debit_amount,  0)
@@ -173,7 +179,7 @@ export default function OpeningBalancesPage() {
       const { data: je, error: jeErr } = await supabase
         .from('journal_entries')
         .insert({
-          entry_number:   `OB-${fy}`,
+          entry_number:   obEntryNumber,
           entry_date:     fyFrom,
           financial_year: fy,
           voucher_type:   'Opening',
