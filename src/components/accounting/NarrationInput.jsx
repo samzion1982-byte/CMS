@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { getRecentNarrations } from '../../lib/accountingLib'
 
 const DROP_MAX_H = 220
@@ -8,10 +7,10 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
   const [suggestions, setSuggestions] = useState([])
   const [open,        setOpen]        = useState(false)
   const [hi,          setHi]          = useState(0)
-  const [pos,         setPos]         = useState(null)   // {top, left, width} or null
+  const [pos,         setPos]         = useState(null)
   const inputRef = useRef(null)
   const loaded   = useRef(false)
-  const initVal  = useRef('')  // suppress dropdown until user edits from focused value
+  const initVal  = useRef('')  // suppress dropdown until user edits from the focused value
 
   async function loadOnce() {
     if (loaded.current) return
@@ -21,12 +20,17 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
 
   function calcPos() {
     if (!inputRef.current) return
-    const r = inputRef.current.getBoundingClientRect()
-    const spaceBelow = Math.max(80, window.innerHeight - r.bottom - 8)
-    setPos({ top: r.bottom + 4, left: r.left, width: r.width, maxH: Math.min(DROP_MAX_H, spaceBelow) })
+    const r    = inputRef.current.getBoundingClientRect()
+    // html { zoom } scales the CSS pixel space — divide to convert visual coords → CSS coords
+    const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1
+    const top  = r.bottom / zoom + 4
+    const left = r.left   / zoom
+    const w    = r.width  / zoom
+    const spaceBelow = Math.max(80, window.innerHeight / zoom - top - 8)
+    setPos({ top, left, width: w, maxH: Math.min(DROP_MAX_H, spaceBelow) })
   }
 
-  // Keep dropdown position in sync when open (scroll / resize)
+  // Keep dropdown aligned while open (scroll / resize)
   useEffect(() => {
     if (!open) return
     window.addEventListener('scroll', calcPos, true)
@@ -69,12 +73,12 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
         disabled={disabled}
         autoComplete="off"
       />
-      {showDrop && createPortal(
+      {showDrop && (
         <div style={{
           position: 'fixed', top: pos.top, left: pos.left, width: pos.width,
           zIndex: 9999, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
           borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-          maxHeight: pos.maxH ?? DROP_MAX_H, overflowY: 'auto',
+          maxHeight: pos.maxH, overflowY: 'auto',
         }}>
           {filtered.map((s, i) => (
             <div key={s} onMouseDown={() => pick(s)} style={{
@@ -86,8 +90,7 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
               {s}
             </div>
           ))}
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   )
