@@ -26,74 +26,8 @@ import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import VoucherPrint from '../components/accounting/VoucherPrint'
+import AccountPicker from '../components/accounting/AccountPicker'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
-
-// ── Account typeahead picker ──────────────────────────────────────
-function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
-function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
-function matchAcct(name, q) {
-  if (!q) return true
-  const nl = name.toLowerCase(), qn = norm(q), nc = compact(name), qc = compact(q)
-  if (nl.includes(q) || norm(name).includes(qn) || nc.includes(qc)) return true
-  return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
-}
-
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
-  const [query, setQuery] = useState('')
-  const [open,  setOpen]  = useState(false)
-  const [hi,    setHi]    = useState(0)
-  const selected    = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
-  const displayName = selected ? selected.name : ''
-  const filtered = useMemo(() => {
-    if (!open) return []
-    const q = query.trim().toLowerCase()
-    if (!q) return accounts.slice(0, 15)
-    const matched = accounts.filter(a => matchAcct(a.name, q))
-    matched.sort((a, b) => (compact(a.name).startsWith(compact(q)) ? 0 : 1) - (compact(b.name).startsWith(compact(q)) ? 0 : 1))
-    return matched.slice(0, 15)
-  }, [query, open, accounts])
-  function onFocus() { setQuery(''); setOpen(true); setHi(0) }
-  function onBlur()  { setTimeout(() => setOpen(false), 160) }
-  function pick(a)   { onChange(a.id); setOpen(false) }
-  function onKey(e) {
-    if (e.key === 'ArrowDown')          { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp')       { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape')        { setOpen(false) }
-    else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
-    else if (e.key === 'Tab'   && open) { if (filtered[hi]) pick(filtered[hi]) }
-  }
-  return (
-    <div style={{ position: 'relative', width: '100%' }}>
-      <input className="field-input" value={open ? query : displayName}
-        onChange={e => { setQuery(e.target.value); setHi(0) }}
-        onFocus={onFocus} onBlur={onBlur} onKeyDown={onKey}
-        placeholder={placeholder} disabled={disabled} autoComplete="off"
-        style={{ height: 34, fontSize: 12 }}
-      />
-      {open && filtered.length > 0 && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300,
-          background: 'var(--card-bg)', border: '1px solid var(--card-border)',
-          borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-          maxHeight: 220, overflowY: 'auto', marginTop: 2,
-        }}>
-          {filtered.map((a, i) => (
-            <div key={a.id} onMouseDown={() => pick(a)} style={{
-              padding: '8px 12px', cursor: 'pointer',
-              background: i === hi ? 'var(--accent-subtle)' : 'transparent',
-              borderBottom: '1px solid var(--card-border)',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-              {a.path && a.path !== a.name && (
-                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{a.path}</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -599,7 +533,8 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const today = localISO(new Date())
   const currentFY = getFY()
 
-  const [accounts, setAccounts]   = useState([])
+  const [accounts,  setAccounts]  = useState([])
+  const [allCoa,    setAllCoa]    = useState([])
   const [loading,       setLoading]       = useState(!!entryId)
   const [saving,        setSaving]        = useState(false)
   const [posting,       setPosting]       = useState(false)
@@ -629,7 +564,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   ])
 
   useEffect(() => {
-    getChartOfAccounts(true, currentEntityId).then(all => setAccounts(getPostableAccountsWithPath(all))).catch(() => {})
+    getChartOfAccounts(true, currentEntityId).then(all => { setAllCoa(all); setAccounts(getPostableAccountsWithPath(all)) }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -962,6 +897,9 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                       onChange={v => setLine(i, 'account_id', v)}
                       placeholder="— Select Ledger —"
                       disabled={formReadOnly}
+                      allCoa={allCoa}
+                      entityId={currentEntityId}
+                      onAccountCreated={a => { setAllCoa(prev => [...prev, a]); setAccounts(prev => [...prev, a]) }}
                     />
                   </td>
                   <td style={{ padding: '6px 10px' }}>

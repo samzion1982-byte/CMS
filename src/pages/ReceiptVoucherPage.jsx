@@ -17,83 +17,11 @@ import {
 import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
+import AccountPicker from '../components/accounting/AccountPicker'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-
-// strip punctuation for fuzzy matching ("Mens" → "Men's Fellowship")
-function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
-function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
-function matchAcct(name, q) {
-  if (!q) return true
-  const nl = name.toLowerCase(), qn = norm(q), nc = compact(name), qc = compact(q)
-  if (nl.includes(q) || norm(name).includes(qn) || nc.includes(qc)) return true
-  return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
-}
-
-// ── Typeahead account picker ──────────────────────────────────────
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
-  const [query, setQuery] = useState('')
-  const [open,  setOpen]  = useState(false)
-  const [hi,    setHi]    = useState(0)
-  const saved = useRef(value)
-
-  const selected    = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
-  const displayName = selected ? selected.name : ''
-
-  const filtered = useMemo(() => {
-    if (!open) return []
-    const q = query.trim().toLowerCase()
-    const qn = norm(q)
-    if (!q) return accounts.slice(0, 15)
-    const matched = accounts.filter(a => matchAcct(a.name, q))
-    matched.sort((a, b) => (compact(a.name).startsWith(compact(q)) ? 0 : 1) - (compact(b.name).startsWith(compact(q)) ? 0 : 1))
-    return matched.slice(0, 15)
-  }, [query, open, accounts])
-
-  function onFocus() { saved.current = value; setQuery(''); setOpen(true); setHi(0) }
-  function onBlur()  { setTimeout(() => { setOpen(false); if (!value && saved.current) onChange(saved.current) }, 160) }
-  function pick(a)   { saved.current = a.id; onChange(a.id); setOpen(false) }
-
-  function onKey(e) {
-    if (e.key === 'ArrowDown')          { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp')       { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape')        { setOpen(false) }
-    else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
-    else if (e.key === 'Tab'   && open) { if (filtered[hi]) pick(filtered[hi]) }
-  }
-
-  return (
-    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-      <input
-        className="field-input"
-        value={open ? query : displayName}
-        onChange={e => { setQuery(e.target.value); setHi(0) }}
-        onFocus={onFocus} onBlur={onBlur} onKeyDown={onKey}
-        placeholder={placeholder} disabled={disabled} autoComplete="off"
-      />
-      {open && filtered.length > 0 && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300,
-          background: 'var(--card-bg)', border: '1px solid var(--card-border)',
-          borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-          maxHeight: 220, overflowY: 'auto', marginTop: 2,
-        }}>
-          {filtered.map((a, i) => (
-            <div key={a.id} onMouseDown={() => pick(a)} style={{
-              padding: '8px 12px', cursor: 'pointer',
-              background: i === hi ? 'var(--accent-subtle)' : 'transparent',
-              borderBottom: '1px solid var(--card-border)',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const blankLine = () => ({ _key: crypto.randomUUID(), account_id: '', amount: '' })
 
@@ -509,6 +437,9 @@ export default function ReceiptVoucherPage() {
                   onChange={id => updateLine(idx, 'account_id', id)}
                   placeholder="Select account…"
                   disabled={busy}
+                  allCoa={allCoa}
+                  entityId={currentEntityId}
+                  onAccountCreated={a => setAllCoa(prev => [...prev, a])}
                 />
                 <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
                   value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}

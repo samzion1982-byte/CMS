@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
@@ -281,6 +281,8 @@ function AccountingLayout() {
 
 // 🛣️ Routes
 function AppRoutes() {
+  const navigate = useNavigate()
+
   // Global Enter-key navigation: pressing Enter on any text input advances to the next focusable element
   useEffect(() => {
     function handleEnter(e) {
@@ -298,6 +300,18 @@ function AppRoutes() {
     document.addEventListener('keydown', handleEnter)
     return () => document.removeEventListener('keydown', handleEnter)
   }, [])
+
+  // Alt+C → Chart of Accounts
+  useEffect(() => {
+    function handleHotkey(e) {
+      if (e.altKey && e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        navigate('/accounting/chart-of-accounts')
+      }
+    }
+    document.addEventListener('keydown', handleHotkey)
+    return () => document.removeEventListener('keydown', handleHotkey)
+  }, [navigate])
 
   return (
     <Routes>

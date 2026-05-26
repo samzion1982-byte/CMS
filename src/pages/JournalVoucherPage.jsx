@@ -16,6 +16,7 @@ import {
 import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
+import AccountPicker from '../components/accounting/AccountPicker'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
@@ -26,69 +27,7 @@ const ACCENT = '#0891b2'
 let _lineId = 0
 function newLine() { return { _id: ++_lineId, accountId: '', accountName: '', amount: '' } }
 
-// strip specials to spaces → "Men's" → "men s"
-function norm(s)    { return s.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim() }
-// strip ALL non-alphanumeric → "Men's" → "mens"
-function compact(s) { return s.toLowerCase().replace(/[^a-z0-9]/g, '') }
-function matchAcct(name, q) {
-  if (!q) return true
-  const nl = name.toLowerCase(), qn = norm(q), nc = compact(name), qc = compact(q)
-  // substring match on raw / normalised / compacted forms
-  if (nl.includes(q) || norm(name).includes(qn) || nc.includes(qc)) return true
-  // all query words must appear somewhere in normalised name (order-independent)
-  return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
-}
-
-function AccountPicker({ value, accounts, onChange, placeholder = 'Select account…', disabled = false }) {
-  const [query, setQuery] = useState('')
-  const [open,  setOpen]  = useState(false)
-  const [hi,    setHi]    = useState(0)
-  const selected    = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
-  const displayName = selected ? selected.name : ''
-  const filtered = useMemo(() => {
-    if (!open) return []
-    const q = query.trim().toLowerCase()
-    if (!q) return accounts.slice(0, 15)
-    const matched = accounts.filter(a => matchAcct(a.name, q))
-    // rank: starts-with first, then rest
-    matched.sort((a, b) => {
-      const as = compact(a.name).startsWith(compact(q)) ? 0 : 1
-      const bs = compact(b.name).startsWith(compact(q)) ? 0 : 1
-      return as - bs
-    })
-    return matched.slice(0, 15)
-  }, [query, open, accounts])
-  function onFocus() { setQuery(''); setOpen(true); setHi(0) }
-  function onBlur()  { setTimeout(() => setOpen(false), 160) }
-  function pick(a)   { onChange(a.id, a.name); setOpen(false) }
-  function onKey(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape') { setOpen(false) }
-    else if (e.key === 'Enter' && open) { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
-    else if (e.key === 'Tab'   && open) { if (filtered[hi]) pick(filtered[hi]) }
-  }
-  return (
-    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-      <input className="field-input" value={open ? query : displayName}
-        onChange={e => { setQuery(e.target.value); setHi(0) }}
-        onFocus={onFocus} onBlur={onBlur} onKeyDown={onKey}
-        placeholder={placeholder} disabled={disabled} autoComplete="off"
-        style={{ fontSize: 12 }} />
-      {open && filtered.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 220, overflowY: 'auto', marginTop: 2 }}>
-          {filtered.map((a, i) => (
-            <div key={a.id} onMouseDown={() => pick(a)} style={{ padding: '8px 12px', cursor: 'pointer', background: i === hi ? 'var(--accent-subtle)' : 'transparent', borderBottom: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRemove, disabled, total }) {
+function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRemove, disabled, total, allCoa, entityId, onAccountCreated }) {
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Panel header */}
@@ -107,6 +46,9 @@ function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRe
               onChange={(id, name) => onChange(idx, 'accountId', id, name)}
               placeholder="Account…"
               disabled={disabled}
+              allCoa={allCoa}
+              entityId={entityId}
+              onAccountCreated={onAccountCreated}
             />
             <input
               type="number" min="0" step="0.01" placeholder="0.00"
@@ -323,6 +265,9 @@ export default function JournalVoucherPage() {
           onRemove={idx => removeLine(setDebitLines, idx)}
           disabled={busy}
           total={totalDebit}
+          allCoa={allCoa}
+          entityId={currentEntityId}
+          onAccountCreated={a => setAllCoa(prev => [...prev, a])}
         />
         <LinesPanel
           title="Credit (Cr)"
@@ -334,6 +279,9 @@ export default function JournalVoucherPage() {
           onRemove={idx => removeLine(setCreditLines, idx)}
           disabled={busy}
           total={totalCredit}
+          allCoa={allCoa}
+          entityId={currentEntityId}
+          onAccountCreated={a => setAllCoa(prev => [...prev, a])}
         />
       </div>
 
