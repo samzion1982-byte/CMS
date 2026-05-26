@@ -22,11 +22,8 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
   function calcPos() {
     if (!inputRef.current) return
     const r = inputRef.current.getBoundingClientRect()
-    const spaceBelow = window.innerHeight - r.bottom
-    const top = spaceBelow >= DROP_MAX_H + 8
-      ? r.bottom + 4                          // enough room below → open downward
-      : r.top - Math.min(DROP_MAX_H, r.top - 8) // not enough room → open upward
-    setPos({ top, left: r.left, width: r.width })
+    const spaceBelow = Math.max(80, window.innerHeight - r.bottom - 8)
+    setPos({ top: r.bottom + 4, left: r.left, width: r.width, maxH: Math.min(DROP_MAX_H, spaceBelow) })
   }
 
   // Keep dropdown position in sync when open (scroll / resize)
@@ -77,7 +74,7 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
           position: 'fixed', top: pos.top, left: pos.left, width: pos.width,
           zIndex: 9999, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
           borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-          maxHeight: DROP_MAX_H, overflowY: 'auto',
+          maxHeight: pos.maxH ?? DROP_MAX_H, overflowY: 'auto',
         }}>
           {filtered.map((s, i) => (
             <div key={s} onMouseDown={() => pick(s)} style={{
