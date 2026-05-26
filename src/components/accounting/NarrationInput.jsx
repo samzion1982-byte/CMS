@@ -51,7 +51,7 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
         disabled={disabled}
         autoComplete="off"
       />
-      {open && filtered.length > 0 && (
+      {open && value && filtered.length > 0 && (
         <div style={{
           position: 'fixed', top: pos.top, left: pos.left, width: pos.width,
           zIndex: 9999, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
