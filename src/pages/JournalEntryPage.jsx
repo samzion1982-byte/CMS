@@ -529,6 +529,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const { profile } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { currentEntityId, currentEntity } = useEntity()
 
   const today = localISO(new Date())
