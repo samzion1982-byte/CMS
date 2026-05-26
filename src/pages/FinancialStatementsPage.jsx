@@ -14,6 +14,7 @@ import {
   getReceiptsAndPayments,
   getIncomeStatement,
   getBalanceSheet,
+  getAccountingSettings,
   fyDateRange, fmtAmt,
 } from '../lib/accountingLib'
 import { useEntity } from '../lib/EntityContext'
@@ -24,11 +25,11 @@ import {
 } from 'lucide-react'
 import { exportTwoColumn } from '../lib/exportExcel'
 
-// DD-MM-YYYY display format for ISO date strings
-function fmtD(iso) {
+// Format an ISO date string (YYYY-MM-DD) according to the configured date format
+function fmtD(iso, fmt) {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
+  return (fmt || 'DD-MM-YYYY').replace('DD', d).replace('MM', m).replace('YYYY', y)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -407,7 +408,7 @@ function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo }) {
       (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
       entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
       entity?.description ? { text: entity.description, size: 10, italic: true } : null,
-      { text: `Period: ${dateFrom}  to  ${dateTo}`, size: 10 },
+      { text: `Period: ${fmtD(dateFrom, dateFormat)}  to  ${fmtD(dateTo, dateFormat)}`, size: 10 },
     ].filter(Boolean)
     await exportTwoColumn(
       left, right,
@@ -565,7 +566,7 @@ function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo 
       (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
       entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
       entity?.description ? { text: entity.description, size: 10, italic: true } : null,
-      { text: `Period: ${dateFrom}  to  ${dateTo}`, size: 10 },
+      { text: `Period: ${fmtD(dateFrom, dateFormat)}  to  ${fmtD(dateTo, dateFormat)}`, size: 10 },
     ].filter(Boolean)
     await exportTwoColumn(
       left, right,
@@ -723,7 +724,7 @@ function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo }) {
       (entity?.address || entity?.city) ? { text: [entity.address, entity.city].filter(Boolean).join(', '), size: 10 } : null,
       entity?.diocese ? { text: entity.diocese, size: 10, italic: true } : null,
       entity?.description ? { text: entity.description, size: 10, italic: true } : null,
-      { text: `As at: ${dateTo}`, size: 10 },
+      { text: `As at: ${fmtD(dateTo, dateFormat)}`, size: 10 },
     ].filter(Boolean)
     await exportTwoColumn(
       left, right,
@@ -784,6 +785,8 @@ export default function FinancialStatementsPage() {
   const [genFrom,    setGenFrom]    = useState(null)   // dates used for last generate (for display)
   const [genTo,      setGenTo]      = useState(null)
   const [showZero,   setShowZero]   = useState(false)
+  const [dateFormat, setDateFormat] = useState('DD-MM-YYYY')
+
   // Sync date range when FY changes (entity switch or manual picker)
   useEffect(() => {
     const { from, to } = fyDateRange(fy)
@@ -850,7 +853,11 @@ export default function FinancialStatementsPage() {
   // Auto-generate on every mount so navigating back always shows fresh data
   const didMount = useRef(false)
   useEffect(() => {
-    if (!didMount.current) { didMount.current = true; generate() }
+    if (!didMount.current) {
+      didMount.current = true
+      generate()
+      getAccountingSettings().then(s => { if (s.accounting_date_format) setDateFormat(s.accounting_date_format) })
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -950,7 +957,7 @@ export default function FinancialStatementsPage() {
 
         {rangeMode === 'full' && (
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-            {fmtD(fyDateRange(fy).from)} — {fmtD(fyDateRange(fy).to)}
+            {fmtD(fyDateRange(fy).from, dateFormat)} — {fmtD(fyDateRange(fy).to, dateFormat)}
           </span>
         )}
 
@@ -984,13 +991,13 @@ export default function FinancialStatementsPage() {
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>
             {rangeMode === 'custom'
-              ? `${fmtD(fromDate)} to ${fmtD(toDate)}`
+              ? `${fmtD(fromDate, dateFormat)} to ${fmtD(toDate, dateFormat)}`
               : `Full year — FY ${fy}`}
           </p>
           <button onClick={generate}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
             <RefreshCw size={14} />
-            {rangeMode === 'custom' ? `Generate ${fmtD(fromDate)} → ${fmtD(toDate)}` : `Generate for FY ${fy}`}
+            {rangeMode === 'custom' ? `Generate ${fmtD(fromDate, dateFormat)} → ${fmtD(toDate, dateFormat)}` : `Generate for FY ${fy}`}
           </button>
         </div>
       )}
@@ -1026,7 +1033,7 @@ export default function FinancialStatementsPage() {
               &nbsp;·&nbsp;
               {genFrom === fyDateRange(fy).from && genTo === fyDateRange(fy).to
                 ? `Full Year FY ${fy}`
-                : `${fmtD(genFrom)} to ${fmtD(genTo)}`}
+                : `${fmtD(genFrom, dateFormat)} to ${fmtD(genTo, dateFormat)}`}
             </p>
           </div>
 
