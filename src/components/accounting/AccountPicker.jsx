@@ -61,7 +61,7 @@ function QuickAddModal({ initialName, allCoa, entityId, performedBy, onClose, on
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
 
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--accent-subtle)' }}>
@@ -109,7 +109,7 @@ function QuickAddModal({ initialName, allCoa, entityId, performedBy, onClose, on
                 style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
               />
               {parentOpen && parentOptions.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 180, overflowY: 'auto', marginTop: 2 }}>
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 280, overflowY: 'auto', marginTop: 2 }}>
                   {parentOptions.map(a => (
                     <div key={a.id} onMouseDown={() => { setParentId(a.id); setParentOpen(false) }}
                       style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--card-border)' }}>
