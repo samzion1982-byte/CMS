@@ -454,10 +454,29 @@ function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo, dateFormat
 //  Income & Expenditure Account
 // ════════════════════════════════════════════════════════════════
 
+function getGroupIds(accounts) {
+  const rel = accounts.filter(a => (a.level || 0) >= 2)
+  const byId = {}; rel.forEach(a => { byId[a.id] = a })
+  const childrenOf = {}
+  for (const a of rel) {
+    if (a.parent_id && byId[a.parent_id]) {
+      if (!childrenOf[a.parent_id]) childrenOf[a.parent_id] = []
+      childrenOf[a.parent_id].push(a)
+    }
+  }
+  return rel.filter(a => (childrenOf[a.id]?.length || 0) > 0).map(a => a.id)
+}
+
 function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo, dateFormat }) {
   const [expanded, setExpanded] = useState(new Set())
   const surplus   = data.surplus
   const isDeficit = surplus < 0
+
+  const allGroupIds = useMemo(() => [
+    ...getGroupIds(data.expenses),
+    ...getGroupIds(data.income),
+  ], [data])
+  const allExpanded = allGroupIds.length > 0 && allGroupIds.every(id => expanded.has(id))
 
   function toggleGroup(id) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -580,11 +599,18 @@ function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo,
 
   return (
     <div>
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
         <button onClick={doExport}
           style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
           <FileSpreadsheet size={13} /> Export Excel
         </button>
+        {allGroupIds.length > 0 && (
+          <button
+            onClick={() => setExpanded(allExpanded ? new Set() : new Set(allGroupIds))}
+            style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            {allExpanded ? <><ChevronDown size={13} /> Collapse All</> : <><ChevronRight size={13} /> Expand All</>}
+          </button>
+        )}
       </div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}
@@ -616,6 +642,13 @@ function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo,
 
 function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo, dateFormat }) {
   const [expanded, setExpanded] = useState(new Set())
+
+  const allGroupIds = useMemo(() => [
+    ...getGroupIds(data.corpus),
+    ...getGroupIds(data.liabilities),
+    ...getGroupIds(data.assets),
+  ], [data])
+  const allExpanded = allGroupIds.length > 0 && allGroupIds.every(id => expanded.has(id))
 
   function toggleGroup(id) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -738,11 +771,18 @@ function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo, date
 
   return (
     <div>
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
         <button onClick={doExport}
           style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
           <FileSpreadsheet size={13} /> Export Excel
         </button>
+        {allGroupIds.length > 0 && (
+          <button
+            onClick={() => setExpanded(allExpanded ? new Set() : new Set(allGroupIds))}
+            style={{ fontSize: 12, padding: '4px 14px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            {allExpanded ? <><ChevronDown size={13} /> Collapse All</> : <><ChevronRight size={13} /> Expand All</>}
+          </button>
+        )}
       </div>
       <TwoColTable
         leftRows={leftRows} rightRows={rightRows}

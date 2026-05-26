@@ -2,7 +2,7 @@
    TrialBalancePage.jsx — Trial Balance (Indian Format)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { getTrialBalance, fyDateRange, fmtAmt, displayAccountType } from '../lib/accountingLib'
@@ -11,7 +11,7 @@ import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
 import {
   Scale, ArrowLeft, Loader2, FileSpreadsheet,
-  Printer, ChevronDown, CheckCircle2, AlertTriangle,
+  Printer, ChevronDown, CheckCircle2, AlertTriangle, ExternalLink,
 } from 'lucide-react'
 
 /* FY "2025-26" → "31st March 2026" */
@@ -56,6 +56,11 @@ export default function TrialBalancePage() {
     setDateTo(to)
     setGenerated(false)
   }, [fy])
+
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; generate() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleFyChange(f) {
     setFy(f)
@@ -322,7 +327,14 @@ export default function TrialBalancePage() {
                       sections.push(
                         <tr key={r.id} style={{ background: i % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
                           <td style={{ padding: '9px 14px', textAlign: 'center', color: '#6b7280', fontSize: 12, borderRight: '1px solid #e5e7eb' }}>{sno}</td>
-                          <td style={{ padding: '9px 18px', color: '#111827', fontSize: 13, borderRight: '1px solid #e5e7eb' }}>{r.name}</td>
+                          <td
+                            style={{ padding: '9px 18px', color: '#111827', fontSize: 13, borderRight: '1px solid #e5e7eb', cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
+                            onClick={() => navigate(`/accounting/ledger?accountId=${r.id}&from=${dateFrom}&to=${dateTo}`, { state: { from: 'report' } })}
+                            title="View Ledger"
+                          >
+                            {r.name}
+                            <ExternalLink size={10} style={{ marginLeft: 4, opacity: 0.45, verticalAlign: 'middle' }} />
+                          </td>
                           <td style={{ padding: '9px 18px', textAlign: 'right', fontSize: 13, color: r.total_debit > 0 ? '#1d4ed8' : '#9ca3af', fontWeight: r.total_debit > 0 ? 600 : 400, borderRight: '1px solid #e5e7eb' }}>
                             {r.total_debit > 0 ? fmtAmt(r.total_debit) : '—'}
                           </td>
