@@ -32,6 +32,7 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
     <div style={{ position: 'relative', ...style }}>
       <input
         className={className}
+        data-narration
         value={value}
         onChange={e => { onChange(e.target.value); setHi(0) }}
         onFocus={() => { loadOnce(); setOpen(true); setHi(0) }}

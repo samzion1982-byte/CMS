@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from 'react'
-import { PlusCircle, Loader2, Save, X } from 'lucide-react'
+import { PlusCircle, Loader2, Save, X, ChevronRight } from 'lucide-react'
 import { createAccount } from '../../lib/accountingLib'
 import { useAuth } from '../../lib/AuthContext'
 
@@ -13,131 +13,227 @@ export function matchAcct(name, q) {
   return qn.split(' ').filter(Boolean).every(w => norm(name).includes(w))
 }
 
+const LEVEL_LABEL = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger', 4: 'Sub-Ledger' }
+
+// ── Searchable cascading combobox ────────────────────────────────
+function MiniSelect({ label, required, options, selectedId, onSelect, onClear, placeholder, disabled }) {
+  const [q,    setQ]    = useState('')
+  const [open, setOpen] = useState(false)
+  const [hi,   setHi]   = useState(0)
+  const [pos,  setPos]  = useState({ top: 0, left: 0, width: 0 })
+  const inputRef        = useRef(null)
+
+  const sel      = options.find(o => o.id === selectedId)
+  const filtered = q.trim() ? options.filter(o => matchAcct(o.name, q)).slice(0, 20) : options.slice(0, 20)
+
+  function openDrop() {
+    if (!inputRef.current) return
+    const r = inputRef.current.getBoundingClientRect()
+    setPos({ top: r.bottom + 2, left: r.left, width: r.width })
+  }
+
+  function pick(a) { onSelect(a); setQ(''); setOpen(false); setHi(0) }
+
+  function onKey(e) {
+    if (!open) return
+    if      (e.key === 'ArrowDown')                                      { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
+    else if (e.key === 'ArrowUp')                                        { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    else if (e.key === 'Escape')                                         { setOpen(false) }
+    else if ((e.key === 'Enter' || e.key === 'Tab') && filtered.length > 0) { e.preventDefault(); pick(filtered[hi] ?? filtered[0]) }
+  }
+
+  return (
+    <div>
+      <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
+        {label}{required ? ' *' : ''}
+      </label>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <input
+            ref={inputRef}
+            value={open ? q : (sel?.name || '')}
+            onChange={e => { setQ(e.target.value); setOpen(true); setHi(0); openDrop() }}
+            onFocus={() => { setQ(''); setOpen(true); setHi(0); openDrop() }}
+            onBlur={() => setTimeout(() => setOpen(false), 160)}
+            onKeyDown={onKey}
+            placeholder={disabled ? (options.length === 0 ? 'None yet' : '—') : placeholder}
+            disabled={disabled}
+            style={{ width: '100%', height: 34, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: disabled ? 'rgba(0,0,0,0.03)' : 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', opacity: disabled ? 0.65 : 1 }}
+          />
+          {open && !disabled && filtered.length > 0 && (
+            <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 280, overflowY: 'auto' }}>
+              {filtered.map((a, i) => (
+                <div key={a.id} onMouseDown={() => pick(a)}
+                  style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid var(--card-border)', fontSize: 13, fontWeight: 600, color: 'var(--text-1)', background: i === hi ? 'var(--accent-subtle)' : 'transparent' }}>
+                  {a.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {selectedId && onClear && (
+          <button onMouseDown={e => { e.preventDefault(); onClear() }}
+            title="Clear selection"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 3, display: 'flex', flexShrink: 0 }}>
+            <X size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Quick-add modal ───────────────────────────────────────────────
 function QuickAddModal({ initialName, allCoa, entityId, performedBy, onClose, onCreated }) {
-  const [name,       setName]       = useState(initialName)
-  const [parentId,   setParentId]   = useState('')
-  const [parentQ,    setParentQ]    = useState('')
-  const [parentOpen, setParentOpen] = useState(false)
-  const [saving,     setSaving]     = useState(false)
-  const [error,      setError]      = useState('')
+  const [name,   setName]   = useState(initialName)
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
 
-  // Allow level 1–3 accounts as parent (new account becomes level 2–4)
-  const parentOptions = useMemo(() => {
-    const opts = allCoa.filter(a => a.level <= 3 && a.is_active !== false)
-    if (!parentQ.trim()) return opts.slice(0, 20)
-    return opts.filter(a => matchAcct(a.name, parentQ)).slice(0, 15)
-  }, [allCoa, parentQ])
+  const [l1Id, setL1Id] = useState('')
+  const [l2Id, setL2Id] = useState('')
+  const [l3Id, setL3Id] = useState('')
 
-  const selectedParent = allCoa.find(a => a.id === parentId)
-  const newLevel       = selectedParent ? selectedParent.level + 1 : 3
+  const l1Options = useMemo(() => allCoa.filter(a => a.level === 1 && a.is_active !== false), [allCoa])
+  const l2Options = useMemo(() => allCoa.filter(a => a.level === 2 && a.parent_id === l1Id && a.is_active !== false), [allCoa, l1Id])
+  const l3Options = useMemo(() => allCoa.filter(a => a.level === 3 && a.parent_id === l2Id && a.is_active !== false), [allCoa, l2Id])
+
+  const sel1 = l1Options.find(a => a.id === l1Id)
+  const sel2 = l2Options.find(a => a.id === l2Id)
+  const sel3 = l3Options.find(a => a.id === l3Id)
+
+  const parentAcct = sel3 || sel2 || sel1 || null
+  const newLevel   = parentAcct ? parentAcct.level + 1 : null
+  const canSave    = !saving && name.trim() && parentAcct && (!newLevel || newLevel <= 4)
 
   async function handleSave() {
-    if (!name.trim())  { setError('Account name is required'); return }
-    if (!parentId)     { setError('Select a parent account group'); return }
-    if (newLevel > 4)  { setError('Cannot add a sub-account under a Level-4 account'); return }
-    setSaving(true)
-    setError('')
+    if (!name.trim()) { setError('Account name is required'); return }
+    if (!parentAcct)  { setError('Select a Main Account to place the new account under'); return }
+    if (newLevel > 4) { setError('Cannot add sub-accounts under a Level-4 account'); return }
+    setSaving(true); setError('')
     try {
       const ts = Date.now().toString(36).toUpperCase()
-      const payload = {
-        name:        name.trim(),
-        account_type: selectedParent.account_type,
-        is_active:   true,
-        is_postable: newLevel >= 3,
-        level:       newLevel,
-        parent_id:   parentId,
-        entity_id:   entityId,
-        sort_order:  0,
-        code:        `AC-${ts}`,
-      }
-      const newAcct = await createAccount(payload, performedBy || 'user')
+      const newAcct = await createAccount({
+        name:         name.trim(),
+        account_type: parentAcct.account_type,
+        is_active:    true,
+        is_postable:  newLevel >= 3,
+        level:        newLevel,
+        parent_id:    parentAcct.id,
+        entity_id:    entityId,
+        sort_order:   0,
+        code:         `AC-${ts}`,
+      }, performedBy || 'user')
       onCreated(newAcct)
     } catch (e) { setError(e.message) }
     setSaving(false)
   }
 
-  const LEVEL_LABEL = { 1: 'Main Account', 2: 'Account Group', 3: 'Ledger', 4: 'Sub-Ledger' }
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 600, boxShadow: '0 24px 60px rgba(0,0,0,0.3)' }}>
 
         {/* Header */}
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--accent-subtle)' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--accent-subtle)', borderRadius: '13px 13px 0 0' }}>
           <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Add Account to COA</p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Create a new ledger and continue</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Quick Add Account</p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Add to Chart of Accounts and continue</p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
-            <X size={18} />
-          </button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={18} /></button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
           {error && (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#dc2626' }}>
               {error}
             </div>
           )}
 
+          {/* Account name */}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
               Account Name *
             </label>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              onKeyDown={e => e.key === 'Enter' && canSave && handleSave()}
               autoFocus
               style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
 
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 5 }}>
-              Parent Group *
-            </label>
-            <div style={{ position: 'relative' }}>
-              <input
-                value={parentOpen ? parentQ : (selectedParent?.name || '')}
-                onChange={e => { setParentQ(e.target.value); setParentOpen(true) }}
-                onFocus={() => { setParentQ(''); setParentOpen(true) }}
-                onBlur={() => setTimeout(() => setParentOpen(false), 160)}
-                placeholder="Search account group…"
-                style={{ width: '100%', height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box' }}
-              />
-              {parentOpen && parentOptions.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 300, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 280, overflowY: 'auto', marginTop: 2 }}>
-                  {parentOptions.map(a => (
-                    <div key={a.id} onMouseDown={() => { setParentId(a.id); setParentOpen(false) }}
-                      style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--card-border)' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 1 }}>
-                        {'› '.repeat(a.level - 1)}{a.account_type} · {LEVEL_LABEL[a.level] || `Level ${a.level}`}
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.name}</div>
-                    </div>
-                  ))}
+          {/* Cascading parent selectors */}
+          <div style={{ background: 'rgba(0,0,0,0.02)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, border: '1px solid var(--card-border)' }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: 0 }}>Place Under</p>
+
+            <MiniSelect
+              label="Main Account"
+              required
+              options={l1Options}
+              selectedId={l1Id}
+              onSelect={a => { setL1Id(a.id); setL2Id(''); setL3Id('') }}
+              placeholder="Select Main Account…"
+            />
+
+            {l1Id && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <ChevronRight size={14} style={{ color: 'var(--text-3)', marginTop: 26, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <MiniSelect
+                    label="Account Group"
+                    options={l2Options}
+                    selectedId={l2Id}
+                    onSelect={a => { setL2Id(a.id); setL3Id('') }}
+                    onClear={() => { setL2Id(''); setL3Id('') }}
+                    placeholder={l2Options.length ? 'Select Group (or skip to add as Group)…' : 'No groups yet — will add as Group'}
+                    disabled={l2Options.length === 0}
+                  />
                 </div>
-              )}
-            </div>
-            {selectedParent && (
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>
-                Type: <strong>{selectedParent.account_type}</strong> · Will be created as <strong>{LEVEL_LABEL[newLevel] || `Level ${newLevel}`}</strong>
-              </p>
+              </div>
+            )}
+
+            {l2Id && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', paddingLeft: 22 }}>
+                <ChevronRight size={14} style={{ color: 'var(--text-3)', marginTop: 26, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <MiniSelect
+                    label="Ledger"
+                    options={l3Options}
+                    selectedId={l3Id}
+                    onSelect={a => setL3Id(a.id)}
+                    onClear={() => setL3Id('')}
+                    placeholder={l3Options.length ? 'Select Ledger (or skip to add as Ledger)…' : 'No ledgers yet — will add as Ledger'}
+                    disabled={l3Options.length === 0}
+                  />
+                </div>
+              </div>
             )}
           </div>
+
+          {/* Result preview */}
+          {parentAcct && (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, background: 'var(--accent-subtle)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+              <span style={{ color: 'var(--text-3)' }}>Will create:</span>
+              <strong style={{ color: 'var(--text-1)' }}>{LEVEL_LABEL[newLevel] || `Level ${newLevel}`}</strong>
+              <span style={{ color: 'var(--text-3)' }}>under</span>
+              <strong style={{ color: 'var(--accent)' }}>{parentAcct.name}</strong>
+              <span style={{ fontSize: 10, color: 'var(--text-3)', background: 'var(--card-bg)', borderRadius: 4, padding: '1px 6px', border: '1px solid var(--card-border)' }}>
+                {parentAcct.account_type}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: 10, justifyContent: 'flex-end', borderRadius: '0 0 13px 13px', background: 'var(--card-bg)' }}>
           <button onClick={onClose}
-            style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+            style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{ padding: '8px 22px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: saving ? 0.7 : 1 }}>
+          <button onClick={handleSave} disabled={!canSave}
+            style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: canSave ? 1 : 0.5 }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {saving ? 'Creating…' : 'Create & Select'}
           </button>
@@ -149,10 +245,8 @@ function QuickAddModal({ initialName, allCoa, entityId, performedBy, onClose, on
 
 // ── AccountPicker ─────────────────────────────────────────────────
 // Props:
-//   value, accounts, onChange, placeholder, disabled  — existing behaviour
-//   allCoa        — full COA list (for quick-add parent picker)
-//   entityId      — entity to create account under
-//   onAccountCreated(newAcct) — called after quick-add so parent can refresh allCoa
+//   value, accounts, onChange, placeholder, disabled — core behaviour
+//   allCoa, entityId, onAccountCreated              — for quick-add
 export default function AccountPicker({
   value,
   accounts,
@@ -163,11 +257,11 @@ export default function AccountPicker({
   entityId,
   onAccountCreated,
 }) {
-  const { profile } = useAuth()
-  const [query,    setQuery]    = useState('')
-  const [open,     setOpen]     = useState(false)
-  const [hi,       setHi]       = useState(0)
-  const [quickAdd, setQuickAdd] = useState(false)
+  const { profile }              = useAuth()
+  const [query,    setQuery]     = useState('')
+  const [open,     setOpen]      = useState(false)
+  const [hi,       setHi]        = useState(0)
+  const [quickAdd, setQuickAdd]  = useState(false)
   const saved = useRef(value)
 
   const selected    = useMemo(() => accounts.find(a => a.id === value), [value, accounts])
@@ -189,9 +283,9 @@ export default function AccountPicker({
   function pick(a)   { saved.current = a.id; onChange(a.id, a.name); setOpen(false) }
 
   function onKey(e) {
-    if      (e.key === 'ArrowDown' )         { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
-    else if (e.key === 'ArrowUp'  )          { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-    else if (e.key === 'Escape'   )          { setOpen(false) }
+    if      (e.key === 'ArrowDown')          { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
+    else if (e.key === 'ArrowUp')            { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    else if (e.key === 'Escape')             { setOpen(false) }
     else if (e.key === 'Enter' && open)      { e.preventDefault(); if (filtered[hi]) pick(filtered[hi]); else setOpen(false) }
     else if (e.key === 'Tab'   && open)      { if (filtered[hi]) pick(filtered[hi]) }
   }
@@ -199,7 +293,6 @@ export default function AccountPicker({
   function handleCreated(newAcct) {
     setQuickAdd(false)
     onAccountCreated?.(newAcct)
-    // Select the new account immediately
     saved.current = newAcct.id
     onChange(newAcct.id, newAcct.name)
     setOpen(false)
@@ -234,7 +327,7 @@ export default function AccountPicker({
             ))}
 
             {noResults && (
-              <div style={{ padding: '10px 12px', borderTop: filtered.length ? '1px solid var(--card-border)' : 'none' }}>
+              <div style={{ padding: '10px 12px' }}>
                 <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px' }}>
                   "<strong>{query}</strong>" not found in Chart of Accounts
                 </p>

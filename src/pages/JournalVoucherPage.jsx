@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -37,7 +38,7 @@ function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRe
       </div>
 
       {/* Lines */}
-      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+      <div data-lines style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {lines.map((line, idx) => (
           <div key={line._id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <AccountPicker
@@ -56,6 +57,18 @@ function LinesPanel({ title, accentColor, lines, accounts, onChange, onAdd, onRe
               onChange={e => onChange(idx, 'amount', e.target.value)}
               disabled={disabled}
               className="field-input"
+              onKeyDown={e => {
+                const isLast = idx === lines.length - 1
+                const actOnEnter = e.key === 'Enter' && isLast
+                const actOnTab   = e.key === 'Tab'   && !e.shiftKey
+                if (!actOnEnter && !actOnTab) return
+                e.preventDefault()
+                const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
+                const c = e.target.closest('[data-lines]')
+                if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > idx + 1) ps[idx + 1].focus() }; return }
+                flushSync(onAdd)
+                if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
+              }}
               style={{ width: 100, textAlign: 'right', fontSize: 12, fontFamily: 'monospace', flexShrink: 0 }}
             />
             <button
@@ -86,7 +99,7 @@ export default function JournalVoucherPage() {
   const navigate   = useNavigate()
   const toast      = useToast()
   const { currentEntityId, currentEntity } = useEntity()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null
 
   const [allCoa,    setAllCoa]    = useState([])
@@ -118,6 +131,13 @@ export default function JournalVoucherPage() {
   const busy = saving || posting
 
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
+
+  useEffect(() => {
+    if (searchParams.get('coaRefresh')) {
+      getChartOfAccounts(true, currentEntityId).then(setAllCoa).catch(() => {})
+      setSearchParams(p => { const n = new URLSearchParams(p); n.delete('coaRefresh'); return n }, { replace: true })
+    }
+  }, [searchParams.get('coaRefresh')])
 
   useEffect(() => {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]

@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { flushSync } from 'react-dom'
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
@@ -43,7 +44,7 @@ function VBadge({ type }) {
 export default function JournalEntryPage() {
   const navigate = useNavigate()
   const { id: routeId } = useParams()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [checked,    setChecked]    = useState(false)
   const [needsSetup, setNeedsSetup] = useState(false)
 
@@ -568,6 +569,13 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   }, [])
 
   useEffect(() => {
+    if (searchParams.get('coaRefresh')) {
+      getChartOfAccounts(true, currentEntityId).then(all => { setAllCoa(all); setAccounts(getPostableAccountsWithPath(all)) }).catch(() => {})
+      setSearchParams(p => { const n = new URLSearchParams(p); n.delete('coaRefresh'); return n }, { replace: true })
+    }
+  }, [searchParams.get('coaRefresh')])
+
+  useEffect(() => {
     if (!entryId) {
       // Auto-generate entry number
       nextEntryNumber(currentFY, 'Receipt', currentEntityId).then(n => setHeader(h => ({ ...h, entry_number: n }))).catch(() => {})
@@ -886,7 +894,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                 {!formReadOnly && <th style={{ width: 40 }}></th>}
               </tr>
             </thead>
-            <tbody>
+            <tbody data-lines>
               {lines.map((line, i) => (
                 <tr key={i} style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}>
                   <td style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>{i + 1}</td>
@@ -912,6 +920,19 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
                   </td>
                   <td style={{ padding: '6px 10px' }}>
                     <input type="number" min="0" step="0.01" value={line.credit_amount} onChange={e => setLine(i, 'credit_amount', e.target.value)} disabled={formReadOnly} placeholder="0.00"
+                      onKeyDown={e => {
+                        if (formReadOnly) return
+                        const isLast = i === lines.length - 1
+                        const actOnEnter = e.key === 'Enter' && isLast
+                        const actOnTab   = e.key === 'Tab'   && !e.shiftKey
+                        if (!actOnEnter && !actOnTab) return
+                        e.preventDefault()
+                        const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
+                        const c = e.target.closest('[data-lines]')
+                        if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > i + 1) ps[i + 1].focus() }; return }
+                        flushSync(addLine)
+                        if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
+                      }}
                       style={{ width: '100%', height: 34, padding: '0 8px', border: '1.5px solid var(--card-border)', borderRadius: 7, fontSize: 12, fontFamily: 'monospace', textAlign: 'right', background: parseFloat(line.credit_amount) > 0 ? '#dcfce722' : 'var(--input-bg)', color: '#16a34a', outline: 'none', boxSizing: 'border-box' }} />
                   </td>
                   {!formReadOnly && (

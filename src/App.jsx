@@ -282,6 +282,7 @@ function AccountingLayout() {
 // 🛣️ Routes
 function AppRoutes() {
   const navigate = useNavigate()
+  const [showCOAModal, setShowCOAModal] = useState(false)
 
   // Global Enter-key navigation: pressing Enter on any text input advances to the next focusable element
   useEffect(() => {
@@ -292,7 +293,7 @@ function AppRoutes() {
       if (el.type === 'submit' || el.type === 'button' || el.type === 'checkbox' || el.type === 'radio') return
       e.preventDefault()
       const all = Array.from(
-        document.querySelectorAll('input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')
+        document.querySelectorAll('input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])')
       ).filter(n => n.tabIndex !== -1 && n.offsetParent !== null)
       const idx = all.indexOf(el)
       if (idx !== -1 && idx < all.length - 1) all[idx + 1].focus()
@@ -301,19 +302,26 @@ function AppRoutes() {
     return () => document.removeEventListener('keydown', handleEnter)
   }, [])
 
-  // Alt+C → Chart of Accounts
+  // Alt+C → Chart of Accounts (modal overlay)
   useEffect(() => {
     function handleHotkey(e) {
       if (e.altKey && e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault()
-        navigate('/accounting/chart-of-accounts')
+        setShowCOAModal(true)
       }
     }
     document.addEventListener('keydown', handleHotkey)
     return () => document.removeEventListener('keydown', handleHotkey)
-  }, [navigate])
+  }, [])
 
   return (
+    <>
+    {/* Alt+C COA overlay — full-screen modal sheet */}
+    {showCOAModal && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 900, overflowY: 'auto', background: 'var(--page-bg, #f1f5f9)' }}>
+        <ChartOfAccountsPage isModal onClose={() => setShowCOAModal(false)} />
+      </div>
+    )}
     <Routes>
       <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -454,6 +462,7 @@ function AppRoutes() {
 
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+    </>
   )
 }
 

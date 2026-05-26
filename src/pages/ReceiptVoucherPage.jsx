@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -85,7 +86,7 @@ export default function ReceiptVoucherPage() {
   const navigate  = useNavigate()
   const toast     = useToast()
   const { currentEntityId, currentEntity } = useEntity()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null   // set when editing existing entry
 
   // ── Data
@@ -139,6 +140,13 @@ export default function ReceiptVoucherPage() {
   const busy    = saving || posting
 
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
+
+  useEffect(() => {
+    if (searchParams.get('coaRefresh')) {
+      getChartOfAccounts(true, currentEntityId).then(setAllCoa).catch(() => {})
+      setSearchParams(p => { const n = new URLSearchParams(p); n.delete('coaRefresh'); return n }, { replace: true })
+    }
+  }, [searchParams.get('coaRefresh')])
 
   useEffect(() => {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
@@ -415,7 +423,7 @@ export default function ReceiptVoucherPage() {
           </div>
 
           {/* Credit entries table */}
-          <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>
+          <div className="card" data-lines style={{ marginBottom: 16, padding: '18px 20px' }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#16a34a', marginBottom: 12 }}>
               Credit Entries
             </div>
@@ -444,6 +452,18 @@ export default function ReceiptVoucherPage() {
                 <input className="field-input" type="number" step="0.01" min="0" placeholder="0.00"
                   value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)}
                   disabled={busy}
+                  onKeyDown={e => {
+                    const isLast = idx === lines.length - 1
+                    const actOnEnter = e.key === 'Enter' && isLast
+                    const actOnTab   = e.key === 'Tab'   && !e.shiftKey
+                    if (!actOnEnter && !actOnTab) return
+                    e.preventDefault()
+                    const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
+                    const c = e.target.closest('[data-lines]')
+                    if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > idx + 1) ps[idx + 1].focus() }; return }
+                    flushSync(addLine)
+                    if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
+                  }}
                   style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a', fontSize: 15 }} />
                 <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy} className="nav-item"
                   style={{ background: 'none', border: 'none', padding: 4, borderRadius: 6, display: 'flex', alignItems: 'center', width: 'auto',

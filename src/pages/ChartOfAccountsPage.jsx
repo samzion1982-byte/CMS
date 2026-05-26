@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -14,7 +14,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
 import {
-  ChevronRight, ChevronDown, Plus, Edit2, Trash2, ArrowLeft,
+  ChevronRight, ChevronDown, Plus, PlusCircle, Edit2, Trash2, ArrowLeft,
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
@@ -213,7 +213,7 @@ function TreeNode({ node, depth, allAccounts, onAdd, onEdit, onDelete, onToggleA
 
 // ── Modal form ────────────────────────────────────────────────────
 
-function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, saving }) {
+function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, saving, initialName }) {
   const isEdit = mode === 'edit'
   const parentLevel = parentNode?.level || 0
   const thisLevel   = isEdit ? node.level : parentLevel + 1
@@ -228,7 +228,7 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
         sort_order:   node.sort_order || 0,
       }
     : {
-        name:         '',
+        name:         initialName || '',
         account_type: parentNode?.account_type || 'Asset',
         description:  '',
         is_active:    true,
@@ -326,10 +326,13 @@ function AccountModal({ mode, node, parentNode, allAccounts, onClose, onSave, sa
 //  MAIN PAGE
 // ════════════════════════════════════════════════════════════════
 
-export default function ChartOfAccountsPage() {
+export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
   const { profile } = useAuth()
   const toast       = useToast()
   const navigate    = useNavigate()
+  const [searchParams] = useSearchParams()
+  const returnTo    = searchParams.get('returnTo') || ''
+  const prefill     = searchParams.get('prefill') || ''
   const { currentEntityId, currentEntity } = useEntity()
 
   const [accounts,    setAccounts]    = useState([])
@@ -522,7 +525,7 @@ export default function ChartOfAccountsPage() {
   // ── Handlers ──────────────────────────────────────────────────
 
   function handleAdd(parentNode) {
-    setModal({ mode: 'add', node: null, parentNode })
+    setModal({ mode: 'add', node: null, parentNode, initialName: prefill || '' })
   }
 
   function handleEdit(node) {
@@ -578,12 +581,18 @@ export default function ChartOfAccountsPage() {
       if (isEdit) {
         await updateAccount(modal.node.id, payload, profile.email)
         toast(`"${form.name}" updated.`, 'success')
+        setModal(null)
+        load()
       } else {
         await createAccount(payload, profile.email)
         toast(`"${form.name}" created.`, 'success')
+        if (returnTo) {
+          navigate(returnTo)
+        } else {
+          setModal(null)
+          load()
+        }
       }
-      setModal(null)
-      load()
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
@@ -591,7 +600,7 @@ export default function ChartOfAccountsPage() {
   // ── Add a new top-level Main Account ──────────────────────────
 
   function handleAddMainAccount() {
-    setModal({ mode: 'add', node: null, parentNode: null })
+    setModal({ mode: 'add', node: null, parentNode: null, initialName: prefill || '' })
   }
 
   // ── Drag-and-drop handlers ─────────────────────────────────────
@@ -682,10 +691,10 @@ export default function ChartOfAccountsPage() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
+            <button onClick={() => isModal ? onClose?.() : navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+              {isModal ? <X size={15} /> : <ArrowLeft size={15} />}
             </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>{isModal ? 'Close' : 'Accounts'}</span>
           </div>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -706,6 +715,29 @@ export default function ChartOfAccountsPage() {
           </button>
         </div>
       </div>
+
+      {/* Return-to banner */}
+      {returnTo && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+          padding: '12px 16px', background: '#eff6ff', border: '1.5px solid #bfdbfe',
+          borderRadius: 10, fontSize: 13,
+        }}>
+          <PlusCircle size={16} style={{ color: '#2563eb', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <strong style={{ color: '#1d4ed8' }}>
+              {prefill ? `Adding "${prefill}" to Chart of Accounts` : 'Adding account to Chart of Accounts'}
+            </strong>
+            <span style={{ color: '#3b82f6', marginLeft: 8 }}>
+              — click <strong>+</strong> next to the right parent group, then save to return automatically.
+            </span>
+          </div>
+          <button onClick={() => navigate(returnTo)}
+            style={{ padding: '5px 14px', background: 'none', border: '1.5px solid #93c5fd', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Cancel &amp; Return
+          </button>
+        </div>
+      )}
 
       {/* Summary + Search bar */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'stretch' }}>
@@ -809,6 +841,7 @@ export default function ChartOfAccountsPage() {
           onClose={() => setModal(null)}
           onSave={handleSave}
           saving={saving}
+          initialName={modal.initialName || ''}
         />
       )}
       {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={() => {}} />}

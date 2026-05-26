@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -83,7 +84,7 @@ export default function PaymentVoucherPage() {
   const navigate   = useNavigate()
   const toast      = useToast()
   const { currentEntityId, currentEntity } = useEntity()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const editId = searchParams.get('edit') || null
 
   const [allCoa,        setAllCoa]        = useState([])
@@ -122,6 +123,13 @@ export default function PaymentVoucherPage() {
   const busy    = saving || posting
 
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
+
+  useEffect(() => {
+    if (searchParams.get('coaRefresh')) {
+      getChartOfAccounts(true, currentEntityId).then(setAllCoa).catch(() => {})
+      setSearchParams(p => { const n = new URLSearchParams(p); n.delete('coaRefresh'); return n }, { replace: true })
+    }
+  }, [searchParams.get('coaRefresh')])
 
   useEffect(() => {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
@@ -329,7 +337,7 @@ export default function PaymentVoucherPage() {
           </div>
 
           {/* Debit entries */}
-          <div className="card" style={{ marginBottom: 16, padding: '18px 20px' }}>
+          <div className="card" data-lines style={{ marginBottom: 16, padding: '18px 20px' }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: accentColor, marginBottom: 12 }}>
               Debit Entries
             </div>
@@ -344,7 +352,20 @@ export default function PaymentVoucherPage() {
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textAlign: 'center' }}>{idx + 1}</div>
                 <AccountPicker value={line.account_id} accounts={debitAccounts} onChange={v => updateLine(idx, 'account_id', v)} placeholder="Select expense / payment account" disabled={busy} allCoa={allCoa} entityId={currentEntityId} onAccountCreated={a => setAllCoa(prev => [...prev, a])} />
                 <input type="number" min="0" step="0.01" placeholder="0.00" value={line.amount} onChange={e => updateLine(idx, 'amount', e.target.value)} disabled={busy}
-                  className="field-input" style={{ textAlign: 'right', fontFamily: 'monospace' }} />
+                  className="field-input"
+                  onKeyDown={e => {
+                    const isLast = idx === lines.length - 1
+                    const actOnEnter = e.key === 'Enter' && isLast
+                    const actOnTab   = e.key === 'Tab'   && !e.shiftKey
+                    if (!actOnEnter && !actOnTab) return
+                    e.preventDefault()
+                    const q = 'input.field-input:not([type="number"]):not([disabled]):not([data-narration])'
+                    const c = e.target.closest('[data-lines]')
+                    if (actOnTab && !isLast) { if (c) { const ps = c.querySelectorAll(q); if (ps.length > idx + 1) ps[idx + 1].focus() }; return }
+                    flushSync(addLine)
+                    if (c) { const ps = c.querySelectorAll(q); if (ps.length) ps[ps.length - 1].focus() }
+                  }}
+                  style={{ textAlign: 'right', fontFamily: 'monospace' }} />
                 <button onClick={() => removeLine(idx)} disabled={lines.length === 1 || busy}
                   style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c', opacity: lines.length === 1 ? 0.3 : 1, display: 'flex' }}>
                   <Trash2 size={14} />

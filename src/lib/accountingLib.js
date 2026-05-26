@@ -1050,7 +1050,7 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
       }
 
       // Flat item (L3 with no active L4 children, L2, or other levels)
-      groups['flat_' + id] = { name: acct?.name || id, total: amount, children: [] }
+      groups['flat_' + id] = { name: acct?.name || id, total: amount, accountId: id, children: [] }
     }
 
     for (const [name, amount] of Object.entries(others)) {
@@ -1061,7 +1061,7 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
     return Object.values(groups)
       .map(g => {
         if (g.children.length === 0) {
-          return { name: g.name, amount: g.total, accountId: null, children: [] }
+          return { name: g.name, amount: g.total, accountId: g.accountId || null, children: [] }
         }
         if (g.children.length === 1) {
           // Single active child — show child name directly (no group wrapper)
