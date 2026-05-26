@@ -778,10 +778,26 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
   const acctBal   = {}   // coa_id → running closing balance
   let cashCoaOB = 0, bankCoaOB = 0
 
+  // Fetch Opening Balance journal entries for this FY — they take priority over COA field
+  let obJeQ = supabase
+    .from('journal_entries')
+    .select('journal_entry_lines(account_id, debit_amount, credit_amount, chart_of_accounts(name, account_type))')
+    .eq('financial_year', fy)
+    .eq('voucher_type', 'Opening')
+    .eq('is_posted', true)
+    .eq('is_deleted', false)
+  if (entityId) obJeQ = obJeQ.eq('entity_id', entityId)
+  const { data: obJeEntries } = await obJeQ
+  // Accounts covered by OB journal entries — skip their COA opening_balance to avoid double-counting
+  const obJeAccountIds = new Set(
+    (obJeEntries || []).flatMap(e => (e.journal_entry_lines || []).map(l => l.account_id))
+  )
+
   for (const a of assetAccts || []) {
     const t = cashRe.test(a.name) ? 'cash' : bankRe.test(a.name) ? 'bank' : 'other'
     assetType[a.id] = t
     acctName[a.id]  = a.name
+    if (obJeAccountIds.has(a.id)) continue  // OB journal entry supersedes COA field
     const obDate = a.opening_balance_date || from
     if (obDate <= dateFrom) {
       const amt = Number(a.opening_balance) || 0
@@ -793,6 +809,19 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
 
   function classifyAcct(id, name) {
     return assetType[id] || (cashRe.test(name || '') ? 'cash' : bankRe.test(name || '') ? 'bank' : 'other')
+  }
+
+  // Apply Opening Balance journal entry amounts to cash/bank opening balance
+  for (const e of obJeEntries || []) {
+    for (const l of (e.journal_entry_lines || [])) {
+      if (l.chart_of_accounts?.account_type !== 'Asset') continue
+      const t = classifyAcct(l.account_id, l.chart_of_accounts?.name)
+      if (t !== 'cash' && t !== 'bank') continue
+      const netAmt = Number(l.debit_amount || 0) - Number(l.credit_amount || 0)
+      if (t === 'cash') cashCoaOB += netAmt
+      else bankCoaOB += netAmt
+      acctBal[l.account_id] = (acctBal[l.account_id] || 0) + netAmt
+    }
   }
 
   // ── Pre-period entries for custom date ranges (FY start → day before fromDate) ──
