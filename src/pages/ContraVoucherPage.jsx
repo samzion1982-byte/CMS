@@ -5,7 +5,7 @@ import { useToast } from '../lib/toast'
 import {
   getFY, fmtAmt,
   getChartOfAccounts, getAccountingSettings,
-  nextEntryNumber, createJournalEntry, updateJournalEntry,
+  nextEntryNumber, createJournalEntry, updateJournalEntry, updatePostedJournalEntry,
   postJournalEntry, getJournalEntryWithLines,
 } from '../lib/accountingLib'
 import {
@@ -162,8 +162,9 @@ export default function ContraVoucherPage() {
   const [toLabel,   setToLabel]   = useState('')
   const [amount,    setAmount]    = useState('')
   const [showPrint,  setShowPrint] = useState(false)
-  const [saving,     setSaving]    = useState(false)
-  const [posting,    setPosting]   = useState(false)
+  const [saving,    setSaving]    = useState(false)
+  const [posting,   setPosting]   = useState(false)
+  const [isPosted,  setIsPosted]  = useState(false)
   const [voucherPfx, setVoucherPfx] = useState(null)
 
   // Only leaf cash/bank asset accounts; exclude bare group names like "Bank" / "Cash"
@@ -190,6 +191,7 @@ export default function ContraVoucherPage() {
     Promise.all(promises).then(async ([coa, s, existing]) => {
       setAllCoa(coa)
       if (editId && existing) {
+        setIsPosted(existing.is_posted || false)
         setVoucherNo(existing.entry_number)
         setEntryDate(existing.entry_date || localISO(new Date()))
         setRefNo(existing.reference_no || '')
@@ -242,12 +244,16 @@ export default function ContraVoucherPage() {
       ]
       let je
       if (editId) {
-        je = await updateJournalEntry(editId, entry, jLines, user?.email || 'system')
+        if (isPosted) {
+          je = await updatePostedJournalEntry(editId, { ...entry, is_posted: true }, jLines, user?.email || 'system')
+        } else {
+          je = await updateJournalEntry(editId, entry, jLines, user?.email || 'system')
+        }
         toast(`${voucherNo} updated`, 'success')
       } else {
         je = await createJournalEntry(entry, jLines, user?.email || 'system')
       }
-      if (andPost) { await postJournalEntry(je.id, user?.email || 'system'); toast(`${voucherNo} posted`, 'success') }
+      if (andPost && !isPosted) { await postJournalEntry(je.id, user?.email || 'system'); toast(`${voucherNo} posted`, 'success') }
       else if (!editId) { toast(`${voucherNo} saved as draft`, 'success') }
       navigate('/accounting/journal-entries')
     } catch (err) { toast(err.message || 'Failed to save', 'error'); setSt(false) }
@@ -283,6 +289,14 @@ export default function ContraVoucherPage() {
           <Printer size={14} /> Print
         </button>
       </div>
+
+      {/* Posted-entry warning */}
+      {editId && isPosted && (
+        <div style={{ marginBottom: 14, padding: '10px 16px', borderRadius: 8, background: '#fefce8', border: '1.5px solid #fbbf24', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#92400e' }}>
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <span><strong>This entry is already posted.</strong> Changes will update the posted record directly.</span>
+        </div>
+      )}
 
       {/* ── Voucher meta ────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 16, padding: '14px 18px' }}>

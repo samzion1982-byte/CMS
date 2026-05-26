@@ -6,8 +6,9 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
   const [open,        setOpen]        = useState(false)
   const [hi,          setHi]          = useState(0)
   const [pos,         setPos]         = useState({ top: 0, left: 0, width: 0 })
-  const inputRef = useRef(null)
-  const loaded   = useRef(false)
+  const inputRef  = useRef(null)
+  const loaded    = useRef(false)
+  const initVal   = useRef('')   // value at the moment of focus — suppress dropdown until user edits
 
   async function loadOnce() {
     if (loaded.current) return
@@ -44,14 +45,14 @@ export default function NarrationInput({ value, onChange, disabled, placeholder 
         data-narration
         value={value}
         onChange={e => { onChange(e.target.value); setHi(0); if (open) openDrop() }}
-        onFocus={() => { loadOnce(); setOpen(true); setHi(0); openDrop() }}
+        onFocus={() => { initVal.current = value ?? ''; loadOnce(); setOpen(true); setHi(0); openDrop() }}
         onBlur={() => setTimeout(() => setOpen(false), 160)}
         onKeyDown={onKey}
         placeholder={placeholder}
         disabled={disabled}
         autoComplete="off"
       />
-      {open && value && filtered.length > 0 && (
+      {open && value && filtered.length > 0 && value !== initVal.current && (
         <div style={{
           position: 'fixed', top: pos.top, left: pos.left, width: pos.width,
           zIndex: 9999, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
