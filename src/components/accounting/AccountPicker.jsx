@@ -282,13 +282,17 @@ export default function AccountPicker({
   function onBlur()  { setTimeout(() => { setOpen(false); if (!value && saved.current) onChange(saved.current) }, 160) }
   function pick(a)   { saved.current = a.id; onChange(a.id, a.name); setOpen(false) }
 
+  function openQuickAdd() { setOpen(false); setQuickAdd(true) }
+
   function onKey(e) {
     if      (e.key === 'ArrowDown')     { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
     else if (e.key === 'ArrowUp')       { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === 'Escape')        { setOpen(false) }
+    else if (e.key === '+' && noResults && allCoa.length > 0) { e.preventDefault(); openQuickAdd() }
     else if (e.key === 'Enter' && open) {
       const hasIntent = query.trim().length > 0 || hi > 0
-      if (filtered[hi] && hasIntent) { e.preventDefault(); pick(filtered[hi]) }
+      if (filtered[hi] && hasIntent)           { e.preventDefault(); pick(filtered[hi]) }
+      else if (noResults && allCoa.length > 0) { e.preventDefault(); openQuickAdd() }
       else setOpen(false)
     }
     else if (e.key === 'Tab' && open) {
