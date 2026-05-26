@@ -271,11 +271,17 @@ async function checkEntrySystemLocked() {
   return data
 }
 
+function isoToDisplay(iso) {
+  if (!iso) return iso
+  const [y, m, d] = iso.split('-')
+  return `${d}-${m}-${y}`
+}
+
 async function checkPeriodLock(entryDate, churchData) {
   const data = churchData || (await supabase.from('churches').select('accounting_period_lock_date').limit(1).single()).data
   const lockDate = data?.accounting_period_lock_date
   if (lockDate && entryDate && entryDate <= lockDate) {
-    throw new Error(`Entry date (${entryDate}) is on or before the period lock date (${lockDate}). Go to Accounting → Settings to change the lock date.`)
+    throw new Error(`Entry date (${isoToDisplay(entryDate)}) is on or before the period lock date (${isoToDisplay(lockDate)}). Go to Accounting → Settings to change the lock date.`)
   }
 }
 
