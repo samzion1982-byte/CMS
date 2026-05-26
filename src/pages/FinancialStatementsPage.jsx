@@ -267,7 +267,7 @@ function RPTable({ leftRows, rightRows, leftTotal, rightTotal, leftLabel, rightL
 //  Receipts & Payments Account
 // ════════════════════════════════════════════════════════════════
 
-function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo }) {
+function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo, dateFormat }) {
   function allKeysFor(d) {
     const keys = []
     for (const r of d.receipts || []) if ((r.children?.length || 0) > 0) keys.push('r_' + r.name)
@@ -454,7 +454,7 @@ function ReceiptsPayments({ data, entity, navigate, dateFrom, dateTo }) {
 //  Income & Expenditure Account
 // ════════════════════════════════════════════════════════════════
 
-function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo }) {
+function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo, dateFormat }) {
   const [expanded, setExpanded] = useState(new Set())
   const surplus   = data.surplus
   const isDeficit = surplus < 0
@@ -614,7 +614,7 @@ function IncomeExpenditure({ data, entity, showZero, navigate, dateFrom, dateTo 
 //  Balance Sheet
 // ════════════════════════════════════════════════════════════════
 
-function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo }) {
+function BalanceSheet({ data, entity, showZero, navigate, dateFrom, dateTo, dateFormat }) {
   const [expanded, setExpanded] = useState(new Set())
 
   function toggleGroup(id) {
@@ -1037,9 +1037,9 @@ export default function FinancialStatementsPage() {
             </p>
           </div>
 
-          {tab === 'rp' && rp && <ReceiptsPayments data={rp} entity={currentEntity} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
-          {tab === 'ie' && ie && <IncomeExpenditure data={ie} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
-          {tab === 'bs' && bs && <BalanceSheet data={bs} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} />}
+          {tab === 'rp' && rp && <ReceiptsPayments data={rp} entity={currentEntity} navigate={navigate} dateFrom={genFrom} dateTo={genTo} dateFormat={dateFormat} />}
+          {tab === 'ie' && ie && <IncomeExpenditure data={ie} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} dateFormat={dateFormat} />}
+          {tab === 'bs' && bs && <BalanceSheet data={bs} entity={currentEntity} showZero={showZero} navigate={navigate} dateFrom={genFrom} dateTo={genTo} dateFormat={dateFormat} />}
         </div>
       )}
 
