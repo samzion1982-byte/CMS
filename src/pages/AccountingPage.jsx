@@ -820,7 +820,14 @@ export default function AccountingPage() {
                 <tbody>
                   {entries.map((e, i) => (
                     <tr key={e.id}
-                      onClick={() => navigate(`/accounting/journal-entries/${e.id}`)}
+                      onClick={() => {
+                        const t = e.voucher_type
+                        if      (t === 'Receipt') navigate(`/accounting/receipt-voucher?edit=${e.id}`)
+                        else if (t === 'Payment') navigate(`/accounting/payment-voucher?edit=${e.id}`)
+                        else if (t === 'Contra')  navigate(`/accounting/contra-voucher?edit=${e.id}`)
+                        else if (t === 'Journal') navigate(`/accounting/journal-voucher?edit=${e.id}`)
+                        else                      navigate(`/accounting/journal-entries/${e.id}`)
+                      }}
                       style={{ background: i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent', cursor: 'pointer' }}
                       onMouseEnter={ev => { ev.currentTarget.style.background = 'var(--sidebar-item-hover)' }}
                       onMouseLeave={ev => { ev.currentTarget.style.background = i % 2 ? 'rgba(0,0,0,0.012)' : 'transparent' }}

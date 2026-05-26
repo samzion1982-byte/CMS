@@ -584,6 +584,11 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
     }
     setLoading(true)
     getJournalEntryWithLines(entryId).then(entry => {
+      const t = entry.voucher_type
+      if      (t === 'Receipt') { navigate(`/accounting/receipt-voucher?edit=${entryId}`, { replace: true }); return }
+      else if (t === 'Payment') { navigate(`/accounting/payment-voucher?edit=${entryId}`, { replace: true }); return }
+      else if (t === 'Contra')  { navigate(`/accounting/contra-voucher?edit=${entryId}`,  { replace: true }); return }
+      else if (t === 'Journal') { navigate(`/accounting/journal-voucher?edit=${entryId}`, { replace: true }); return }
       setIsPosted(entry.is_posted)
       setHeader({
         entry_number:   entry.entry_number,
