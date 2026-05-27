@@ -519,6 +519,14 @@ async function updateBalanceCache(lines, fy, entityId) {
   }
 }
 
+// ── Fetch a single account by ID (no entity filter — used as a fallback) ─
+
+export async function getAccountById(id) {
+  if (!id) return null
+  const { data } = await supabase.from('chart_of_accounts').select('*').eq('id', id).maybeSingle()
+  return data
+}
+
 // ── Ledger ────────────────────────────────────────────────────────
 
 export async function getLedger(accountId, entityId, from, to) {
@@ -1008,17 +1016,55 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
     // Opening Balance entries excluded from period R&P body
   }
 
+  // Fallback: any account IDs in receiptAmts/paymentAmts that coaById doesn't know about
+  // (can happen when auto-created COA accounts have entity_id = null or a different entity_id).
+  // Fetch them directly by ID with no entity filter so they always resolve to a name.
+  const missingIds = Array.from(new Set([
+    ...Object.keys(receiptAmts),
+    ...Object.keys(paymentAmts),
+  ])).filter(id => !coaById[id])
+  if (missingIds.length > 0) {
+    const { data: missingAccts } = await supabase
+      .from('chart_of_accounts')
+      .select('id, name, parent_id, level, account_type')
+      .in('id', missingIds)
+    for (const a of missingAccts || []) coaById[a.id] = a
+
+    // Also resolve any parent accounts referenced by the newly-fetched accounts
+    const missingParentIds = (missingAccts || [])
+      .map(a => a.parent_id)
+      .filter(pid => pid && !coaById[pid])
+    if (missingParentIds.length > 0) {
+      const { data: parentAccts } = await supabase
+        .from('chart_of_accounts')
+        .select('id, name, parent_id, level, account_type')
+        .in('id', missingParentIds)
+      for (const a of parentAccts || []) coaById[a.id] = a
+    }
+  }
+
   // Build receipts/payments mirroring COA hierarchy (same grouping as COA tree).
   // Two-pass: first identify which L3 parents have L4 children in amts,
   // then build groups cleanly without key collisions.
   function buildHier(amts, others) {
-    // Pass 1: find all L3 IDs that have ≥1 L4 child with an amount
+    // Pass 1a: find all L3 IDs that have ≥1 L4 child with an amount
     const l3WithChildren = new Set()
     for (const id of Object.keys(amts)) {
       const acct = coaById[id]
       if (acct?.level === 4 && acct.parent_id) {
         const par = coaById[acct.parent_id]
         if (par?.level === 3) l3WithChildren.add(par.id)
+      }
+    }
+
+    // Pass 1b: find all L2 IDs that have ≥1 plain L3 child (no L4 children) with an amount
+    // These L3 accounts (e.g. payment categories under "Receipt Income") should be grouped.
+    const l2WithL3Children = new Set()
+    for (const id of Object.keys(amts)) {
+      const acct = coaById[id]
+      if (acct?.level === 3 && !l3WithChildren.has(acct.id) && acct.parent_id) {
+        const par = coaById[acct.parent_id]
+        if (par?.level === 2) l2WithL3Children.add(par.id)
       }
     }
 
@@ -1049,7 +1095,19 @@ export async function getReceiptsAndPayments(fy, entityId, fromDate = null, toDa
         continue
       }
 
-      // Flat item (L3 with no active L4 children, L2, or other levels)
+      if (acct?.level === 3 && !l3WithChildren.has(acct.id) && acct.parent_id) {
+        const par = coaById[acct.parent_id]
+        if (par?.level === 2 && l2WithL3Children.has(par.id)) {
+          // Plain L3 (no L4 children) under an L2 group → group under the L2 parent
+          const key = 'grp2_' + par.id
+          if (!groups[key]) groups[key] = { name: par.name, total: 0, children: [] }
+          groups[key].total += amount
+          groups[key].children.push({ name: acct.name, amount, accountId: id })
+          continue
+        }
+      }
+
+      // Flat item (L3 with no L2 group, L2, L1, or unknown levels)
       groups['flat_' + id] = { name: acct?.name || id, total: amount, accountId: id, children: [] }
     }
 

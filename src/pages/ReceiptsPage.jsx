@@ -10,12 +10,13 @@ import { getActiveCategories }  from '../lib/paymentCategories'
 import {
   Plus, Search, X, Loader2, Save, Edit2, Trash2,
   IndianRupee, CheckSquare, Square, Settings, Lock,
-  FileSpreadsheet, ChevronDown, Printer, Bell, Layers,
+  FileSpreadsheet, ChevronDown, Printer, Bell, Layers, ArrowRightLeft,
 } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF'
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
+import TransferToAccountsModal                     from '../components/receipts/TransferToAccountsModal'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -79,8 +80,9 @@ export default function ReceiptsPage() {
   const [church,          setChurch]          = useState(null)
   const [printingId,      setPrintingId]      = useState(null)
   const [pwGate,          setPwGate]          = useState(null)  // { label, onConfirmed }
-  const [showPending,     setShowPending]     = useState(false)
-  const [pendingCount,    setPendingCount]    = useState(0)
+  const [showPending,       setShowPending]       = useState(false)
+  const [pendingCount,      setPendingCount]      = useState(0)
+  const [showTransfer,      setShowTransfer]      = useState(false)
   const [showBulkPrint,   setShowBulkPrint]   = useState(false)
   const exportMenuRef = useRef(null)
 
@@ -393,7 +395,16 @@ export default function ReceiptsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
 
-          {/* Pending Payments — FIRST */}
+          {/* Transfer to Accounts — visible only when Advanced Accounts enabled */}
+          {church?.accounting_enabled && (
+            <button className="action-btn" onClick={() => setShowTransfer(true)}
+              style={{ background: '#0891b2', color: '#fff', border: 'none', height: 34 }}
+              title="Transfer receipt entries to Accounting journals">
+              <ArrowRightLeft size={13}/> Transfer
+            </button>
+          )}
+
+          {/* Pending Payments */}
           <button className="action-btn" onClick={() => setShowPending(true)}
             style={{
               position: 'relative', height: 34,
@@ -691,6 +702,16 @@ export default function ReceiptsPage() {
         <BulkReceiptsPrintModal
           initialFY={filterFY}
           onClose={() => setShowBulkPrint(false)}
+        />
+      )}
+
+      {showTransfer && (
+        <TransferToAccountsModal
+          profile={profile}
+          fy={filterFY}
+          toast={toast}
+          onClose={() => setShowTransfer(false)}
+          onTransferred={() => loadList()}
         />
       )}
     </div>

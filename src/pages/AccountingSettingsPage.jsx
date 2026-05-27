@@ -354,7 +354,7 @@ export default function AccountingSettingsPage() {
   const toast    = useToast()
   const { entities, currentEntityId, defaultEntityId, switchEntity, setDefaultEntity, reload: reloadEntities } = useEntity()
 
-  const [pageUnlocked, setPageUnlocked] = useState(false)
+  const [pageUnlocked, setPageUnlocked] = useState(() => sessionStorage.getItem('ac_settings_unlocked') === '1')
   const [loading,     setLoading]     = useState(true)
   const [saving,      setSaving]      = useState(false)
   const [churchId,    setChurchId]    = useState(null)
@@ -668,7 +668,7 @@ export default function AccountingSettingsPage() {
 
   if (!pageUnlocked) return (
     <div className="page-container">
-      <SettingsLockScreen onUnlock={() => setPageUnlocked(true)} />
+      <SettingsLockScreen onUnlock={() => { sessionStorage.setItem('ac_settings_unlocked', '1'); setPageUnlocked(true) }} />
     </div>
   )
 

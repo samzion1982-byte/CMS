@@ -21,17 +21,35 @@ export async function getActiveCategories() {
 }
 
 export async function updateCategory(id, name, sort_order) {
-  const { error } = await supabase
+  const { data: cat, error } = await supabase
     .from('payment_categories')
     .update({ name: name.trim(), sort_order })
     .eq('id', id)
+    .select('coa_account_id')
+    .single()
   if (error) throw error
+
+  // Keep COA account name in sync if this category is mapped
+  if (cat?.coa_account_id) {
+    await supabase
+      .from('chart_of_accounts')
+      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .eq('id', cat.coa_account_id)
+  }
 }
 
 export async function toggleCategory(id, is_active) {
   const { error } = await supabase
     .from('payment_categories')
     .update({ is_active })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function reorderCategory(id, sort_order) {
+  const { error } = await supabase
+    .from('payment_categories')
+    .update({ sort_order })
     .eq('id', id)
   if (error) throw error
 }

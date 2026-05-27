@@ -2,7 +2,7 @@
    AccountingPage.jsx — Accounting Dashboard (Finance → Accounts)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -465,6 +465,7 @@ export default function AccountingPage() {
   const navigate = useNavigate()
   const { entities, currentEntity, currentEntityId, switchEntity, loading: entityLoading } = useEntity()
   const [entityOpen,     setEntityOpen]     = useState(false)
+  const entityCloseTimer = useRef(null)
   const [switchTarget,   setSwitchTarget]   = useState(null)  // entity pending password
   const [switchPwInput,  setSwitchPwInput]  = useState('')
   const [switchPwError,  setSwitchPwError]  = useState('')
@@ -672,7 +673,10 @@ export default function AccountingPage() {
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Entity Switcher — always visible */}
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative' }}
+            onMouseEnter={() => clearTimeout(entityCloseTimer.current)}
+            onMouseLeave={() => { entityCloseTimer.current = setTimeout(() => setEntityOpen(false), 300) }}
+          >
             <button
               onClick={() => setEntityOpen(o => !o)}
               className="no-lift ac-entity-btn"
@@ -689,7 +693,7 @@ export default function AccountingPage() {
                     onClick={() => {
                       setEntityOpen(false)
                       if (e.id === currentEntityId) return
-                      setSwitchTarget(e); setSwitchPwInput(''); setSwitchPwError('')
+                      switchEntity(e.id); toast(`Switched to "${e.name}".`, 'success')
                     }}
                     className="no-lift"
                     style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: e.id === currentEntityId ? 'var(--sidebar-item-active-bg)' : 'transparent', color: e.id === currentEntityId ? 'var(--accent)' : 'var(--text-1)', fontWeight: e.id === currentEntityId ? 700 : 400, border: 'none', cursor: e.id === currentEntityId ? 'default' : 'pointer' }}>

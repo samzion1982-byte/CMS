@@ -355,6 +355,12 @@ export default function JournalTemplatesPage() {
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <button onClick={() => navigate('/accounting/settings')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <ArrowLeft size={15} />
+            </button>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
+          </div>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Copy size={19} style={{ color: 'var(--accent)' }} /> Journal Templates

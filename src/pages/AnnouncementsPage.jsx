@@ -146,6 +146,8 @@ function DashboardTab({ church, profile, toast }) {
       const blob  = await generateGreetingCard({
         type: event.eventType, names: event.displayName,
         years: event.years || 0,
+        age: event.age || 0,
+        date: event.eventDate || '',
         churchName: church?.church_name || '',
         city: church?.city || '',
         address: church?.address || '',
@@ -189,6 +191,7 @@ function DashboardTab({ church, profile, toast }) {
 
       const blob = await generateGreetingCard({
         type: 'birthday', names: 'Test Person', years: 0,
+        age: 30, date: new Date().toISOString().slice(0, 10),
         churchName: church?.church_name || '', city: church?.city || '',
         address: church?.address || '', verse,
       }).catch(e => { throw new Error(`[card] ${e.message}`) })

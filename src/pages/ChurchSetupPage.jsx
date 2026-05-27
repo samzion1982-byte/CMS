@@ -5,7 +5,7 @@ import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
          Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Settings } from 'lucide-react'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
-import { getCategories, updateCategory, toggleCategory } from '../lib/paymentCategories'
+import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
@@ -740,7 +740,7 @@ export default function ChurchSetupPage() {
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">UPI ID</p>
                   <div className="field-group">
                     <input className="field-input" value={form.upi_id} onChange={e => s('upi_id', e.target.value)}
-                      placeholder="e.g. allindiachristiansevasangam@sbi"
+                      placeholder="e.g. samzion1982@oksbi"
                       style={{ fontFamily: 'monospace', letterSpacing: '0.02em' }}/>
                     <p className="text-xs text-slate-400 mt-1">
                       Used on the online payment page for GPay / UPI deep-link. Members pay directly to this ID.
@@ -1312,6 +1312,22 @@ function PaymentCategoriesPanel({ toast }) {
     setTogglingId(null)
   }
 
+  const moveCat = async (idx, dir) => {
+    const next = [...cats]
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= next.length) return
+    const aOrder = next[idx].sort_order
+    const bOrder = next[swapIdx].sort_order
+    const a = next[idx], b = next[swapIdx]
+    next[idx]     = { ...a, sort_order: bOrder }
+    next[swapIdx] = { ...b, sort_order: aOrder }
+    setCats(next.sort((x, y) => x.sort_order - y.sort_order))
+    await Promise.all([
+      reorderCategory(a.id, bOrder),
+      reorderCategory(b.id, aOrder),
+    ])
+  }
+
   const activeCount = cats.filter(c => c.is_active).length
 
   return (
@@ -1358,7 +1374,7 @@ function PaymentCategoriesPanel({ toast }) {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {cats.map((c) => (
+              {cats.map((c, idx) => (
                 <div key={c.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12,
@@ -1430,6 +1446,19 @@ function PaymentCategoriesPanel({ toast }) {
                         <span style={{ fontSize: 13, fontWeight: 600, color: c.is_active ? 'var(--text-1)' : 'var(--text-3)', transition: 'color 0.15s' }}>
                           {c.name}
                         </span>
+                      </div>
+                      {/* Up / Down reorder */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+                        <button onClick={() => moveCat(idx, -1)} disabled={idx === 0}
+                          title="Move up"
+                          style={{ padding: '1px 4px', borderRadius: 4, border: '1px solid var(--card-border)', background: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? 'var(--text-3)' : 'var(--text-2)', opacity: idx === 0 ? 0.35 : 1, lineHeight: 1 }}>
+                          <ChevronUp size={11}/>
+                        </button>
+                        <button onClick={() => moveCat(idx, 1)} disabled={idx === cats.length - 1}
+                          title="Move down"
+                          style={{ padding: '1px 4px', borderRadius: 4, border: '1px solid var(--card-border)', background: 'none', cursor: idx === cats.length - 1 ? 'default' : 'pointer', color: idx === cats.length - 1 ? 'var(--text-3)' : 'var(--text-2)', opacity: idx === cats.length - 1 ? 0.35 : 1, lineHeight: 1 }}>
+                          <ChevronDown size={11}/>
+                        </button>
                       </div>
                       <button
                         onClick={() => startEdit(c)}

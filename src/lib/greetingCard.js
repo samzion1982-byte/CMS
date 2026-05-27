@@ -2,11 +2,22 @@
    greetingCard.js — Canvas-based greeting card generation (1080×1920)
    ═══════════════════════════════════════════════════════════════ */
 
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 export function getDayOfWeek(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number)
   return DAYS[new Date(y, m - 1, d).getDay()]
+}
+
+function formatEventDate(dateStr) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const sfx = d === 1 || d === 21 || d === 31 ? 'st'
+             : d === 2 || d === 22             ? 'nd'
+             : d === 3 || d === 23             ? 'rd' : 'th'
+  return `${DAYS[date.getDay()]}, ${d}${sfx} ${MONTHS[m - 1]} ${y}`
 }
 
 async function loadFonts() {
@@ -36,6 +47,16 @@ function wrapText(ctx, text, cx, y, maxW, lineH) {
   return lines.length * lineH
 }
 
+function measureLines(ctx, text, maxW) {
+  const words = text.split(' ')
+  let line = '', count = 0
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w
+    if (ctx.measureText(test).width > maxW && line) { count++; line = w } else line = test
+  }
+  return line ? count + 1 : count
+}
+
 function drawCross(ctx, cx, cy, size, color) {
   ctx.fillStyle = color
   const arm = size * 0.12
@@ -48,7 +69,6 @@ function drawDivider(ctx, W, y, color, style = 'diamond') {
   ctx.strokeStyle = color; ctx.fillStyle = color
 
   if (style === 'dots') {
-    // Row of graduated dots
     const count = 13
     const span = W - 220
     const gap = span / (count - 1)
@@ -62,7 +82,6 @@ function drawDivider(ctx, W, y, color, style = 'diamond') {
       ctx.fill()
     }
   } else if (style === 'cross') {
-    // Lines with a small decorative cross in the center
     ctx.lineWidth = 0.9; ctx.globalAlpha = 0.55
     ctx.beginPath(); ctx.moveTo(100, y); ctx.lineTo(W / 2 - 28, y); ctx.stroke()
     ctx.beginPath(); ctx.moveTo(W / 2 + 28, y); ctx.lineTo(W - 100, y); ctx.stroke()
@@ -70,7 +89,6 @@ function drawDivider(ctx, W, y, color, style = 'diamond') {
     ctx.beginPath(); ctx.moveTo(W / 2, y - 14); ctx.lineTo(W / 2, y + 14); ctx.stroke()
     ctx.beginPath(); ctx.moveTo(W / 2 - 9, y - 3); ctx.lineTo(W / 2 + 9, y - 3); ctx.stroke()
   } else if (style === 'triple') {
-    // Thin line with three diamonds
     ctx.lineWidth = 0.7; ctx.globalAlpha = 0.45
     ctx.beginPath(); ctx.moveTo(100, y); ctx.lineTo(W - 100, y); ctx.stroke()
     ctx.globalAlpha = 1
@@ -82,7 +100,6 @@ function drawDivider(ctx, W, y, color, style = 'diamond') {
       ctx.closePath(); ctx.fill()
     })
   } else {
-    // Default: line + single diamond
     ctx.lineWidth = 1; ctx.globalAlpha = 0.7
     ctx.beginPath(); ctx.moveTo(100, y); ctx.lineTo(W - 100, y); ctx.stroke()
     ctx.globalAlpha = 1
@@ -94,47 +111,146 @@ function drawDivider(ctx, W, y, color, style = 'diamond') {
   ctx.restore()
 }
 
+// Manual rounded rect (avoids ctx.roundRect browser compatibility concerns)
+function roundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  ctx.lineTo(x + r, y + h)
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+// Fixed-position gold sparkles — deterministic layout, no randomness
+function drawSparkles(ctx, W, H, GOLD) {
+  const pts = [
+    // Edge accents
+    [0.10, 0.13, 14, 0.07], [0.90, 0.11, 12, 0.06],
+    [0.05, 0.38, 18, 0.06], [0.94, 0.35, 14, 0.07],
+    [0.08, 0.58, 16, 0.07], [0.92, 0.55, 18, 0.06],
+    [0.06, 0.80, 14, 0.07], [0.94, 0.77, 16, 0.06],
+    [0.18, 0.92, 14, 0.07], [0.82, 0.90, 12, 0.06],
+    [0.30, 0.04, 12, 0.08], [0.70, 0.03, 14, 0.07],
+    [0.22, 0.97, 14, 0.06], [0.78, 0.95, 12, 0.07],
+    // Middle zone — slightly stronger to fill the large empty area
+    [0.15, 0.52, 22, 0.11], [0.85, 0.49, 20, 0.10],
+    [0.10, 0.63, 18, 0.09], [0.88, 0.60, 22, 0.11],
+    [0.20, 0.70, 20, 0.10], [0.80, 0.68, 18, 0.10],
+    [0.28, 0.56, 16, 0.08], [0.72, 0.54, 20, 0.09],
+    [0.40, 0.48, 18, 0.09], [0.60, 0.48, 16, 0.08],
+    [0.50, 0.44, 24, 0.12], [0.50, 0.76, 20, 0.10],
+    [0.35, 0.80, 16, 0.08], [0.65, 0.78, 20, 0.09],
+  ]
+  ctx.save()
+  ctx.fillStyle = GOLD
+  ctx.textAlign = 'center'
+  pts.forEach(([xr, yr, size, alpha]) => {
+    ctx.globalAlpha = alpha
+    ctx.font = `${size}px serif`
+    ctx.fillText('✦', xr * W, yr * H)
+  })
+  ctx.restore()
+}
+
+// Five candles — tallest in centre, tapering outward
+function drawBirthdayCandles(ctx, cx, baseY, GOLD) {
+  const candles = [
+    { off: -96, scale: 0.72 }, { off: -48, scale: 0.90 },
+    { off:   0, scale: 1.00 },
+    { off:  48, scale: 0.90 }, { off:  96, scale: 0.72 },
+  ]
+  candles.forEach(({ off, scale }) => {
+    const x = cx + off
+    const h = 32 * scale, w = 9 * scale, flH = 17 * scale
+    ctx.save()
+    // Body gradient
+    const grad = ctx.createLinearGradient(x - w / 2, baseY - h, x + w / 2, baseY)
+    grad.addColorStop(0, '#e8d8a8')
+    grad.addColorStop(1, '#c8b870')
+    ctx.globalAlpha = 0.88
+    ctx.fillStyle = grad
+    ctx.fillRect(x - w / 2, baseY - h, w, h)
+    // Wax-base glow
+    ctx.fillStyle = GOLD; ctx.globalAlpha = 0.30
+    ctx.beginPath()
+    ctx.ellipse(x, baseY, w * 0.7, 3 * scale, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // Wick
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5 * scale
+    ctx.beginPath(); ctx.moveTo(x, baseY - h); ctx.lineTo(x, baseY - h - 5 * scale); ctx.stroke()
+    // Flame glow halo
+    ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffaa00'
+    ctx.beginPath()
+    ctx.ellipse(x, baseY - h - flH * 0.5, flH * 0.75, flH * 1.0, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // Flame outer (teardrop)
+    ctx.globalAlpha = 0.88; ctx.fillStyle = '#ff8c00'
+    ctx.beginPath()
+    ctx.moveTo(x, baseY - h - flH)
+    ctx.quadraticCurveTo(x + flH * 0.42, baseY - h - flH * 0.5, x, baseY - h)
+    ctx.quadraticCurveTo(x - flH * 0.42, baseY - h - flH * 0.5, x, baseY - h - flH)
+    ctx.fill()
+    // Flame inner
+    ctx.globalAlpha = 0.92; ctx.fillStyle = '#fff070'
+    ctx.beginPath()
+    ctx.moveTo(x, baseY - h - flH * 0.85)
+    ctx.quadraticCurveTo(x + flH * 0.20, baseY - h - flH * 0.42, x, baseY - h - 2)
+    ctx.quadraticCurveTo(x - flH * 0.20, baseY - h - flH * 0.42, x, baseY - h - flH * 0.85)
+    ctx.fill()
+    ctx.restore()
+  })
+}
+
+// Two interlocking gold rings with a diamond accent
+function drawAnniversaryRings(ctx, cx, cy, GOLD) {
+  const r = 30, gap = 14
+  const lx = cx - gap / 2, rx = cx + gap / 2
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 10
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 5; ctx.globalAlpha = 0.92
+  ctx.beginPath(); ctx.arc(lx, cy, r, 0, Math.PI * 2); ctx.stroke()
+  ctx.beginPath(); ctx.arc(rx, cy, r, 0, Math.PI * 2); ctx.stroke()
+  ctx.shadowBlur = 0
+  // Shimmer highlight
+  ctx.strokeStyle = '#fff5c0'; ctx.lineWidth = 1.8; ctx.globalAlpha = 0.45
+  ctx.beginPath(); ctx.arc(lx - 8, cy - 8, r, Math.PI * 1.05, Math.PI * 1.55); ctx.stroke()
+  ctx.beginPath(); ctx.arc(rx - 8, cy - 8, r, Math.PI * 1.05, Math.PI * 1.55); ctx.stroke()
+  // Central diamond
+  ctx.fillStyle = GOLD; ctx.globalAlpha = 1
+  ctx.shadowColor = 'rgba(212,175,55,0.55)'; ctx.shadowBlur = 8
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - 9); ctx.lineTo(cx + 9, cy)
+  ctx.lineTo(cx, cy + 9); ctx.lineTo(cx - 9, cy)
+  ctx.closePath(); ctx.fill()
+  ctx.restore()
+}
+
 // 20 elegant dark gradient themes — one picked randomly per card
 const GRADIENT_THEMES = [
-  // 1. Original — navy / deep purple / dark crimson
   { stops:['#0d0b1e','#1e0a2e','#2d0a14'], dir:[0,0,1,1], glow:'rgba(212,175,55,0.10)' },
-  // 2. Midnight Indigo
   { stops:['#03031a','#0d0b38','#1a0532'], dir:[0,0,1,1], glow:'rgba(120,90,255,0.09)' },
-  // 3. Deep Forest Green
   { stops:['#020f08','#0a1f12','#021408'], dir:[0,1,1,0], glow:'rgba(50,180,100,0.08)' },
-  // 4. Dark Burgundy
   { stops:['#120508','#2a0815','#0f0308'], dir:[0,0,0,1], glow:'rgba(220,80,120,0.09)' },
-  // 5. Deep Teal Navy
   { stops:['#030d12','#051d25','#010a10'], dir:[0,0,1,1], glow:'rgba(30,180,200,0.08)' },
-  // 6. Royal Purple
   { stops:['#0f0320','#1e0840','#0a0318'], dir:[1,0,0,1], glow:'rgba(160,80,255,0.10)' },
-  // 7. Dark Slate Blue
   { stops:['#080c14','#121c30','#050810'], dir:[0,0,1,1], glow:'rgba(80,130,220,0.09)' },
-  // 8. Dark Copper Bronze
   { stops:['#130c06','#251808','#100a05'], dir:[0,0,1,1], glow:'rgba(200,130,50,0.11)' },
-  // 9. Deep Emerald
   { stops:['#031208','#082515','#020e06'], dir:[1,1,0,0], glow:'rgba(30,200,120,0.08)' },
-  // 10. Dark Rose Plum
   { stops:['#140610','#28102a','#120414'], dir:[0,0,1,1], glow:'rgba(220,80,160,0.09)' },
-  // 11. Midnight Navy
   { stops:['#020408','#060c1e','#020408'], dir:[0,0,0,1], glow:'rgba(50,100,220,0.11)' },
-  // 12. Deep Violet
   { stops:['#110820','#1e1038','#0d0518'], dir:[0,0,1,1], glow:'rgba(180,100,220,0.10)' },
-  // 13. Black Charcoal Gold
   { stops:['#0f0f0f','#1a1a1a','#0a0804'], dir:[0,0,1,1], glow:'rgba(212,175,55,0.15)' },
-  // 14. Deep Cobalt
   { stops:['#020518','#050e35','#020310'], dir:[1,0,0,1], glow:'rgba(60,100,255,0.10)' },
-  // 15. Dark Amber Brown
   { stops:['#120800','#251400','#100600'], dir:[0,0,1,1], glow:'rgba(220,150,30,0.11)' },
-  // 16. Dark Sage Forest
   { stops:['#060d08','#101e10','#050a05'], dir:[0,1,1,0], glow:'rgba(80,160,80,0.09)' },
-  // 17. Midnight Maroon
   { stops:['#150204','#2a0508','#0d0203'], dir:[0,0,0,1], glow:'rgba(200,40,60,0.08)' },
-  // 18. Dark Teal Abyss
   { stops:['#020810','#051520','#02080d'], dir:[0,0,1,1], glow:'rgba(20,160,180,0.09)' },
-  // 19. Black Velvet Purple
   { stops:['#080508','#100810','#050305'], dir:[1,0,0,1], glow:'rgba(180,50,200,0.10)' },
-  // 20. Steel Charcoal Blue
   { stops:['#080a0e','#121620','#060810'], dir:[0,0,1,1], glow:'rgba(150,170,200,0.08)' },
 ]
 
@@ -175,7 +291,8 @@ function drawBorder(ctx, W, H, GOLD) {
 }
 
 export async function generateGreetingCard({
-  type, names, years = 0, churchName, city, address, verse, backgroundUrl = null
+  type, names, years = 0, age = 0, date = '',
+  churchName, city, address, verse, backgroundUrl = null
 }) {
   await loadFonts()
 
@@ -184,20 +301,19 @@ export async function generateGreetingCard({
   canvas.width = W; canvas.height = H
   const ctx = canvas.getContext('2d')
 
-  const GOLD   = '#d4af37'
-  const WHITE  = '#ffffff'
-  const CREAM  = '#f0e6c8'
-  const LGOLD  = '#ddc57a'
+  const GOLD  = '#d4af37'
+  const WHITE = '#ffffff'
+  const CREAM = '#f0e6c8'
+  const LGOLD = '#ddc57a'
 
   if (backgroundUrl) {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => { ctx.drawImage(img, 0, 0, W, H); resolve() }
       img.onerror = () => { drawBackground(ctx, W, H); resolve() }
       img.src = backgroundUrl
     })
-    // Dark overlay so text stays readable over any background
     ctx.fillStyle = 'rgba(0,0,0,0.42)'
     ctx.fillRect(0, 0, W, H)
   } else {
@@ -205,56 +321,112 @@ export async function generateGreetingCard({
   }
 
   drawBorder(ctx, W, H, GOLD)
+  drawSparkles(ctx, W, H, GOLD)  // subtle ✦ texture across the card
 
   ctx.textAlign = 'center'
 
   // Cross
   drawCross(ctx, W / 2, 168, 96, GOLD)
 
+  // Decorative church header frame — certificate style with corner & edge ornaments
+  ctx.save()
+  const fX = W / 2 - 350, fY = 272, fW = 700, fH = 164, fR = 22
+  // Background fill
+  roundedRect(ctx, fX, fY, fW, fH, fR)
+  ctx.fillStyle = 'rgba(212,175,55,0.08)'; ctx.fill()
+  // Outer border
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.8; ctx.globalAlpha = 0.52
+  roundedRect(ctx, fX, fY, fW, fH, fR); ctx.stroke()
+  // Inner inset border
+  ctx.lineWidth = 0.7; ctx.globalAlpha = 0.22
+  roundedRect(ctx, fX + 10, fY + 10, fW - 20, fH - 20, Math.max(fR - 3, 2)); ctx.stroke()
+  // Center top & bottom: diamond + flanking lines
+  ;[[W / 2, fY], [W / 2, fY + fH]].forEach(([ox, oy]) => {
+    ctx.fillStyle = GOLD; ctx.globalAlpha = 1
+    ctx.beginPath()
+    ctx.moveTo(ox, oy - 7); ctx.lineTo(ox + 7, oy)
+    ctx.lineTo(ox, oy + 7); ctx.lineTo(ox - 7, oy)
+    ctx.closePath(); ctx.fill()
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 1.1; ctx.globalAlpha = 0.45
+    ctx.beginPath(); ctx.moveTo(ox - 60, oy); ctx.lineTo(ox - 12, oy); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(ox + 12, oy); ctx.lineTo(ox + 60, oy); ctx.stroke()
+  })
+  ctx.restore()
+
   // Church name
   ctx.font = 'bold 44px "Playfair Display", Georgia, serif'
   ctx.fillStyle = WHITE
-  ctx.fillText(churchName || 'Church', W / 2, 300)
+  ctx.fillText(churchName || 'Church', W / 2, 332)
 
   // Location
   const loc = [address, city].filter(Boolean).join(', ')
   ctx.font = '26px "Plus Jakarta Sans", sans-serif'
   ctx.fillStyle = LGOLD
-  ctx.fillText(loc, W / 2, 342)
+  ctx.fillText(loc, W / 2, 392)
 
-  drawDivider(ctx, W, 380, GOLD, 'diamond')
-
-  // Event heading — flanking ✦ ornaments for polish
   const isBday = type === 'birthday'
+
+  // Candles (birthday) or rings (anniversary) — ABOVE the heading
+  if (isBday) {
+    drawBirthdayCandles(ctx, W / 2, 542, GOLD)
+  } else {
+    drawAnniversaryRings(ctx, W / 2, 522, GOLD)
+  }
+
+  // Event heading with flanking ✦ ornaments
   ctx.save()
-  ctx.font = '38px serif'
-  ctx.fillStyle = GOLD
-  ctx.globalAlpha = 0.72
-  ctx.fillText('✦', W / 2 - 400, 496)
-  ctx.fillText('✦', W / 2 + 400, 496)
+  ctx.font = '38px serif'; ctx.fillStyle = GOLD; ctx.globalAlpha = 0.72
+  ctx.fillText('✦', W / 2 - 400, 642)
+  ctx.fillText('✦', W / 2 + 400, 642)
   ctx.globalAlpha = 1
   ctx.restore()
 
   ctx.font = 'italic bold 70px "Playfair Display", Georgia, serif'
   ctx.fillStyle = '#f0c040'
-  ctx.fillText(isBday ? 'Happy Birthday!' : 'Happy Anniversary!', W / 2, 488)
+  ctx.fillText(isBday ? 'Happy Birthday!' : 'Happy Anniversary!', W / 2, 634)
 
-  // Names — larger gap below heading (+60 px)
+  // Names
   ctx.font = 'bold 54px "Plus Jakarta Sans", sans-serif'
   ctx.fillStyle = WHITE
-  ctx.fillText(names, W / 2, 638)
+  ctx.fillText(names, W / 2, 724)
 
-  // Thin decorative underline below name(s)
+  // Thin decorative underline below name
   const nameW = Math.min(ctx.measureText(names).width / 2 + 40, 360)
   ctx.save()
   ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.4
-  ctx.beginPath(); ctx.moveTo(W / 2 - nameW, 660); ctx.lineTo(W / 2 + nameW, 660); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(W / 2 - nameW, 746); ctx.lineTo(W / 2 + nameW, 746); ctx.stroke()
   ctx.globalAlpha = 1
   ctx.restore()
 
-  let curY = 690
+  let curY = 776
 
-  // Years (anniversary only)
+  // Celebration date
+  if (date) {
+    ctx.font = '26px "Plus Jakarta Sans", sans-serif'
+    ctx.fillStyle = LGOLD
+    ctx.globalAlpha = 0.88
+    ctx.fillText(formatEventDate(date), W / 2, curY + 10)
+    ctx.globalAlpha = 1
+    curY += 46
+  }
+
+  // Age milestone (birthday only)
+  if (isBday && age > 0) {
+    ctx.save()
+    ctx.font = 'italic 28px "Playfair Display", Georgia, serif'
+    ctx.fillStyle = GOLD; ctx.globalAlpha = 0.90
+    const milestones = [10,16,18,21,25,30,40,50,60,70,75,80,90,100]
+    const sfx = age === 1 ? 'st' : age === 2 ? 'nd' : age === 3 ? 'rd' : 'th'
+    const ageMsg = milestones.includes(age)
+      ? `✦  Celebrating a Milestone — ${age}${sfx} Birthday!  ✦`
+      : `Celebrating ${age} years of God's grace`
+    ctx.fillText(ageMsg, W / 2, curY + 10)
+    ctx.globalAlpha = 1
+    ctx.restore()
+    curY += 50
+  }
+
+  // Years together (anniversary only)
   if (!isBday && years > 0) {
     ctx.font = '30px Georgia, serif'
     ctx.fillStyle = GOLD
@@ -297,12 +469,11 @@ export async function generateGreetingCard({
     curY += tamilH + 18
   }
 
-  // Top divider after verse; footer divider raised to reduce gap below greeting
   const topDivY = curY + 12
-  const botDivY = H - 360
+  const botDivY = H - 400
   drawDivider(ctx, W, topDivY, GOLD, 'cross')
 
-  // Greeting message — vertically centred between the two dividers
+  // Greeting message — centred between the two dividers, larger font + subtle glow box
   const bdayMsgs = [
     'May the Almighty God bless you with good health, peace and prosperity!',
     'May God shower you with His grace and fill your life with joy, love and endless blessings!',
@@ -347,40 +518,41 @@ export async function generateGreetingCard({
     'May the Lord seal your hearts together and bless you with a lifetime of happiness and grace!',
     'May your marriage be a living testimony that what God has joined together, He will also sustain!',
   ]
-  const msgPool = isBday ? bdayMsgs : anniMsgs
-  const greetingMsg = msgPool[Math.floor(Math.random() * msgPool.length)]
-  const greetFontSize = 32
-  const greetLineH = 48
+  const greetingMsg = (isBday ? bdayMsgs : anniMsgs)[Math.floor(Math.random() * 20)]
+  const greetFontSize = 36
+  const greetLineH    = 52
   ctx.font = `italic ${greetFontSize}px "Playfair Display", Georgia, serif`
-  const greetLines = (() => {
-    const words = greetingMsg.split(' ')
-    let line = '', n = 0
-    for (const w of words) {
-      const test = line ? `${line} ${w}` : w
-      if (ctx.measureText(test).width > 880 && line) { n++; line = w } else line = test
-    }
-    return line ? n + 1 : n
-  })()
-  const greetH = greetLines * greetLineH
-  const greetY = Math.round((topDivY + botDivY - greetH) / 2) + greetFontSize
+  const numLines = measureLines(ctx, greetingMsg, 880)
+  const greetH   = numLines * greetLineH
+  const greetY   = Math.round((topDivY + botDivY - greetH) / 2) + greetFontSize
+
+  // Subtle gold-tinted glow box behind the greeting
+  ctx.save()
+  const padX = 60, padY = 42
+  roundedRect(ctx, W / 2 - 440, greetY - greetFontSize - padY, 880, greetH + padY * 2, 14)
+  ctx.fillStyle = 'rgba(212,175,55,0.06)'; ctx.fill()
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 0.9; ctx.globalAlpha = 0.28; ctx.stroke()
+  ctx.restore()
+
   ctx.fillStyle = CREAM
+  ctx.font = `italic ${greetFontSize}px "Playfair Display", Georgia, serif`
   wrapText(ctx, greetingMsg, W / 2, greetY, 880, greetLineH)
 
   // Footer
   drawDivider(ctx, W, botDivY, GOLD, 'triple')
 
-  ctx.font = 'italic 26px "Playfair Display", Georgia, serif'
+  ctx.font = 'italic 33px "Playfair Display", Georgia, serif'
   ctx.fillStyle = LGOLD
-  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 56)
+  ctx.fillText('Wishes and Blessings from', W / 2, botDivY + 90)
 
-  ctx.font = '23px Georgia, serif'
+  ctx.font = '33px Georgia, serif'
   ctx.fillStyle = CREAM
-  ctx.fillText('The Presbyter, Secretary, Treasurer and', W / 2, botDivY + 98)
+  ctx.fillText('The Presbyter, Secretary, Treasurer and', W / 2, botDivY + 152)
 
-  ctx.font = '23px Georgia, serif'
+  ctx.font = '33px Georgia, serif'
   ctx.fillStyle = CREAM
   const membersLine = `beloved members of the ${churchName || 'Church'} Congregation`
-  wrapText(ctx, membersLine, W / 2, botDivY + 134, 920, 34)
+  wrapText(ctx, membersLine, W / 2, botDivY + 198, 920, 44)
 
   return new Promise(resolve => canvas.toBlob(b => resolve(b), 'image/jpeg', 0.92))
 }

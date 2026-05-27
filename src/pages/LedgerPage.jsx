@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useToast } from '../lib/toast'
-import { getLedger, getChartOfAccounts, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
+import { getLedger, getChartOfAccounts, getAccountById, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { useEntity } from '../lib/EntityContext'
 import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
@@ -286,7 +286,13 @@ export default function LedgerPage() {
   const postableIds = useMemo(() => new Set(postable.map(a => a.id)), [postable])
 
   useEffect(() => {
-    getChartOfAccounts(true, currentEntityId).then(all => {
+    getChartOfAccounts(true, currentEntityId).then(async all => {
+      // If the pre-selected account isn't in the entity-filtered list (e.g. auto-created
+      // receipt-transfer accounts with a mismatched entity_id), fetch it by ID directly.
+      if (initAccountId && !all.find(a => a.id === initAccountId)) {
+        const extra = await getAccountById(initAccountId)
+        if (extra) all = [...all, extra]
+      }
       setAllAccounts(all)
       setPostable(getPostableAccountsWithPath(all))
     }).catch(() => {})

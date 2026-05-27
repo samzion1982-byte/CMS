@@ -10,14 +10,14 @@ import { useToast } from '../lib/toast'
 import {
   fyDateRange, fmtAmt,
   getIncomeStatement, getChartOfAccounts, getTrialBalance,
-  createJournalEntry, nextEntryNumber,
+  createJournalEntry, nextEntryNumber, softDeleteJournalEntry,
 } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, CheckCircle, AlertTriangle, RefreshCw,
-  ChevronDown, Archive, ArrowRight, ChevronsRight,
+  ChevronDown, Archive, ArrowRight, ChevronsRight, RotateCcw,
 } from 'lucide-react'
 
 function nextFY(fy) {
@@ -43,6 +43,8 @@ export default function YearEndClosingPage() {
   const [cfLoading,     setCfLoading]     = useState(false)
   const [cfSaving,      setCfSaving]      = useState(false)
   const [cfDone,        setCfDone]        = useState(false) // opening balances already created
+  const [revoking,      setRevoking]      = useState(false)
+  const [showRevoke,    setShowRevoke]    = useState(false)
 
   const loadPreview = useCallback(async () => {
     setLoading(true)
@@ -210,6 +212,45 @@ export default function YearEndClosingPage() {
     setCfSaving(false)
   }
 
+  async function handleRevoke() {
+    setRevoking(true)
+    try {
+      // Find and delete the YEC closing entry for this FY
+      const { data: yecEntries } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('financial_year', fy)
+        .eq('entity_id', currentEntityId)
+        .eq('narration', `Year-End Closing entries for FY ${fy}`)
+        .eq('is_deleted', false)
+      for (const e of (yecEntries || [])) {
+        await softDeleteJournalEntry(e.id, profile?.email || 'admin')
+      }
+
+      // Find and delete the carry-forward OB entry for the next FY
+      const nfy = nextFY(fy)
+      const { data: obEntries } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('financial_year', nfy)
+        .eq('entity_id', currentEntityId)
+        .eq('voucher_type', 'Opening')
+        .ilike('narration', `%b/f from FY ${fy}%`)
+        .eq('is_deleted', false)
+      for (const e of (obEntries || [])) {
+        await softDeleteJournalEntry(e.id, profile?.email || 'admin')
+      }
+
+      toast('Year-end closing revoked. All income & expense balances are restored.', 'success')
+      setShowRevoke(false)
+      setAlreadyDone(false)
+      setCfDone(false)
+      setCfPreview(null)
+      loadPreview()
+    } catch (e) { toast(e.message, 'error') }
+    setRevoking(false)
+  }
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -219,6 +260,12 @@ export default function YearEndClosingPage() {
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <button onClick={() => navigate('/accounting/settings')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <ArrowLeft size={15} />
+            </button>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
           </div>
           <div>
             <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -247,6 +294,12 @@ export default function YearEndClosingPage() {
             style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
+          {alreadyDone && (
+            <button onClick={() => setShowRevoke(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#fff5f5', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#b91c1c', cursor: 'pointer' }}>
+              <RotateCcw size={13} /> Revoke Closing
+            </button>
+          )}
         </div>
       </div>
 
@@ -495,6 +548,55 @@ export default function YearEndClosingPage() {
           </div>
         </>
       ) : null}
+
+      {/* ── Revoke Year-End Closing confirmation modal ── */}
+      {showRevoke && (
+        <div onClick={e => { if (e.target === e.currentTarget && !revoking) setShowRevoke(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.72)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            {/* header */}
+            <div style={{ background: '#7f1d1d', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: 7, display: 'flex' }}>
+                <AlertTriangle size={16} color="#fca5a5" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff' }}>Revoke Year-End Closing — FY {fy}?</p>
+                <p style={{ margin: 0, fontSize: 11, color: '#fca5a5' }}>This will undo the closing entry and opening balances</p>
+              </div>
+              {!revoking && (
+                <button onClick={() => setShowRevoke(false)} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 9px', cursor: 'pointer', color: '#fff', fontSize: 16, fontWeight: 700 }}>×</button>
+              )}
+            </div>
+            {/* body */}
+            <div style={{ padding: '20px 22px' }}>
+              <div style={{ background: '#fef9c3', border: '1px solid #fde047', borderRadius: 8, padding: '12px 14px', marginBottom: 18 }}>
+                <p style={{ margin: 0, fontSize: 12, color: '#713f12', lineHeight: 1.6 }}>
+                  The following journal entries will be <strong>soft-deleted</strong> (recoverable from Journal Entries):
+                </p>
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: '#713f12', lineHeight: 1.8 }}>
+                  <li><strong>YEC-{fy}</strong> — Year-End Closing entries for FY {fy}</li>
+                  {cfDone && <li><strong>OB-{nextFY(fy)}</strong> — Opening Balances b/f from FY {fy}</li>}
+                </ul>
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: '#92400e' }}>
+                  Income &amp; Expense account balances will be restored in FY {fy}.
+                  {cfDone && ` Opening Balances for FY ${nextFY(fy)} will also be removed.`}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowRevoke(false)} disabled={revoking}
+                  style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                  Cancel
+                </button>
+                <button onClick={handleRevoke} disabled={revoking}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 20px', background: revoking ? '#fca5a5' : '#b91c1c', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: revoking ? 'not-allowed' : 'pointer' }}>
+                  {revoking ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  {revoking ? 'Revoking…' : 'Yes, Revoke Closing'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
