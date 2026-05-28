@@ -225,16 +225,18 @@ export async function getCashAccountsForTransfer(entityId) {
 export async function getBankAccountsForTransfer(entityId) {
   let q = supabase
     .from('chart_of_accounts')
-    .select('id, name, code')
+    .select('id, name, code, parent_id')
     .eq('account_type', 'Asset')
     .eq('is_active', true)
-    .eq('is_postable', true)
     .ilike('name', '%bank%')
     .order('name')
   if (entityId) q = q.eq('entity_id', entityId)
   const { data, error } = await q
   if (error) throw error
-  return data || []
+  const all = data || []
+  // Remove group accounts — any account that is the parent_id of another in the result
+  const parentIds = new Set(all.map(a => a.parent_id).filter(Boolean))
+  return all.filter(a => !parentIds.has(a.id))
 }
 
 // ── Main: execute the transfer ─────────────────────────────────────
