@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getFY, fmtAmt,
-  getChartOfAccounts, getPostableAccountsWithPath,
+  getChartOfAccounts, getPostableAccountsWithPath, getAccountsByIds,
   nextEntryNumber, getAccountingSettings,
   createJournalEntry, updateJournalEntry, updatePostedJournalEntry, postJournalEntry,
   getJournalEntryWithLines,
@@ -153,6 +153,17 @@ export default function ReceiptVoucherPage() {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existingEntry]) => {
+      // When editing, supplement COA with any line accounts not in the entity-filtered list
+      // (auto-created receipt-transfer accounts can have a mismatched entity_id)
+      if (existingEntry) {
+        const allLineIds = (existingEntry.journal_entry_lines || []).map(l => l.account_id)
+        const coaIds = new Set(coa.map(a => a.id))
+        const missing = allLineIds.filter(id => id && !coaIds.has(id))
+        if (missing.length) {
+          const extra = await getAccountsByIds(missing)
+          coa = [...coa, ...extra]
+        }
+      }
       setAllCoa(coa)
       if (editId && existingEntry) {
         setIsPosted(existingEntry.is_posted || false)

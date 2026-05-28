@@ -4,7 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   getFY, fmtAmt,
-  getChartOfAccounts, getAccountingSettings,
+  getChartOfAccounts, getAccountingSettings, getAccountsByIds,
   nextEntryNumber, createJournalEntry, updateJournalEntry, updatePostedJournalEntry,
   postJournalEntry, getJournalEntryWithLines,
 } from '../lib/accountingLib'
@@ -189,6 +189,12 @@ export default function ContraVoucherPage() {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
     if (editId) promises.push(getJournalEntryWithLines(editId))
     Promise.all(promises).then(async ([coa, s, existing]) => {
+      if (existing) {
+        const allLineIds = (existing.journal_entry_lines || []).map(l => l.account_id)
+        const coaIds = new Set(coa.map(a => a.id))
+        const missing = allLineIds.filter(id => id && !coaIds.has(id))
+        if (missing.length) { const extra = await getAccountsByIds(missing); coa = [...coa, ...extra] }
+      }
       setAllCoa(coa)
       if (editId && existing) {
         setIsPosted(existing.is_posted || false)

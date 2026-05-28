@@ -527,6 +527,15 @@ export async function getAccountById(id) {
   return data
 }
 
+// ── Fetch multiple accounts by ID — no entity filter (fallback for entity_id mismatches) ─
+
+export async function getAccountsByIds(ids) {
+  const clean = (ids || []).filter(Boolean)
+  if (!clean.length) return []
+  const { data } = await supabase.from('chart_of_accounts').select('*').in('id', clean)
+  return data || []
+}
+
 // ── Ledger ────────────────────────────────────────────────────────
 
 export async function getLedger(accountId, entityId, from, to) {
