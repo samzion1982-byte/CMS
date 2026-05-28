@@ -22,8 +22,8 @@ const H = 508   // px
 // Conservative row limits per page (each row ≈ 22px tall)
 // Last page carries header + rows + TOTAL row + signature + footer text
 // Middle pages carry header + rows only
-const ROWS_LAST = 5
-const ROWS_MID  = 10
+const ROWS_LAST = 4
+const ROWS_MID  = 8
 
 function paginateRows(rows) {
   const n = rows.length
@@ -185,7 +185,7 @@ export default function VoucherPrint({
               }}>
                 {/* Double-border inset */}
                 <div style={{ margin: 44, height: H - 88, border: '2px solid #000', boxSizing: 'border-box', padding: 4 }}>
-                <div style={{ border: '1px solid #000', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', padding: '8px 14px 0' }}>
+                <div style={{ border: '1px solid #000', height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', padding: '8px 14px 8px' }}>
 
                   <PageHeader pageNum={pageIdx + 1} />
 
