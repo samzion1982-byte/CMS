@@ -52,6 +52,7 @@ import JournalTemplatesPage       from './pages/JournalTemplatesPage'
 import YearEndClosingPage         from './pages/YearEndClosingPage'
 import EventPlannerPage           from './pages/EventPlannerPage'
 import EventRecorderPage          from './pages/EventRecorderPage'
+import EventSettingsPage          from './pages/EventSettingsPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
 import EntityManagementPage       from './pages/EntityManagementPage'
@@ -499,6 +500,9 @@ function AppRoutes() {
       />
       <Route path="/events/recorder"
         element={<PrivateRoute><AppLayout><EventRecorderPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/events/settings"
+        element={<PrivateRoute><AppLayout><EventSettingsPage /></AppLayout></PrivateRoute>}
       />
 
       {/* ── Simple Accounts Module ── */}
