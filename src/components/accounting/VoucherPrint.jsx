@@ -1,4 +1,4 @@
-/* VoucherPrint — A5 landscape modal preview */
+/* VoucherPrint — A5 landscape modal preview, supports multi-page */
 import { Printer, X } from 'lucide-react'
 import { fmtAmt } from '../../lib/accountingLib'
 
@@ -15,9 +15,8 @@ const TYPE_COLOR = {
   Journal: '#6d28d9',
 }
 
-// A5 landscape at ~96dpi = 794 × 559px; we render at 720 × 508 (90% scale)
+// A5 landscape ~96dpi = 794 × 559px; preview at 720px wide
 const W = 720
-const H = 508
 
 export default function VoucherPrint({
   open, onClose,
@@ -40,6 +39,7 @@ export default function VoucherPrint({
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Times New Roman', Georgia, serif; background: #fff; }
     table { border-collapse: collapse; width: 100%; }
+    .vp-signature { break-inside: avoid; page-break-inside: avoid; }
   </style>
 </head><body>${el.innerHTML}</body></html>`)
     win.document.close()
@@ -55,11 +55,11 @@ export default function VoucherPrint({
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.65)',
         display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: 20,
+        alignItems: 'center', justifyContent: 'flex-start',
+        padding: 20, overflowY: 'auto',
       }}
     >
-      <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 28px 72px rgba(0,0,0,0.45)', maxWidth: '98vw' }}>
+      <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: '0 28px 72px rgba(0,0,0,0.45)', maxWidth: '98vw', marginTop: 20, marginBottom: 20 }}>
 
         {/* ── Toolbar ─────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: '#1e293b' }}>
@@ -84,36 +84,31 @@ export default function VoucherPrint({
 
         {/* ── Paper preview area ───────────────────────────── */}
         <div style={{ padding: '20px 24px', background: '#475569', display: 'flex', justifyContent: 'center' }}>
-          {/* The actual voucher — this div is cloned into the print window */}
+          {/* This div is cloned into the print window */}
           <div id="vp-paper" style={{
-            width: W, height: H,
+            width: W,
             background: '#fff',
             boxShadow: '0 6px 32px rgba(0,0,0,0.35)',
             fontFamily: "'Times New Roman', Georgia, serif",
-            overflow: 'hidden',
             boxSizing: 'border-box',
           }}>
-            {/* 0.5-inch inset wrapper — double-line border, 48px from every edge */}
+            {/* 0.5-inch inset wrapper — double-line border */}
             <div style={{
               margin: 48,
-              height: H - 96,
               border: '2px solid #000',
               boxSizing: 'border-box',
               padding: 5,
             }}>
             <div style={{
               border: '1px solid #000',
-              height: '100%',
               boxSizing: 'border-box',
-              position: 'relative',
               display: 'flex',
               flexDirection: 'column',
-              padding: '10px 16px 90px',
-              overflow: 'hidden',
+              padding: '10px 16px',
             }}>
 
             {/* ── Entity header ──────────────────────────────── */}
-            <div style={{ textAlign: 'center', paddingBottom: 8, marginBottom: 8, borderBottom: `2.5px solid #000` }}>
+            <div style={{ textAlign: 'center', paddingBottom: 8, marginBottom: 8, borderBottom: '2.5px solid #000' }}>
               <div style={{ fontSize: 17, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 2px' }}>
                 {entity?.name || 'Church Name'}
               </div>
@@ -170,13 +165,12 @@ export default function VoucherPrint({
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i} style={{ borderBottom: '0.5px solid #d1d5db' }}>
-                    <td style={{ padding: '5px 8px', fontStyle: r.bold ? 'normal' : 'normal' }}>{r.label}</td>
+                    <td style={{ padding: '5px 8px' }}>{r.label}</td>
                     <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: r.bold ? 800 : 400 }}>
                       {r.amount != null ? fmtAmt(r.amount) : ''}
                     </td>
                   </tr>
                 ))}
-                {/* Pad empty rows to keep table height consistent */}
                 {rows.length < 3 && Array.from({ length: 3 - rows.length }).map((_, i) => (
                   <tr key={`pad-${i}`} style={{ borderBottom: '0.5px solid #e5e7eb' }}>
                     <td style={{ padding: '5px 8px' }}>&nbsp;</td>
@@ -195,16 +189,17 @@ export default function VoucherPrint({
             </table>
 
             {/* ── Narration ────────────────────────────────── */}
-            <div style={{ marginTop: 6, minHeight: 16 }}>
-              {narration && (
-                <div style={{ fontSize: 10, color: '#555', fontStyle: 'italic' }}>
-                  <span style={{ fontWeight: 700, fontStyle: 'normal' }}>Narration: </span>{narration}
-                </div>
-              )}
-            </div>
+            {narration && (
+              <div style={{ marginTop: 6, fontSize: 10, color: '#555', fontStyle: 'italic' }}>
+                <span style={{ fontWeight: 700, fontStyle: 'normal' }}>Narration: </span>{narration}
+              </div>
+            )}
 
-            {/* ── Signature block — absolutely pinned so it's always visible ── */}
-            <div style={{ position: 'absolute', left: 16, right: 16, bottom: 22, display: 'flex', justifyContent: 'space-between' }}>
+            {/* ── Signature block — in normal flow, never overlaps rows ── */}
+            <div className="vp-signature" style={{
+              display: 'flex', justifyContent: 'space-between',
+              marginTop: 24, paddingTop: 4,
+            }}>
               {['Prepared By', 'Checked By', 'Approved By'].map(role => (
                 <div key={role} style={{ width: '30%', display: 'flex', flexDirection: 'column' }}>
                   <div style={{ height: 40 }} />
@@ -216,12 +211,12 @@ export default function VoucherPrint({
             </div>
 
             {/* ── Footer ──────────────────────────────────── */}
-            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 8, textAlign: 'center', fontSize: 9, color: '#9ca3af' }}>
+            <div style={{ textAlign: 'center', fontSize: 9, color: '#9ca3af', marginTop: 8, paddingBottom: 6 }}>
               Computer generated — {entity?.name}
             </div>
 
-            </div>{/* end inner border */}
-            </div>{/* end outer border / inset wrapper */}
+            </div>
+            </div>
           </div>
         </div>
       </div>
