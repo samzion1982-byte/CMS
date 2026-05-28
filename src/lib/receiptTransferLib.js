@@ -228,6 +228,7 @@ export async function getBankAccountsForTransfer(entityId) {
     .select('id, name, code')
     .eq('account_type', 'Asset')
     .eq('is_active', true)
+    .eq('is_postable', true)
     .ilike('name', '%bank%')
     .order('name')
   if (entityId) q = q.eq('entity_id', entityId)
