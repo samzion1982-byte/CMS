@@ -223,23 +223,13 @@ async function rawBlobToOggOpus(rawBlob) {
 
 /* ── Column definitions ───────────────────────────────────────── */
 const ALL_COLS = [
-  { label: 'S.No',               key: 'sno',                    align: 'center' },
   { label: 'Family ID',          key: 'family_id',              align: 'center' },
   { label: 'Member ID',          key: 'member_id',              align: 'center' },
-  { label: 'Title',              key: 'title',                  align: 'center' },
   { label: 'Member Name',        key: 'member_name',            align: 'left'   },
   { label: 'Father Name',        key: 'father_name',            align: 'left'   },
   { label: 'Gender',             key: 'gender',                 align: 'center' },
-  { label: 'Aadhaar',            key: 'aadhaar',                align: 'center' },
-  { label: 'DOB',                key: 'dob_actual',             align: 'center', fmt: 'date' },
   { label: 'Age',                key: 'age',                    align: 'center' },
-  { label: 'DOBC',               key: 'dob_certificate',        align: 'center', fmt: 'date' },
   { label: 'Marital Status',     key: 'marital_status',         align: 'center' },
-  { label: 'Date of Marriage',   key: 'date_of_marriage',       align: 'center', fmt: 'date' },
-  { label: 'Spouse',             key: 'spouse_name',            align: 'left'   },
-  { label: 'Address',            key: 'address_street',         align: 'left'   },
-  { label: 'Area 1',             key: 'area_1',                 align: 'left'   },
-  { label: 'Area 2',             key: 'area_2',                 align: 'left'   },
   { label: 'City',               key: 'city',                   align: 'left'   },
   { label: 'State',              key: 'state',                  align: 'left'   },
   { label: 'Zonal Area',         key: 'zonal_area',             align: 'left'   },
@@ -256,9 +246,7 @@ const ALL_COLS = [
   { label: 'Denomination',       key: 'denomination',           align: 'center' },
   { label: 'Mem. Since',         key: 'membership_from_year',   align: 'center' },
   { label: 'Baptism Type',       key: 'baptism_type',           align: 'center' },
-  { label: 'Baptism Date',       key: 'baptism_date',           align: 'center', fmt: 'date' },
   { label: 'Confirmed',          key: 'confirmation_taken',     align: 'center', fmt: 'bool' },
-  { label: 'Confirm Date',       key: 'confirmation_date',      align: 'center', fmt: 'date' },
   { label: 'Is FBRF',            key: 'is_fbrf_member',         align: 'center', fmt: 'bool' },
   { label: "Men's Fellowship",   key: 'act_mens_fellowship',    align: 'center', fmt: 'bool' },
   { label: "Women's Fellowship", key: 'act_womens_fellowship',  align: 'center', fmt: 'bool' },
@@ -280,17 +268,12 @@ const SLICER_GROUPS = [
     label: 'Personal & Identification',
     color: '#7c3aed',
     slicers: [
-      { key: 'sno_d',         label: 'S.No',         type: 'disabled' },
       { key: 'familyIdTxt',   label: 'Family ID',    type: 'text',  field: 'family_id'  },
       { key: 'memberIdTxt',   label: 'Member ID',    type: 'text',  field: 'member_id'  },
-      { key: 'titleFilter',   label: 'Title',        type: 'multi', optsKey: 'titles',        showBlank: false },
       { key: 'memberNameTxt', label: 'Member Name',  type: 'text',  field: 'member_name' },
       { key: 'fatherNameTxt', label: 'Father Name',  type: 'text',  field: 'father_name' },
       { key: 'gender',        label: 'Gender',       type: 'multi', optsKey: 'genders',       showBlank: true  },
-      { key: 'aadhaarTxt',    label: 'Aadhaar',      type: 'text',  field: 'aadhaar'    },
-      { key: 'dob_d',         label: 'DOB',          type: 'disabled' },
       { key: 'age',           label: 'Age',          type: 'age'   },
-      { key: 'dobc_d',        label: 'DOBC',         type: 'disabled' },
     ],
   },
   {
@@ -298,13 +281,8 @@ const SLICER_GROUPS = [
     color: '#0891b2',
     slicers: [
       { key: 'maritalStatus', label: 'Marital Status',  type: 'multi', optsKey: 'maritalStatuses', showBlank: true  },
-      { key: 'dom_d',         label: 'Date of Marriage',type: 'disabled' },
-      { key: 'spouseTxt',     label: 'Spouse',          type: 'text',  field: 'spouse_name' },
       { key: 'isFamilyHead',  label: 'Family Head',     type: 'bool'  },
       { key: 'relationship',  label: 'Relationship',    type: 'multi', optsKey: 'relationships',   showBlank: true  },
-      { key: 'addressTxt',    label: 'Address',         type: 'text',  field: 'address_street' },
-      { key: 'area1Txt',      label: 'Area 1',          type: 'text',  field: 'area_1' },
-      { key: 'area2Txt',      label: 'Area 2',          type: 'text',  field: 'area_2' },
       { key: 'city',          label: 'City',            type: 'multi', optsKey: 'cities',          showBlank: true  },
       { key: 'stateFilter',   label: 'State',           type: 'multi', optsKey: 'states',          showBlank: true  },
       { key: 'zonalArea',     label: 'Zonal Area',      type: 'multi', optsKey: 'zonalAreas',      showBlank: true  },
@@ -325,9 +303,7 @@ const SLICER_GROUPS = [
       { key: 'denomination',    label: 'Denomination',  type: 'multi', optsKey: 'denominations',   showBlank: false },
       { key: 'memSince',        label: 'Mem. Since',    type: 'range' },
       { key: 'baptismType',     label: 'Baptism Type',  type: 'multi', optsKey: 'baptismTypes',    showBlank: false },
-      { key: 'bapt_d',          label: 'Baptism Date',  type: 'disabled' },
       { key: 'confirmationTaken',label: 'Confirmed',    type: 'bool'  },
-      { key: 'conf_d',          label: 'Confirm Date',  type: 'disabled' },
       { key: 'isFBRF',          label: 'Is FBRF',       type: 'bool'  },
     ],
   },
@@ -356,7 +332,7 @@ const EMPTY_FILTERS = {
   // multi-select
   gender: [], maritalStatus: [], relationship: [], membershipType: [],
   denomination: [], zonalArea: [], church: [], city: [], stateFilter: [],
-  baptismType: [], workingSector: [], titleFilter: [], qualFilter: [],
+  baptismType: [], workingSector: [], qualFilter: [],
   // bool
   isFamilyHead: 'all', confirmationTaken: 'all', isFBRF: 'all',
   actMens: 'all', actWomens: 'all', actYouth: 'all', actSS: 'all',
@@ -365,8 +341,8 @@ const EMPTY_FILTERS = {
   ageFrom: '', ageTo: '', memSinceFrom: '', memSinceTo: '',
   // text
   familyIdTxt: '', memberIdTxt: '', memberNameTxt: '', fatherNameTxt: '',
-  aadhaarTxt: '', spouseTxt: '', addressTxt: '', area1Txt: '', area2Txt: '',
   mobileTxt: '', whatsappTxt: '', emailTxt: '', profTxt: '',
+  
 }
 
 /* ── Helpers ──────────────────────────────────────────────────── */
@@ -696,7 +672,6 @@ export default function MemberReportPage() {
       if (!mc(filters.stateFilter,   'state',                true))  return false
       if (!mc(filters.baptismType,   'baptism_type',         false)) return false
       if (!mc(filters.workingSector, 'working_sector',       false)) return false
-      if (!mc(filters.titleFilter,   'title',                false)) return false
       if (!mc(filters.qualFilter,    'qualification',        false)) return false
       if (filters.ageFrom      !== '' && (m.age                  || 0) < parseInt(filters.ageFrom))      return false
       if (filters.ageTo        !== '' && (m.age                  || 0) > parseInt(filters.ageTo))        return false
@@ -711,9 +686,7 @@ export default function MemberReportPage() {
       for (const [fk, dbf] of bools) if (filters[fk] !== 'all' && !!m[dbf] !== (filters[fk] === 'yes')) return false
       const texts = [
         ['familyIdTxt','family_id'],['memberIdTxt','member_id'],['memberNameTxt','member_name'],
-        ['fatherNameTxt','father_name'],['aadhaarTxt','aadhaar'],['spouseTxt','spouse_name'],
-        ['addressTxt','address_street'],['area1Txt','area_1'],['area2Txt','area_2'],
-        ['mobileTxt','mobile'],['whatsappTxt','whatsapp'],['emailTxt','email'],['profTxt','profession'],
+        ['fatherNameTxt','father_name'],['mobileTxt','mobile'],['whatsappTxt','whatsapp'],['emailTxt','email'],['profTxt','profession'],
       ]
       for (const [fk, dbf] of texts) {
         if (filters[fk]?.trim()) {
