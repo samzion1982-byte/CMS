@@ -18,9 +18,10 @@ import LoginLogsPage from './pages/LoginLogsPage'
 import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
-import ReportsPage       from './pages/ReportsPage'
-import AuctionReportPage  from './pages/AuctionReportPage'
-import MemberReportPage  from './pages/MemberReportPage'
+import ReportsPage          from './pages/ReportsPage'
+import AuctionReportPage     from './pages/AuctionReportPage'
+import MemberReportPage      from './pages/MemberReportPage'
+import TransferReportPage    from './pages/TransferReportPage'
 import WhatsAppReceiptLogPage from './pages/WhatsAppReceiptLogPage'
 import PaymentSchedulePage    from './pages/PaymentSchedulePage'
 import PaymentPage            from './pages/PaymentPage'
@@ -399,6 +400,9 @@ function AppRoutes() {
       />
       <Route path="/reports/member"
         element={<PrivateRoute><AppLayout><MemberReportPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/reports/transfers"
+        element={<PrivateRoute><AppLayout><TransferReportPage /></AppLayout></PrivateRoute>}
       />
 
       <Route

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react'
 import { supabase, getChurch } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { exportMultiSheetWithTitle } from '../lib/exportExcel'
@@ -18,6 +18,17 @@ function getFY(dateStr) {
 
 const PAYMENT_MODES = ['Cash', 'Cheque', 'DD', 'Net Banking', 'UPI']
 const BANK_MODES    = ['Cheque', 'DD', 'Net Banking', 'UPI']
+
+const FY_MONTHS = ['April','May','June','July','August','September','October','November','December','January','February','March']
+const FY_MON_S  = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
+
+// Pastel row colors cycling across members in member-wise view
+const MEMBER_BG = [
+  'rgba(255,242,204,0.55)', 'rgba(209,236,241,0.55)', 'rgba(226,239,218,0.55)',
+  'rgba(248,203,173,0.45)', 'rgba(230,224,236,0.55)', 'rgba(221,235,247,0.55)',
+  'rgba(255,235,156,0.45)', 'rgba(198,224,180,0.45)', 'rgba(252,213,206,0.45)',
+  'rgba(213,232,212,0.55)',
+]
 
 const localISO = d =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -93,6 +104,8 @@ export default function ReportsPage() {
   // Pay-head report
   const [payheadRows,  setPayheadRows]  = useState([])
   const [payheadTotal, setPayheadTotal] = useState(0)
+  const [paySubView,   setPaySubView]   = useState('list')   // 'list' | 'memberwise' | 'monthwise'
+  const [payMonthMap,  setPayMonthMap]  = useState({})        // receipt_number → month_paid string
 
   const fromRef = useRef(null)
   const toRef   = useRef(null)
@@ -244,6 +257,21 @@ export default function ReportsPage() {
     }))
     setPayheadRows(mapped)
     setPayheadTotal(mapped.reduce((s, r) => s + r.amount, 0))
+
+    // Fetch month_paid for all receipts so member-wise and monthwise views have it
+    const receiptNos = [...new Set(mapped.map(r => r.receipt_number).filter(Boolean))]
+    if (receiptNos.length) {
+      const { data: mData } = await supabase
+        .from('receipts')
+        .select('receipt_number, month_paid')
+        .in('receipt_number', receiptNos)
+      const mMap = {}
+      for (const r of mData || []) mMap[r.receipt_number] = r.month_paid || ''
+      setPayMonthMap(mMap)
+    } else {
+      setPayMonthMap({})
+    }
+    setPaySubView('list')
   }
 
   // ── Excel export ───────────────────────────────────────────────
@@ -330,34 +358,78 @@ export default function ReportsPage() {
       ], `Receipt_Report_${filterFY || 'All'}_${ts}.xlsx`)
 
     } else {
-      // ── Single sheet: By Payment Head ──────────────────────────
-      const cols = [
+      // ── Sheet 1: Transaction List ──────────────────────────────
+      const listCols = [
         { header: 'R.No',        key: 'receipt_number', align: 'left'   },
         { header: 'Date',        key: 'receipt_date',   align: 'center' },
         { header: 'Mode',        key: 'payment_mode',   align: 'center' },
         { header: 'Member ID',   key: 'member_id',      align: 'center' },
         { header: 'Member Name', key: 'member_name',    align: 'left'   },
+        { header: 'Months Paid', key: 'months_display', align: 'center' },
         { header: selCat,        key: 'amount',         align: 'right',  numFmt: '#,##0' },
       ]
-      const totalRow = {
-        receipt_number: '', receipt_date: '', payment_mode: '',
-        member_id: '', member_name: 'TOTAL', amount: payheadTotal, _bold: true,
-      }
-      const data = [
-        ...payheadRows.map(r => ({ ...r, receipt_date: fmtDateExcel(r.receipt_date) })),
-        totalRow,
+      const listTotalRow = { receipt_number: '', receipt_date: '', payment_mode: '', member_id: '', member_name: 'TOTAL', months_display: '', amount: payheadTotal, _bold: true }
+      const listData = [
+        ...payheadRows.map(r => {
+          const mp = payMonthMap[r.receipt_number] || ''
+          const mps = mp ? mp.split(',').map(s => s.trim()).filter(Boolean) : []
+          return { ...r, receipt_date: fmtDateExcel(r.receipt_date), months_display: mps.length ? `${mps.length} Month${mps.length !== 1 ? 's' : ''}` : '' }
+        }),
+        listTotalRow,
       ]
+
+      // ── Sheet 2: Detailed Member-wise ─────────────────────────
+      const mwCols = [
+        { header: 'R.No',        key: 'receipt_number', align: 'left'   },
+        { header: 'Date',        key: 'receipt_date',   align: 'center' },
+        { header: 'Mode',        key: 'payment_mode',   align: 'center' },
+        { header: 'Member ID',   key: 'member_id',      align: 'center' },
+        { header: 'Member Name', key: 'member_name',    align: 'left'   },
+        { header: 'Months Paid', key: 'months_display', align: 'center' },
+        { header: selCat,        key: 'amount',         align: 'right',  numFmt: '#,##0' },
+      ]
+      const mwData = []
+      let mwGrand = 0
+      for (const grp of memberGroups) {
+        for (const row of grp.rows) {
+          mwData.push({ receipt_number: row.receipt_number, receipt_date: fmtDateExcel(row.receipt_date), payment_mode: row.payment_mode, member_id: row.member_id, member_name: row.member_name, months_display: row.monthCount > 0 ? `${row.monthCount} Month${row.monthCount !== 1 ? 's' : ''}` : '', amount: row.amount })
+        }
+        const subLabel = grp.totalMonths > 0 ? `${grp.totalMonths} Month${grp.totalMonths !== 1 ? 's' : ''}` : ''
+        mwData.push({ receipt_number: '', receipt_date: '', payment_mode: '', member_id: '', member_name: `${grp.member_name} — TOTAL`, months_display: subLabel, amount: grp.totalAmt, _bold: true, _subtotal: true })
+        mwGrand += grp.totalAmt
+      }
+      mwData.push({ receipt_number: '', receipt_date: '', payment_mode: '', member_id: '', member_name: 'GRAND TOTAL', months_display: '', amount: mwGrand, _bold: true })
+
+      // ── Sheet 3: Monthwise Tabulated ──────────────────────────
+      const mthCols = [
+        { header: 'Member ID',   key: 'member_id',   align: 'center' },
+        { header: 'Member Name', key: 'member_name', align: 'left'   },
+        ...FY_MONTHS.map((m, idx) => ({ header: FY_MON_S[idx], key: m, align: 'right', numFmt: '#,##0' })),
+        { header: 'Total', key: 'row_total', align: 'right', numFmt: '#,##0' },
+      ]
+      const mthData = monthwisePivot.members.map(mem => {
+        const row = { member_id: mem.member_id, member_name: mem.member_name }
+        let rowTotal = 0
+        FY_MONTHS.forEach(m => { row[m] = mem.months[m] > 0 ? mem.months[m] : 0; rowTotal += row[m] })
+        row.row_total = rowTotal
+        return row
+      })
+      const mthTotalRow = { member_id: '', member_name: 'TOTAL', _bold: true }
+      let mthGrandTotal = 0
+      FY_MONTHS.forEach(m => { mthTotalRow[m] = monthwisePivot.colTotals[m] || 0; mthGrandTotal += mthTotalRow[m] })
+      mthTotalRow.row_total = mthGrandTotal
+      mthData.push(mthTotalRow)
+
+      const payTitleLines = [
+        { text: churchName, bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+        { text: selCat + ' Report', bold: true, size: 12, bg: '0369A1', color: 'FFFFFF' },
+        { text: dateLabel, bold: false, size: 10, bg: 'EEF3FA', color: '1E3A5F' },
+      ]
+
       await exportMultiSheetWithTitle([
-        {
-          name: selCat.slice(0, 31),
-          columns: cols,
-          rows: data,
-          titleLines: [
-            { text: churchName, bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
-            { text: selCat + ' Report', bold: true, size: 12, bg: '0369A1', color: 'FFFFFF' },
-            { text: dateLabel, bold: false, size: 10, bg: 'EEF3FA', color: '1E3A5F' },
-          ],
-        },
+        { name: 'Transaction List', columns: listCols, rows: listData, titleLines: payTitleLines },
+        { name: 'Member-wise Detail', columns: mwCols, rows: mwData, titleLines: [...payTitleLines.slice(0,1), { text: selCat + ' — Detailed Member-wise', bold: true, size: 12, bg: '166534', color: 'FFFFFF' }, payTitleLines[2]] },
+        { name: 'Monthwise Tabulated', columns: mthCols, rows: mthData, titleLines: [...payTitleLines.slice(0,1), { text: selCat + ' — Monthwise Tabulated', bold: true, size: 12, bg: '7C3AED', color: 'FFFFFF' }, payTitleLines[2]] },
       ], `${selCat.replace(/\s+/g, '_')}_Report_${ts}.xlsx`)
     }
   }
@@ -367,6 +439,60 @@ export default function ReportsPage() {
   const summColTotal = mode => summaryRows.reduce((s, r) => s + (r[mode] || 0), 0)
   const bankGrand    = summaryRows.reduce((s, r) => s + r.bank_total, 0)
   const modeTotal    = mode => payheadRows.reduce((s, r) => r.payment_mode === mode ? s + r.amount : s, 0)
+
+  // ── derived: member groups (for member-wise view) ──────────────
+  const memberGroups = useMemo(() => {
+    if (!payheadRows.length) return []
+    const groups = {}
+    for (const row of payheadRows) {
+      const key = row.member_id || row.member_name
+      if (!groups[key]) groups[key] = { member_id: row.member_id, member_name: row.member_name, rows: [], totalAmt: 0, totalMonths: 0 }
+      const monthsStr = payMonthMap[row.receipt_number] || ''
+      const monthCount = monthsStr ? monthsStr.split(',').map(s => s.trim()).filter(Boolean).length : 0
+      groups[key].rows.push({ ...row, month_paid: monthsStr, monthCount })
+      groups[key].totalAmt    += row.amount
+      groups[key].totalMonths += monthCount
+    }
+    return Object.values(groups).sort((a, b) => {
+      const na = Number(a.member_id), nb = Number(b.member_id)
+      return (!isNaN(na) && !isNaN(nb)) ? na - nb : String(a.member_id).localeCompare(String(b.member_id))
+    })
+  }, [payheadRows, payMonthMap])
+
+  // ── derived: monthwise pivot (member × fiscal-month amounts) ───
+  const monthwisePivot = useMemo(() => {
+    if (!payheadRows.length) return { members: [], colTotals: {} }
+    const memberMap = {}
+    for (const row of payheadRows) {
+      const key = row.member_id || row.member_name
+      if (!memberMap[key]) {
+        const mths = {}; FY_MONTHS.forEach(m => { mths[m] = 0 })
+        memberMap[key] = { member_id: row.member_id, member_name: row.member_name, months: mths }
+      }
+      const monthsStr  = payMonthMap[row.receipt_number] || ''
+      const monthsPaid = monthsStr ? monthsStr.split(',').map(s => s.trim()).filter(Boolean) : []
+      if (monthsPaid.length > 0) {
+        const perMonth = row.amount / monthsPaid.length
+        for (const mp of monthsPaid) {
+          const matched = FY_MONTHS.find(m => m.toLowerCase() === mp.toLowerCase())
+          if (matched) memberMap[key].months[matched] += perMonth
+        }
+      } else if (row.receipt_date) {
+        // Fall back to receipt date's calendar month
+        const d = new Date(row.receipt_date + 'T00:00:00')
+        const mName = d.toLocaleString('en-US', { month: 'long' })
+        const matched = FY_MONTHS.find(m => m.toLowerCase() === mName.toLowerCase())
+        if (matched) memberMap[key].months[matched] += row.amount
+      }
+    }
+    const members = Object.values(memberMap).sort((a, b) => {
+      const na = Number(a.member_id), nb = Number(b.member_id)
+      return (!isNaN(na) && !isNaN(nb)) ? na - nb : String(a.member_id).localeCompare(String(b.member_id))
+    })
+    const colTotals = {}
+    FY_MONTHS.forEach(m => { colTotals[m] = members.reduce((s, mem) => s + (mem.months[m] || 0), 0) })
+    return { members, colTotals }
+  }, [payheadRows, payMonthMap])
 
   // ── render ────────────────────────────────────────────────────
   return (
@@ -631,10 +757,8 @@ export default function ReportsPage() {
       ════════════════════════════════════════════════════════ */}
       {generated && !loading && activeTab === 'payhead' && (
         <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{
-            padding: '14px 20px', borderBottom: '1px solid var(--table-border)',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}>
+          {/* header */}
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>{selCat}</h3>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
               {payheadRows.length} receipt{payheadRows.length !== 1 ? 's' : ''} · {fmtDate(dateFrom)} to {fmtDate(dateTo)}
@@ -648,70 +772,196 @@ export default function ReportsPage() {
           ) : (
             <>
               {/* mode summary strip */}
-              <div style={{
-                padding: '10px 20px', display: 'flex', gap: 20, flexWrap: 'wrap',
-                borderBottom: '1px solid var(--table-border)', background: 'rgba(0,0,0,0.015)',
-                alignItems: 'center',
-              }}>
+              <div style={{ padding: '10px 20px', display: 'flex', gap: 20, flexWrap: 'wrap', borderBottom: '1px solid var(--table-border)', background: 'rgba(0,0,0,0.015)', alignItems: 'center' }}>
                 {PAYMENT_MODES.filter(m => modeTotal(m) > 0).map(m => (
                   <div key={m} style={{ fontSize: 12 }}>
                     <span style={{ color: 'var(--text-3)', marginRight: 4 }}>{m}:</span>
-                    <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-1)' }}>
-                      ₹{fmtAmtZ(modeTotal(m))}
-                    </span>
+                    <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--text-1)' }}>₹{fmtAmtZ(modeTotal(m))}</span>
                   </div>
                 ))}
                 <div style={{ marginLeft: 'auto', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-3)', marginRight: 4 }}>Total:</span>
-                  <span style={{ fontWeight: 800, fontFamily: 'monospace', color: 'var(--accent)', fontSize: 15 }}>
-                    ₹{fmtAmtZ(payheadTotal)}
-                  </span>
+                  <span style={{ fontWeight: 800, fontFamily: 'monospace', color: 'var(--accent)', fontSize: 15 }}>₹{fmtAmtZ(payheadTotal)}</span>
                 </div>
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--table-header-bg)' }}>
-                      <th style={TH}>R.No</th>
-                      <th style={TH}>Date</th>
-                      <th style={TH}>Mode</th>
-                      <th style={TH}>Member ID</th>
-                      <th style={TH}>Member Name</th>
-                      <th style={TH_R}>{selCat}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payheadRows.map((row, i) => (
-                      <tr
-                        key={row.receipt_number + i}
-                        style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}
-                      >
-                        <td style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 600 }}>{row.receipt_number}</td>
-                        <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtDate(row.receipt_date)}</td>
-                        <td style={{ padding: '7px 10px' }}>
-                          <span style={modeBadge(row.payment_mode)}>{row.payment_mode}</span>
+              {/* sub-tabs */}
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--table-border)', display: 'flex', gap: 4 }}>
+                {[
+                  { id: 'list',       label: 'Transaction List' },
+                  { id: 'memberwise', label: 'Detailed Member-wise' },
+                  { id: 'monthwise',  label: 'Monthwise Tabulated' },
+                ].map(t => (
+                  <button key={t.id} onClick={() => setPaySubView(t.id)}
+                    style={{ padding: '5px 13px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: paySubView === t.id ? 700 : 500,
+                      background: paySubView === t.id ? 'var(--accent)' : 'var(--card-border)',
+                      color: paySubView === t.id ? '#fff' : 'var(--text-2)', transition: 'all 0.15s' }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Transaction List ────────────────────────────── */}
+              {paySubView === 'list' && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--table-header-bg)' }}>
+                        <th style={TH}>R.No</th>
+                        <th style={TH}>Date</th>
+                        <th style={TH}>Mode</th>
+                        <th style={TH}>Member ID</th>
+                        <th style={TH}>Member Name</th>
+                        <th style={{ ...TH, textAlign: 'center' }}>Months Paid</th>
+                        <th style={TH_R}>{selCat}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payheadRows.map((row, i) => {
+                        const mp = payMonthMap[row.receipt_number] || ''
+                        const mps = mp ? mp.split(',').map(s => s.trim()).filter(Boolean) : []
+                        return (
+                          <tr key={row.receipt_number + i} style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
+                            <td style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 600 }}>{row.receipt_number}</td>
+                            <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtDate(row.receipt_date)}</td>
+                            <td style={{ padding: '7px 10px' }}><span style={modeBadge(row.payment_mode)}>{row.payment_mode}</span></td>
+                            <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>{row.member_id}</td>
+                            <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{row.member_name}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'center', fontSize: 11, color: mps.length ? 'var(--text-2)' : 'var(--text-3)' }}>
+                              {mps.length ? `${mps.length} Month${mps.length !== 1 ? 's' : ''}` : '—'}
+                            </td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>{fmtAmtZ(row.amount)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
+                        <td colSpan={6} style={{ padding: '10px 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+                          Total ({payheadRows.length} receipt{payheadRows.length !== 1 ? 's' : ''})
                         </td>
-                        <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>{row.member_id}</td>
-                        <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{row.member_name}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
-                          {fmtAmtZ(row.amount)}
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmtAmtZ(payheadTotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* ── Detailed Member-wise ─────────────────────────── */}
+              {paySubView === 'memberwise' && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--table-header-bg)' }}>
+                        <th style={TH}>R.No</th>
+                        <th style={TH}>Date</th>
+                        <th style={TH}>Mode</th>
+                        <th style={TH}>Member ID</th>
+                        <th style={TH}>Member Name</th>
+                        <th style={{ ...TH, textAlign: 'center' }}>Months Paid</th>
+                        <th style={TH_R}>{selCat}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberGroups.map((grp, gi) => {
+                        const bg = MEMBER_BG[gi % MEMBER_BG.length]
+                        return (
+                          <Fragment key={grp.member_id || gi}>
+                            {grp.rows.map((row, ri) => (
+                              <tr key={row.receipt_number + ri} style={{ background: bg, borderTop: ri === 0 ? '2px solid var(--card-border)' : '1px solid rgba(0,0,0,0.05)' }}>
+                                <td style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 600 }}>{row.receipt_number}</td>
+                                <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', whiteSpace: 'nowrap' }}>{fmtDate(row.receipt_date)}</td>
+                                <td style={{ padding: '7px 10px' }}><span style={modeBadge(row.payment_mode)}>{row.payment_mode}</span></td>
+                                <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>{row.member_id}</td>
+                                <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{row.member_name}</td>
+                                <td style={{ padding: '7px 10px', textAlign: 'center', fontSize: 11, color: row.monthCount ? 'var(--text-2)' : 'var(--text-3)' }}>
+                                  {row.monthCount > 0 ? `${row.monthCount} Month${row.monthCount !== 1 ? 's' : ''}` : '—'}
+                                </td>
+                                <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700 }}>{fmtAmtZ(row.amount)}</td>
+                              </tr>
+                            ))}
+                            {/* member subtotal */}
+                            <tr style={{ background: 'rgba(0,0,0,0.045)', borderTop: '1px solid var(--card-border)' }}>
+                              <td colSpan={5} style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
+                                {grp.member_name} — TOTAL
+                              </td>
+                              <td style={{ padding: '6px 10px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>
+                                {grp.totalMonths > 0 ? `${grp.totalMonths} Month${grp.totalMonths !== 1 ? 's' : ''}` : '—'}
+                              </td>
+                              <td style={{ padding: '6px 10px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text-1)' }}>
+                                {fmtAmtZ(grp.totalAmt)}
+                              </td>
+                            </tr>
+                          </Fragment>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '3px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
+                        <td colSpan={5} style={{ padding: '10px 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+                          Grand Total ({memberGroups.length} member{memberGroups.length !== 1 ? 's' : ''})
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
+                          {memberGroups.reduce((s, g) => s + g.totalMonths, 0)} Months
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>
+                          {fmtAmtZ(payheadTotal)}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
-                      <td colSpan={5} style={{ padding: '10px 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
-                        Total ({payheadRows.length} receipt{payheadRows.length !== 1 ? 's' : ''})
-                      </td>
-                      <td style={{ padding: '10px 10px', textAlign: 'right', fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>
-                        {fmtAmtZ(payheadTotal)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* ── Monthwise Tabulated ──────────────────────────── */}
+              {paySubView === 'monthwise' && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--table-header-bg)' }}>
+                        <th style={{ ...TH, minWidth: 90 }}>Member ID</th>
+                        <th style={{ ...TH, minWidth: 170 }}>Member Name</th>
+                        {FY_MON_S.map(m => (
+                          <th key={m} style={{ ...TH_R, fontSize: 10, minWidth: 62 }}>{m}</th>
+                        ))}
+                        <th style={{ ...TH_R, minWidth: 80, color: 'var(--text-2)' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthwisePivot.members.map((mem, i) => {
+                        const rowTotal = FY_MONTHS.reduce((s, m) => s + (mem.months[m] || 0), 0)
+                        return (
+                          <tr key={mem.member_id + i} style={{ borderTop: '1px solid var(--table-border)', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}>
+                            <td style={{ padding: '7px 10px', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-2)' }}>{mem.member_id}</td>
+                            <td style={{ padding: '7px 10px', fontSize: 12, fontWeight: 500 }}>{mem.member_name}</td>
+                            {FY_MONTHS.map(m => (
+                              <td key={m} style={{ padding: '7px 8px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', color: mem.months[m] > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
+                                {mem.months[m] > 0 ? fmtAmtZ(mem.months[m]) : '—'}
+                              </td>
+                            ))}
+                            <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-1)' }}>
+                              {fmtAmtZ(rowTotal)}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid var(--table-border)', background: 'var(--table-header-bg)' }}>
+                        <td colSpan={2} style={{ padding: '10px 10px', fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Total</td>
+                        {FY_MONTHS.map(m => (
+                          <td key={m} style={{ padding: '10px 8px', textAlign: 'right', fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: monthwisePivot.colTotals[m] > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
+                            {monthwisePivot.colTotals[m] > 0 ? fmtAmtZ(monthwisePivot.colTotals[m]) : '—'}
+                          </td>
+                        ))}
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontSize: 14, fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>
+                          {fmtAmtZ(FY_MONTHS.reduce((s, m) => s + (monthwisePivot.colTotals[m] || 0), 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </>
           )}
         </div>
