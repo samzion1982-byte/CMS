@@ -27,19 +27,20 @@ const ROWS_MID  = 8
 
 function paginateRows(rows) {
   const n = rows.length
-  if (n <= ROWS_LAST) return [rows]   // fits on one page
+  if (n <= ROWS_LAST) return [rows]
 
-  // Allocate backward: pin ROWS_LAST rows to the final page,
-  // fill middle pages from the back toward the front.
+  // How many non-last pages are needed?
+  const numMid = Math.ceil((n - ROWS_LAST) / ROWS_MID)
   const pages = []
-  let end = n
-  pages.unshift(rows.slice(end - ROWS_LAST, end))
-  end -= ROWS_LAST
-  while (end > 0) {
-    const take = Math.min(ROWS_MID, end)
-    pages.unshift(rows.slice(end - take, end))
-    end -= take
+  let start = 0
+  for (let i = 0; i < numMid; i++) {
+    // Spread remaining mid-rows evenly across remaining mid-pages
+    const pagesLeft = numMid - i
+    const take = Math.ceil((n - ROWS_LAST - start) / pagesLeft)
+    pages.push(rows.slice(start, start + take))
+    start += take
   }
+  pages.push(rows.slice(start))  // last page (≤ ROWS_LAST)
   return pages
 }
 
