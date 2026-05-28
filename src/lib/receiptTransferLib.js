@@ -223,20 +223,21 @@ export async function getCashAccountsForTransfer(entityId) {
 // ── Load bank COA accounts (Asset accounts whose name contains "bank") ──
 
 export async function getBankAccountsForTransfer(entityId) {
+  // Fetch ALL asset accounts so parent_id detection works even when
+  // a parent's children don't have 'bank' in their name
   let q = supabase
     .from('chart_of_accounts')
     .select('id, name, code, parent_id')
     .eq('account_type', 'Asset')
     .eq('is_active', true)
-    .ilike('name', '%bank%')
     .order('name')
   if (entityId) q = q.eq('entity_id', entityId)
   const { data, error } = await q
   if (error) throw error
   const all = data || []
-  // Remove group accounts — any account that is the parent_id of another in the result
   const parentIds = new Set(all.map(a => a.parent_id).filter(Boolean))
-  return all.filter(a => !parentIds.has(a.id))
+  // Leaf accounts only, name must contain 'bank'
+  return all.filter(a => !parentIds.has(a.id) && a.name.toLowerCase().includes('bank'))
 }
 
 // ── Main: execute the transfer ─────────────────────────────────────
