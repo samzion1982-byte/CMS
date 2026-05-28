@@ -227,7 +227,7 @@ export async function getBankAccountsForTransfer(entityId) {
   // works even when a parent's children belong to a different entity_id
   const { data, error } = await supabase
     .from('chart_of_accounts')
-    .select('id, name, code, parent_id, entity_id, is_active')
+    .select('id, name, code, parent_id, entity_id, is_active, level')
     .eq('account_type', 'Asset')
     .order('name')
   if (error) throw error
@@ -236,6 +236,7 @@ export async function getBankAccountsForTransfer(entityId) {
   return all.filter(a =>
     !parentIds.has(a.id) &&
     a.is_active &&
+    a.level === 4 &&
     a.name.toLowerCase().includes('bank') &&
     (!entityId || a.entity_id === entityId)
   )
