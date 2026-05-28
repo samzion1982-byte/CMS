@@ -23,7 +23,7 @@ const H = 508   // px
 // Last page carries header + rows + TOTAL row + signature + footer text
 // Middle pages carry header + rows only
 const ROWS_LAST = 4
-const ROWS_MID  = 10
+const ROWS_MID  = 7
 
 function paginateRows(rows) {
   const n = rows.length
