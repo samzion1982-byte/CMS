@@ -1177,14 +1177,14 @@ export default function MemberReportPage() {
               <div style={{ fontSize:11, color:'#64748b' }}>Click or drag any slicer into the filter area below &nbsp;·&nbsp; <span style={{ textDecoration:'line-through', color:'#c9d1da' }}>strikethrough</span> = not filterable</div>
             </div>
           </div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+          <div style={{ display:'grid', gridTemplateColumns: '1fr 1fr', gap:12, alignItems: 'start' }}>
             {SLICER_GROUPS.map(group => (
-              <div key={group.label} style={{ flex: '1 1 48%', minWidth: 360 }}>
+              <div key={group.label} style={{ paddingRight: 8 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
                   <span style={{ fontSize:10, fontWeight:700, color:group.color, textTransform:'uppercase', letterSpacing:'0.1em', whiteSpace:'nowrap' }}>{group.label}</span>
                   <div style={{ flex:1, height:1, background:'#f0f4f8' }} />
                 </div>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
                   {group.slicers.map(def => (
                     <SlicerChip key={def.key} def={def}
                       isActive={activeSlicerKeys.includes(def.key)}
