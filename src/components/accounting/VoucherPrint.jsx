@@ -29,14 +29,11 @@ function paginateRows(rows) {
   const n = rows.length
   if (n <= ROWS_LAST) return [rows]
 
-  // How many non-last pages are needed?
-  const numMid = Math.ceil((n - ROWS_LAST) / ROWS_MID)
+  // Greedy forward: fill each page to ROWS_MID, always keeping ≥ ROWS_LAST for the last page
   const pages = []
   let start = 0
-  for (let i = 0; i < numMid; i++) {
-    // Spread remaining mid-rows evenly across remaining mid-pages
-    const pagesLeft = numMid - i
-    const take = Math.ceil((n - ROWS_LAST - start) / pagesLeft)
+  while (n - start > ROWS_LAST) {
+    const take = Math.min(ROWS_MID, n - start - ROWS_LAST)
     pages.push(rows.slice(start, start + take))
     start += take
   }
