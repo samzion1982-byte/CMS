@@ -124,6 +124,17 @@ export default function MembersPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!perms.canAdd) return
+    const onKey = e => {
+      if (tab !== 'list') return
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
+      if (e.key === '+') newMember()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tab, perms.canAdd])
+
   useEffect(() => { getZones().then(rows => setZones(rows.map(z => z.zone_name))).catch(() => {}) }, [])
   useEffect(() => { loadMembers(alpha, searchCol, searchVal) }, [alpha, searchCol])
   useEffect(() => {

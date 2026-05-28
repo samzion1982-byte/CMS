@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import {
   ArrowRightLeft, Loader2, RefreshCw, CheckCircle2, Clock, ChevronDown,
-  TrendingUp, Wallet, Hash, AlertCircle,
+  TrendingUp, Wallet, Hash, AlertCircle, FileSpreadsheet,
 } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -49,7 +49,8 @@ export default function TransferReportPage() {
   const [fy,     setFy]     = useState(getFY)
   const [fyOpen, setFyOpen] = useState(false)
   const [FYS,    setFYS]    = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading,   setLoading]   = useState(true)
+  const [exporting, setExporting] = useState(false)
 
   // data
   const [stats,    setStats]    = useState(null)   // aggregated stats
@@ -146,6 +147,188 @@ export default function TransferReportPage() {
 
   const pct = stats ? (stats.totalCount ? Math.round(stats.xfCount / stats.totalCount * 100) : 0) : 0
 
+  const exportExcel = async () => {
+    if (!stats) return
+    setExporting(true)
+    try {
+      const ExcelJS = (await import('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js')).default || window.ExcelJS
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Church CMS'; wb.created = new Date()
+
+      const thin = { style: 'thin', color: { argb: 'FFBBBBBB' } }
+      const border = { top: thin, left: thin, bottom: thin, right: thin }
+
+      const styleHeader = (cell, fgColor) => {
+        cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10, name: 'Calibri' }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: fgColor } }
+        cell.border    = border
+        cell.alignment = { vertical: 'middle' }
+      }
+      const styleData = (cell, align = 'center', alt = false, bold = false) => {
+        cell.font      = { size: 10, name: 'Calibri', bold }
+        cell.border    = border
+        cell.alignment = { horizontal: align, vertical: 'middle' }
+        if (alt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FA' } }
+      }
+      const styleFooter = (cell, align = 'center') => {
+        cell.font      = { bold: true, size: 10, name: 'Calibri' }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+        cell.border    = border
+        cell.alignment = { horizontal: align, vertical: 'middle' }
+      }
+
+      // ── Sheet 1: Transfer Batches ─────────────────────────────────
+      const ws1 = wb.addWorksheet('Transfer Batches', { views: [{ state: 'frozen', ySplit: 3 }] })
+      ws1.columns = [
+        { width: 5 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 },
+        { width: 10 }, { width: 15 }, { width: 15 }, { width: 15 },
+        { width: 22 }, { width: 20 }, { width: 11 },
+      ]
+
+      // Title row
+      ws1.mergeCells('A1:L1')
+      const t1 = ws1.getCell('A1')
+      t1.value = `Transfer Report — ${fyLabel(fy)}`
+      t1.font  = { bold: true, size: 14, color: { argb: 'FFFFFFFF' }, name: 'Calibri' }
+      t1.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
+      t1.alignment = { horizontal: 'center', vertical: 'middle' }
+      ws1.getRow(1).height = 28
+
+      // Summary row
+      ws1.mergeCells('A2:L2')
+      const s1 = ws1.getCell('A2')
+      s1.value = `Total: ${stats.totalCount} receipts  |  Transferred: ${stats.xfCount} (${pct}%)  ₹${fmtAmt(stats.xfTotal)}  |  Pending: ${stats.pendCount}  ₹${fmtAmt(stats.pendTotal)}  |  Active batches: ${stats.activeBatches}`
+      s1.font  = { size: 10, italic: true, color: { argb: 'FF475569' }, name: 'Calibri' }
+      s1.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4FA' } }
+      s1.alignment = { horizontal: 'center', vertical: 'middle' }
+      ws1.getRow(2).height = 16
+
+      // Header row
+      const hdr1 = ['#', 'Date From', 'Date To', 'Receipt From', 'Receipt To', 'Receipts', 'Cash (₹)', 'Bank (₹)', 'Total (₹)', 'Transferred By', 'Transferred On', 'Status']
+      const hRow1 = ws1.getRow(3)
+      hdr1.forEach((h, i) => {
+        const cell = hRow1.getCell(i + 1)
+        cell.value = h
+        styleHeader(cell, 'FF334155')
+        cell.alignment = { horizontal: i >= 5 && i <= 8 ? 'right' : 'center', vertical: 'middle' }
+      })
+      hRow1.height = 20
+
+      // Data rows
+      batches.forEach((b, idx) => {
+        const total = Number(b.cash_total || 0) + Number(b.bank_total || 0)
+        const row = ws1.addRow([
+          batches.length - idx,
+          fmtDate(b.from_date), fmtDate(b.to_date),
+          b.from_receipt_no || '—', b.to_receipt_no || '—',
+          b.receipt_count || 0,
+          Number(b.cash_total || 0), Number(b.bank_total || 0), total,
+          b.transferred_by || '—',
+          b.transferred_at ? fmtDateTime(b.transferred_at) : '—',
+          b.is_reversed ? 'Reversed' : 'Active',
+        ])
+        row.height = 15
+        const alt = idx % 2 === 1
+        const rev = b.is_reversed
+        const fgRev = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF1F2' } }
+        row.eachCell({ includeEmpty: true }, (cell, col) => {
+          const right = col >= 6 && col <= 9
+          styleData(cell, right ? 'right' : 'center', alt)
+          if (rev) cell.fill = fgRev
+          if (col === 9) cell.font = { ...cell.font, bold: true }
+          if (col === 12) {
+            cell.font = { size: 10, bold: true, name: 'Calibri', color: { argb: rev ? 'FFDC2626' : 'FF16A34A' } }
+          }
+        })
+      })
+
+      // Footer
+      const active = batches.filter(b => !b.is_reversed)
+      const fRow1 = ws1.addRow([
+        'Total (Active Batches)', '', '', '', '',
+        active.reduce((s, b) => s + (b.receipt_count || 0), 0),
+        active.reduce((s, b) => s + Number(b.cash_total || 0), 0),
+        active.reduce((s, b) => s + Number(b.bank_total || 0), 0),
+        active.reduce((s, b) => s + Number(b.cash_total || 0) + Number(b.bank_total || 0), 0),
+        '', '', '',
+      ])
+      fRow1.height = 16
+      fRow1.eachCell({ includeEmpty: true }, (cell, col) => {
+        styleFooter(cell, col >= 6 && col <= 9 ? 'right' : 'center')
+      })
+
+      // ── Sheet 2: Pending Receipts ─────────────────────────────────
+      if (pending.length > 0) {
+        const ws2 = wb.addWorksheet('Pending Receipts', { views: [{ state: 'frozen', ySplit: 3 }] })
+        ws2.columns = [
+          { width: 20 }, { width: 22 }, { width: 10 },
+          { width: 15 }, { width: 18 }, { width: 15 },
+        ]
+
+        ws2.mergeCells('A1:F1')
+        const t2 = ws2.getCell('A1')
+        t2.value = `Pending Receipts — ${fyLabel(fy)}`
+        t2.font  = { bold: true, size: 14, color: { argb: 'FFFFFFFF' }, name: 'Calibri' }
+        t2.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD97706' } }
+        t2.alignment = { horizontal: 'center', vertical: 'middle' }
+        ws2.getRow(1).height = 28
+
+        ws2.mergeCells('A2:F2')
+        const s2 = ws2.getCell('A2')
+        s2.value = `${stats.pendCount} receipts pending  |  Cash ₹${fmtAmt(stats.pendCash)}  |  Bank ₹${fmtAmt(stats.pendBank)}  |  Total ₹${fmtAmt(stats.pendTotal)}`
+        s2.font  = { size: 10, italic: true, color: { argb: 'FF92400E' }, name: 'Calibri' }
+        s2.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+        s2.alignment = { horizontal: 'center', vertical: 'middle' }
+        ws2.getRow(2).height = 16
+
+        const hdr2 = ['Month', 'Receipt Range', 'Count', 'Cash (₹)', 'Bank / Cheque (₹)', 'Total (₹)']
+        const hRow2 = ws2.getRow(3)
+        hdr2.forEach((h, i) => {
+          const cell = hRow2.getCell(i + 1)
+          cell.value = h
+          styleHeader(cell, 'FFB45309')
+          cell.alignment = { horizontal: i >= 2 ? 'right' : 'left', vertical: 'middle' }
+        })
+        hRow2.height = 20
+
+        pending.forEach((g, idx) => {
+          const [y, m] = g.month.split('-')
+          const label = new Date(Number(y), Number(m) - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+          const range = g.minNo === g.maxNo ? String(g.minNo) : `${g.minNo} → ${g.maxNo}`
+          const row = ws2.addRow([label, range, g.count, g.cash, g.bank, g.cash + g.bank])
+          row.height = 15
+          const alt = idx % 2 === 1
+          row.eachCell({ includeEmpty: true }, (cell, col) => {
+            styleData(cell, col >= 3 ? 'right' : 'left', alt, col === 6)
+            if (alt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9F0' } }
+          })
+        })
+
+        const fRow2 = ws2.addRow(['Total Pending', '', stats.pendCount, stats.pendCash, stats.pendBank, stats.pendTotal])
+        fRow2.height = 16
+        fRow2.eachCell({ includeEmpty: true }, (cell, col) => {
+          styleFooter(cell, col >= 3 ? 'right' : 'left')
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }
+          cell.font = { bold: true, size: 10, name: 'Calibri', color: { argb: 'FF92400E' } }
+        })
+      }
+
+      // Download
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `transfer_report_${fy}_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast(`Exported successfully.`, 'success')
+    } catch (e) {
+      toast('Export failed: ' + e.message, 'error')
+    }
+    setExporting(false)
+  }
+
   return (
     <div className="page-container">
       {/* ── header ── */}
@@ -177,6 +360,11 @@ export default function TransferReportPage() {
               </div>
             )}
           </div>
+          <button onClick={exportExcel} disabled={exporting || loading || !stats}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#16a34a', border: 'none', borderRadius: 8, cursor: exporting || loading || !stats ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#fff', opacity: exporting || loading || !stats ? 0.6 : 1 }}>
+            {exporting ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={14} />}
+            {exporting ? 'Exporting…' : 'Excel Export'}
+          </button>
           <button onClick={load} disabled={loading}
             style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-2)' }}>
             <RefreshCw size={14} style={loading ? { animation: 'spin .7s linear infinite' } : {}} />

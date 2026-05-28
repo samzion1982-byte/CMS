@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
-  PiggyBank, Tag, List, Settings, Wallet,
+  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -15,19 +15,23 @@ const NAV = [
     { label: 'Dashboard',     path: '/dashboard',     icon: LayoutDashboard },
     { label: 'Members',       path: '/members',       icon: Users           },
     { label: 'Announcements', path: '/announcements', icon: Megaphone       },
+    { label: 'Events', icon: Calendar, children: [
+      { label: 'Event Planner',  path: '/events/planner'  },
+      { label: 'Event Recorder', path: '/events/recorder' },
+    ]},
   ]},
   { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },
     { label: 'Receipt Entry',     path: '/receipts',          icon: IndianRupee },
     { label: 'Payment Schedule',  path: '/payment-schedule',  icon: CreditCard  },
-    { label: 'Member Statement',  path: '/member-statement',  icon: BookOpen    },
     { label: 'Accounts',          path: '/accounting',        icon: Landmark,    accountingOnly: true },
     { label: 'Simple Accounts',   path: '/simple-accounts',   icon: Wallet,      simpleOnly: true },
     { label: 'Reports', icon: BarChart3, children: [
-      { label: 'Member Report',   path: '/reports/member'    },
-      { label: 'Receipt Report',  path: '/reports'           },
-      { label: 'Auction Report',  path: '/reports/auction'   },
-      { label: 'Transfer Report', path: '/reports/transfers' },
+      { label: 'Member Report',    path: '/reports/member'    },
+      { label: 'Member Statement', path: '/member-statement'  },
+      { label: 'Receipt Report',   path: '/reports'           },
+      { label: 'Auction Report',   path: '/reports/auction'   },
+      { label: 'Transfer Report',  path: '/reports/transfers' },
     ]},
   ]},
   { group: 'ADMIN', adminOnly: true, items: [

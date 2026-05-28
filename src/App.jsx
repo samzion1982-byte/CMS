@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
@@ -50,6 +50,8 @@ import FundsPage                  from './pages/FundsPage'
 import FundReportPage             from './pages/FundReportPage'
 import JournalTemplatesPage       from './pages/JournalTemplatesPage'
 import YearEndClosingPage         from './pages/YearEndClosingPage'
+import EventPlannerPage           from './pages/EventPlannerPage'
+import EventRecorderPage          from './pages/EventRecorderPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
 import EntityManagementPage       from './pages/EntityManagementPage'
@@ -303,9 +305,12 @@ function AppRoutes() {
     return () => document.removeEventListener('keydown', handleEnter)
   }, [])
 
-  // Alt+C → Chart of Accounts (modal overlay)
+  const location = useLocation()
+
+  // Alt+C → Chart of Accounts (modal overlay), only on /accounting pages
   useEffect(() => {
     function handleHotkey(e) {
+      if (!location.pathname.startsWith('/accounting')) return
       if (e.altKey && e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault()
         setShowCOAModal(true)
@@ -313,14 +318,46 @@ function AppRoutes() {
     }
     document.addEventListener('keydown', handleHotkey)
     return () => document.removeEventListener('keydown', handleHotkey)
-  }, [])
+  }, [location.pathname])
+
+  // Escape closes the COA modal
+  useEffect(() => {
+    if (!showCOAModal) return
+    const onEsc = e => { if (e.key === 'Escape') setShowCOAModal(false) }
+    document.addEventListener('keydown', onEsc)
+    return () => document.removeEventListener('keydown', onEsc)
+  }, [showCOAModal])
 
   return (
     <>
-    {/* Alt+C COA overlay — full-screen modal sheet */}
+    {/* Alt+C — Chart of Accounts modal */}
     {showCOAModal && (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 900, overflowY: 'auto', background: 'var(--page-bg, #f1f5f9)' }}>
-        <ChartOfAccountsPage isModal onClose={() => setShowCOAModal(false)} />
+      <div
+        onClick={() => setShowCOAModal(false)}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 900,
+          background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            width: '92vw', maxWidth: 1100, height: '88vh',
+            background: 'var(--page-bg, #f1f5f9)',
+            borderRadius: 14,
+            boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+            display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <EntityProvider>
+              <ChartOfAccountsPage isModal onClose={() => setShowCOAModal(false)} />
+            </EntityProvider>
+          </div>
+        </div>
       </div>
     )}
     <Routes>
@@ -455,6 +492,14 @@ function AppRoutes() {
         <Route path="fund-report"       element={<AppLayout><FundReportPage /></AppLayout>} />
         <Route path="entities"          element={<AppLayout><EntityManagementPage /></AppLayout>} />
       </Route>
+
+      {/* ── Events Module ── */}
+      <Route path="/events/planner"
+        element={<PrivateRoute><AppLayout><EventPlannerPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/events/recorder"
+        element={<PrivateRoute><AppLayout><EventRecorderPage /></AppLayout></PrivateRoute>}
+      />
 
       {/* ── Simple Accounts Module ── */}
       <Route path="/simple-accounts"             element={<PrivateRoute><AppLayout><SimpleAccountsDashboard /></AppLayout></PrivateRoute>} />
