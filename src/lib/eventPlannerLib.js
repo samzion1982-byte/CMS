@@ -73,14 +73,7 @@ export async function getTasks(eventId) {
   return data || []
 }
 
-// Fetch all tasks that have a due_date (for calendar task-dot display)
-export async function getCalendarTasks() {
-  const { data, error } = await supabase.from('event_tasks')
-    .select('id, event_id, title, due_date, status, priority')
-    .not('due_date', 'is', null)
-  if (error) throw error
-  return data || []
-}
+
 
 export async function saveTask(id, payload, userEmail) {
   const now = new Date().toISOString()

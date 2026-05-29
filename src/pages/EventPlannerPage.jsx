@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    EventPlannerPage.jsx
    Views: Year · Month · Week · Agenda · Cards · Board (Kanban)
-   Features: click-to-add, event color & status, task dots,
+  Features: click-to-add, event color & status,
              board filters, smart carry-forward
    ═══════════════════════════════════════════════════════════════ */
 
@@ -27,7 +27,7 @@ import {
   getBuckets, saveBucket, deleteBucket,
   getTasks, saveTask, deleteTask,
   updateTaskOrder, updateBucketOrder, moveTask, carryForward,
-  getCalendarTasks, autoFillRecurring,
+  autoFillRecurring,
 } from '../lib/eventPlannerLib'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ const PALETTE = [
 const EVENT_TYPES = [
   { value:'annual',   label:'Annual'   },
   { value:'monthly',  label:'Monthly'  },
+  { value:'weekly',   label:'Weekly'   },
   { value:'one-time', label:'One-time' },
 ]
 
@@ -68,7 +69,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June','July','A
 function getDayAbbrs(ws){ const A=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return [...A.slice(ws),...A.slice(0,ws)] }
 function getDaySingle(ws){ const A=['S','M','T','W','T','F','S']; return [...A.slice(ws),...A.slice(0,ws)] }
 
-const BLANK_EVENT  = { name:'', event_type:'annual', start_date:'', end_date:'', year:new Date().getFullYear(), description:'', color:null, status:'planning', date_fixed:false, is_recurring:false }
+const BLANK_EVENT  = { name:'', event_type:'annual', start_date:'', end_date:'', year:new Date().getFullYear(), color:null, status:'planning', date_fixed:false, is_recurring:false }
 
 function addOneYear(ds){ if(!ds)return null; const[y,m,d]=ds.split('-'); return `${parseInt(y)+1}-${m}-${d}` }
 const BLANK_BUCKET = { name:'', color:'#6366f1' }
@@ -197,7 +198,7 @@ const btnS={padding:'7px 13px',borderRadius:7,border:'1px solid var(--card-borde
 
 // ── MiniMonth (used in Year view) ─────────────────────────────────────────────
 
-function MiniMonth({ year, month, events, calTasks, showTaskDots, selRange, onDayMouseDown, onDayMouseEnter, onDayMouseUp, onDayContextMenu, onMonthClick, onEventClick, ws=0 }) {
+function MiniMonth({ year, month, events, selRange, onDayMouseDown, onDayMouseEnter, onDayMouseUp, onDayContextMenu, onMonthClick, onEventClick, ws=0 }) {
   const days     = getMonthGrid(new Date(year, month, 1), ws)
   const todayStr = toDateStr(new Date())
   const mStart   = `${year}-${String(month+1).padStart(2,'0')}-01`
@@ -224,7 +225,6 @@ function MiniMonth({ year, month, events, calTasks, showTaskDots, selRange, onDa
           const ds=toDateStr(day), isCur=day.getMonth()===month, isToday=ds===todayStr
           const isStartDay=day.getDay()===ws
           const evts=isCur?eventsOnDay(ds,events):[]
-          const tCnt=isCur&&showTaskDots?calTasks.filter(t=>normalizeDateKey(t.due_date)===ds).length:0
           const inSel=!!(selRange&&isCur&&ds>=selRange.start&&ds<=selRange.end)
           return(
             <div key={ds}
@@ -236,7 +236,7 @@ function MiniMonth({ year, month, events, calTasks, showTaskDots, selRange, onDa
               <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:'50%',background:isToday?'var(--accent,#2563eb)':'transparent',color:isToday?'#fff':!isCur?'transparent':isStartDay?'#ef4444':'var(--text-1)',fontSize:9,fontWeight:isToday?700:isStartDay?600:400}}>
                 {isCur?day.getDate():''}
               </span>
-              {(evts.length>0||tCnt>0)&&(
+              {evts.length>0&&(
                 <div style={{position:'absolute',bottom:0,left:0,right:0,display:'flex',justifyContent:'center',gap:1.5}}>
                   {evts.slice(0,3).map(e=>(
                     <div key={e.id}
@@ -245,7 +245,6 @@ function MiniMonth({ year, month, events, calTasks, showTaskDots, selRange, onDa
                       onClick={ev=>{ev.stopPropagation();onEventClick(e)}} title={e.name}
                       style={{width:4,height:4,borderRadius:'50%',background:eventColor(e).dot,cursor:'pointer'}}/>
                   ))}
-                  {tCnt>0&&<div style={{width:4,height:4,borderRadius:1,background:'#f97316'}}/>}
                   {evts.length>3&&<div style={{width:4,height:4,borderRadius:'50%',background:'#94a3b8'}}/>}
                 </div>
               )}
@@ -389,7 +388,7 @@ function EventCard({event,onClick,onEdit,onDelete}){
       </div>
       <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700,color:'var(--text-1)',lineHeight:1.3,paddingRight:hov?56:0,textDecoration:event.status==='cancelled'?'line-through':'none'}}>{event.name}</h3>
       <p style={{margin:'0 0 8px',fontSize:12,color:'var(--text-3)',display:'flex',alignItems:'center',gap:4}}><CalendarDays size={11}/>{dr}</p>
-      {event.description&&<p style={{margin:'0 0 6px',fontSize:12,color:'var(--text-2)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{event.description}</p>}
+  
       <p style={{margin:0,fontSize:11,color:'var(--text-3)'}}>Open board →</p>
     </div>
   )
@@ -414,10 +413,9 @@ function ColorPicker({value, onChange}) {
 
 // ── DayTooltip (hover popup) ──────────────────────────────────────────────────
 
-function DayTooltip({ ds, events, calTasks, showTaskDots, x, y, onEventClick, onClose }) {
+function DayTooltip({ ds, events, x, y, onEventClick, onClose }) {
   const [hovId, setHovId] = useState(null)
   const dayEvts = eventsOnDay(ds, events)
-  const dayTasks = showTaskDots ? calTasks.filter(t => normalizeDateKey(t.due_date) === ds) : []
   if (!ds) return null
   const [yy,mm,dd] = ds.split('-')
   const dateLabel = new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd))
@@ -431,8 +429,8 @@ function DayTooltip({ ds, events, calTasks, showTaskDots, x, y, onEventClick, on
         <span style={{fontSize:10,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{dateLabel}</span>
         <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)',padding:'0 2px',lineHeight:1,fontSize:14,display:'flex',alignItems:'center'}}>×</button>
       </div>
-      {dayEvts.length===0&&dayTasks.length===0&&(
-        <div style={{fontSize:12,color:'var(--text-3)',textAlign:'center',padding:'8px 0'}}>No events or tasks</div>
+      {dayEvts.length===0&&(
+        <div style={{fontSize:12,color:'var(--text-3)',textAlign:'center',padding:'8px 0'}}>No events</div>
       )}
       {dayEvts.map(e=>{
         const ec=eventColor(e)
@@ -454,18 +452,6 @@ function DayTooltip({ ds, events, calTasks, showTaskDots, x, y, onEventClick, on
           </div>
         )
       })}
-      {dayTasks.length>0&&(
-        <>
-          {dayEvts.length>0&&<div style={{height:1,background:'var(--card-border,#e2e8f0)',margin:'6px 0'}}/>}
-          <div style={{fontSize:10,fontWeight:700,color:'var(--text-3)',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Tasks Due</div>
-          {dayTasks.map(t=>(
-            <div key={t.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-              <div style={{width:6,height:6,borderRadius:1,background:priorityColor(t.priority),flexShrink:0}}/>
-              <span style={{fontSize:11,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</span>
-            </div>
-          ))}
-        </>
-      )}
     </div>
   )
 }
@@ -627,7 +613,7 @@ function EventFormModal({initial,onSave,onClose}){
           </label>
         </div>
       )}
-      <Field label="Description"><textarea style={{...iSt,resize:'vertical',minHeight:64}} value={form.description} onChange={f('description')} placeholder="Optional details…"/></Field>
+      
       <Field label="Event Colour (overrides type colour)">
         <ColorPicker value={form.color} onChange={c=>setForm(p=>({...p,color:c}))}/>
         {form.color&&<div style={{display:'flex',alignItems:'center',gap:8,marginTop:8}}><div style={{width:18,height:18,borderRadius:4,background:form.color}}/><span style={{fontSize:12,color:'var(--text-2)'}}>{form.color}</span></div>}
@@ -811,11 +797,10 @@ export default function EventPlannerPage(){
   const [events,    setEvents]    = useState([])
   const [buckets,   setBuckets]   = useState([])
   const [tasks,     setTasks]     = useState([])
-  const [calTasks,  setCalTasks]  = useState([])
   const [members,   setMembers]   = useState([])
   const [selEvent,  setSelEvent]  = useState(null)
   const [loading,   setLoading]   = useState(true)
-  const [showTaskDots,setShowTaskDots]=useState(true)
+  
 
   // Board filters
   const [fStatus,    setFStatus]    = useState('')
@@ -882,10 +867,6 @@ export default function EventPlannerPage(){
     catch{toast('Failed to load board','error')}
   },[toast])
 
-  const loadCalTasks=useCallback(async()=>{
-    try{setCalTasks(await getCalendarTasks())}catch{}
-  },[])
-
   useEffect(()=>{loadEvents()},[loadEvents])
   useEffect(()=>{
     const onKey=(e)=>{if(e.key==='Escape')setTooltip(null)}
@@ -897,7 +878,7 @@ export default function EventPlannerPage(){
       document.removeEventListener('contextmenu',onCtx)
     }
   },[])
-  useEffect(()=>{loadCalTasks()},[loadCalTasks])
+  
   useEffect(()=>{
     supabase.from('members').select('id,first_name,last_name').eq('status','active').order('first_name').then(({data})=>setMembers(data||[]))
   },[])
@@ -945,7 +926,7 @@ export default function EventPlannerPage(){
       const payload={
         name:form.name.trim(),event_type:form.event_type,
         start_date:form.start_date||null,end_date:form.end_date||null,
-        year:yr,description:form.description||null,color:form.color||null,
+        year:yr,color:form.color||null,
         status:form.status||'planning',
         date_fixed:!!form.date_fixed,is_recurring:!!form.is_recurring,
       }
@@ -1010,13 +991,13 @@ export default function EventPlannerPage(){
       if(!form.id)payload.sort_order=tasks.filter(t=>t.bucket_id===form.bucket_id).length
       await saveTask(form.id||null,payload,profile?.email)
       toast(form.id?'Task updated':'Task added','success')
-      setTaskModal(null);setTaskDefBkt(null);await loadBoard(selEvent.id);loadCalTasks()
+      setTaskModal(null);setTaskDefBkt(null);await loadBoard(selEvent.id)
     }catch{toast('Failed to save task','error')}
   }
 
   async function handleDeleteTask(task){
     if(!window.confirm(`Delete "${task.title}"?`))return
-    try{await deleteTask(task.id);setTasks(p=>p.filter(t=>t.id!==task.id));toast('Task deleted','success');loadCalTasks()}
+    try{await deleteTask(task.id);setTasks(p=>p.filter(t=>t.id!==task.id));toast('Task deleted','success')}
     catch{toast('Failed to delete task','error')}
   }
 
@@ -1035,7 +1016,7 @@ export default function EventPlannerPage(){
   async function handleStatusToggle(task){
     const next=STATUS_CYCLE[(STATUS_CYCLE.indexOf(task.status)+1)%STATUS_CYCLE.length]
     setTasks(p=>p.map(t=>t.id===task.id?{...t,status:next}:t))
-    try{await saveTask(task.id,{...task,status:next},profile?.email);loadCalTasks()}
+    try{await saveTask(task.id,{...task,status:next},profile?.email)}
     catch{setTasks(p=>p.map(t=>t.id===task.id?{...t,status:task.status}:t));toast('Failed to update status','error')}
   }
 
@@ -1044,7 +1025,7 @@ export default function EventPlannerPage(){
   async function handleQuickAddTask(bucketId,title){
     try{
       await saveTask(null,{event_id:selEvent.id,bucket_id:bucketId,title,priority:'medium',status:'pending',sort_order:tasks.filter(t=>t.bucket_id===bucketId).length},profile?.email)
-      await loadBoard(selEvent.id);loadCalTasks()
+      await loadBoard(selEvent.id)
     }catch{toast('Failed to add task','error')}
   }
 
@@ -1096,13 +1077,11 @@ export default function EventPlannerPage(){
     return true
   }):events
 
-  // Search results (events + calTasks cross-referenced with events)
+  // Search results (events)
   const searchTrimmed=search.trim().toLowerCase()
   const searchResults=searchTrimmed.length>1?{
     events:events.filter(e=>e.name.toLowerCase().includes(searchTrimmed)).slice(0,6),
-    tasks:calTasks.filter(t=>t.title.toLowerCase().includes(searchTrimmed))
-      .map(t=>({...t,eventName:events.find(e=>e.id===t.event_id)?.name||''}))
-      .filter(t=>t.eventName).slice(0,8),
+    tasks: [],
   }:null
   function bucketTasks(id){return tasks.filter(t=>t.bucket_id===id).sort((a,b)=>a.sort_order-b.sort_order)}
 
@@ -1171,13 +1150,7 @@ export default function EventPlannerPage(){
               </button>
             ))}
           </div>
-          {/* Task dots toggle */}
-          {isCalView&&(
-            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-3)',cursor:'pointer',userSelect:'none'}}>
-              <input type="checkbox" checked={showTaskDots} onChange={e=>setShowTaskDots(e.target.checked)} style={{accentColor:'var(--accent,#2563eb)'}}/>
-              Task dots
-            </label>
-          )}
+          
           <button onClick={()=>navigate('/events/settings')} title="Event Settings"
             style={{...btnS,display:'flex',alignItems:'center',padding:'7px 10px'}}>
             <Settings size={15}/>
@@ -1228,8 +1201,7 @@ export default function EventPlannerPage(){
               year={calYear}
               month={i}
               events={calFilteredEvents}
-              calTasks={calTasks}
-              showTaskDots={showTaskDots}
+              
               selRange={selRange}
               onDayMouseDown={ds=>{calDragRef.current={active:true,start:ds,end:ds};setSelRange({start:ds,end:ds})}}
               onDayMouseEnter={(ds,x,y)=>{if(calDragRef.current.active){const s=calDragRef.current.start;calDragRef.current.end=ds;setSelRange({start:s<=ds?s:ds,end:s<=ds?ds:s})}}}
@@ -1248,7 +1220,7 @@ export default function EventPlannerPage(){
           <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:'#3b82f6'}}/><span style={{fontSize:11,color:'var(--text-3)'}}>Annual</span></div>
           <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:'#8b5cf6'}}/><span style={{fontSize:11,color:'var(--text-3)'}}>Monthly</span></div>
           <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:'#64748b'}}/><span style={{fontSize:11,color:'var(--text-3)'}}>One-time</span></div>
-          {showTaskDots&&<div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:2,background:'#f97316'}}/><span style={{fontSize:11,color:'var(--text-3)'}}>Task due</span></div>}
+          
         </div>
       </div>
     )
@@ -1294,7 +1266,6 @@ export default function EventPlannerPage(){
                 const ds=toDateStr(day),isToday=ds===todayStr,isCurMon=day.getMonth()===curMon
                 const isStartDay=day.getDay()===ws
                 const dayEvts=eventsOnDay(ds,calFilteredEvents)
-                const dayTasks=showTaskDots?calTasks.filter(t=>normalizeDateKey(t.due_date)===ds):[]
                 const inSel=!!(selRange&&isCurMon&&ds>=selRange.start&&ds<=selRange.end)
                 return(
                   <div key={ds}
@@ -1319,12 +1290,7 @@ export default function EventPlannerPage(){
                       )
                     })}
                     {dayEvts.length>2&&<div style={{fontSize:9,color:'var(--text-3)',fontWeight:600}}>+{dayEvts.length-2} more</div>}
-                    {dayTasks.length>0&&(
-                      <div style={{display:'flex',gap:2,marginTop:1,flexWrap:'wrap'}}>
-                        {dayTasks.slice(0,3).map(t=><div key={t.id} title={t.title} style={{width:6,height:6,borderRadius:2,background:priorityColor(t.priority)}}/>)}
-                        {dayTasks.length>3&&<div style={{fontSize:8,color:'var(--text-3)'}}>+{dayTasks.length-3}</div>}
-                      </div>
-                    )}
+                    
                   </div>
                 )
               })}
@@ -1336,7 +1302,7 @@ export default function EventPlannerPage(){
             {EVENT_TYPES.map(t=>{const ec=eventColor({event_type:t.value});return(
               <div key={t.value} style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:10,height:10,borderRadius:2,background:ec.bg,border:`1.5px solid ${ec.dot}`}}/><span style={{fontSize:11,color:'var(--text-3)'}}>{t.label}</span></div>
             )})}
-            {showTaskDots&&<div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:'#ef4444'}}/><span style={{fontSize:11,color:'var(--text-3)'}}>Task due (high)</span></div>}
+            
             <span style={{fontSize:11,color:'var(--text-3)',fontStyle:'italic'}}>Click or drag dates to add event · Hover for details</span>
           </div>
         </div>
@@ -1447,7 +1413,6 @@ export default function EventPlannerPage(){
             {days.map(day=>{
               const ds=toDateStr(day),isToday=ds===todayStr
               const dayEvts=eventsOnDay(ds,calFilteredEvents)
-              const dayTasks=showTaskDots?calTasks.filter(t=>normalizeDateKey(t.due_date)===ds):[]
               const inSel=!!(selRange&&ds>=selRange.start&&ds<=selRange.end)
               return(
                 <div key={ds}
@@ -1468,22 +1433,8 @@ export default function EventPlannerPage(){
                       </div>
                     )
                   })}
-                  {dayTasks.length>0&&(
-                    <div style={{marginTop:dayEvts.length?6:0}}>
-                      {dayTasks.slice(0,4).map(t=>{
-                        const ts=taskStatusStyle(t.status)
-                        return(
-                          <div key={t.id} title={t.title}
-                            style={{fontSize:10,padding:'2px 6px',marginBottom:2,borderRadius:4,background:ts.bg,color:ts.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:4}}>
-                            <div style={{width:5,height:5,borderRadius:'50%',background:priorityColor(t.priority),flexShrink:0}}/>
-                            {t.title}
-                          </div>
-                        )
-                      })}
-                      {dayTasks.length>4&&<div style={{fontSize:9,color:'var(--text-3)'}}>+{dayTasks.length-4} tasks</div>}
-                    </div>
-                  )}
-                  {dayEvts.length===0&&dayTasks.length===0&&(
+                  
+                  {dayEvts.length===0&&(
                     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:50,color:'var(--text-3)',opacity:0.4}}>
                       <Plus size={14}/>
                     </div>
@@ -1509,15 +1460,7 @@ export default function EventPlannerPage(){
       byYear[yr].push(e)
     })
 
-    // Tasks due in next 14 days
-    const soon=calTasks
-      .filter(t=>{
-        if(t.status==='done')return false
-        const diff=(new Date(normalizeDateKey(t.due_date)+'T00:00:00')-new Date(todayStr+'T00:00:00'))/(1000*60*60*24)
-        return diff>=-1&&diff<=14
-      })
-      .sort((a,b)=>a.due_date.localeCompare(b.due_date))
-      .map(t=>({...t,eventName:events.find(e=>e.id===t.event_id)?.name||'Unknown event'}))
+    
 
     if(sorted.length===0)return(
       <div style={{padding:'0 24px 24px',textAlign:'center',paddingTop:64,color:'var(--text-3)'}}>
@@ -1526,33 +1469,7 @@ export default function EventPlannerPage(){
     )
     return(
       <div style={{padding:'0 24px 24px'}}>
-        {/* Upcoming tasks */}
-        {soon.length>0&&(
-          <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:10,padding:'14px 16px',marginBottom:24}}>
-            <h3 style={{margin:'0 0 12px',fontSize:13,fontWeight:700,color:'var(--text-1)',display:'flex',alignItems:'center',gap:6}}>
-              <Clock size={14} color="var(--accent,#2563eb)"/> Tasks Due in Next 14 Days
-              <span style={{marginLeft:4,fontSize:11,fontWeight:600,color:'var(--text-3)',background:'var(--input-bg,#f1f5f9)',borderRadius:10,padding:'1px 7px'}}>{soon.length}</span>
-            </h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:8}}>
-              {soon.map(t=>{
-                const overdue=isOverdue(t.due_date)
-                const ts=taskStatusStyle(t.status)
-                return(
-                  <div key={t.id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 10px',borderRadius:8,border:'1px solid var(--card-border,#e2e8f0)',background:overdue?'#fef2f2':'var(--page-bg,#f8fafc)',borderLeft:`3px solid ${priorityColor(t.priority)}`}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:overdue?'#dc2626':'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</div>
-                      <div style={{fontSize:10,color:'var(--text-3)',marginTop:2,display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
-                        <CalendarDays size={9}/>{overdue?'Overdue · ':''}{fmtDate(t.due_date)}
-                        <span style={{marginLeft:2,fontSize:9,background:ts.bg,color:ts.text,borderRadius:8,padding:'1px 5px',fontWeight:700,textTransform:'uppercase'}}>{ts.label}</span>
-                      </div>
-                      <div style={{fontSize:10,color:'var(--text-3)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.eventName}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
+        
         {Object.keys(byYear).sort((a,b)=>b-a).map(yr=>(
           <div key={yr} style={{marginBottom:26}}>
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
@@ -1739,7 +1656,7 @@ export default function EventPlannerPage(){
       {tooltip&&!selRange&&(
         <>
           <div onClick={()=>setTooltip(null)} style={{position:'fixed',inset:0,zIndex:1199}}/>
-          <DayTooltip ds={tooltip.ds} events={events} calTasks={calTasks} showTaskDots={showTaskDots} x={tooltip.x} y={tooltip.y} onEventClick={e=>{openBoard(e);setTooltip(null)}} onClose={()=>setTooltip(null)}/>
+          <DayTooltip ds={tooltip.ds} events={events} x={tooltip.x} y={tooltip.y} onEventClick={e=>{openBoard(e);setTooltip(null)}} onClose={()=>setTooltip(null)}/>
         </>
       )}
       {searchResults&&(
