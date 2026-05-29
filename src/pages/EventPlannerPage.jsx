@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
-  closestCorners, useDroppable,
+  closestCorners, useDroppable, useDraggable,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -27,8 +27,11 @@ import {
   getBuckets, saveBucket, deleteBucket,
   getTasks, saveTask, deleteTask,
   updateTaskOrder, updateBucketOrder, moveTask, carryForward,
+  getTaskLibrary, saveLibraryTask, deleteLibraryTask, updateLibraryTaskOrder, cloneLibraryTaskToEvent,
+  getEventVolunteers, saveEventVolunteer, deleteEventVolunteer, replaceEventPlannerMasterData,
   autoFillRecurring,
 } from '../lib/eventPlannerLib'
+import { sendWhatsAppMessage } from '../lib/whatsapp'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -298,6 +301,78 @@ function TaskCardOverlay({task}){
     <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderLeft:`3px solid ${priorityColor(task.priority)}`,borderRadius:8,padding:'10px 12px',boxShadow:'0 10px 28px rgba(0,0,0,0.2)',width:252,cursor:'grabbing'}}>
       <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'var(--text-1)'}}>{task.title}</p>
       <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:st.bg,color:st.text,textTransform:'uppercase'}}>{st.label}</span>
+    </div>
+  )
+}
+
+function LibraryTaskOverlay({task}){
+  if(!task)return null
+  return(
+    <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:8,padding:'10px 12px',boxShadow:'0 10px 28px rgba(0,0,0,0.2)',width:260,cursor:'grabbing'}}>
+      <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'var(--text-1)'}}>{task.title}</p>
+      {task.description&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text-3)'}}>{task.description}</p>}
+      <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#eef2ff',color:'#1d4ed8',textTransform:'uppercase'}}>Library template</span>
+    </div>
+  )
+}
+
+function buildLibraryTree(tasks){
+  const map={}
+  tasks.forEach(t=>map[t.id]={...t,children:[]})
+  tasks.forEach(t=>{ if(t.parent_id&&map[t.parent_id]) map[t.parent_id].children.push(map[t.id]) })
+  return tasks.filter(t=>!t.parent_id).map(t=>map[t.id]).sort((a,b)=>a.sort_order-b.sort_order)
+}
+
+function LibraryTaskCard({task,depth,onEdit,onDelete}){
+  const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useDraggable({id:`lib-${task.id}`})
+  return(
+    <div ref={setNodeRef} style={{transform:CSS.Transform.toString(transform),transition,opacity:isDragging?0.4:1,marginBottom:8,marginLeft:depth*14}} {...attributes}{...listeners}>
+      <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:10,padding:'10px 12px',cursor:'grab',position:'relative',boxShadow:isDragging?'0 10px 24px rgba(0,0,0,0.14)':'none'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--text-1)'}}>{task.title}</span>
+          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#f8fafc',color:'#334155',textTransform:'uppercase'}}>{task.priority||'medium'}</span>
+        </div>
+        {task.description&&<p style={{margin:'0 0 8px',fontSize:11,color:'var(--text-3)',lineHeight:1.4}}>{task.description}</p>}
+        <div style={{display:'flex',gap:4,position:'absolute',top:8,right:8}}>
+          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}} style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer'}}><Pencil size={11} color="var(--text-2)"/></button>
+          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(task)}} style={{background:'#fef2f2',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer'}}><Trash2 size={11} color="#ef4444"/></button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LibraryTaskNode({task,depth,onEdit,onDelete}){
+  return(
+    <>
+      <LibraryTaskCard task={task} depth={depth} onEdit={onEdit} onDelete={onDelete}/>
+      {task.children?.sort((a,b)=>a.sort_order-b.sort_order).map(child=><LibraryTaskNode key={child.id} task={child} depth={depth+1} onEdit={onEdit} onDelete={onDelete}/>)}
+    </>
+  )
+}
+
+function LibraryPanel({tasks,onEdit,onDelete,onAdd}){
+  const roots=buildLibraryTree(tasks)
+  return(
+    <div style={{width:320,flexShrink:0,display:'flex',flexDirection:'column',background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,overflow:'hidden',boxShadow:'0 12px 32px rgba(15,23,42,0.08)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px',borderBottom:'1px solid var(--card-border,#e2e8f0)'}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>Task Library</div>
+          <div style={{fontSize:11,color:'var(--text-3)',marginTop:2}}>Drag templates into buckets to copy them</div>
+        </div>
+        <button onClick={onAdd} style={{...btnP,fontSize:12,padding:'6px 10px'}}>New</button>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:12,minHeight:240}}>
+        {roots.length===0?(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'var(--text-3)',padding:'24px',textAlign:'center'}}>
+            <LayoutGrid size={34}/>
+            <div style={{fontSize:13,fontWeight:600}}>No library templates yet</div>
+            <div style={{fontSize:12}}>Add a task template and drag it onto a bucket to reuse it.</div>
+          </div>
+        ):(
+          roots.map(task=><LibraryTaskNode key={task.id} task={task} depth={0} onEdit={onEdit} onDelete={onDelete}/>)
+        )}
+      </div>
     </div>
   )
 }
@@ -650,11 +725,16 @@ function BucketFormModal({initial,onSave,onClose}){
 
 // ── TaskFormModal ─────────────────────────────────────────────────────────────
 
-function TaskFormModal({initial,buckets,members,defaultBucketId,onSave,onClose}){
-  const [form,setForm]=useState({...BLANK_TASK,bucket_id:defaultBucketId||buckets[0]?.id||'',...initial})
+function TaskFormModal({initial,buckets,members,volunteers,defaultBucketId,onSave,onClose}){
+  const [form,setForm]=useState({...BLANK_TASK,bucket_id:defaultBucketId||buckets[0]?.id||'',assigned_volunteer_id:initial?.assigned_volunteer_id||'',...initial})
   const [saving,setSaving]=useState(false)
   function f(k){return e=>setForm(p=>({...p,[k]:e.target.value}))}
-  async function handleSave(){if(!form.title.trim()||!form.bucket_id)return;setSaving(true);await onSave(form);setSaving(false)}
+  async function handleSave(){
+    if(!form.title.trim()||!form.bucket_id)return
+    setSaving(true)
+    await onSave(form)
+    setSaving(false)
+  }
   return(
     <Modal onClose={onClose} width={500}>
       <ModalTitle onClose={onClose}>{initial?.id?'Edit Task':'New Task'}</ModalTitle>
@@ -662,12 +742,18 @@ function TaskFormModal({initial,buckets,members,defaultBucketId,onSave,onClose})
       <Field label="Title *"><input autoFocus style={iSt} value={form.title} onChange={f('title')} placeholder="e.g. Book choir for the service"/></Field>
       <Field label="Bucket"><select style={iSt} value={form.bucket_id} onChange={f('bucket_id')}>{buckets.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <Field label="Assigned To">
-          <input style={iSt} list="ep-mlist" value={form.assigned_to} onChange={f('assigned_to')} placeholder="Person or team"/>
-          <datalist id="ep-mlist">{members.map(m=><option key={m.id} value={`${m.first_name||''} ${m.last_name||''}`.trim()}/>)}</datalist>
+        <Field label="Assigned Volunteer">
+          <select style={iSt} value={form.assigned_volunteer_id||''} onChange={e=>setForm(p=>({...p,assigned_volunteer_id:e.target.value}))}>
+            <option value="">— None —</option>
+            {volunteers.map(v=><option key={v.id} value={v.id}>{v.name}{v.role?` · ${v.role}`:''}</option>)}
+          </select>
         </Field>
         <Field label="Due Date"><input style={iSt} type="date" value={form.due_date} onChange={f('due_date')}/></Field>
       </div>
+      <Field label="Assigned To">
+        <input style={iSt} list="ep-mlist" value={form.assigned_to} onChange={f('assigned_to')} placeholder="Person or team"/>
+        <datalist id="ep-mlist">{members.map(m=><option key={m.id} value={`${m.first_name||''} ${m.last_name||''}`.trim()}/>)}</datalist>
+      </Field>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <Field label="Priority"><select style={iSt} value={form.priority} onChange={f('priority')}>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></Field>
         <Field label="Status"><select style={iSt} value={form.status} onChange={f('status')}>{TASK_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></Field>
@@ -676,6 +762,39 @@ function TaskFormModal({initial,buckets,members,defaultBucketId,onSave,onClose})
       <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
         <button style={btnS} onClick={onClose}>Cancel</button>
         <button style={{...btnP,opacity:saving?0.7:1}} onClick={handleSave} disabled={!form.title.trim()||!form.bucket_id||saving}>{saving?'Saving…':'Save Task'}</button>
+      </div>
+      </ModalBody>
+    </Modal>
+  )
+}
+
+function LibraryTaskFormModal({initial,onSave,onClose,libraryTasks}){
+  const [form,setForm]=useState({
+    title:'',description:'',priority:'medium',parent_id:'',sort_order:libraryTasks.filter(t=>!t.parent_id).length,
+    ...initial,
+  })
+  const [saving,setSaving]=useState(false)
+  function f(k){return e=>setForm(p=>({...p,[k]:e.target.value}))}
+  async function handleSave(){
+    if(!form.title.trim())return
+    setSaving(true)
+    await onSave(form)
+    setSaving(false)
+  }
+  return(
+    <Modal onClose={onClose} width={440}>
+      <ModalTitle onClose={onClose}>{initial?.id?'Edit Template':'New Library Template'}</ModalTitle>
+      <ModalBody>
+      <Field label="Title *"><input autoFocus style={iSt} value={form.title} onChange={f('title')} placeholder="e.g. Welcome folder"/></Field>
+      <Field label="Description"><textarea style={{...iSt,resize:'vertical',minHeight:72}} value={form.description} onChange={f('description')} placeholder="Optional details or instructions"/></Field>
+      <Field label="Priority"><select style={iSt} value={form.priority} onChange={f('priority')}>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></Field>
+      <Field label="Parent Template"><select style={iSt} value={form.parent_id||''} onChange={f('parent_id')}>
+        <option value="">— None —</option>
+        {libraryTasks.filter(t=>t.id!==initial?.id).map(t=><option key={t.id} value={t.id}>{t.title}</option>)}
+      </select></Field>
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
+        <button style={btnS} onClick={onClose}>Cancel</button>
+        <button style={{...btnP,opacity:saving?0.7:1}} onClick={handleSave} disabled={!form.title.trim()||saving}>{saving?'Saving…':'Save Template'}</button>
       </div>
       </ModalBody>
     </Modal>
@@ -797,10 +916,12 @@ export default function EventPlannerPage(){
   const [events,    setEvents]    = useState([])
   const [buckets,   setBuckets]   = useState([])
   const [tasks,     setTasks]     = useState([])
+  const [libraryTasks, setLibraryTasks] = useState([])
+  const [libraryModal, setLibraryModal] = useState(null)
+  const [volunteers, setVolunteers] = useState([])
   const [members,   setMembers]   = useState([])
   const [selEvent,  setSelEvent]  = useState(null)
   const [loading,   setLoading]   = useState(true)
-  
 
   // Board filters
   const [fStatus,    setFStatus]    = useState('')
@@ -846,6 +967,7 @@ export default function EventPlannerPage(){
 
   // DnD
   const [activeTask,setActiveTask]=useState(null)
+  const [activeLibraryTask,setActiveLibraryTask]=useState(null)
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}))
 
   // ── Data loaders ────────────────────────────────────────────
@@ -863,9 +985,19 @@ export default function EventPlannerPage(){
   },[toast,profile])
 
   const loadBoard=useCallback(async(id)=>{
-    try{const [b,t]=await Promise.all([getBuckets(id),getTasks(id)]);setBuckets(b);setTasks(t)}
-    catch{toast('Failed to load board','error')}
+    try{
+      const [b,t]=await Promise.all([getBuckets(id),getTasks(id)])
+      setBuckets(b);setTasks(t)
+    }catch{toast('Failed to load board','error')}
   },[toast])
+
+  const loadVolunteers=useCallback(async()=>{
+    try{setVolunteers(await getEventVolunteers())}catch{}
+  },[])
+
+  const loadLibraryTasks=useCallback(async()=>{
+    try{setLibraryTasks(await getTaskLibrary())}catch{}
+  },[])
 
   useEffect(()=>{loadEvents()},[loadEvents])
   useEffect(()=>{
@@ -900,7 +1032,8 @@ export default function EventPlannerPage(){
   // ── Navigation ──────────────────────────────────────────────
 
   function openBoard(event){
-    setPrevView(view);setSelEvent(event);setView('board');setFStatus('');setFPriority('');setFAssignee('');loadBoard(event.id)
+    setPrevView(view);setSelEvent(event);setView('board');setFStatus('');setFPriority('');setFAssignee('');
+    loadBoard(event.id);loadLibraryTasks();loadVolunteers()
   }
   function backFromBoard(){ setView(prevView);setSelEvent(null);setBuckets([]);setTasks([]) }
 
@@ -987,12 +1120,61 @@ export default function EventPlannerPage(){
 
   async function handleSaveTask(form){
     try{
-      const payload={event_id:selEvent.id,bucket_id:form.bucket_id,title:form.title.trim(),assigned_to:form.assigned_to||null,due_date:form.due_date||null,priority:form.priority,status:form.status,notes:form.notes||null}
-      if(!form.id)payload.sort_order=tasks.filter(t=>t.bucket_id===form.bucket_id).length
+      const volunteer = volunteers.find(v=>v.id===form.assigned_volunteer_id)
+      const payload={
+        event_id:selEvent.id,
+        bucket_id:form.bucket_id,
+        title:form.title.trim(),
+        assigned_to:volunteer?volunteer.name:(form.assigned_to||null),
+        assigned_volunteer_id:form.assigned_volunteer_id||null,
+        due_date:form.due_date||null,
+        priority:form.priority,
+        status:form.status,
+        notes:form.notes||null,
+      }
+      if(!form.id) payload.sort_order=tasks.filter(t=>t.bucket_id===form.bucket_id).length
       await saveTask(form.id||null,payload,profile?.email)
       toast(form.id?'Task updated':'Task added','success')
       setTaskModal(null);setTaskDefBkt(null);await loadBoard(selEvent.id)
+
+      const assignedVolunteerId = form.assigned_volunteer_id ? String(form.assigned_volunteer_id) : null
+      const previousVolunteerId = form.id ? String(tasks.find(t=>t.id===form.id)?.assigned_volunteer_id || '') : null
+      if(assignedVolunteerId && assignedVolunteerId !== previousVolunteerId){
+        const volunteerInfo = volunteers.find(v=>String(v.id)===assignedVolunteerId)
+        if(volunteerInfo?.whatsapp){
+          try{
+            const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
+            if(!error && church){
+              const message = `You have been assigned \"${form.title.trim()}\" for ${selEvent?.name || 'the event'}. Please prepare accordingly.`
+              await sendWhatsAppMessage(church, { to: volunteerInfo.whatsapp, message })
+              toast(`WhatsApp sent to ${volunteerInfo.name}`,'success')
+            }
+          }catch(err){
+            toast('Failed to send WhatsApp notification','error')
+          }
+        }
+      }
     }catch{toast('Failed to save task','error')}
+  }
+
+  async function handleSaveLibraryTask(form){
+    try{
+      const payload={
+        title:form.title.trim(),
+        description:form.description||null,
+        priority:form.priority||'medium',
+        parent_id:form.parent_id||null,
+        sort_order:form.sort_order!=null?form.sort_order:libraryTasks.filter(t=>!t.parent_id).length,
+      }
+      await saveLibraryTask(form.id||null,payload,profile?.email)
+      toast(form.id?'Template updated':'Template added','success')
+      setLibraryModal(null);await loadLibraryTasks()
+    }catch{toast('Failed to save template','error')}
+  }
+
+  async function handleDeleteLibrary(task){
+    if(!window.confirm(`Delete library template "${task.title}"?`))return
+    try{await deleteLibraryTask(task.id);toast('Template deleted','success');await loadLibraryTasks()}catch{toast('Failed to delete template','error')}
   }
 
   async function handleDeleteTask(task){
@@ -1042,18 +1224,45 @@ export default function EventPlannerPage(){
 
   // ── Drag & Drop ─────────────────────────────────────────────
 
-  function handleDragStart({active}){setActiveTask(tasks.find(t=>t.id===active.id)||null)}
+  function handleDragStart({active}){
+    const isLibraryDrag=typeof active.id==='string'&&active.id.startsWith('lib-')
+    if(isLibraryDrag){
+      setActiveTask(null)
+      setActiveLibraryTask(libraryTasks.find(t=>t.id===active.id.slice(4))||null)
+      return
+    }
+    setActiveLibraryTask(null)
+    setActiveTask(tasks.find(t=>t.id===active.id)||null)
+  }
 
-  function handleDragEnd({active,over}){
-    setActiveTask(null);if(!over||active.id===over.id)return
-    const dragged=tasks.find(t=>t.id===active.id);if(!dragged)return
-    const overIsBucket=buckets.some(b=>b.id===over.id)
-    const overTask=tasks.find(t=>t.id===over.id)
-    const targetBktId=overIsBucket?over.id:overTask?.bucket_id
+  async function handleDragEnd({active,over}){
+    setActiveTask(null)
+    setActiveLibraryTask(null)
+    if(!over||active.id===over.id)return
+
+    const isLibraryDrag=typeof active.id==='string'&&active.id.startsWith('lib-')
+    const targetBktId=buckets.some(b=>b.id===over.id)?over.id:tasks.find(t=>t.id===over.id)?.bucket_id
     if(!targetBktId)return
+
+    if(isLibraryDrag){
+      const libraryTaskId=active.id.slice(4)
+      try{
+        await cloneLibraryTaskToEvent(libraryTaskId, selEvent.id, targetBktId, profile?.email)
+        await loadBoard(selEvent.id)
+      }catch(err){
+        toast('Failed to copy task from library','error')
+      }
+      return
+    }
+
+    const dragged=tasks.find(t=>t.id===active.id)
+    if(!dragged)return
+    const overTask=tasks.find(t=>t.id===over.id)
+
     if(dragged.bucket_id===targetBktId){
       const bkt=tasks.filter(t=>t.bucket_id===targetBktId).sort((a,b)=>a.sort_order-b.sort_order)
-      const oi=bkt.findIndex(t=>t.id===active.id), ni=overTask?bkt.findIndex(t=>t.id===over.id):bkt.length-1
+      const oi=bkt.findIndex(t=>t.id===active.id)
+      const ni=overTask?bkt.findIndex(t=>t.id===over.id):bkt.length-1
       if(oi===-1||ni===-1||oi===ni)return
       const re=arrayMove(bkt,oi,ni)
       setTasks(p=>p.map(t=>{const i=re.findIndex(r=>r.id===t.id);return i>=0?{...t,sort_order:i}:t}))
@@ -1600,35 +1809,43 @@ export default function EventPlannerPage(){
 
         {/* Kanban */}
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div style={{display:'flex',gap:14,padding:'16px 22px 24px',overflowX:'auto',flex:1,alignItems:'flex-start'}}>
-            {buckets.length===0?(
-              <div style={{display:'flex',flex:1,alignItems:'center',justifyContent:'center',minHeight:180,flexDirection:'column',color:'var(--text-3)',gap:8}}>
-                <LayoutGrid size={38} style={{opacity:0.18}}/><p style={{margin:0,fontSize:14,fontWeight:500}}>No buckets yet</p>
-                <p style={{margin:0,fontSize:13}}>Click <strong>+ Add Bucket</strong> to get started</p>
-              </div>
-            ):buckets.map((b,bi)=>(
-              <BucketColumn key={b.id} bucket={b} tasks={boardBucketTasks(b.id)}
-                onAddTask={id=>{setTaskDefBkt(id);setTaskModal({})}}
-                onEditBucket={setBucketModal} onDeleteBucket={handleDeleteBucket}
-                onEditTask={setTaskModal} onDeleteTask={handleDeleteTask}
-                onStatusChange={handleStatusToggle}
-                onQuickAdd={handleQuickAddTask}
-                onMoveLeft={bi>0?()=>handleMoveBucket(b.id,-1):null}
-                onMoveRight={bi<buckets.length-1?()=>handleMoveBucket(b.id,1):null}/>
-            ))}
-            {buckets.length>0&&(
-              <button onClick={()=>setBucketModal({})} style={{width:265,flexShrink:0,padding:'13px 16px',borderRadius:10,border:'2px dashed var(--card-border,#e2e8f0)',background:'transparent',color:'var(--text-3)',fontSize:13,fontWeight:500,cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
-                <Plus size={15}/>Add bucket
-              </button>
-            )}
+          <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+            <div style={{display:'flex',gap:14,padding:'16px 0 24px 22px',overflowX:'auto',flex:1,alignItems:'flex-start'}}>
+              {buckets.length===0?(
+                <div style={{display:'flex',flex:1,alignItems:'center',justifyContent:'center',minHeight:180,flexDirection:'column',color:'var(--text-3)',gap:8,margin:'0 22px'}}>
+                  <LayoutGrid size={38} style={{opacity:0.18}}/><p style={{margin:0,fontSize:14,fontWeight:500}}>No buckets yet</p>
+                  <p style={{margin:0,fontSize:13}}>Click <strong>+ Add Bucket</strong> to get started</p>
+                </div>
+              ):buckets.map((b,bi)=>(
+                <BucketColumn key={b.id} bucket={b} tasks={boardBucketTasks(b.id)}
+                  onAddTask={id=>{setTaskDefBkt(id);setTaskModal({})}}
+                  onEditBucket={setBucketModal} onDeleteBucket={handleDeleteBucket}
+                  onEditTask={setTaskModal} onDeleteTask={handleDeleteTask}
+                  onStatusChange={handleStatusToggle}
+                  onQuickAdd={handleQuickAddTask}
+                  onMoveLeft={bi>0?()=>handleMoveBucket(b.id,-1):null}
+                  onMoveRight={bi<buckets.length-1?()=>handleMoveBucket(b.id,1):null}/>
+              ))}
+              {buckets.length>0&&(
+                <button onClick={()=>setBucketModal({})} style={{width:265,flexShrink:0,padding:'13px 16px',borderRadius:10,border:'2px dashed var(--card-border,#e2e8f0)',background:'transparent',color:'var(--text-3)',fontSize:13,fontWeight:500,cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
+                  <Plus size={15}/>Add bucket
+                </button>
+              )}
+            </div>
+            <div style={{flexShrink:0,padding:'16px 22px 24px',minWidth:320,maxWidth:320}}>
+              <LibraryPanel tasks={libraryTasks} onEdit={task=>setLibraryModal(task)} onDelete={handleDeleteLibrary} onAdd={()=>setLibraryModal({})}/>
+            </div>
           </div>
-          <DragOverlay dropAnimation={null}>{activeTask?<TaskCardOverlay task={activeTask}/>:null}</DragOverlay>
+          <DragOverlay dropAnimation={null}>
+            {activeTask ? <TaskCardOverlay task={activeTask}/> : activeLibraryTask ? <LibraryTaskOverlay task={activeLibraryTask}/> : null}
+          </DragOverlay>
         </DndContext>
 
         {/* Modals */}
         {eventModal!==null&&<EventFormModal initial={eventModal} onSave={handleSaveEvent} onClose={()=>setEventModal(null)}/>}
         {bucketModal!==null&&<BucketFormModal initial={bucketModal} onSave={handleSaveBucket} onClose={()=>setBucketModal(null)}/>}
-        {taskModal!==null&&<TaskFormModal initial={taskModal} buckets={buckets} members={members} defaultBucketId={taskDefBkt} onSave={handleSaveTask} onClose={()=>{setTaskModal(null);setTaskDefBkt(null)}}/>}
+        {taskModal!==null&&<TaskFormModal initial={taskModal} buckets={buckets} members={members} volunteers={volunteers} defaultBucketId={taskDefBkt} onSave={handleSaveTask} onClose={()=>{setTaskModal(null);setTaskDefBkt(null)}}/>}
+        {libraryModal!==null&&<LibraryTaskFormModal initial={libraryModal} libraryTasks={libraryTasks} onSave={handleSaveLibraryTask} onClose={()=>setLibraryModal(null)}/>}        
         {carryModal&&selEvent&&<CarryForwardModal currentEvent={selEvent} allEvents={events} onCarryForward={handleCarryForward} onClose={()=>setCarryModal(false)}/>}
         {summaryModal&&selEvent&&<CompletionSummaryModal event={selEvent} buckets={buckets} tasks={tasks} onClose={()=>setSummaryModal(false)}/>}
       </div>

@@ -96,6 +96,158 @@ export async function deleteTask(id) {
   if (error) throw error
 }
 
+export async function getTaskLibrary() {
+  const { data, error } = await supabase.from('task_library')
+    .select('*')
+    .order('sort_order')
+    .order('created_at')
+  if (error) throw error
+  return data || []
+}
+
+export async function saveLibraryTask(id, payload, userEmail) {
+  const now = new Date().toISOString()
+  if (id) {
+    const { error } = await supabase.from('task_library')
+      .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
+    if (error) throw error
+    return id
+  } else {
+    const { data, error } = await supabase.from('task_library')
+      .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
+      .select('id').single()
+    if (error) throw error
+    return data.id
+  }
+}
+
+export async function deleteLibraryTask(id) {
+  const { error } = await supabase.from('task_library').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function updateLibraryTaskOrder(tasks) {
+  await Promise.all(
+    tasks.map((t, idx) =>
+      supabase.from('task_library').update({ sort_order: idx }).eq('id', t.id)
+    )
+  )
+}
+
+export async function getEventVolunteers() {
+  const { data, error } = await supabase.from('event_volunteers')
+    .select('*').order('sort_order').order('created_at')
+  if (error) throw error
+  return data || []
+}
+
+export async function saveEventVolunteer(id, payload, userEmail) {
+  const now = new Date().toISOString()
+  if (id) {
+    const { error } = await supabase.from('event_volunteers')
+      .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
+    if (error) throw error
+    return id
+  } else {
+    const { data, error } = await supabase.from('event_volunteers')
+      .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
+      .select('id').single()
+    if (error) throw error
+    return data.id
+  }
+}
+
+export async function deleteEventVolunteer(id) {
+  const { error } = await supabase.from('event_volunteers').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function replaceEventPlannerMasterData(data, userEmail) {
+  const now = new Date().toISOString()
+  const library = Array.isArray(data.library) ? data.library : []
+  const volunteers = Array.isArray(data.volunteers) ? data.volunteers : []
+
+  const { error: libDelError } = await supabase.from('task_library').delete().neq('id', '')
+  if (libDelError) throw libDelError
+
+  const { error: volDelError } = await supabase.from('event_volunteers').delete().neq('id', '')
+  if (volDelError) throw volDelError
+
+  if (volunteers.length > 0) {
+    const newVols = volunteers.map(v => ({
+      id: v.id,
+      name: v.name,
+      role: v.role || null,
+      whatsapp: v.whatsapp || null,
+      sort_order: v.sort_order || 0,
+      created_by: userEmail,
+      updated_by: userEmail,
+      created_at: v.created_at || now,
+      updated_at: v.updated_at || now,
+    }))
+    const { error } = await supabase.from('event_volunteers').insert(newVols)
+    if (error) throw error
+  }
+
+  if (library.length > 0) {
+    const newLib = library.map(t => ({
+      id: t.id,
+      parent_id: t.parent_id || null,
+      title: t.title,
+      description: t.description || null,
+      priority: t.priority || 'medium',
+      sort_order: t.sort_order || 0,
+      created_by: userEmail,
+      updated_by: userEmail,
+      created_at: t.created_at || now,
+      updated_at: t.updated_at || now,
+    }))
+    const { error } = await supabase.from('task_library').insert(newLib)
+    if (error) throw error
+  }
+}
+
+export async function cloneLibraryTaskToEvent(libraryTaskId, eventId, bucketId, userEmail) {
+  const { data: allLibraryTasks, error } = await supabase.from('task_library').select('*')
+  if (error) throw error
+  const libById = {}
+  allLibraryTasks.forEach(t => { libById[t.id] = { ...t, children: [] } })
+  allLibraryTasks.forEach(t => {
+    if (t.parent_id && libById[t.parent_id]) libById[t.parent_id].children.push(libById[t.id])
+  })
+  const root = libById[libraryTaskId]
+  if (!root) throw new Error('Library task not found')
+
+  async function insertTask(task, parentEventTaskId = null, sortOrder = 0) {
+    const payload = {
+      event_id:    eventId,
+      bucket_id:   bucketId,
+      title:       task.title,
+      description: task.description || null,
+      assigned_to: null,
+      priority:    task.priority || 'medium',
+      status:      'pending',
+      sort_order:  sortOrder,
+      due_date:    null,
+      parent_id:   parentEventTaskId,
+    }
+    const { data, error } = await supabase.from('event_tasks')
+      .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
+      .select('id').single()
+    if (error) throw error
+    return data.id
+  }
+
+  async function recurse(source, parentEventTaskId) {
+    const id = await insertTask(source, parentEventTaskId, source.sort_order || 0)
+    for (const child of source.children.sort((a,b)=>a.sort_order-b.sort_order)) {
+      await recurse(child, id)
+    }
+  }
+
+  await recurse(root, null)
+}
+
 export async function updateTaskOrder(tasks) {
   await Promise.all(
     tasks.map((t, idx) =>
