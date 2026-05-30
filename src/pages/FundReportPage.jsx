@@ -144,7 +144,7 @@ export default function FundReportPage() {
                 const isSelected = selectedFund?.id === f.id
                 return (
                   <div key={f.id} className="card" onClick={() => isSelected ? setSelectedFund(null) : loadTransactions(f)}
-                    style={{ padding: '18px 20px', borderLeft: `4px solid ${f.color}`, cursor: 'pointer', border: isSelected ? `2px solid ${f.color}` : `1px solid var(--card-border)`, borderLeft: `4px solid ${f.color}`, background: isSelected ? `${f.color}08` : 'var(--card-bg)', transition: 'all 0.15s' }}>
+                    style={{ padding: '18px 20px', borderLeft: `4px solid ${f.color}`, cursor: 'pointer', border: isSelected ? `2px solid ${f.color}` : `1px solid var(--card-border)`, background: isSelected ? `${f.color}08` : 'var(--card-bg)', transition: 'all 0.15s' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: f.color, flexShrink: 0 }} />

@@ -2,10 +2,23 @@
    EventSettingsPage.jsx — Settings for the Event Planner
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, Calendar, ChevronLeft, Check, Globe } from 'lucide-react'
+import { Settings, Calendar, ChevronLeft, Check, Globe, Download, UploadCloud, Trash2, Plus } from 'lucide-react'
+import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import {
+  getEventPlannerMasterData,
+  downloadEventPlannerMasterData,
+  downloadEventPlannerMasterTemplate,
+  readAndParseEventPlannerMasterFile,
+  importEventPlannerMasterData,
+  getTaskLibrary,
+  updateLibraryItemName,
+  deleteLibraryItem,
+  addLibraryCategory,
+  addLibrarySubtask,
+} from '../lib/eventPlannerLib'
 
 // ── Country → week start day mapping ─────────────────────────────────────────
 // weekStart: 0 = Sunday, 1 = Monday, 6 = Saturday
@@ -125,8 +138,134 @@ function WeekPreview({ weekStart }) {
 export default function EventSettingsPage() {
   const navigate = useNavigate()
   const toast    = useToast()
+  const { profile } = useAuth()
+  const [tab, setTab] = useState('library')
   const [form, setForm]   = useState(loadSettings)
   const [saved, setSaved] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [libraryTasks, setLibraryTasks] = useState([])
+  const [loadingLibrary, setLoadingLibrary] = useState(false)
+  const [librarySaving, setLibrarySaving] = useState(false)
+
+  useEffect(() => {
+    loadMasterData()
+  }, [])
+
+  async function loadMasterData() {
+    setLoadingLibrary(true)
+    try {
+      const tasks = await getTaskLibrary()
+      setLibraryTasks(tasks || [])
+    } catch (err) {
+      console.error(err)
+      toast('Failed to load library data', 'error')
+    } finally {
+      setLoadingLibrary(false)
+    }
+  }
+
+  function updateLibraryTaskValue(id, field, value) {
+    setLibraryTasks(prev => prev.map(task => task.id === id ? { ...task, [field]: value } : task))
+  }
+
+  async function handleSaveLibraryTaskInline(id, field, value) {
+    if (!value.trim()) {
+      toast('Field cannot be blank', 'error')
+      return
+    }
+    setLibrarySaving(true)
+    try {
+      await saveLibraryTask(id, { [field]: value.trim() }, profile?.email)
+      await loadMasterData()
+      toast('Saved', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('Failed to save', 'error')
+    } finally {
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleAddLibraryRow() {
+    setLibrarySaving(true)
+    try {
+      const maxSort = Math.max(0, ...libraryTasks.map(t => t.sort_order || 0))
+      await saveLibraryTask(null, { category: 'New Category', subcategory: 'New Item', sort_order: maxSort + 1 }, profile?.email)
+      await loadMasterData()
+      toast('Added row', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('Failed to add row', 'error')
+    } finally {
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleDeleteLibraryTask(id) {
+    if (!window.confirm('Delete this row?')) return
+    setLibrarySaving(true)
+    try {
+      await deleteLibraryTask(id)
+      await loadMasterData()
+      toast('Deleted', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('Failed to delete', 'error')
+    } finally {
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleExportMasterData() {
+    setExporting(true)
+    try {
+      await downloadEventPlannerMasterData()
+      toast('Master data export ready', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('Failed to export master data', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleDownloadTemplate() {
+    setExporting(true)
+    try {
+      await downloadEventPlannerMasterTemplate()
+      toast('Template download ready', 'success')
+    } catch (err) {
+      console.error(err)
+      toast('Failed to download template', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleImportMasterData(file) {
+    setImportError('')
+    if (!file) return
+    setImporting(true)
+    try {
+      const parsed = await readAndParseEventPlannerMasterFile(file)
+      if (!parsed.valid) {
+        setImportError(parsed.errors.join(' '))
+        toast('Failed to import master data', 'error')
+        return
+      }
+      await importEventPlannerMasterData(parsed, profile?.email || null)
+      toast('Imported master data successfully', 'success')
+      await loadMasterData()
+    } catch (err) {
+      console.error(err)
+      setImportError('Invalid Excel file or unsupported format.')
+      toast('Failed to import master data', 'error')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   function handleCountryChange(country) {
     const match = COUNTRIES.find(c => c.country === country)
@@ -148,7 +287,7 @@ export default function EventSettingsPage() {
   const selectedOpt = WEEK_START_OPTIONS.find(o => o.value === form.weekStartDay)
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
 
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 }}>
@@ -161,78 +300,220 @@ export default function EventSettingsPage() {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>Event Settings</h1>
       </div>
 
-      {/* ── Calendar section ──────────────────────────────────── */}
-      <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 20 }}>
-          <Calendar size={17} color="var(--accent,#2563eb)" />
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>Calendar</h2>
-        </div>
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--card-border,#e2e8f0)', marginBottom: 28 }}>
+        {['library', 'settings', 'volunteers'].map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: '12px 20px',
+              border: 'none',
+              background: 'transparent',
+              borderBottom: tab === t ? '3px solid var(--accent,#2563eb)' : 'none',
+              color: tab === t ? 'var(--accent,#2563eb)' : 'var(--text-2)',
+              fontWeight: tab === t ? 600 : 500,
+              fontSize: 14,
+              cursor: 'pointer',
+              textTransform: 'capitalize',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-
-          {/* Country */}
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-              <Globe size={11} /> Country / Region
-            </label>
-            <select value={form.country || ''} onChange={e => handleCountryChange(e.target.value)} style={iSt}>
-              <option value="">— Select country —</option>
-              {COUNTRIES_SORTED.map(c => (
-                <option key={c.country} value={c.country}>{c.country}</option>
-              ))}
-            </select>
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {/* LIBRARY TAB */}
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {tab === 'library' && (
+        <div>
+          <div style={{ marginBottom: 20 }}>
+            <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: 'var(--text-1)' }}>Library</h2>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)' }}>Manage task templates with Category and Subcategory columns.</p>
           </div>
 
-          {/* Week Starts On */}
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' }}>
-              Week Starts On
+          <div style={{ marginBottom: 16, display: 'flex', gap: 10 }}>
+            <button
+              style={{ ...btnP, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={handleAddLibraryRow}
+              disabled={librarySaving}
+            >
+              <Plus size={14} /> Add Row
+            </button>
+            <button
+              style={{ ...btnP, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={handleDownloadTemplate}
+              disabled={exporting}
+            >
+              <Download size={14} /> {exporting ? 'Downloading…' : 'Download Template'}
+            </button>
+            <button
+              style={{ ...btnP, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={handleExportMasterData}
+              disabled={exporting}
+            >
+              <Download size={14} /> {exporting ? 'Exporting…' : 'Export Data'}
+            </button>
+            <label style={{ ...btnS, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <UploadCloud size={14} />
+              <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={e => handleImportMasterData(e.target.files?.[0])} disabled={importing} />
+              {importing ? 'Importing…' : 'Import'}
             </label>
-            <select value={form.weekStartDay} onChange={e => handleWeekStartChange(e.target.value)} style={iSt}>
-              {WEEK_START_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}{o.note ? ` — ${o.note}` : ''}</option>
-              ))}
-            </select>
+          </div>
+          {importError && <p style={{ margin: '0 0 16px', color: '#dc2626', fontSize: 12 }}>{importError}</p>}
+
+          {/* Two-column table */}
+          <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--card-border,#e2e8f0)' }}>
+            {/* Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 50px', background: 'var(--input-bg,#f8fafc)', borderBottom: '2px solid var(--card-border,#e2e8f0)' }}>
+              <div style={{ padding: '14px 16px', fontWeight: 700, fontSize: 13, color: '#fff', background: '#4a5568' }}>Category</div>
+              <div style={{ padding: '14px 16px', fontWeight: 700, fontSize: 13, color: '#fff', background: '#4a5568' }}>Subcategory</div>
+              <div style={{ padding: '14px 16px', fontWeight: 700, fontSize: 13, color: '#fff', background: '#4a5568', textAlign: 'center' }}>Action</div>
+            </div>
+
+            {/* Rows */}
+            {loadingLibrary ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)' }}>Loading...</div>
+            ) : libraryTasks.length === 0 ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)' }}>No items yet. Click "Add Row" to start.</div>
+            ) : (
+              [...libraryTasks].sort((a, b) => {
+                const catCompare = (a.category || '').localeCompare(b.category || '')
+                return catCompare !== 0 ? catCompare : (a.sort_order || 0) - (b.sort_order || 0)
+              }).map((task, idx) => (
+                <div key={task.id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 50px',
+                  borderBottom: idx < libraryTasks.length - 1 ? '1px solid var(--card-border,#e2e8f0)' : 'none',
+                  background: idx % 2 === 0 ? 'transparent' : 'var(--input-bg,#f8fafc)'
+                }}>
+                  <input
+                    style={{ ...iSt, border: 'none', borderRadius: 0, background: 'transparent', padding: '12px 16px' }}
+                    value={task.category || ''}
+                    onChange={e => updateLibraryTaskValue(task.id, 'category', e.target.value)}
+                    onBlur={e => handleSaveLibraryTaskInline(task.id, 'category', e.target.value)}
+                    disabled={librarySaving}
+                  />
+                  <input
+                    style={{ ...iSt, border: 'none', borderRadius: 0, background: 'transparent', padding: '12px 16px', borderLeft: '1px solid var(--card-border,#e2e8f0)' }}
+                    value={task.subcategory || ''}
+                    onChange={e => updateLibraryTaskValue(task.id, 'subcategory', e.target.value)}
+                    onBlur={e => handleSaveLibraryTaskInline(task.id, 'subcategory', e.target.value)}
+                    disabled={librarySaving}
+                  />
+                  <button
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderLeft: '1px solid var(--card-border,#e2e8f0)',
+                    }}
+                    onClick={() => handleDeleteLibraryTask(task.id)}
+                    disabled={librarySaving}
+                    title="Delete row"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
+      )}
 
-        {/* Hint row */}
-        {form.country && (
-          <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-3)' }}>
-            <strong>{form.country}</strong> calendar convention: week starts on <strong>{WS_LABEL[form.weekStartDay]}</strong>.
-            You can override the day above if needed.
-          </p>
-        )}
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {/* SETTINGS TAB */}
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {tab === 'settings' && (
+        <div>
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 20 }}>
+              <Calendar size={17} color="var(--accent,#2563eb)" />
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>Calendar</h2>
+            </div>
 
-        {/* Preview */}
-        <div style={{ background: 'var(--input-bg,#f8fafc)', borderRadius: 8, padding: '14px 14px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Calendar Preview
-            </span>
-            {selectedOpt && (
-              <span style={{ fontSize: 11, color: 'var(--accent,#2563eb)', fontWeight: 600 }}>
-                Starts {selectedOpt.label}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+
+              {/* Country */}
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                  <Globe size={11} /> Country / Region
+                </label>
+                <select value={form.country || ''} onChange={e => handleCountryChange(e.target.value)} style={iSt}>
+                  <option value="">— Select country —</option>
+                  {COUNTRIES_SORTED.map(c => (
+                    <option key={c.country} value={c.country}>{c.country}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Week Starts On */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'block' }}>
+                  Week Starts On
+                </label>
+                <select value={form.weekStartDay} onChange={e => handleWeekStartChange(e.target.value)} style={iSt}>
+                  {WEEK_START_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}{o.note ? ` — ${o.note}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Hint row */}
+            {form.country && (
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-3)' }}>
+                <strong>{form.country}</strong> calendar convention: week starts on <strong>{WS_LABEL[form.weekStartDay]}</strong>.
+                You can override the day above if needed.
+              </p>
+            )}
+
+            {/* Preview */}
+            <div style={{ background: 'var(--input-bg,#f8fafc)', borderRadius: 8, padding: '14px 14px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Calendar Preview
+                </span>
+                {selectedOpt && (
+                  <span style={{ fontSize: 11, color: 'var(--accent,#2563eb)', fontWeight: 600 }}>
+                    Starts {selectedOpt.label}
+                  </span>
+                )}
+              </div>
+              <WeekPreview weekStart={form.weekStartDay} />
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: '#ef4444', fontWeight: 500 }}>
+                The week start day is highlighted in red across all calendar views.
+              </p>
+            </div>
+          </div>
+
+          {/* Save row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button style={btnP} onClick={handleSave}>Save Settings</button>
+            <button style={btnS} onClick={() => navigate('/events/planner')}>Cancel</button>
+            {saved && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#16a34a', fontWeight: 500 }}>
+                <Check size={14} /> Saved
               </span>
             )}
           </div>
-          <WeekPreview weekStart={form.weekStartDay} />
-          <p style={{ margin: '10px 0 0', fontSize: 11, color: '#ef4444', fontWeight: 500 }}>
-            The week start day is highlighted in red across all calendar views.
-          </p>
         </div>
-      </div>
+      )}
 
-      {/* Save row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button style={btnP} onClick={handleSave}>Save Settings</button>
-        <button style={btnS} onClick={() => navigate('/events/planner')}>Cancel</button>
-        {saved && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#16a34a', fontWeight: 500 }}>
-            <Check size={14} /> Saved
-          </span>
-        )}
-      </div>
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {/* VOLUNTEERS TAB */}
+      {/* ──────────────────────────────────────────────────────────────────────── */}
+      {tab === 'volunteers' && (
+        <div>
+          <p style={{ fontSize: 14, color: 'var(--text-3)' }}>Volunteers management coming soon.</p>
+        </div>
+      )}
 
     </div>
   )
