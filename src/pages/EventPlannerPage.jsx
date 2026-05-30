@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
-  closestCorners, useDroppable, useDraggable,
+  closestCorners, pointerWithin, useDroppable, useDraggable,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -17,7 +17,7 @@ import {
   Calendar, Plus, ChevronLeft, ChevronRight, Pencil, Trash2,
   User, CalendarDays, Copy, LayoutGrid, CheckCircle2, List,
   Grid3X3, Filter, X, SlidersHorizontal, Search, BarChart2,
-  AlertCircle, Clock, Repeat, Settings,
+  AlertCircle, Clock, Repeat, Settings, GripVertical,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -27,7 +27,8 @@ import {
   getBuckets, saveBucket, deleteBucket,
   getTasks, saveTask, deleteTask,
   updateTaskOrder, updateBucketOrder, moveTask, carryForward,
-  getTaskLibrary, saveLibraryTask, deleteLibraryTask, updateLibraryTaskOrder, cloneLibraryTaskToEvent,
+  getTaskLibrary, updateLibraryTaskOrder, cloneLibraryTaskToEvent,
+  addLibraryCategory, updateLibraryItemName, addLibrarySubtask, deleteLibraryItem,
   getEventVolunteers, saveEventVolunteer, deleteEventVolunteer, replaceEventPlannerMasterData,
   autoFillRecurring,
 } from '../lib/eventPlannerLib'
@@ -282,13 +283,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
         {task.notes&&!isDragging&&<p style={{margin:'0 0 6px',fontSize:11,color:'var(--text-3)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',lineHeight:1.4}}>{task.notes}</p>}
         {task.assigned_to&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:4}}><User size={11} color="var(--text-3)"/><span style={{fontSize:12,color:'var(--text-2)'}}>{task.assigned_to}</span></div>}
         {task.due_date&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}><CalendarDays size={11} color={overdue?'#ef4444':'var(--text-3)'}/><span style={{fontSize:12,color:overdue?'#ef4444':'var(--text-2)',fontWeight:overdue?600:400}}>{fmtDate(task.due_date)}{overdue?' ⚠':''}</span></div>}
-        <span
-          onPointerDown={e=>e.stopPropagation()}
-          onClick={e=>{e.stopPropagation();onStatusChange&&onStatusChange(task)}}
-          title="Click to advance status"
-          style={{display:'inline-block',fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:st.bg,color:st.text,textTransform:'uppercase',letterSpacing:'0.04em',cursor:'pointer',userSelect:'none'}}>
-          {task.status==='done'&&<CheckCircle2 size={9} style={{verticalAlign:'middle',marginRight:3}}/>}{st.label}
-        </span>
+        {/* status hidden for now */}
       </div>
     </div>
   )
@@ -307,70 +302,179 @@ function TaskCardOverlay({task}){
 
 function LibraryTaskOverlay({task}){
   if(!task)return null
+  const title = task.subcategory || task.category || task.title || ''
   return(
     <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:8,padding:'10px 12px',boxShadow:'0 10px 28px rgba(0,0,0,0.2)',width:260,cursor:'grabbing'}}>
-      <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'var(--text-1)'}}>{task.title}</p>
+      <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'var(--text-1)'}}>{title}</p>
       {task.description&&<p style={{margin:'0 0 8px',fontSize:12,color:'var(--text-3)'}}>{task.description}</p>}
       <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#eef2ff',color:'#1d4ed8',textTransform:'uppercase'}}>Library template</span>
     </div>
   )
 }
 
-function buildLibraryTree(tasks){
-  const map={}
-  tasks.forEach(t=>map[t.id]={...t,children:[]})
-  tasks.forEach(t=>{ if(t.parent_id&&map[t.parent_id]) map[t.parent_id].children.push(map[t.id]) })
-  return tasks.filter(t=>!t.parent_id).map(t=>map[t.id]).sort((a,b)=>a.sort_order-b.sort_order)
+function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,saving}){
+  const [editing,setEditing]=useState(false)
+  const [value,setValue]=useState(task.subcategory||task.category||'')
+  const draggableId = task.dragId || `lib-${task.id}`
+  const {attributes,listeners,setNodeRef,isDragging}=useDraggable({id:draggableId})
+  const taskColor=isSubtask?'#1e3a8a':'#991b1b'
+  const bgColor=isSubtask?'#eff6ff':'#fef2f2'
+
+  async function handleSave(){
+    if(!value.trim()) return
+    setEditing(false)
+    const targetId = task.dragId || task.id
+    await onNameChange(targetId, isSubtask ? 'subcategory' : 'category', value.trim())
+  }
+
+  return(
+    <div ref={setNodeRef} style={{width:'100%',boxSizing:'border-box',padding:isSubtask?'8px 12px 8px 30px':'8px 12px',borderBottom:'1px solid var(--card-border,#e2e8f0)',background:isDragging?'rgba(37,99,235,0.1)':bgColor,display:'flex',alignItems:'center',gap:6,opacity:isDragging?0.6:1,transition:'all 0.15s',borderLeft:`3px solid ${isDragging?'var(--accent,#2563eb)':taskColor}`}}>
+      <div {...attributes} {...listeners} style={{cursor:'grab',display:'flex',alignItems:'center',color:'var(--text-3)',flexShrink:0}}>
+        <GripVertical size={14}/>
+      </div>
+      {editing?(
+        <input autoFocus value={value} onChange={e=>setValue(e.target.value)} onBlur={handleSave} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} style={{flex:1,padding:'4px 6px',fontSize:12,border:`1px solid ${taskColor}`,borderRadius:4,outline:'none'}} disabled={saving}/>
+      ):(
+        <span onDoubleClick={()=>{setEditing(true);setValue(task.subcategory||task.category||'')}} style={{flex:1,fontSize:13,color:taskColor,cursor:'text',padding:'2px 4px',borderRadius:3,userSelect:'none',fontWeight:isSubtask?500:600}}>{task.subcategory||task.category}</span>
+      )}
+      {!isSubtask&&(
+        <button onClick={()=>onAddSubtask(task.id)} disabled={saving || !task.id} style={{background:'transparent',border:'none',color:taskColor,cursor:task.id?'pointer':'not-allowed',fontSize:14,padding:'0 4px',fontWeight:600}}>+</button>
+      )}
+      <button onClick={()=>onDelete(task.dragId || task.id)} disabled={saving} style={{background:'transparent',border:'none',color:'#ef4444',cursor:'pointer',padding:'0 4px'}}><Trash2 size={14}/></button>
+    </div>
+  )
 }
 
-function LibraryTaskCard({task,depth,onEdit,onDelete}){
-  const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useDraggable({id:`lib-${task.id}`})
+// ── CanvasDropZone ────────────────────────────────────────────────────────────
+
+function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask, libCreatedTaskIds=[], libraryCategories=[]}){
+  const {setNodeRef,isOver}=useDroppable({id:'canvas-drop-zone'})
+  const topTasks = tasks.filter(t=>t.parent_id==null)
+  const subtasksByParent = {}
+  tasks.filter(t=>t.parent_id!=null).forEach(t=>{
+    if(!subtasksByParent[t.parent_id]) subtasksByParent[t.parent_id]=[]
+    subtasksByParent[t.parent_id].push(t)
+  })
+
+  const isCategoryTask = task => !task.parent_id && libraryCategories.includes(task.title)
+  const getRowCount = task => {
+    if(isCategoryTask(task)){
+      const subtasks = subtasksByParent[task.id] || []
+      return Math.max(3, 3 + subtasks.length)
+    }
+    return 1
+  }
+
+  const handleAddSubtaskClick = async (e, task) => {
+    e.stopPropagation()
+    const title = window.prompt('Subtask name')
+    if(title && title.trim()) await onAddSubtask(task.id, title.trim())
+  }
+
+  function CategorySlot({ task, subtasks }){
+    const {setNodeRef: setTaskDropRef, isOver: isOverTask} = useDroppable({id:`task-${task.id}`})
+    const rowCount = getRowCount(task)
+    return (
+      <div ref={setTaskDropRef} style={{minHeight:rowCount * 70,background:isOverTask?'rgba(37,99,235,0.08)':'#fff',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,boxShadow:'0 8px 24px rgba(15,23,42,0.08)',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+        <div style={{padding:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title}</div>
+              {task.description && <div style={{fontSize:12,color:'var(--text-3)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.description}</div>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}>
+              {isCategoryTask(task)&&(
+                <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:11,padding:'5px 8px'}}>+ Subtask</button>
+              )}
+              <button onClick={e=>{e.stopPropagation(); onDeleteTask(task.id)}} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={14}/></button>
+            </div>
+          </div>
+          {subtasks.length>0 && (
+            <div style={{padding:'10px 0 0',borderTop:'1px solid #eef2f7',display:'flex',flexDirection:'column',gap:8}}>
+              {subtasks.map(subtask=>(
+                <div key={subtask.id} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10}}>
+                  <div style={{flex:1,minWidth:0,fontSize:13,color:'#1f2937',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtask.title}</div>
+                  <button onClick={e=>{e.stopPropagation(); onDeleteTask(subtask.id)}} title="Delete subtask" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={12}/></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if(!topTasks.length){
+    return(
+      <div style={{display:'flex',flexDirection:'column',gap:12,maxWidth:268}}>
+        <div ref={setNodeRef} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'32px',color:'var(--text-3)',minHeight:180,background:isOver?'rgba(37,99,235,0.05)':'transparent',borderRadius:8,border:isOver?'2px dashed var(--accent,#2563eb)':'2px dashed transparent',transition:'all 0.15s'}}>
+          <LayoutGrid size={48} style={{opacity:isOver?0.3:0.18,marginBottom:16,transition:'opacity 0.15s'}}/>
+          <p style={{margin:0,fontSize:15,fontWeight:500,textAlign:'center'}}>Drag tasks from the library to organize your event</p>
+          <p style={{margin:'8px 0 0',fontSize:13,textAlign:'center'}}>Click <strong>+ Task</strong> in the library to create a new task</p>
+        </div>
+      </div>
+    )
+  }
+
   return(
-    <div ref={setNodeRef} style={{transform:CSS.Transform.toString(transform),transition,opacity:isDragging?0.4:1,marginBottom:8,marginLeft:depth*14}} {...attributes}{...listeners}>
-      <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:10,padding:'10px 12px',cursor:'grab',position:'relative',boxShadow:isDragging?'0 10px 24px rgba(0,0,0,0.14)':'none'}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-          <span style={{fontSize:12,fontWeight:700,color:'var(--text-1)'}}>{task.title}</span>
-          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#f8fafc',color:'#334155',textTransform:'uppercase'}}>{task.priority||'medium'}</span>
-        </div>
-        {task.description&&<p style={{margin:'0 0 8px',fontSize:11,color:'var(--text-3)',lineHeight:1.4}}>{task.description}</p>}
-        <div style={{display:'flex',gap:4,position:'absolute',top:8,right:8}}>
-          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}} style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer'}}><Pencil size={11} color="var(--text-2)"/></button>
-          <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(task)}} style={{background:'#fef2f2',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer'}}><Trash2 size={11} color="#ef4444"/></button>
-        </div>
+    <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'20px',background:isOver?'rgba(37,99,235,0.03)':'transparent',borderRadius:8,transition:'all 0.15s'}}>
+      <div style={{display:'flex',flexDirection:'column',gap:16,minHeight:520}}>
+        {topTasks.map(task=>{
+          const subtasks = subtasksByParent[task.id] || []
+          return <CategorySlot key={task.id} task={task} subtasks={subtasks}/>
+        })}
       </div>
     </div>
   )
 }
 
-function LibraryTaskNode({task,depth,onEdit,onDelete}){
-  return(
-    <>
-      <LibraryTaskCard task={task} depth={depth} onEdit={onEdit} onDelete={onDelete}/>
-      {task.children?.sort((a,b)=>a.sort_order-b.sort_order).map(child=><LibraryTaskNode key={child.id} task={child} depth={depth+1} onEdit={onEdit} onDelete={onDelete}/>)}
-    </>
-  )
-}
+// ── LibraryPanel ──────────────────────────────────────────────────────────────
 
-function LibraryPanel({tasks,onEdit,onDelete,onAdd}){
-  const roots=buildLibraryTree(tasks)
+function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,saving}){
+  const [search,setSearch]=useState('')
+  const { profile } = useAuth()
+
+  const filtered=tasks.filter(t=>
+    (t.category||'').toLowerCase().includes(search.toLowerCase())||
+    (t.subcategory||'').toLowerCase().includes(search.toLowerCase())
+  )
+
+  const grouped={}
+  filtered.forEach(t=>{
+    if(!grouped[t.category]) grouped[t.category]=[]
+    grouped[t.category].push(t)
+  })
+
+  const categories=Object.keys(grouped).sort()
+
   return(
-    <div style={{width:320,flexShrink:0,display:'flex',flexDirection:'column',background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,overflow:'hidden',boxShadow:'0 12px 32px rgba(15,23,42,0.08)'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px',borderBottom:'1px solid var(--card-border,#e2e8f0)'}}>
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>Task Library</div>
-          <div style={{fontSize:11,color:'var(--text-3)',marginTop:2}}>Drag templates into buckets to copy them</div>
+    <div style={{display:'flex',flexDirection:'column',background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,overflow:'hidden',boxShadow:'0 12px 32px rgba(15,23,42,0.08)',flex:1,height:'100%'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',borderBottom:'1px solid var(--card-border,#e2e8f0)',flexShrink:0}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:8}}>Task Library</div>
+          <input placeholder="Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:'100%',padding:'6px 8px',fontSize:12,border:'1px solid var(--card-border,#e2e8f0)',borderRadius:6,outline:'none',background:'var(--input-bg,#f8fafc)'}}/>
         </div>
-        <button onClick={onAdd} style={{...btnP,fontSize:12,padding:'6px 10px'}}>New</button>
+        <button onClick={onAddCategory} disabled={saving} style={{...btnP,fontSize:12,padding:'6px 10px',whiteSpace:'nowrap',flexShrink:0}}>+ Task</button>
       </div>
-      <div style={{flex:1,overflowY:'auto',padding:12,minHeight:240}}>
-        {roots.length===0?(
-          <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'var(--text-3)',padding:'24px',textAlign:'center'}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:240}}>
+        {filtered.length===0?(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'var(--text-3)',padding:'24px',textAlign:'center',height:'100%'}}>
             <LayoutGrid size={34}/>
-            <div style={{fontSize:13,fontWeight:600}}>No library templates yet</div>
-            <div style={{fontSize:12}}>Add a task template and drag it onto a bucket to reuse it.</div>
+            <div style={{fontSize:13,fontWeight:600}}>{search?'No items found':'No tasks yet'}</div>
+            <div style={{fontSize:12}}>Click "+ Task" to add a category.</div>
           </div>
         ):(
-          roots.map(task=><LibraryTaskNode key={task.id} task={task} depth={0} onEdit={onEdit} onDelete={onDelete}/>)
+          categories.map(cat=>{
+            const firstTask = grouped[cat][0]
+            return (
+              <div key={cat}>
+                <LibraryItemRow task={{category:cat,id:firstTask?.id,dragId:`lib-cat-${cat}`}} isSubtask={false} onNameChange={onNameChange} onAddSubtask={onAddSubtask} onDelete={onDelete} saving={saving}/>
+                {grouped[cat].map(subtask=>(
+                  <LibraryItemRow key={subtask.id} task={subtask} isSubtask={true} onNameChange={onNameChange} onDelete={onDelete} saving={saving}/>
+                ))}
+              </div>
+            )
+          })
         )}
       </div>
     </div>
@@ -917,6 +1021,7 @@ export default function EventPlannerPage(){
   const [buckets,   setBuckets]   = useState([])
   const [tasks,     setTasks]     = useState([])
   const [libraryTasks, setLibraryTasks] = useState([])
+  const [librarySaving, setLibrarySaving] = useState(false)
   const [libraryModal, setLibraryModal] = useState(null)
   const [volunteers, setVolunteers] = useState([])
   const [members,   setMembers]   = useState([])
@@ -968,6 +1073,7 @@ export default function EventPlannerPage(){
   // DnD
   const [activeTask,setActiveTask]=useState(null)
   const [activeLibraryTask,setActiveLibraryTask]=useState(null)
+  const [libCreatedTaskIds,setLibCreatedTaskIds]=useState([])
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}))
 
   // ── Data loaders ────────────────────────────────────────────
@@ -1177,10 +1283,126 @@ export default function EventPlannerPage(){
     try{await deleteLibraryTask(task.id);toast('Template deleted','success');await loadLibraryTasks()}catch{toast('Failed to delete template','error')}
   }
 
-  async function handleDeleteTask(task){
+  // ── Library management (new) ────────────────────────────────
+  async function handleAddLibraryCategory(){
+    setLibrarySaving(true)
+    try{
+      await addLibraryCategory(profile?.email)
+      await loadLibraryTasks()
+      toast('Task category added','success')
+    }catch{
+      toast('Failed to add task','error')
+    }finally{
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleLibraryNameChange(id,field,value){
+    setLibrarySaving(true)
+    try{
+      if(typeof id==='string' && id.startsWith('lib-cat-')){
+        const oldCategory = id.slice('lib-cat-'.length)
+        const newCategory = value.trim()
+        if(!newCategory) throw new Error('Category name cannot be blank')
+        const now = new Date().toISOString()
+        const { error } = await supabase.from('task_library')
+          .update({ category:newCategory, updated_by: profile?.email, updated_at: now })
+          .eq('category', oldCategory)
+        if(error) throw error
+      } else {
+        await updateLibraryItemName(id,field,value,profile?.email)
+      }
+      await loadLibraryTasks()
+    }catch{
+      toast('Failed to update','error')
+    }finally{
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleAddLibrarySubtask(taskId){
+    setLibrarySaving(true)
+    try{
+      await addLibrarySubtask(taskId,profile?.email)
+      await loadLibraryTasks()
+      toast('Subtask added','success')
+    }catch{
+      toast('Failed to add subtask','error')
+    }finally{
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleDeleteLibraryItem(id){
+    setLibrarySaving(true)
+    try{
+      if(typeof id==='string' && id.startsWith('lib-cat-')){
+        const category = id.slice('lib-cat-'.length)
+        const count = libraryTasks.filter(t=>t.category===category).length
+        if(!window.confirm(`Delete category "${category}" and its ${count} item${count===1?'':'s'}?`)) return
+        const { error } = await supabase.from('task_library').delete().eq('category', category)
+        if(error) throw error
+      } else {
+        await deleteLibraryItem(id,profile?.email)
+      }
+      await loadLibraryTasks()
+      toast('Item deleted','success')
+    }catch{
+      toast('Failed to delete','error')
+    }finally{
+      setLibrarySaving(false)
+    }
+  }
+
+  async function handleDeleteTask(taskId){
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
     if(!window.confirm(`Delete "${task.title}"?`))return
-    try{await deleteTask(task.id);setTasks(p=>p.filter(t=>t.id!==task.id));toast('Task deleted','success')}
-    catch{toast('Failed to delete task','error')}
+    try{
+      await deleteTask(taskId)
+      setTasks(p=>p.filter(t=>t.id!==taskId))
+      toast('Task deleted','success')
+    }catch(err){
+      console.error('Failed to delete task:', err)
+      toast('Failed to delete task','error')
+    }
+  }
+
+  async function handleAddSubtask(parentTaskId, subtaskTitle){
+    try{
+      console.log('EventPlanner: handleAddSubtask', { parentTaskId, subtaskTitle, selEventId: selEvent?.id })
+      const payload={
+        event_id: selEvent.id,
+        parent_id: parentTaskId,
+        title: subtaskTitle,
+        bucket_id: null,
+        status: 'pending',
+        priority: 'medium',
+        sort_order: 0,
+      }
+      await saveTask(null, payload, profile?.email)
+      await loadBoard(selEvent.id)
+      toast('Subtask added','success')
+    }catch(err){
+      console.error('Failed to add subtask:', err)
+      toast('Failed to add subtask','error')
+    }
+  }
+
+  async function handleUpdateTaskPosition(taskId, x, y){
+    setTasks(p=>p.map(t=>t.id===taskId?{...t,pos_x:Math.round(x),pos_y:Math.round(y)}:t))
+    try{ await saveTask(taskId,{pos_x:Math.round(x),pos_y:Math.round(y)},profile?.email) }
+    catch(err){ console.debug('Position save failed (ignored):', err) }
+  }
+
+  function handleOpenTaskModal(bucketId){
+    setTaskDefBkt(bucketId)
+    setTaskModal({ ...BLANK_TASK, bucket_id: bucketId || '' })
+  }
+
+  function handleEditTask(task){
+    setTaskDefBkt(task.bucket_id || null)
+    setTaskModal(task)
   }
 
   // ── Carry forward ───────────────────────────────────────────
@@ -1225,10 +1447,16 @@ export default function EventPlannerPage(){
   // ── Drag & Drop ─────────────────────────────────────────────
 
   function handleDragStart({active}){
-    const isLibraryDrag=typeof active.id==='string'&&active.id.startsWith('lib-')
+    const isLibraryDrag = typeof active.id==='string' && active.id.startsWith('lib-')
     if(isLibraryDrag){
       setActiveTask(null)
-      setActiveLibraryTask(libraryTasks.find(t=>t.id===active.id.slice(4))||null)
+      let libraryId = active.id
+      if(libraryId.startsWith('lib-lib-cat-')) libraryId = libraryId.slice('lib-'.length)
+      if(libraryId.startsWith('lib-cat-')){
+        setActiveLibraryTask({ category: libraryId.slice('lib-cat-'.length), subcategory: '' })
+      } else {
+        setActiveLibraryTask(libraryTasks.find(t=>t.id===libraryId.slice(4))||null)
+      }
       return
     }
     setActiveLibraryTask(null)
@@ -1240,36 +1468,114 @@ export default function EventPlannerPage(){
     setActiveLibraryTask(null)
     if(!over||active.id===over.id)return
 
-    const isLibraryDrag=typeof active.id==='string'&&active.id.startsWith('lib-')
-    const targetBktId=buckets.some(b=>b.id===over.id)?over.id:tasks.find(t=>t.id===over.id)?.bucket_id
-    if(!targetBktId)return
+    const isLibraryDrag = typeof active.id==='string' && active.id.startsWith('lib-')
 
     if(isLibraryDrag){
-      const libraryTaskId=active.id.slice(4)
+      // allow dropping library items onto buckets or the canvas
+      let libraryId = active.id
+      if(libraryId.startsWith('lib-lib-cat-')) libraryId = libraryId.slice('lib-'.length)
+      // If dragging a category header -> create a new bucket
+      if(libraryId.startsWith('lib-cat-')){
+        const category = libraryId.slice('lib-cat-'.length)
+        const dropTarget = String(over?.id || '')
+        const onTask = tasks.some(t=>`task-${t.id}`===dropTarget)
+
+        if(dropTarget === 'canvas-drop-zone' || onTask){
+          try{
+            await saveTask(null, {
+              event_id: selEvent.id,
+              parent_id: null,
+              bucket_id: null,
+              title: category,
+              description: null,
+              assigned_to: null,
+              priority: 'medium',
+              status: 'pending',
+              sort_order: tasks.filter(t=>!t.bucket_id).length,
+            }, profile?.email)
+            await loadBoard(selEvent.id)
+            await loadLibraryTasks()
+            toast('Category added to canvas','success')
+          }catch(err){
+            console.error('Failed to create category on canvas:', err, err?.message, JSON.stringify(err))
+            toast(err?.message || 'Failed to add category to canvas','error')
+          }
+          return
+        }
+
+        if(buckets.some(b=>String(b.id)===dropTarget)){
+          try{
+            await saveBucket(null, { name: category, color: BLANK_BUCKET.color, event_id: selEvent.id, sort_order: buckets.length }, profile?.email)
+            await loadBoard(selEvent.id)
+            await loadLibraryTasks()
+            toast('Bucket added to event','success')
+          }catch(err){
+            console.error('Failed to create bucket from category:', err, err?.message, JSON.stringify(err))
+            toast(err?.message || 'Failed to create bucket from category','error')
+          }
+        }
+        return
+      }
+
+      // Subcategory drag -> create a task. If dropped on a bucket, attach to that bucket; if dropped on a category task, make it a subtask.
+      const libraryTaskId = active.id.slice(4)
       try{
-        await cloneLibraryTaskToEvent(libraryTaskId, selEvent.id, targetBktId, profile?.email)
+        const libTask = libraryTasks.find(t=>t.id===libraryTaskId)
+        const dropTarget = String(over?.id || '')
+        const targetBucketId = buckets.some(b=>String(b.id)===dropTarget) ? dropTarget : null
+        const targetParentId = dropTarget.startsWith('task-')
+          ? dropTarget.slice('task-'.length)
+          : (tasks.some(t => String(t.id) === dropTarget) ? dropTarget : null)
+        const newId = await cloneLibraryTaskToEvent(libraryTaskId, selEvent.id, targetBucketId, targetParentId, profile?.email, tasks)
+        if(libTask?.subcategory) setLibCreatedTaskIds(ids=>[...ids, String(newId)])
         await loadBoard(selEvent.id)
+        toast('Task added to event','success')
       }catch(err){
-        toast('Failed to copy task from library','error')
+        console.error('Failed to copy task:', err)
+        toast(err?.message || 'Failed to copy task from library','error')
       }
       return
     }
 
-    const dragged=tasks.find(t=>t.id===active.id)
-    if(!dragged)return
-    const overTask=tasks.find(t=>t.id===over.id)
+    const dropTarget = String(over?.id || '')
+    const dragged = tasks.find(t => t.id === active.id)
+    if(!dragged) return
 
-    if(dragged.bucket_id===targetBktId){
-      const bkt=tasks.filter(t=>t.bucket_id===targetBktId).sort((a,b)=>a.sort_order-b.sort_order)
-      const oi=bkt.findIndex(t=>t.id===active.id)
-      const ni=overTask?bkt.findIndex(t=>t.id===over.id):bkt.length-1
-      if(oi===-1||ni===-1||oi===ni)return
-      const re=arrayMove(bkt,oi,ni)
-      setTasks(p=>p.map(t=>{const i=re.findIndex(r=>r.id===t.id);return i>=0?{...t,sort_order:i}:t}))
-      updateTaskOrder(re).catch(()=>{})
-    }else{
-      setTasks(p=>p.map(t=>t.id===active.id?{...t,bucket_id:targetBktId}:t))
-      moveTask(active.id,targetBktId).catch(()=>{})
+    const taskParentMatch = dropTarget.startsWith('task-')
+      ? dropTarget.slice('task-'.length)
+      : (tasks.some(t => String(t.id) === dropTarget) ? dropTarget : null)
+
+    if (dropTarget === 'canvas-drop-zone') {
+      if (dragged.parent_id === null && dragged.bucket_id === null) return
+      setTasks(p => p.map(t => t.id === dragged.id ? { ...t, parent_id: null, bucket_id: null } : t))
+      saveTask(dragged.id, { parent_id: null, bucket_id: null }, profile?.email).catch(() => {})
+      return
+    }
+
+    if (taskParentMatch != null) {
+      if (dragged.id === taskParentMatch) return
+      if (dragged.parent_id === taskParentMatch && dragged.bucket_id === null) return
+      setTasks(p => p.map(t => t.id === dragged.id ? { ...t, parent_id: taskParentMatch, bucket_id: null } : t))
+      saveTask(dragged.id, { parent_id: taskParentMatch, bucket_id: null }, profile?.email).catch(() => {})
+      return
+    }
+
+    const targetBktId = buckets.some(b => String(b.id) === dropTarget) ? dropTarget : tasks.find(t => String(t.id) === dropTarget)?.bucket_id
+    if(!targetBktId) return
+
+    const overTask = tasks.find(t => String(t.id) === dropTarget)
+
+    if (dragged.bucket_id === targetBktId) {
+      const bkt = tasks.filter(t => t.bucket_id === targetBktId).sort((a,b) => a.sort_order - b.sort_order)
+      const oi = bkt.findIndex(t => t.id === active.id)
+      const ni = overTask ? bkt.findIndex(t => t.id === over.id) : bkt.length - 1
+      if (oi === -1 || ni === -1 || oi === ni) return
+      const re = arrayMove(bkt, oi, ni)
+      setTasks(p => p.map(t => { const i = re.findIndex(r => r.id === t.id); return i >= 0 ? { ...t, sort_order: i } : t }))
+      updateTaskOrder(re).catch(() => {})
+    } else {
+      setTasks(p => p.map(t => t.id === active.id ? { ...t, bucket_id: targetBktId } : t))
+      moveTask(active.id, targetBktId).catch(() => {})
     }
   }
 
@@ -1749,7 +2055,7 @@ export default function EventPlannerPage(){
   if(view==='board'){
     const total=tasks.length, done=tasks.filter(t=>t.status==='done').length
     const pct=total>0?Math.round((done/total)*100):0
-    const ec=eventColor(selEvent), es=evtStatusStyle(selEvent?.status)
+    const ec=eventColor(selEvent)
 
     return(
       <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 88px)',overflow:'hidden'}}>
@@ -1763,7 +2069,6 @@ export default function EventPlannerPage(){
             {ec.dot&&<div style={{width:10,height:10,borderRadius:'50%',background:ec.dot,flexShrink:0}}/>}
             <h2 style={{margin:0,fontSize:15,fontWeight:700,color:'var(--text-1)'}}>{selEvent?.name}</h2>
             <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:ec.bg,color:ec.text,textTransform:'uppercase',flexShrink:0}}>{selEvent?.event_type}</span>
-            <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:es.bg,color:es.text,textTransform:'uppercase',flexShrink:0}}>{es.label}</span>
             {selEvent?.start_date&&<span style={{fontSize:12,color:'var(--text-3)',flexShrink:0}}>{fmtDate(selEvent.start_date)}{selEvent.end_date&&selEvent.end_date!==selEvent.start_date?` – ${fmtDate(selEvent.end_date)}`:''}</span>}
           </div>
           {total>0&&(
@@ -1780,7 +2085,6 @@ export default function EventPlannerPage(){
           <div style={{display:'flex',gap:6,flexShrink:0}}>
             <button onClick={()=>setEventModal(selEvent)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Pencil size={12}/>Edit</button>
             <button onClick={()=>setCarryModal(true)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Copy size={12}/>Copy from…</button>
-            <button onClick={()=>setBucketModal({})} style={{...btnP,display:'flex',alignItems:'center',gap:5,fontSize:12,padding:'5px 11px'}}><Plus size={13}/>Add Bucket</button>
           </div>
         </div>
 
@@ -1788,9 +2092,6 @@ export default function EventPlannerPage(){
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 22px',borderBottom:'1px solid var(--card-border,#e2e8f0)',background:hasFilter?'rgba(37,99,235,0.03)':'var(--page-bg,#f8fafc)',flexShrink:0,flexWrap:'wrap'}}>
           <Filter size={13} color={hasFilter?'var(--accent,#2563eb)':'var(--text-3)'}/>
           <span style={{fontSize:11,fontWeight:600,color:hasFilter?'var(--accent,#2563eb)':'var(--text-3)'}}>Filter:</span>
-          <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{fontSize:12,padding:'3px 7px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-2)',cursor:'pointer',outline:'none'}}>
-            <option value="">All Statuses</option>{TASK_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
           <select value={fPriority} onChange={e=>setFPriority(e.target.value)} style={{fontSize:12,padding:'3px 7px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-2)',cursor:'pointer',outline:'none'}}>
             <option value="">All Priorities</option>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
@@ -1800,7 +2101,7 @@ export default function EventPlannerPage(){
             </select>
           )}
           {hasFilter&&(
-            <button onClick={()=>{setFStatus('');setFPriority('');setFAssignee('')}} style={{display:'flex',alignItems:'center',gap:4,background:'none',border:'none',cursor:'pointer',fontSize:12,color:'var(--text-3)',padding:'2px 4px'}}>
+            <button onClick={()=>{setFPriority('');setFAssignee('')}} style={{display:'flex',alignItems:'center',gap:4,background:'none',border:'none',cursor:'pointer',fontSize:12,color:'var(--text-3)',padding:'2px 4px'}}>
               <X size={12}/>Clear
             </button>
           )}
@@ -1808,32 +2109,33 @@ export default function EventPlannerPage(){
         </div>
 
         {/* Kanban */}
-        <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div style={{display:'flex',flex:1,overflow:'hidden'}}>
-            <div style={{display:'flex',gap:14,padding:'16px 0 24px 22px',overflowX:'auto',flex:1,alignItems:'flex-start'}}>
-              {buckets.length===0?(
-                <div style={{display:'flex',flex:1,alignItems:'center',justifyContent:'center',minHeight:180,flexDirection:'column',color:'var(--text-3)',gap:8,margin:'0 22px'}}>
-                  <LayoutGrid size={38} style={{opacity:0.18}}/><p style={{margin:0,fontSize:14,fontWeight:500}}>No buckets yet</p>
-                  <p style={{margin:0,fontSize:13}}>Click <strong>+ Add Bucket</strong> to get started</p>
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div style={{display:'flex',flex:1,overflow:'hidden',gap:16}}>
+            <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',gap:16,minWidth:0}}>
+              <CanvasDropZone tasks={boardTasks.filter(t=>!t.bucket_id)} onDeleteTask={handleDeleteTask} onAddSubtask={handleAddSubtask} libCreatedTaskIds={libCreatedTaskIds} libraryCategories={libraryTasks.filter(t=>!t.subcategory).map(t=>t.category.trim()).filter(Boolean)} />
+              {buckets.length>0 && (
+                  <div style={{display:'flex',flexDirection:'column',gap:16,overflowY:'auto',paddingBottom:12}}>
+                    {buckets.map(bucket=>(
+                    <BucketColumn
+                      key={bucket.id}
+                      bucket={bucket}
+                      tasks={boardBucketTasks(bucket.id)}
+                      onAddTask={handleOpenTaskModal}
+                      onEditBucket={setBucketModal}
+                      onDeleteBucket={handleDeleteBucket}
+                      onEditTask={handleEditTask}
+                      onDeleteTask={handleDeleteTask}
+                      onStatusChange={handleStatusToggle}
+                      onMoveLeft={buckets.findIndex(b=>b.id===bucket.id)>0?()=>handleMoveBucket(bucket.id,-1):null}
+                      onMoveRight={buckets.findIndex(b=>b.id===bucket.id)<buckets.length-1?()=>handleMoveBucket(bucket.id,1):null}
+                      onQuickAdd={handleOpenTaskModal}
+                    />
+                  ))}
                 </div>
-              ):buckets.map((b,bi)=>(
-                <BucketColumn key={b.id} bucket={b} tasks={boardBucketTasks(b.id)}
-                  onAddTask={id=>{setTaskDefBkt(id);setTaskModal({})}}
-                  onEditBucket={setBucketModal} onDeleteBucket={handleDeleteBucket}
-                  onEditTask={setTaskModal} onDeleteTask={handleDeleteTask}
-                  onStatusChange={handleStatusToggle}
-                  onQuickAdd={handleQuickAddTask}
-                  onMoveLeft={bi>0?()=>handleMoveBucket(b.id,-1):null}
-                  onMoveRight={bi<buckets.length-1?()=>handleMoveBucket(b.id,1):null}/>
-              ))}
-              {buckets.length>0&&(
-                <button onClick={()=>setBucketModal({})} style={{width:265,flexShrink:0,padding:'13px 16px',borderRadius:10,border:'2px dashed var(--card-border,#e2e8f0)',background:'transparent',color:'var(--text-3)',fontSize:13,fontWeight:500,cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
-                  <Plus size={15}/>Add bucket
-                </button>
               )}
             </div>
-            <div style={{flexShrink:0,padding:'16px 22px 24px',minWidth:320,maxWidth:320}}>
-              <LibraryPanel tasks={libraryTasks} onEdit={task=>setLibraryModal(task)} onDelete={handleDeleteLibrary} onAdd={()=>setLibraryModal({})}/>
+            <div style={{width:380,display:'flex',flexDirection:'column',height:'100%',overflow:'hidden',padding:'0 22px 22px'}}>
+              <LibraryPanel tasks={libraryTasks} onNameChange={handleLibraryNameChange} onAddSubtask={handleAddLibrarySubtask} onDelete={handleDeleteLibraryItem} onAddCategory={handleAddLibraryCategory} saving={librarySaving}/>
             </div>
           </div>
           <DragOverlay dropAnimation={null}>
