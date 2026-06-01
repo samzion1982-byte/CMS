@@ -267,6 +267,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:task.id})
   const st=taskStatusStyle(task.status)
   const overdue=task.status!=='done'&&isOverdue(task.due_date)
+  const assignLabel = task.assigned_to ? 'Reassign' : 'Assign'
   return(
     <div ref={setNodeRef} style={{transform:CSS.Transform.toString(transform),transition,opacity:isDragging?0.3:1,marginBottom:8}}
       {...attributes}{...listeners} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}>
@@ -275,6 +276,8 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           <div style={{position:'absolute',top:6,right:6,display:'flex',gap:3,zIndex:1}}>
             <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}}
               style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer',display:'flex',alignItems:'center'}}><Pencil size={11} color="var(--text-2)"/></button>
+            <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}}
+              style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 7px',cursor:'pointer',fontSize:11,color:'var(--text-2)',fontWeight:600,whiteSpace:'nowrap'}}>{assignLabel}</button>
             <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(task)}}
               style={{background:'#fef2f2',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer',display:'flex',alignItems:'center'}}><Trash2 size={11} color="#ef4444"/></button>
           </div>
@@ -283,6 +286,12 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
         {task.notes&&!isDragging&&<p style={{margin:'0 0 6px',fontSize:11,color:'var(--text-3)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',lineHeight:1.4}}>{task.notes}</p>}
         {task.assigned_to&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:4}}><User size={11} color="var(--text-3)"/><span style={{fontSize:12,color:'var(--text-2)'}}>{task.assigned_to}</span></div>}
         {task.due_date&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}><CalendarDays size={11} color={overdue?'#ef4444':'var(--text-3)'}/><span style={{fontSize:12,color:overdue?'#ef4444':'var(--text-2)',fontWeight:overdue?600:400}}>{fmtDate(task.due_date)}{overdue?' ⚠':''}</span></div>}
+        <div style={{display:'flex',justifyContent:'flex-end'}}>
+          <button onClick={e=>{e.stopPropagation();onEdit(task)}}
+            style={{background:'#2563eb',border:'none',borderRadius:999,padding:'6px 12px',fontSize:11,color:'#fff',cursor:'pointer',fontWeight:700,marginTop:4,whiteSpace:'nowrap'}}>
+            {assignLabel}
+          </button>
+        </div>
         {/* status hidden for now */}
       </div>
     </div>
@@ -886,6 +895,7 @@ function TaskFormModal({initial,buckets,members,volunteers,defaultBucketId,onSav
             <option value="">— None —</option>
             {volunteers.map(v=><option key={v.id} value={v.id}>{v.name}{v.role?` · ${v.role}`:''}</option>)}
           </select>
+          <div style={{fontSize:11,color:'var(--text-3)',marginTop:4}}>Select a volunteer to send assignment notification via WhatsApp.</div>
         </Field>
         <Field label="Due Date"><input style={iSt} type="date" value={form.due_date} onChange={f('due_date')}/></Field>
       </div>
@@ -1287,7 +1297,12 @@ export default function EventPlannerPage(){
           try{
             const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
             if(!error && church){
-              const message = `You have been assigned \"${form.title.trim()}\" for ${selEvent?.name || 'the event'}. Please prepare accordingly.`
+              const eventDates = selEvent?.start_date
+                ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
+                  ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
+                  : ` (${fmtDate(selEvent.start_date)})`
+                : selEvent?.year ? ` (${selEvent.year})` : ''
+              const message = `You have been assigned "${form.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please prepare accordingly.`
               await sendWhatsAppMessage(church, { to: volunteerInfo.whatsapp, message })
               toast(`WhatsApp sent to ${volunteerInfo.name}`,'success')
             }
