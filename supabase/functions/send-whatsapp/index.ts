@@ -44,7 +44,7 @@ serve(async (req) => {
     const apiType = church.whatsapp_api_type || 'soft7'
     const kind    = classifyMedia(mediaUrl, mediaType)
 
-    console.log('[send-whatsapp] mediaType:', mediaType, '| kind:', kind, '| apiType:', apiType, '| mediaUrl:', mediaUrl?.slice(0, 80))
+    console.log('[send-whatsapp] request', { phone, apiType, kind, mediaUrl: mediaUrl?.slice(0, 80), messagePreview: (message||'').slice(0,80) })
 
     let result: unknown
 
@@ -76,11 +76,12 @@ serve(async (req) => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       })
+      const text = await resp.text()
+      console.log('[send-whatsapp] official response', { status: resp.status, text })
       if (!resp.ok) {
-        const text = await resp.text()
         throw new Error(`Official API error ${resp.status}: ${text}`)
       }
-      result = await resp.json().catch(() => ({ ok: true }))
+      try { result = JSON.parse(text) } catch { result = { raw: text } }
 
     /* ── Soft7 (unofficial / hosted) API ── */
     } else {
@@ -124,15 +125,19 @@ serve(async (req) => {
         body: JSON.stringify(payload),
       })
       const rawText = await resp.text()
+      console.log('[send-whatsapp] soft7 response', { status: resp.status, rawText })
       let parsed: Record<string, unknown> = {}
       try { parsed = JSON.parse(rawText) } catch { parsed = { raw: rawText } }
 
       if (!resp.ok) throw new Error(`Soft7 API error ${resp.status}: ${rawText}`)
 
-      if (parsed.status === 'error' || parsed.error || parsed.success === false) {
+      const lowerStatus = String(parsed.status || '').toLowerCase()
+      if (lowerStatus === 'error' || lowerStatus === 'failed' || parsed.error || parsed.success === false) {
         throw new Error(`Soft7 error: ${parsed.message || parsed.error || parsed.reason || rawText}`)
       }
-
+      if (lowerStatus === 'pending' || lowerStatus === 'queued' || lowerStatus === '') {
+        console.warn('[send-whatsapp] soft7 send response is not final', { parsed })
+      }
       const softMsg = String(parsed.message || '').toLowerCase()
       if (softMsg.includes('not ready') || softMsg.includes('connection') || softMsg.includes('stabilize')) {
         throw new Error(`WhatsApp not connected: ${parsed.message}`)

@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, Calendar, ChevronLeft, ChevronDown, Check, Globe, Download, UploadCloud, Trash2, Plus } from 'lucide-react'
+import { Settings, Calendar, ChevronLeft, ChevronDown, Check, Globe, Download, UploadCloud, Trash2, Plus, Pencil } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -350,6 +350,16 @@ export default function EventSettingsPage() {
     }
   }
 
+  function focusVolunteerNameInput(id) {
+    const el = document.getElementById(`volunteer-name-${id}`)
+    if (el) el.focus()
+  }
+
+  function focusLibraryCategoryInput(id) {
+    const el = document.getElementById(`library-category-${id}`)
+    if (el) el.focus()
+  }
+
   async function handleAddLibraryEntry() {
     const name = libraryFormName.trim()
     if (!name) {
@@ -656,7 +666,7 @@ export default function EventSettingsPage() {
           {/* Two-column table with scroll and collapse */}
           <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--card-border,#e2e8f0)', display: 'flex', flexDirection: 'column', maxHeight: 700 }}>
             {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '45px 1fr 1fr 60px', background: 'var(--input-bg,#f8fafc)', borderBottom: '2px solid var(--card-border,#e2e8f0)', position: 'sticky', top: 0, zIndex: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '45px 1fr 1fr 100px', background: 'var(--input-bg,#f8fafc)', borderBottom: '2px solid var(--card-border,#e2e8f0)', position: 'sticky', top: 0, zIndex: 10 }}>
               <div style={{ padding: '12px 8px', fontWeight: 700, fontSize: 12, color: '#fff', background: '#4a5568', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 <button
                   onClick={() => setCollapsedCategories(collapsedCategories.size === libraryCategories.length ? new Set() : new Set(libraryCategories))}
@@ -734,12 +744,13 @@ export default function EventSettingsPage() {
                       {!isCollapsed && categoryItems.map((task, idx) => (
                         <div key={task.id} style={{
                           display: 'grid',
-                          gridTemplateColumns: '45px 1fr 1fr 60px',
+                          gridTemplateColumns: '45px 1fr 1fr 100px',
                           borderBottom: '1px solid var(--card-border,#e2e8f0)',
                           background: idx % 2 === 0 ? 'transparent' : 'var(--input-bg,#f8fafc)'
                         }}>
                           <div style={{ padding: '12px 8px' }}></div>
                           <input
+                            id={`library-category-${task.id}`}
                             style={{ ...iSt, border: 'none', borderRadius: 0, background: 'transparent', padding: '12px 16px' }}
                             value={task.category || ''}
                             onChange={e => updateLibraryTaskValue(task.id, 'category', e.target.value)}
@@ -753,23 +764,42 @@ export default function EventSettingsPage() {
                             onBlur={e => handleSaveLibraryTaskInline(task.id, 'subcategory', e.target.value)}
                             disabled={librarySaving}
                           />
-                          <button
-                            style={{
-                              border: 'none',
-                              background: 'transparent',
-                              color: '#ef4444',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              borderLeft: '1px solid var(--card-border,#e2e8f0)',
-                            }}
-                            onClick={() => handleDeleteLibraryTask(task.id)}
-                            disabled={librarySaving}
-                            title="Delete row"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--card-border,#e2e8f0)' }}>
+                            <button
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: 'var(--text-2)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 8,
+                              }}
+                              onClick={() => focusLibraryCategoryInput(task.id)}
+                              disabled={librarySaving}
+                              title="Edit row"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              style={{
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#ef4444',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 8,
+                              }}
+                              onClick={() => handleDeleteLibraryTask(task.id)}
+                              disabled={librarySaving}
+                              title="Delete row"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -984,7 +1014,7 @@ export default function EventSettingsPage() {
           </div>
 
           <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--card-border,#e2e8f0)', display: 'flex', flexDirection: 'column', maxHeight: 700 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 60px', background: 'var(--input-bg,#f8fafc)', borderBottom: '2px solid var(--card-border,#e2e8f0)', position: 'sticky', top: 0, zIndex: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', background: 'var(--input-bg,#f8fafc)', borderBottom: '2px solid var(--card-border,#e2e8f0)', position: 'sticky', top: 0, zIndex: 10 }}>
               <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 12, color: '#fff', background: '#4a5568' }}>Name</div>
               <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 12, color: '#fff', background: '#4a5568' }}>Role</div>
               <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 12, color: '#fff', background: '#4a5568' }}>WhatsApp</div>
@@ -997,8 +1027,9 @@ export default function EventSettingsPage() {
                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)' }}>No volunteers yet. Add a volunteer to start.</div>
               ) : (
                 volunteers.map((volunteer, idx) => (
-                  <div key={volunteer.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 60px', borderBottom: '1px solid var(--card-border,#e2e8f0)', background: idx % 2 === 0 ? 'transparent' : 'var(--input-bg,#f8fafc)' }}>
+                  <div key={volunteer.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', borderBottom: '1px solid var(--card-border,#e2e8f0)', background: idx % 2 === 0 ? 'transparent' : 'var(--input-bg,#f8fafc)' }}>
                     <input
+                      id={`volunteer-name-${volunteer.id}`}
                       style={{ ...iSt, border: 'none', borderRadius: 0, background: 'transparent', padding: '12px 16px' }}
                       value={volunteer.name || ''}
                       onChange={e => updateVolunteerValue(volunteer.id, 'name', e.target.value)}
@@ -1019,23 +1050,42 @@ export default function EventSettingsPage() {
                       onBlur={e => handleSaveVolunteerInline(volunteer.id, 'whatsapp', e.target.value)}
                       disabled={volunteerSaving}
                     />
-                    <button
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        color: '#ef4444',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderLeft: '1px solid var(--card-border,#e2e8f0)',
-                      }}
-                      onClick={() => handleDeleteVolunteer(volunteer.id)}
-                      disabled={volunteerSaving}
-                      title="Delete volunteer"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--card-border,#e2e8f0)' }}>
+                      <button
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-2)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 8,
+                        }}
+                        onClick={() => focusVolunteerNameInput(volunteer.id)}
+                        disabled={volunteerSaving}
+                        title="Edit volunteer"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 8,
+                        }}
+                        onClick={() => handleDeleteVolunteer(volunteer.id)}
+                        disabled={volunteerSaving}
+                        title="Delete volunteer"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

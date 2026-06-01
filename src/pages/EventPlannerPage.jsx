@@ -262,7 +262,7 @@ function MiniMonth({ year, month, events, selRange, onDayMouseDown, onDayMouseEn
 
 // ── TaskCard (draggable) ──────────────────────────────────────────────────────
 
-function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
+function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange }) {
   const [hov,setHov]=useState(false)
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:task.id})
   const st=taskStatusStyle(task.status)
@@ -276,7 +276,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           <div style={{position:'absolute',top:6,right:6,display:'flex',gap:3,zIndex:1}}>
             <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}}
               style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer',display:'flex',alignItems:'center'}}><Pencil size={11} color="var(--text-2)"/></button>
-            <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}}
+                <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onAssign?.(task)}}
               style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 7px',cursor:'pointer',fontSize:11,color:'var(--text-2)',fontWeight:600,whiteSpace:'nowrap'}}>{assignLabel}</button>
             <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onDelete(task)}}
               style={{background:'#fef2f2',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer',display:'flex',alignItems:'center'}}><Trash2 size={11} color="#ef4444"/></button>
@@ -287,7 +287,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
         {task.assigned_to&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:4}}><User size={11} color="var(--text-3)"/><span style={{fontSize:12,color:'var(--text-2)'}}>{task.assigned_to}</span></div>}
         {task.due_date&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}><CalendarDays size={11} color={overdue?'#ef4444':'var(--text-3)'}/><span style={{fontSize:12,color:overdue?'#ef4444':'var(--text-2)',fontWeight:overdue?600:400}}>{fmtDate(task.due_date)}{overdue?' ⚠':''}</span></div>}
         <div style={{display:'flex',justifyContent:'flex-end'}}>
-          <button onClick={e=>{e.stopPropagation();onEdit(task)}}
+          <button onClick={e=>{e.stopPropagation();onAssign?.(task)}}
             style={{background:'#2563eb',border:'none',borderRadius:20,padding:'7px 16px',fontSize:12,color:'#fff',cursor:'pointer',fontWeight:600,marginTop:6,whiteSpace:'nowrap',transition:'all 0.2s'}}>
             {assignLabel}
           </button>
@@ -369,7 +369,7 @@ function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,savin
 
 // ── CanvasDropZone ────────────────────────────────────────────────────────────
 
-function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask, libCreatedTaskIds=[], libraryCategories=[]}){
+function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditTask,libCreatedTaskIds=[], libraryCategories=[]}){
   const {setNodeRef,isOver}=useDroppable({id:'canvas-drop-zone'})
   const topTasks = tasks.filter(t=>t.parent_id==null)
   const subtasksByParent = {}
@@ -396,29 +396,57 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask, libCreatedTaskIds=[
   function CategorySlot({ task, subtasks }){
     const {setNodeRef: setTaskDropRef, isOver: isOverTask} = useDroppable({id:`task-${task.id}`})
     const rowCount = getRowCount(task)
+    const parentAssignees = task.assigned_to ? String(task.assigned_to).trim() : ''
     return (
       <div ref={setTaskDropRef} style={{minHeight:rowCount * 70,background:isOverTask?'rgba(37,99,235,0.08)':'#fff',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,boxShadow:'0 8px 24px rgba(15,23,42,0.08)',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
-        <div style={{padding:14}}>
+        <div style={{padding:'14px 14px'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:15,fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title}</div>
-              {task.description && <div style={{fontSize:12,color:'var(--text-3)',marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.description}</div>}
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:4}}>
-              {isCategoryTask(task)&&(
-                <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:11,padding:'5px 8px'}}>+ Subtask</button>
+            <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:10,flexWrap:'nowrap'}}>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{task.title}</div>
+              {parentAssignees && (
+                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>
+                  <User size={12} color='var(--text-3)' />
+                  <span>{parentAssignees}</span>
+                </div>
               )}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end',minWidth:176,marginRight:8}}>
+              {isCategoryTask(task)&&(
+                <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:11,padding:'5px 7px'}}>+ Subtask</button>
+              )}
+              <button onClick={e=>{e.stopPropagation(); onAssignTask?.(task)}} style={{...btnS,fontSize:11,padding:'5px 7px',whiteSpace:'nowrap',...(task.assigned_to?{background:'var(--text-1)',color:'var(--accent-text)',borderColor:'var(--text-1)'}:{})}}>{task.assigned_to ? 'Re-Assign' : 'Assign'}</button>
               <button onClick={e=>{e.stopPropagation(); onDeleteTask(task.id)}} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={14}/></button>
             </div>
           </div>
+          {task.description && <div style={{fontSize:12,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.description}</div>}
           {subtasks.length>0 && (
             <div style={{padding:'10px 0 0',borderTop:'1px solid #eef2f7',display:'flex',flexDirection:'column',gap:8}}>
-              {subtasks.map(subtask=>(
-                <div key={subtask.id} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10}}>
-                  <div style={{flex:1,minWidth:0,fontSize:13,color:'#1f2937',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtask.title}</div>
-                  <button onClick={e=>{e.stopPropagation(); onDeleteTask(subtask.id)}} title="Delete subtask" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={12}/></button>
-                </div>
-              ))}
+              {subtasks.map(subtask=>{
+                const childAssignees = subtask.assigned_to ? String(subtask.assigned_to).trim() : ''
+                const showReport = Boolean(childAssignees && parentAssignees && childAssignees !== parentAssignees)
+                return (
+                  <div key={subtask.id} style={{display:'grid',gridTemplateColumns:'10px minmax(0,1fr) min-content',columnGap:8,alignItems:'center',gap:4,padding:'10px 14px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10}}>
+                    <div />
+                    <div style={{minWidth:0,display:'flex',alignItems:'center',gap:8,flexWrap:'nowrap'}}>
+                      <div style={{fontSize:13,color:'#1f2937',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{subtask.title}</div>
+                      {(childAssignees || showReport) && (
+                        <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0,marginLeft:26}}>
+                          <User size={11} color='var(--text-3)' />
+                          <span>
+                            {childAssignees}
+                            {childAssignees && showReport ? ' · ' : ''}
+                            {showReport ? `Reports to ${parentAssignees}` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end'}}>
+                      <button onClick={e=>{e.stopPropagation(); onAssignTask?.(subtask)}} style={{...btnS,fontSize:11,padding:'5px 8px',whiteSpace:'nowrap',...(subtask.assigned_to?{background:'var(--text-1)',color:'var(--accent-text)',borderColor:'var(--text-1)'}:{})}}>{subtask.assigned_to ? 'Re-Assign' : 'Assign'}</button>
+                      <button onClick={e=>{e.stopPropagation(); onDeleteTask(subtask.id)}} title="Delete subtask" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={12}/></button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -527,7 +555,7 @@ function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,sa
 
 // ── BucketColumn ──────────────────────────────────────────────────────────────
 
-function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEditTask,onDeleteTask,onStatusChange,onMoveLeft,onMoveRight,onQuickAdd}){
+function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEditTask,onDeleteTask,onStatusChange,onMoveLeft,onMoveRight,onQuickAdd,onAssignTask}){
   const {setNodeRef,isOver}=useDroppable({id:bucket.id})
   const [quickTitle,setQuickTitle]=useState('')
   const [isQuickAdd,setIsQuickAdd]=useState(false)
@@ -550,7 +578,7 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
       </div>
       <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'10px 8px 12px',minHeight:72,background:isOver?`${bucket.color}12`:'transparent',transition:'background 0.15s'}}>
         <SortableContext items={tasks.map(t=>t.id)} strategy={verticalListSortingStrategy}>
-          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onDelete={onDeleteTask} onStatusChange={onStatusChange}/>)}
+          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onAssign={onAssignTask} onDelete={onDeleteTask} onStatusChange={onStatusChange}/>) }
         </SortableContext>
         {tasks.length===0&&<div style={{textAlign:'center',padding:'14px 8px',color:'var(--text-3)',fontSize:12,userSelect:'none'}}>Drop tasks here</div>}
       </div>
@@ -950,6 +978,81 @@ function LibraryTaskFormModal({initial,onSave,onClose,libraryTasks}){
   )
 }
 
+function AssignModal({initial, volunteers, onSave, onClose}){
+  const [role, setRole] = useState('')
+  const [selectedIds, setSelectedIds] = useState([])
+
+  useEffect(()=>{
+    if(!initial) return
+    if(initial.assigned_volunteer_id){
+      setSelectedIds([String(initial.assigned_volunteer_id)])
+      return
+    }
+    if(initial.assigned_to){
+      const names = String(initial.assigned_to||'').split(',').map(s=>s.trim()).filter(Boolean)
+      const ids = volunteers.filter(v=>names.includes(v.name)).map(v=>String(v.id))
+      setSelectedIds(ids)
+    }
+  },[initial,volunteers])
+
+  const roles = [...new Set(volunteers.map(v=>v.role).filter(Boolean))]
+  const available = role ? volunteers.filter(v=>v.role===role) : volunteers
+
+  function toggleSel(id){
+    setSelectedIds(s=> s.includes(id) ? s.filter(x=>x!==id) : [...s,id])
+  }
+
+  const selectedVolunteers = volunteers.filter(v=>selectedIds.includes(String(v.id)))
+  const assignedNames = selectedVolunteers.map(v=>v.name).join(', ')
+
+  return (
+    <Modal onClose={onClose} width={420}>
+      <ModalTitle onClose={onClose}>Assign — {initial?.title || initial?.name || 'Task'}</ModalTitle>
+      <ModalBody>
+        <Field label="Role">
+          <select style={iSt} value={role} onChange={e=>setRole(e.target.value)}>
+            <option value="">— Select role —</option>
+            {roles.map(r=> <option key={r} value={r}>{r}</option> )}
+          </select>
+        </Field>
+
+        <Field label="Names (select one or more)">
+          <div style={{border:'1px solid var(--card-border,#e2e8f0)',borderRadius:6,maxHeight:160,overflowY:'auto',padding:6}}>
+            {available.map(v=> (
+              <label key={v.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',cursor:'pointer'}}>
+                <input type="checkbox" checked={selectedIds.includes(String(v.id))} onChange={()=>toggleSel(String(v.id))} />
+                <span style={{fontSize:13}}>{v.name}{v.role?` · ${v.role}`:''}</span>
+              </label>
+            ))}
+            {available.length===0 && <div style={{padding:8,color:'var(--text-3)'}}>No volunteers for this role</div>}
+          </div>
+        </Field>
+
+        <Field label="Assigned To">
+          <div style={{padding:'8px',background:'var(--input-bg,#f8fafc)',borderRadius:6}}>{assignedNames || '— Unassigned —'}</div>
+        </Field>
+
+        <div style={{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center',marginTop:6}}>
+          <div style={{fontSize:12,color:'var(--text-3)'}}>{selectedVolunteers.length} selected</div>
+          <div style={{display:'flex',gap:8}}>
+            <button style={btnS} onClick={onClose}>Cancel</button>
+            <button style={{...btnP,opacity:selectedIds.length?1:0.5,cursor:selectedIds.length?'pointer':'not-allowed'}} onClick={async ()=>{
+              if(selectedIds.length===0){
+                toast('Select at least one volunteer to assign','error')
+                return
+              }
+              const ids = selectedIds.slice()
+              await onSave(initial.id, ids)
+            }} disabled={!selectedIds.length}>
+              {selectedIds.length>1?'Assign (multiple)':'Assign'}
+            </button>
+          </div>
+        </div>
+      </ModalBody>
+    </Modal>
+  )
+}
+
 // ── CarryForwardModal ─────────────────────────────────────────────────────────
 
 function CarryForwardModal({currentEvent,allEvents,onCarryForward,onClose}){
@@ -1083,6 +1186,7 @@ export default function EventPlannerPage(){
   const [eventModal,  setEventModal]  = useState(null)
   const [bucketModal, setBucketModal] = useState(null)
   const [taskModal,   setTaskModal]   = useState(null)
+  const [assignModal, setAssignModal] = useState(null)
   const [taskDefBkt,  setTaskDefBkt]  = useState(null)
   const [carryModal,  setCarryModal]  = useState(false)
 
@@ -1456,6 +1560,101 @@ export default function EventPlannerPage(){
   function handleEditTask(task){
     setTaskDefBkt(task.bucket_id || null)
     setTaskModal(task)
+  }
+
+  function handleOpenAssignModal(task){
+    setAssignModal(task)
+  }
+
+  async function handleSaveAssign(taskId, volunteerIds){
+    try{
+      const ids = Array.isArray(volunteerIds) ? volunteerIds : []
+      if(ids.length === 0){
+        toast('Select at least one volunteer to assign','error')
+        return
+      }
+      const selected = volunteers.filter(v=>ids.includes(String(v.id)))
+      const assigned_to = selected.map(v=>v.name).join(', ') || null
+      const assigned_volunteer_id = ids.length===1 ? Number(ids[0]) : null
+      await saveTask(taskId, { assigned_to, assigned_volunteer_id }, profile?.email)
+      toast('Assignment saved','success')
+
+      const whatsappRecipients = selected.filter(v=>v.whatsapp)
+      if(whatsappRecipients.length){
+        try{
+          const task = tasks.find(t=>t.id===taskId)
+          const selectedNames = selected.map(v=>v.name)
+
+          const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
+          if(!error && church){
+            const eventDates = selEvent?.start_date
+              ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
+                ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
+                : ` (${fmtDate(selEvent.start_date)})`
+              : selEvent?.year ? ` (${selEvent.year})` : ''
+
+            const sendResults = await Promise.allSettled(whatsappRecipients.map(async recipient => {
+              const otherNames = selectedNames.filter(name=>name!==recipient.name)
+              const assignmentLine = otherNames.length > 0
+                ? `You and "${otherNames.join(', ')}" have been assigned the task "${task?.title || assigned_to}" for the event "${selEvent?.name || 'the event'}"${eventDates}. Please prepare accordingly.`
+                : `You have been assigned the task "${task?.title || assigned_to}" for the event "${selEvent?.name || 'the event'}"${eventDates}. Please prepare accordingly.`
+
+              const coordinationAssignments = []
+              if(task){
+                if(task.parent_id){
+                  const parentTask = tasks.find(t=>t.id===task.parent_id)
+                  if(parentTask && parentTask.assigned_to && parentTask.assigned_to !== recipient.name){
+                    coordinationAssignments.push({person: parentTask.assigned_to, title: parentTask.title})
+                  }
+                  tasks.filter(t=>t.parent_id===task.parent_id && t.id!==task.id && t.assigned_to && t.assigned_to !== recipient.name).forEach(subtask=>{
+                    coordinationAssignments.push({person: subtask.assigned_to, title: subtask.title})
+                  })
+                } else {
+                  tasks.filter(t=>t.parent_id===task.id && t.assigned_to && t.assigned_to !== recipient.name).forEach(subtask=>{
+                    coordinationAssignments.push({person: subtask.assigned_to, title: subtask.title})
+                  })
+                }
+              }
+
+              const coordinationLines = coordinationAssignments.map(r => `Please coordinate with ${r.person} for ${r.title}.`).join('\n')
+              const message = [
+                `Dear ${recipient.name},`,
+                assignmentLine,
+                coordinationLines || null,
+                'Thank you for your extended support.'
+              ].filter(Boolean).join('\n\n')
+
+              try {
+                return { recipient: recipient.name, status: 'fulfilled', result: await sendWhatsAppMessage(church, { to: recipient.whatsapp, message }) }
+              } catch (err) {
+                console.error('WhatsApp send failed for', recipient.name, { error: err, message })
+                return { recipient: recipient.name, status: 'rejected', reason: err?.message || String(err) }
+              }
+            }))
+
+            const successes = sendResults.filter(r => r.status === 'fulfilled')
+            const failures = sendResults.filter(r => r.status === 'rejected')
+            console.debug('[handleSaveAssign] WhatsApp send results', sendResults)
+            if(successes.length){
+              toast(`WhatsApp sent to ${successes.map(r => r.recipient).join(', ')} (check console for details)`,'success')
+            }
+            if(failures.length){
+              console.error('WhatsApp send failures', failures)
+              toast(`WhatsApp failed for ${failures.map(r => `${r.recipient}: ${r.reason}`).join(', ')}`,'error')
+            }
+          }
+        }catch(err){
+          console.error('Failed to send WhatsApp notification:', err)
+          toast('Assignment saved, but WhatsApp notification failed','error')
+        }
+      }
+
+      setAssignModal(null)
+      await loadBoard(selEvent.id)
+    }catch(err){
+      console.error('Failed to save assignment:', err)
+      toast(err?.message || 'Failed to save assignment','error')
+    }
   }
 
   // ── Carry forward ───────────────────────────────────────────
@@ -2153,7 +2352,7 @@ export default function EventPlannerPage(){
         <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div style={{display:'flex',flex:1,overflow:'hidden',gap:16}}>
             <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',gap:16,minWidth:0}}>
-              <CanvasDropZone tasks={boardTasks.filter(t=>!t.bucket_id)} onDeleteTask={handleDeleteTask} onAddSubtask={handleAddSubtask} libCreatedTaskIds={libCreatedTaskIds} libraryCategories={libraryTasks.filter(t=>!t.subcategory).map(t=>t.category.trim()).filter(Boolean)} />
+              <CanvasDropZone tasks={boardTasks.filter(t=>!t.bucket_id)} onDeleteTask={handleDeleteTask} onAddSubtask={handleAddSubtask} onAssignTask={handleOpenAssignModal} libCreatedTaskIds={libCreatedTaskIds} libraryCategories={libraryTasks.filter(t=>!t.subcategory).map(t=>t.category.trim()).filter(Boolean)} />
               {buckets.length>0 && (
                   <div style={{display:'flex',flexDirection:'column',gap:16,overflowY:'auto',paddingBottom:12}}>
                     {buckets.map(bucket=>(
@@ -2165,6 +2364,7 @@ export default function EventPlannerPage(){
                       onEditBucket={setBucketModal}
                       onDeleteBucket={handleDeleteBucket}
                       onEditTask={handleEditTask}
+                      onAssignTask={handleOpenAssignModal}
                       onDeleteTask={handleDeleteTask}
                       onStatusChange={handleStatusToggle}
                       onMoveLeft={buckets.findIndex(b=>b.id===bucket.id)>0?()=>handleMoveBucket(bucket.id,-1):null}
@@ -2188,7 +2388,8 @@ export default function EventPlannerPage(){
         {eventModal!==null&&<EventFormModal initial={eventModal} onSave={handleSaveEvent} onClose={()=>setEventModal(null)}/>}
         {bucketModal!==null&&<BucketFormModal initial={bucketModal} onSave={handleSaveBucket} onClose={()=>setBucketModal(null)}/>}
         {taskModal!==null&&<TaskFormModal initial={taskModal} buckets={buckets} members={members} volunteers={volunteers} defaultBucketId={taskDefBkt} onSave={handleSaveTask} onClose={()=>{setTaskModal(null);setTaskDefBkt(null)}}/>}
-        {libraryModal!==null&&<LibraryTaskFormModal initial={libraryModal} libraryTasks={libraryTasks} onSave={handleSaveLibraryTask} onClose={()=>setLibraryModal(null)}/>}        
+          {assignModal!==null&&<AssignModal initial={assignModal} volunteers={volunteers} onSave={handleSaveAssign} onClose={()=>setAssignModal(null)}/>}        
+          {libraryModal!==null&&<LibraryTaskFormModal initial={libraryModal} libraryTasks={libraryTasks} onSave={handleSaveLibraryTask} onClose={()=>setLibraryModal(null)}/>}        
         {carryModal&&selEvent&&<CarryForwardModal currentEvent={selEvent} allEvents={events} onCarryForward={handleCarryForward} onClose={()=>setCarryModal(false)}/>}
         {summaryModal&&selEvent&&<CompletionSummaryModal event={selEvent} buckets={buckets} tasks={tasks} onClose={()=>setSummaryModal(false)}/>}
       </div>
