@@ -288,7 +288,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
         {task.due_date&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}><CalendarDays size={11} color={overdue?'#ef4444':'var(--text-3)'}/><span style={{fontSize:12,color:overdue?'#ef4444':'var(--text-2)',fontWeight:overdue?600:400}}>{fmtDate(task.due_date)}{overdue?' ⚠':''}</span></div>}
         <div style={{display:'flex',justifyContent:'flex-end'}}>
           <button onClick={e=>{e.stopPropagation();onEdit(task)}}
-            style={{background:'#2563eb',border:'none',borderRadius:999,padding:'6px 12px',fontSize:11,color:'#fff',cursor:'pointer',fontWeight:700,marginTop:4,whiteSpace:'nowrap'}}>
+            style={{background:'#2563eb',border:'none',borderRadius:20,padding:'7px 16px',fontSize:12,color:'#fff',cursor:'pointer',fontWeight:600,marginTop:6,whiteSpace:'nowrap',transition:'all 0.2s'}}>
             {assignLabel}
           </button>
         </div>
