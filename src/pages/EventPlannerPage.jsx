@@ -236,7 +236,7 @@ function MiniMonth({ year, month, events, selRange, onDayMouseDown, onDayMouseEn
               onMouseEnter={e=>{if(isCur)onDayMouseEnter(ds,e.clientX,e.clientY)}}
               onMouseUp={e=>{if(isCur&&e.button===0)onDayMouseUp(ds,e.clientX,e.clientY)}}
               onContextMenu={e=>{if(isCur)onDayContextMenu(e,ds)}}
-              style={{textAlign:'center',cursor:isCur?'pointer':'default',position:'relative',paddingBottom:(evts.length||tCnt)?6:2,borderRadius:3,background:inSel?'rgba(37,99,235,0.14)':isStartDay&&isCur?'rgba(239,68,68,0.04)':'transparent',userSelect:'none',transition:'background 0.05s'}}>
+              style={{textAlign:'center',cursor:isCur?'pointer':'default',position:'relative',paddingBottom:evts.length?6:2,borderRadius:3,background:inSel?'rgba(37,99,235,0.14)':isStartDay&&isCur?'rgba(239,68,68,0.04)':'transparent',userSelect:'none',transition:'background 0.05s'}}>
               <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:'50%',background:isToday?'var(--accent,#2563eb)':'transparent',color:isToday?'#fff':!isCur?'transparent':isStartDay?'#ef4444':'var(--text-1)',fontSize:9,fontWeight:isToday?700:isStartDay?600:400}}>
                 {isCur?day.getDate():''}
               </span>
