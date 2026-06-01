@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeWhatsAppNumber } from './whatsapp'
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
@@ -103,21 +104,28 @@ export async function deleteTask(id) {
 }
 
 export async function getTaskLibrary() {
-  const { data, error } = await supabase.from('task_library')
-    .select('*')
-    .order('sort_order')
-    .order('created_at')
-  if (error) throw error
-  return data || []
+  try {
+    const { data, error } = await supabase.from('task_library')
+      .select('*')
+      .order('sort_order')
+      .order('created_at')
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.warn('getTaskLibrary fallback after order/query failure', error)
+    const { data, error: fallbackError } = await supabase.from('task_library').select('*')
+    if (fallbackError) throw fallbackError
+    return data || []
+  }
 }
 
 export async function addLibraryCategory(userEmail) {
-  const now = new Date().toISOString()
-  const maxSort = await supabase.from('task_library').select('sort_order', { count: 'exact' }).order('sort_order', { ascending: false }).limit(1)
+  const email = userEmail || 'system'
+  const maxSort = await supabase.from('task_library').select('sort_order').order('sort_order', { ascending: false }).limit(1)
   const nextSort = (maxSort.data?.[0]?.sort_order || 0) + 1
   const { data, error } = await supabase.from('task_library')
-    .insert({ category: 'New Task', subcategory: '', sort_order: nextSort, created_by: userEmail, updated_by: userEmail, created_at: now, updated_at: now })
-    .select('id').single()
+    .insert({ category: 'New Task', subcategory: null, sort_order: nextSort, created_by: email, updated_by: email })
+    .select('*').single()
   if (error) throw error
   return data.id
 }
@@ -131,7 +139,6 @@ export async function updateLibraryItemName(id, field, value, userEmail) {
 }
 
 export async function addLibrarySubtask(parentId, userEmail) {
-  const now = new Date().toISOString()
   const parent = await supabase.from('task_library').select('*').eq('id', parentId).single()
   if (!parent.data) throw new Error('Parent task not found')
 
@@ -139,8 +146,8 @@ export async function addLibrarySubtask(parentId, userEmail) {
   const nextSort = (maxSort.data?.[0]?.sort_order || 0) + 1
 
   const { data, error } = await supabase.from('task_library')
-    .insert({ category: parent.data.category, subcategory: 'New Subtask', sort_order: nextSort, created_by: userEmail, updated_by: userEmail, created_at: now, updated_at: now })
-    .select('id').single()
+    .insert({ category: parent.data.category, subcategory: 'New Subtask', sort_order: nextSort, created_by: userEmail, updated_by: userEmail })
+    .select('*').single()
   if (error) throw error
   return data.id
 }
@@ -148,6 +155,22 @@ export async function addLibrarySubtask(parentId, userEmail) {
 export async function deleteLibraryItem(id, userEmail) {
   const { error } = await supabase.from('task_library').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function saveLibraryTask(id, payload, userEmail) {
+  const now = new Date().toISOString()
+  if (id) {
+    const { error } = await supabase.from('task_library')
+      .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
+    if (error) throw error
+    return id
+  } else {
+    const { data, error } = await supabase.from('task_library')
+      .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
+      .select('id').single()
+    if (error) throw error
+    return data.id
+  }
 }
 
 export async function updateLibraryTaskOrder(tasks) {
@@ -159,10 +182,15 @@ export async function updateLibraryTaskOrder(tasks) {
 }
 
 export async function getEventVolunteers() {
-  const { data, error } = await supabase.from('event_volunteers')
-    .select('*').order('sort_order').order('created_at')
-  if (error) throw error
-  return data || []
+  try {
+    const { data, error } = await supabase.from('event_volunteers')
+      .select('*').order('sort_order').order('created_at')
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.warn('getEventVolunteers failed, returning empty list', error)
+    return []
+  }
 }
 
 export async function saveEventVolunteer(id, payload, userEmail) {
@@ -173,12 +201,53 @@ export async function saveEventVolunteer(id, payload, userEmail) {
     if (error) throw error
     return id
   } else {
+    let sortOrder = payload.sort_order
+    if (sortOrder == null) {
+      const { data: maxRows, error: sortError } = await supabase.from('event_volunteers')
+        .select('sort_order').order('sort_order', { ascending: false }).limit(1)
+      if (sortError) throw sortError
+      sortOrder = (maxRows?.[0]?.sort_order || 0) + 1
+    }
+    const insertPayload = {
+      ...payload,
+      sort_order: sortOrder,
+      created_by: userEmail,
+      updated_by: userEmail,
+      created_at: now,
+      updated_at: now,
+    }
     const { data, error } = await supabase.from('event_volunteers')
-      .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
+      .insert(insertPayload)
       .select('id').single()
     if (error) throw error
     return data.id
   }
+}
+
+export async function findMemberContactByName(name) {
+  const query = String(name || '').trim()
+  if (!query) return null
+  const { data, error } = await supabase.from('members')
+    .select('member_name,whatsapp,mobile')
+    .ilike('member_name', `%${query}%`)
+    .order('member_name')
+    .limit(5)
+  if (error) throw error
+  if (!data || data.length === 0) return null
+  const exactMatch = data.find(m => String(m.member_name || '').trim().toLowerCase() === query.toLowerCase())
+  return exactMatch || data[0]
+}
+
+export async function searchMemberContactsByName(name) {
+  const query = String(name || '').trim()
+  if (!query) return []
+  const { data, error } = await supabase.from('members')
+    .select('member_name,whatsapp,mobile')
+    .ilike('member_name', `%${query}%`)
+    .order('member_name')
+    .limit(5)
+  if (error) throw error
+  return data || []
 }
 
 export async function deleteEventVolunteer(id) {
@@ -189,41 +258,57 @@ export async function deleteEventVolunteer(id) {
 export async function replaceEventPlannerMasterData(data, userEmail) {
   const now = new Date().toISOString()
   const library = Array.isArray(data.library) ? data.library : []
-  const volunteers = Array.isArray(data.volunteers) ? data.volunteers : []
+  const volunteers = data.volunteers === undefined ? undefined : Array.isArray(data.volunteers) ? data.volunteers : []
 
-  const { error: libDelError } = await supabase.from('task_library').delete().neq('id', '')
+const { error: libDelError } = await supabase.from('task_library').delete().gte('sort_order', -1)
   if (libDelError) throw libDelError
 
-  const { error: volDelError } = await supabase.from('event_volunteers').delete().neq('id', '')
-  if (volDelError) throw volDelError
+  if (volunteers !== undefined) {
+    try {
+      const { error: volDelError } = await supabase.from('event_volunteers').delete().gte('sort_order', -1)
+    if (volDelError) throw volDelError
+  } catch (error) {
+    console.warn('replaceEventPlannerMasterData: event_volunteers delete failed, continuing', error)
+  }
+  }
 
-  if (volunteers.length > 0) {
-    const newVols = volunteers.map(v => ({
-      id: v.id,
-      name: v.name,
-      role: v.role || null,
-      whatsapp: v.whatsapp || null,
-      sort_order: v.sort_order || 0,
-      created_by: userEmail,
-      updated_by: userEmail,
-      created_at: v.created_at || now,
-      updated_at: v.updated_at || now,
-    }))
-    const { error } = await supabase.from('event_volunteers').insert(newVols)
-    if (error) throw error
+  if (volunteers && volunteers.length > 0) {
+    try {
+      const newVols = volunteers.map(v => {
+        const row = {
+          name: v.name,
+          role: v.role || null,
+          whatsapp: v.whatsapp || null,
+          sort_order: v.sort_order || 0,
+          created_by: userEmail,
+          updated_by: userEmail,
+          created_at: v.created_at || now,
+          updated_at: v.updated_at || now,
+        }
+        if (v.id) row.id = v.id
+        return row
+      })
+      const { error } = await supabase.from('event_volunteers').insert(newVols)
+      if (error) throw error
+    } catch (error) {
+      console.warn('replaceEventPlannerMasterData: volunteers insert failed (table may not exist), continuing with library only', error)
+    }
   }
 
   if (library.length > 0) {
-    const newLib = library.map(t => ({
-      id: t.id,
-      category: t.category || '',
-      subcategory: t.subcategory || '',
-      sort_order: t.sort_order || 0,
-      created_by: userEmail,
-      updated_by: userEmail,
-      created_at: t.created_at || now,
-      updated_at: t.updated_at || now,
-    }))
+    const newLib = library.map(t => {
+      const row = {
+        category: t.category || '',
+        subcategory: t.subcategory || '',
+        sort_order: t.sort_order || 0,
+        created_by: userEmail,
+        updated_by: userEmail,
+        created_at: t.created_at || now,
+        updated_at: t.updated_at || now,
+      }
+      if (t.id) row.id = t.id
+      return row
+    })
     const { error } = await supabase.from('task_library').insert(newLib)
     if (error) throw error
   }
@@ -286,60 +371,66 @@ async function buildMasterWorkbook({ libraryRows, volunteers }) {
   return wb
 }
 
+function createLibraryWorkbook({ workbook, rows }) {
+  const libWs = workbook.addWorksheet('Library')
+  libWs.columns = [
+    { header: 'Category', key: 'category', width: 36 },
+    { header: 'Subcategory', key: 'subCategory', width: 36 },
+  ]
+
+  libWs.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+  libWs.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' }
+  libWs.getRow(1).height = 24
+  libWs.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF4A5568' },
+  }
+  libWs.views = [{ state: 'frozen', ySplit: 1 }]
+  libWs.autoFilter = 'A1:B1'
+
+  if (Array.isArray(rows) && rows.length > 0) {
+    libWs.addRows(rows)
+  }
+
+  libWs.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    row.eachCell(cell => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      }
+    })
+  })
+
+  return libWs
+}
+
 export async function downloadEventPlannerMasterTemplate() {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'Church CMS — Event Planner Master Data'
+  wb.creator = 'Church CMS — Event Planner Library Template'
   wb.created = new Date()
 
-  const infoWs = wb.addWorksheet('Instructions')
-  infoWs.getColumn(1).width = 100
-  const lines = [
-    'Event Planner Master Data Import Template',
-    '',
-    'Fill in the Library sheet with one row per template item.',
-    'For top-level categories only, leave Subcategory blank.',
-    'Use the Volunteers sheet to import volunteer names, roles and WhatsApp numbers.',
-    '',
-    'Columns in Library:',
-    '  Category, Subcategory, Description, Priority',
-    'Columns in Volunteers:',
-    '  Name, Role, WhatsApp, Sort Order',
-  ]
-  lines.forEach(text => infoWs.addRow([text]))
-
-  const libWs = wb.addWorksheet('Library')
-  libWs.columns = [
-    { header: 'Category', key: 'category', width: 38 },
-    { header: 'Subcategory', key: 'subCategory', width: 38 },
-    { header: 'Description', key: 'description', width: 50 },
-    { header: 'Priority', key: 'priority', width: 18 },
-  ]
   const sampleRows = [
-    { category: 'Food & Catering', subCategory: 'Breakfast', description: '', priority: 'medium' },
-    { category: 'Food & Catering', subCategory: 'Lunch', description: '', priority: 'medium' },
-    { category: 'Food & Catering', subCategory: 'Dinner', description: '', priority: 'medium' },
-    { category: 'Freebies & Gifts', subCategory: 'Shawls', description: '', priority: 'low' },
-    { category: 'Freebies & Gifts', subCategory: 'Promise Cards', description: '', priority: 'low' },
-    { category: 'Stationery Items', subCategory: 'Offering Envelopes', description: '', priority: 'low' },
+    { category: 'Food & Catering', subCategory: 'Breakfast' },
+    { category: 'Food & Catering', subCategory: 'Lunch' },
+    { category: 'Food & Catering', subCategory: 'Dinner' },
+    { category: 'Freebies & Gifts', subCategory: 'Shawls' },
+    { category: 'Freebies & Gifts', subCategory: 'Promise Cards' },
   ]
-  libWs.addRows(sampleRows)
 
-  const volWs = wb.addWorksheet('Volunteers')
-  volWs.columns = [
-    { header: 'Name', key: 'name', width: 32 },
-    { header: 'Role', key: 'role', width: 28 },
-    { header: 'WhatsApp', key: 'whatsapp', width: 24 },
-    { header: 'Sort Order', key: 'sort_order', width: 14 },
-  ]
-  volWs.addRow({ name: 'John Doe', role: 'Coordinator', whatsapp: '+911234567890', sort_order: 0 })
+  createLibraryWorkbook({ workbook: wb, rows: sampleRows })
+
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'event-planner-master-template.xlsx'
+  a.download = 'event-planner-library-template.xlsx'
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -347,15 +438,184 @@ export async function downloadEventPlannerMasterTemplate() {
 export async function downloadEventPlannerMasterData() {
   const data = await getEventPlannerMasterData()
   const libraryRows = flattenLibraryRows(data.library || [])
-  const wb = await buildMasterWorkbook({ libraryRows, volunteers: data.volunteers || [] })
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Church CMS — Event Planner Library Data Export'
+  wb.created = new Date()
+
+  createLibraryWorkbook({ workbook: wb, rows: libraryRows })
+
+
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'event-planner-master-data.xlsx'
+  a.download = 'event-planner-library-data.xlsx'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function formatVolunteerWorksheet(volWs) {
+  const borderStyle = {
+    top: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+    left: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+    bottom: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+    right: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+  }
+
+  const headerRow = volWs.getRow(1)
+  headerRow.font = { bold: true, color: { argb: 'FF1F497D' } }
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center' }
+  headerRow.height = 22
+  headerRow.eachCell(cell => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDBE5F1' },
+    }
+    cell.border = borderStyle
+  })
+
+  volWs.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    row.eachCell(cell => {
+      cell.border = borderStyle
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+    })
+  })
+
+  volWs.columns.forEach(col => {
+    let maxLength = 14
+    col.eachCell({ includeEmpty: false }, cell => {
+      const value = cell.value
+      const text = value == null ? '' : String(value)
+      maxLength = Math.max(maxLength, text.length + 2)
+    })
+    col.width = Math.min(Math.max(maxLength, 14), 48)
+  })
+
+  volWs.views = [{ state: 'frozen', ySplit: 1 }]
+}
+
+export async function downloadEventPlannerVolunteersTemplate() {
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Church CMS — Event Planner Volunteers Template'
+  wb.created = new Date()
+
+  const volWs = wb.addWorksheet('Volunteers')
+  volWs.columns = [
+    { header: 'Name', key: 'name', width: 34 },
+    { header: 'Role', key: 'role', width: 26 },
+    { header: 'WhatsApp', key: 'whatsapp', width: 26 },
+  ]
+  volWs.addRows([
+    ['Daniel Prahbahar', 'Secretary', '919123456789'],
+    ['Immanuel Jones', 'Volunteer', '919876543210'],
+  ])
+
+  formatVolunteerWorksheet(volWs)
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'event-planner-volunteers-template.xlsx'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function downloadEventPlannerVolunteersData() {
+  const data = await getEventPlannerMasterData()
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Church CMS — Event Planner Volunteers Export'
+  wb.created = new Date()
+
+  const volWs = wb.addWorksheet('Volunteers')
+  volWs.columns = [
+    { header: 'Name', key: 'name', width: 32 },
+    { header: 'Role', key: 'role', width: 28 },
+    { header: 'WhatsApp', key: 'whatsapp', width: 24 },
+  ]
+  if (Array.isArray(data.volunteers) && data.volunteers.length > 0) {
+    volWs.addRows((data.volunteers || []).map(v => ([v.name, v.role || '', v.whatsapp || ''])))
+  }
+
+  formatVolunteerWorksheet(volWs)
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'event-planner-volunteers-data.xlsx'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function readAndParseVolunteersFile(file) {
+  const buffer = await file.arrayBuffer()
+  async function parseWithExcelJS() {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer)
+    const wsVol = wb.getWorksheet('Volunteers') || wb.worksheets[0]
+    if (!wsVol) throw new Error('Missing Volunteers sheet')
+    const volunteers = parseVolunteersSheet(wsVol)
+    if (!volunteers.length) throw new Error('No volunteers found in file')
+    return { valid: true, errors: [], volunteers }
+  }
+  async function parseWithXLSX() {
+    const xlsxModule = await import('xlsx')
+    const XLSX = xlsxModule.default || xlsxModule
+    const wb = XLSX.read(buffer, { type: 'array' })
+    const sheetNames = wb.SheetNames || []
+    if (!sheetNames.length) throw new Error('No sheets found in workbook')
+    const volunteerSheetName = sheetNames.find(name => name === 'Volunteers') || sheetNames[0]
+    const volunteerSheet = wb.Sheets[volunteerSheetName]
+    if (!volunteerSheet) throw new Error('Missing Volunteers sheet')
+    const volunteerRows = XLSX.utils.sheet_to_json(volunteerSheet, { header: 1, defval: '' })
+    const volunteers = volunteerRows.slice(1).reduce((out, row) => {
+      const name = String(row[0] ?? '').trim()
+      if (!name) return out
+      out.push({
+        name,
+        role: String(row[1] ?? '').trim() || null,
+        whatsapp: normalizeWhatsAppNumber(String(row[2] ?? '').trim() || '', { provider: 'soft7' }) || null,
+        sort_order: Number(row[3] ?? 0) || 0,
+      })
+      return out
+    }, [])
+    if (!volunteers.length) throw new Error('No volunteers found in file')
+    return { valid: true, errors: [], volunteers }
+  }
+  try { return await parseWithExcelJS() } catch (err) { try { return await parseWithXLSX() } catch (err2) { console.error('Failed to parse volunteers file', err, err2); return { valid: false, errors: ['Invalid file or unsupported format.'], volunteers: [] } } }
+}
+
+export async function importEventPlannerVolunteers(volunteers, userEmail) {
+  if (!Array.isArray(volunteers) || volunteers.length === 0) return
+  const now = new Date().toISOString()
+  try {
+    const { error: delErr } = await supabase.from('event_volunteers').delete().gte('sort_order', -1)
+    if (delErr) throw delErr
+  } catch (err) {
+    console.warn('importEventPlannerVolunteers: delete failed, continuing', err)
+  }
+  const rows = volunteers.map((v, idx) => ({
+    name: v.name,
+    role: v.role || null,
+    whatsapp: v.whatsapp || null,
+    sort_order: v.sort_order || idx,
+    created_by: userEmail,
+    updated_by: userEmail,
+    created_at: v.created_at || now,
+    updated_at: v.updated_at || now,
+  }))
+  const { error } = await supabase.from('event_volunteers').insert(rows)
+  if (error) throw error
 }
 
 function parseLibrarySheet(ws) {
@@ -364,10 +624,8 @@ function parseLibrarySheet(ws) {
     if (ri === 1) return
     const category = String(row.getCell(1).value ?? '').trim()
     const subCategory = String(row.getCell(2).value ?? '').trim()
-    const description = String(row.getCell(3).value ?? '').trim()
-    const priority = String(row.getCell(4).value ?? 'medium').trim() || 'medium'
     if (!category) return
-    rows.push({ category, subCategory: subCategory || null, description: description || null, priority })
+    rows.push({ category, subCategory: subCategory || null })
   })
   return rows
 }
@@ -379,7 +637,7 @@ function parseVolunteersSheet(ws) {
     const name = String(row.getCell(1).value ?? '').trim()
     if (!name) return
     const role = String(row.getCell(2).value ?? '').trim() || null
-    const whatsapp = String(row.getCell(3).value ?? '').trim() || null
+    const whatsapp = normalizeWhatsAppNumber(String(row.getCell(3).value ?? '').trim() || '', { provider: 'soft7' }) || null
     const sort_order = Number(row.getCell(4).value ?? 0) || 0
     rows.push({ name, role, whatsapp, sort_order })
   })
@@ -387,30 +645,109 @@ function parseVolunteersSheet(ws) {
 }
 
 export async function readAndParseEventPlannerMasterFile(file) {
-  const ExcelJS = (await import('exceljs')).default
-  const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(await file.arrayBuffer())
+  const buffer = await file.arrayBuffer()
 
-  const wsLibrary = wb.getWorksheet('Library')
-  const wsVolunteers = wb.getWorksheet('Volunteers')
-  const errors = []
-  if (!wsLibrary) errors.push('Missing "Library" sheet. Please use the Event Planner template.')
-  if (!wsVolunteers) errors.push('Missing "Volunteers" sheet. Please use the Event Planner template.')
-  if (errors.length) return { valid: false, errors, library: [], volunteers: [] }
-
-  const library = parseLibrarySheet(wsLibrary)
-  const volunteers = parseVolunteersSheet(wsVolunteers)
-
-  if (!library.length && !volunteers.length) {
-    return { valid: false, errors: ['No library or volunteer rows found.'], library: [], volunteers: [] }
+  function normalizeWorkbookLibrary(ws) {
+    if (!ws) return null
+    const header1 = String(ws.getRow(1).getCell(1).value ?? '').trim()
+    const header2 = String(ws.getRow(1).getCell(2).value ?? '').trim()
+    if (!header1 || !/category/i.test(header1)) return null
+    if (!header2 || !/subcategory/i.test(header2)) return null
+    return ws
   }
 
-  return { valid: true, errors: [], library, volunteers }
+  async function parseWithExcelJS() {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buffer)
+
+    let wsLibrary = normalizeWorkbookLibrary(wb.getWorksheet('Library'))
+    if (!wsLibrary && wb.worksheets.length) {
+      wsLibrary = normalizeWorkbookLibrary(wb.worksheets[0])
+    }
+    if (!wsLibrary) {
+      throw new Error('Missing Library sheet or invalid header row')
+    }
+
+    const library = parseLibrarySheet(wsLibrary)
+    const wsVolunteers = wb.getWorksheet('Volunteers')
+    const volunteers = wsVolunteers ? parseVolunteersSheet(wsVolunteers) : null
+
+    if (!library.length && !(volunteers && volunteers.length)) {
+      throw new Error('No library rows found')
+    }
+
+    return { valid: true, errors: [], library, volunteers }
+  }
+
+  async function parseWithXLSX() {
+    const xlsxModule = await import('xlsx')
+    const XLSX = xlsxModule.default || xlsxModule
+    const wb = XLSX.read(buffer, { type: 'array' })
+    const sheetNames = wb.SheetNames || []
+    if (!sheetNames.length) {
+      throw new Error('No sheets found in workbook')
+    }
+
+    const librarySheetName = sheetNames.find(name => name === 'Library') || sheetNames[0]
+    const librarySheet = wb.Sheets[librarySheetName]
+    if (!librarySheet) {
+      throw new Error('Missing Library sheet')
+    }
+
+    const rows = XLSX.utils.sheet_to_json(librarySheet, { header: 1, defval: '' })
+    if (!rows.length || !String(rows[0][0] ?? '').trim().toLowerCase().includes('category') || !String(rows[0][1] ?? '').trim().toLowerCase().includes('subcategory')) {
+      throw new Error('Missing Category/Subcategory headers in Library sheet')
+    }
+
+    const library = rows.slice(1).reduce((out, row) => {
+      const category = String(row[0] ?? '').trim()
+      if (!category) return out
+      const subCategory = String(row[1] ?? '').trim()
+      out.push({ category, subCategory: subCategory || null })
+      return out
+    }, [])
+
+    let volunteers = null
+    const volunteerSheetName = sheetNames.find(name => name === 'Volunteers')
+    if (volunteerSheetName) {
+      const volunteerSheet = wb.Sheets[volunteerSheetName]
+      const volunteerRows = XLSX.utils.sheet_to_json(volunteerSheet, { header: 1, defval: '' })
+      volunteers = volunteerRows.slice(1).reduce((out, row) => {
+        const name = String(row[0] ?? '').trim()
+        if (!name) return out
+        out.push({
+          name,
+          role: String(row[1] ?? '').trim() || null,
+          whatsapp: String(row[2] ?? '').trim() || null,
+          sort_order: Number(row[3] ?? 0) || 0,
+        })
+        return out
+      }, [])
+    }
+
+    if (!library.length && !(volunteers && volunteers.length)) {
+      throw new Error('No library rows found')
+    }
+
+    return { valid: true, errors: [], library, volunteers }
+  }
+
+  try {
+    return await parseWithExcelJS()
+  } catch (err) {
+    try {
+      return await parseWithXLSX()
+    } catch (err2) {
+      console.error('Failed to parse event planner template', err, err2)
+      return { valid: false, errors: ['Invalid file or unsupported format. Please use the Event Planner library template and save it as .xlsx.'], library: [], volunteers: null }
+    }
+  }
 }
 
 export async function importEventPlannerMasterData(parsed, userEmail) {
   const libraryRows = Array.isArray(parsed.library) ? parsed.library : []
-  const volunteers = Array.isArray(parsed.volunteers) ? parsed.volunteers : []
+  const volunteers = parsed.volunteers === null ? undefined : Array.isArray(parsed.volunteers) ? parsed.volunteers : []
 
   const library = libraryRows
     .filter(row => row.category && row.category.trim())

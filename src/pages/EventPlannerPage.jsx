@@ -14,7 +14,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Calendar, Plus, ChevronLeft, ChevronRight, Pencil, Trash2,
+  Calendar, Plus, ChevronLeft, ChevronRight, ChevronDown, Pencil, Trash2,
   User, CalendarDays, Copy, LayoutGrid, CheckCircle2, List,
   Grid3X3, Filter, X, SlidersHorizontal, Search, BarChart2,
   AlertCircle, Clock, Repeat, Settings, GripVertical,
@@ -312,13 +312,21 @@ function LibraryTaskOverlay({task}){
   )
 }
 
-function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,saving}){
+function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,saving,onToggleCollapse,collapsed,autoEdit}){
   const [editing,setEditing]=useState(false)
   const [value,setValue]=useState(task.subcategory||task.category||'')
   const draggableId = task.dragId || `lib-${task.id}`
   const {attributes,listeners,setNodeRef,isDragging}=useDraggable({id:draggableId})
   const taskColor=isSubtask?'#1e3a8a':'#991b1b'
   const bgColor=isSubtask?'#eff6ff':'#fef2f2'
+  const inputRef = useRef(null)
+
+  useEffect(()=>{
+    if(autoEdit){
+      setEditing(true)
+      setTimeout(()=>{inputRef.current?.focus()},60)
+    }
+  },[autoEdit])
 
   async function handleSave(){
     if(!value.trim()) return
@@ -333,9 +341,14 @@ function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,savin
         <GripVertical size={14}/>
       </div>
       {editing?(
-        <input autoFocus value={value} onChange={e=>setValue(e.target.value)} onBlur={handleSave} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} style={{flex:1,padding:'4px 6px',fontSize:12,border:`1px solid ${taskColor}`,borderRadius:4,outline:'none'}} disabled={saving}/>
+        <input ref={inputRef} autoFocus value={value} onChange={e=>setValue(e.target.value)} onBlur={handleSave} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} style={{flex:1,padding:'4px 6px',fontSize:12,border:`1px solid ${taskColor}`,borderRadius:4,outline:'none'}} disabled={saving}/>
       ):(
         <span onDoubleClick={()=>{setEditing(true);setValue(task.subcategory||task.category||'')}} style={{flex:1,fontSize:13,color:taskColor,cursor:'text',padding:'2px 4px',borderRadius:3,userSelect:'none',fontWeight:isSubtask?500:600}}>{task.subcategory||task.category}</span>
+      )}
+      {!isSubtask&&(
+        <button onClick={()=>onToggleCollapse?.(task.category)} disabled={saving} title={collapsed ? 'Expand category' : 'Collapse category'} style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:14,padding:'0 4px',display:'flex',alignItems:'center'}}>
+          {collapsed ? <ChevronRight size={16}/> : <ChevronDown size={16}/>}        
+        </button>
       )}
       {!isSubtask&&(
         <button onClick={()=>onAddSubtask(task.id)} disabled={saving || !task.id} style={{background:'transparent',border:'none',color:taskColor,cursor:task.id?'pointer':'not-allowed',fontSize:14,padding:'0 4px',fontWeight:600}}>+</button>
@@ -430,8 +443,9 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask, libCreatedTaskIds=[
 
 // ── LibraryPanel ──────────────────────────────────────────────────────────────
 
-function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,saving}){
+function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,saving,recentAddedId}){
   const [search,setSearch]=useState('')
+  const [collapsedCategories,setCollapsedCategories]=useState({})
   const { profile } = useAuth()
 
   const filtered=tasks.filter(t=>
@@ -441,22 +455,41 @@ function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,sa
 
   const grouped={}
   filtered.forEach(t=>{
-    if(!grouped[t.category]) grouped[t.category]=[]
-    grouped[t.category].push(t)
+    const key = t.category || ''
+    if(!grouped[key]) grouped[key]=[]
+    grouped[key].push(t)
   })
 
-  const categories=Object.keys(grouped).sort()
+  // sort items inside each category by sort_order then created_at
+  Object.keys(grouped).forEach(k=>{
+    grouped[k].sort((a,b)=> (a.sort_order||0)-(b.sort_order||0) || (new Date(a.created_at||0) - new Date(b.created_at||0)))
+  })
+
+  // order categories by the lowest sort_order of their items so new categories appear at the end
+  const categories = Object.keys(grouped).sort((a,b)=>{
+    const aOrder = grouped[a][0]?.sort_order ?? 0
+    const bOrder = grouped[b][0]?.sort_order ?? 0
+    return aOrder - bOrder
+  })
+  const allCollapsed = categories.length > 0 && categories.every(cat => collapsedCategories[cat])
+
+  const toggleCategory = (category) => setCollapsedCategories(prev => ({ ...prev, [category]: !prev[category] }))
+  const toggleAll = () => setCollapsedCategories(Object.fromEntries(categories.map(cat => [cat, !allCollapsed])))
 
   return(
     <div style={{display:'flex',flexDirection:'column',background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,overflow:'hidden',boxShadow:'0 12px 32px rgba(15,23,42,0.08)',flex:1,height:'100%'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',borderBottom:'1px solid var(--card-border,#e2e8f0)',flexShrink:0}}>
-        <div style={{flex:1}}>
-          <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)',marginBottom:8}}>Task Library</div>
-          <input placeholder="Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:'100%',padding:'6px 8px',fontSize:12,border:'1px solid var(--card-border,#e2e8f0)',borderRadius:6,outline:'none',background:'var(--input-bg,#f8fafc)'}}/>
+      <div style={{display:'flex',flexDirection:'column',gap:8,padding:'14px 16px',borderBottom:'1px solid var(--card-border,#e2e8f0)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>Task Library</div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <button onClick={onAddCategory} disabled={saving} title="Add a new task category" style={{...btnP,fontSize:12,padding:'6px 12px',whiteSpace:'nowrap',flexShrink:0,height:32,display:'flex',alignItems:'center',gap:6}}>+ Task</button>
+            <button onClick={toggleAll} disabled={categories.length===0} title={allCollapsed ? 'Expand all' : 'Collapse all'} style={{background:'transparent',border:'none',padding:6,display:'flex',alignItems:'center',justifyContent:'center',cursor:categories.length? 'pointer':'default',flexShrink:0,transition:'transform 0.12s,background 0.12s',borderRadius:6}}
+              onMouseEnter={e=>{e.currentTarget.style.background='rgba(15,23,42,0.04)';e.currentTarget.style.transform='scale(1.05)'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.transform='none'}}>{allCollapsed ? <ChevronRight size={14} color="var(--text-3)"/> : <ChevronDown size={14} color="var(--text-3)"/>}</button>
+          </div>
         </div>
-        <button onClick={onAddCategory} disabled={saving} style={{...btnP,fontSize:12,padding:'6px 10px',whiteSpace:'nowrap',flexShrink:0}}>+ Task</button>
+        <input placeholder="Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:'100%',padding:'6px 8px',fontSize:12,border:'1px solid var(--card-border,#f8fafc)',borderRadius:6,outline:'none',background:'var(--input-bg,#f8fafc)'}}/>
       </div>
-      <div style={{flex:1,overflowY:'auto',minHeight:240}}>
+      <div style={{flex:1,overflowY:'auto',minHeight:240,padding:'12px 14px'}}>
         {filtered.length===0?(
           <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,color:'var(--text-3)',padding:'24px',textAlign:'center',height:'100%'}}>
             <LayoutGrid size={34}/>
@@ -466,11 +499,13 @@ function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,sa
         ):(
           categories.map(cat=>{
             const firstTask = grouped[cat][0]
+            const newTask = recentAddedId ? tasks.find(t=>t.id===recentAddedId) : null
+            const headerAutoEdit = newTask && (newTask.subcategory==null || newTask.subcategory==='') && newTask.category===cat && newTask.id===firstTask?.id
             return (
               <div key={cat}>
-                <LibraryItemRow task={{category:cat,id:firstTask?.id,dragId:`lib-cat-${cat}`}} isSubtask={false} onNameChange={onNameChange} onAddSubtask={onAddSubtask} onDelete={onDelete} saving={saving}/>
-                {grouped[cat].map(subtask=>(
-                  <LibraryItemRow key={subtask.id} task={subtask} isSubtask={true} onNameChange={onNameChange} onDelete={onDelete} saving={saving}/>
+                <LibraryItemRow task={{category:cat,id:firstTask?.id,dragId:`lib-cat-${cat}`}} isSubtask={false} onNameChange={onNameChange} onAddSubtask={onAddSubtask} onDelete={onDelete} saving={saving} onToggleCollapse={toggleCategory} collapsed={collapsedCategories[cat]} autoEdit={headerAutoEdit} />
+                {!collapsedCategories[cat] && grouped[cat].filter(t => t.subcategory != null && t.subcategory !== '').map(subtask=>(
+                  <LibraryItemRow key={subtask.id} task={subtask} isSubtask={true} onNameChange={onNameChange} onDelete={onDelete} saving={saving} autoEdit={subtask.id===recentAddedId}/>
                 ))}
               </div>
             )
@@ -1023,6 +1058,7 @@ export default function EventPlannerPage(){
   const [libraryTasks, setLibraryTasks] = useState([])
   const [librarySaving, setLibrarySaving] = useState(false)
   const [libraryModal, setLibraryModal] = useState(null)
+  const [libraryRecentlyAddedId, setLibraryRecentlyAddedId] = useState(null)
   const [volunteers, setVolunteers] = useState([])
   const [members,   setMembers]   = useState([])
   const [selEvent,  setSelEvent]  = useState(null)
@@ -1287,8 +1323,10 @@ export default function EventPlannerPage(){
   async function handleAddLibraryCategory(){
     setLibrarySaving(true)
     try{
-      await addLibraryCategory(profile?.email)
+      const newId = await addLibraryCategory(profile?.email)
       await loadLibraryTasks()
+      setLibraryRecentlyAddedId(newId)
+      setTimeout(()=>setLibraryRecentlyAddedId(null),2200)
       toast('Task category added','success')
     }catch{
       toast('Failed to add task','error')
@@ -2060,53 +2098,41 @@ export default function EventPlannerPage(){
     return(
       <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 88px)',overflow:'hidden'}}>
         {/* Board header */}
-        <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 22px',flexShrink:0,borderBottom:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',flexWrap:'wrap',rowGap:6}}>
-          <button onClick={backFromBoard} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:4,color:'var(--accent,#2563eb)',fontWeight:600,fontSize:13,padding:'4px 6px 4px 0',flexShrink:0}}>
-            <ChevronLeft size={16}/> Event Planner
-          </button>
-          <div style={{width:1,height:18,background:'var(--card-border,#e2e8f0)',flexShrink:0}}/>
-          <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0,flexWrap:'wrap'}}>
-            {ec.dot&&<div style={{width:10,height:10,borderRadius:'50%',background:ec.dot,flexShrink:0}}/>}
-            <h2 style={{margin:0,fontSize:15,fontWeight:700,color:'var(--text-1)'}}>{selEvent?.name}</h2>
-            <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:ec.bg,color:ec.text,textTransform:'uppercase',flexShrink:0}}>{selEvent?.event_type}</span>
-            {selEvent?.start_date&&<span style={{fontSize:12,color:'var(--text-3)',flexShrink:0}}>{fmtDate(selEvent.start_date)}{selEvent.end_date&&selEvent.end_date!==selEvent.start_date?` – ${fmtDate(selEvent.end_date)}`:''}</span>}
-          </div>
-          {total>0&&(
-            <div onClick={()=>setSummaryModal(true)} title="View completion summary" style={{display:'flex',alignItems:'center',gap:7,flexShrink:0,cursor:'pointer',borderRadius:6,padding:'2px 4px'}}
-              onMouseEnter={e=>e.currentTarget.style.background='var(--input-bg,#f1f5f9)'}
-              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              <div style={{width:64,height:5,borderRadius:10,background:'var(--input-bg,#f1f5f9)',overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${pct}%`,background:pct===100?'#22c55e':'var(--accent,#2563eb)',borderRadius:10}}/>
+        <div style={{display:'flex',flexDirection:'column',gap:6,padding:'11px 22px',flexShrink:0,borderBottom:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button onClick={backFromBoard} style={{background:'none',border:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:4,color:'var(--accent,#2563eb)',fontWeight:600,fontSize:13,padding:'4px 6px 4px 0',flexShrink:0}}>
+              <ChevronLeft size={16}/> Event Planner
+            </button>
+            <div style={{width:1,height:18,background:'var(--card-border,#e2e8f0)',flexShrink:0}}/>
+            <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,background:'var(--input-bg,#f8fafc)',padding:'10px 12px',borderRadius:12,flex:1,minWidth:0}}>
+                {ec.dot&&<div style={{width:10,height:10,borderRadius:'50%',background:ec.dot,flexShrink:0}}/>}
+                <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+                  <h2 style={{margin:0,fontSize:16,fontWeight:800,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{selEvent?.name}</h2>
+                  <span style={{fontSize:10,fontWeight:700,padding:'4px 8px',borderRadius:20,background:ec.bg,color:ec.text,textTransform:'uppercase',flexShrink:0}}>{selEvent?.event_type}</span>
+                  <span style={{fontSize:12,color:'var(--text-3)',flexShrink:0}}>{selEvent?.start_date?`${fmtDate(selEvent.start_date)}${selEvent.end_date&&selEvent.end_date!==selEvent.start_date?` – ${fmtDate(selEvent.end_date)}`:''}`:''}</span>
+                </div>
               </div>
-              <span style={{fontSize:11,color:'var(--text-3)',whiteSpace:'nowrap'}}>{done}/{total}</span>
-              <BarChart2 size={12} color="var(--text-3)"/>
             </div>
-          )}
-          <div style={{display:'flex',gap:6,flexShrink:0}}>
-            <button onClick={()=>setEventModal(selEvent)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Pencil size={12}/>Edit</button>
-            <button onClick={()=>setCarryModal(true)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Copy size={12}/>Copy from…</button>
+            {total>0&&(
+              <div onClick={()=>setSummaryModal(true)} title="View completion summary" style={{display:'flex',alignItems:'center',gap:7,flexShrink:0,cursor:'pointer',borderRadius:6,padding:'2px 4px'}}
+                onMouseEnter={e=>e.currentTarget.style.background='var(--input-bg,#f1f5f9)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <div style={{width:64,height:5,borderRadius:10,background:'var(--input-bg,#f1f5f9)',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${pct}%`,background:pct===100?'#22c55e':'var(--accent,#2563eb)',borderRadius:10}}/>
+                </div>
+                <span style={{fontSize:11,color:'var(--text-3)',whiteSpace:'nowrap'}}>{done}/{total}</span>
+                <BarChart2 size={12} color="var(--text-3)"/>
+              </div>
+            )}
+            <div style={{display:'flex',gap:6,flexShrink:0}}>
+              <button onClick={()=>setEventModal(selEvent)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Pencil size={12}/>Edit</button>
+              <button onClick={()=>setCarryModal(true)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Copy size={12}/>Copy from…</button>
+            </div>
           </div>
         </div>
 
-        {/* Filter bar */}
-        <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 22px',borderBottom:'1px solid var(--card-border,#e2e8f0)',background:hasFilter?'rgba(37,99,235,0.03)':'var(--page-bg,#f8fafc)',flexShrink:0,flexWrap:'wrap'}}>
-          <Filter size={13} color={hasFilter?'var(--accent,#2563eb)':'var(--text-3)'}/>
-          <span style={{fontSize:11,fontWeight:600,color:hasFilter?'var(--accent,#2563eb)':'var(--text-3)'}}>Filter:</span>
-          <select value={fPriority} onChange={e=>setFPriority(e.target.value)} style={{fontSize:12,padding:'3px 7px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-2)',cursor:'pointer',outline:'none'}}>
-            <option value="">All Priorities</option>{PRIORITIES.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-          {assignees.length>0&&(
-            <select value={fAssignee} onChange={e=>setFAssignee(e.target.value)} style={{fontSize:12,padding:'3px 7px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-2)',cursor:'pointer',outline:'none'}}>
-              <option value="">All Assignees</option>{assignees.map(a=><option key={a} value={a}>{a}</option>)}
-            </select>
-          )}
-          {hasFilter&&(
-            <button onClick={()=>{setFPriority('');setFAssignee('')}} style={{display:'flex',alignItems:'center',gap:4,background:'none',border:'none',cursor:'pointer',fontSize:12,color:'var(--text-3)',padding:'2px 4px'}}>
-              <X size={12}/>Clear
-            </button>
-          )}
-          {hasFilter&&<span style={{fontSize:11,color:'var(--text-3)',fontStyle:'italic'}}>{boardTasks.length}/{tasks.length} tasks shown</span>}
-        </div>
+        {/* Filter removed as requested */}
 
         {/* Kanban */}
         <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -2134,8 +2160,8 @@ export default function EventPlannerPage(){
                 </div>
               )}
             </div>
-            <div style={{width:380,display:'flex',flexDirection:'column',height:'100%',overflow:'hidden',padding:'0 22px 22px'}}>
-              <LibraryPanel tasks={libraryTasks} onNameChange={handleLibraryNameChange} onAddSubtask={handleAddLibrarySubtask} onDelete={handleDeleteLibraryItem} onAddCategory={handleAddLibraryCategory} saving={librarySaving}/>
+            <div style={{width:380,display:'flex',flexDirection:'column',height:'100%',overflow:'hidden',padding:'22px 22px 22px'}}>
+              <LibraryPanel tasks={libraryTasks} onNameChange={handleLibraryNameChange} onAddSubtask={handleAddLibrarySubtask} onDelete={handleDeleteLibraryItem} onAddCategory={handleAddLibraryCategory} saving={librarySaving} recentAddedId={libraryRecentlyAddedId} />
             </div>
           </div>
           <DragOverlay dropAnimation={null}>

@@ -7,8 +7,27 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase'
 
 const EDGE_FN = `${SUPABASE_URL}/functions/v1/send-whatsapp`
 
+export function normalizeWhatsAppNumber(raw, { provider = 'soft7', defaultCountry = '91' } = {}) {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (!digits) return ''
+  const normalized = digits.replace(/^0+/, '')
+  switch ((provider || '').toLowerCase()) {
+    case 'official':
+    case 'meta':
+    case 'waba':
+      if (normalized.length <= 10 && defaultCountry) {
+        return `${defaultCountry}${normalized}`
+      }
+      return normalized
+    case 'soft7':
+    default:
+      return normalized
+  }
+}
+
 export async function sendWhatsAppMessage(church, { to, message, mediaUrl, mediaType }) {
-  if (!to) throw new Error('Recipient number is required')
+  const recipient = normalizeWhatsAppNumber(to, { provider: church?.whatsapp_api_type || 'soft7', defaultCountry: '91' })
+  if (!recipient) throw new Error('Recipient number is required')
 
   const resp = await fetch(EDGE_FN, {
     method: 'POST',

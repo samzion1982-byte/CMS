@@ -14,7 +14,7 @@ drop table if exists task_library cascade;
 create table if not exists task_library (
   id              uuid        primary key default gen_random_uuid(),
   category        text        not null,              -- e.g., "Food & Catering"
-  subcategory     text        not null,              -- e.g., "Breakfast", "Lunch", "Dinner"
+  subcategory     text,                              -- e.g., "Breakfast", "Lunch", "Dinner" (null for category-only rows)
   sort_order      integer     not null default 0,
   created_by      text,
   updated_by      text,
@@ -54,6 +54,4 @@ values
   ('Freebies & Gifts', 'Shawls', 10, now(), now()),
   ('Freebies & Gifts', 'Mementos', 11, now(), now()),
   ('Freebies & Gifts', 'Calendar', 12, now(), now()),
-  ('Freebies & Gifts', 'Promise Cards', 13, now(), now()),
-  ('Stationery Items', 'Offering Envelopes', 14, now(), now()),
-  ('Stationery Items', 'Pen', 15, now(), now());
+  ('Freebies & Gifts', 'Promise Cards', 13, now(), now());
