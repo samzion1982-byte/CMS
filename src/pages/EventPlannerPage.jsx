@@ -76,6 +76,30 @@ function getDaySingle(ws){ const A=['S','M','T','W','T','F','S']; return [...A.s
 const BLANK_EVENT  = { name:'', event_type:'annual', start_date:'', end_date:'', year:new Date().getFullYear(), color:null, status:'planning', date_fixed:false, is_recurring:false }
 
 function addOneYear(ds){ if(!ds)return null; const[y,m,d]=ds.split('-'); return `${parseInt(y)+1}-${m}-${d}` }
+function WhatsAppIcon({ size=14, ringCount=0, color='#fff' }){
+  const padding = 2
+  const svgSize = size + (ringCount * 4)
+  const centerX = svgSize / 2
+  const centerY = svgSize / 2
+  const iconRadius = size / 2
+  
+  return (
+    <svg width={svgSize} height={svgSize} viewBox={`0 0 ${svgSize} ${svgSize}`} xmlns="http://www.w3.org/2000/svg">
+      {/* Outer rings */}
+      {ringCount >= 1 && <circle cx={centerX} cy={centerY} r={iconRadius + 2} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
+      {ringCount >= 2 && <circle cx={centerX} cy={centerY} r={iconRadius + 4.5} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
+      {ringCount >= 3 && <circle cx={centerX} cy={centerY} r={iconRadius + 7} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
+      
+      {/* Icon */}
+      <g transform={`translate(${(svgSize - size) / 2}, ${(svgSize - size) / 2})`}>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.671.15-.198.297-.767.967-.94 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.447-.52.149-.173.198-.297.298-.497.099-.198.05-.372-.025-.521-.075-.148-.671-1.611-.92-2.207-.242-.579-.487-.5-.671-.51l-.572-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.71.306 1.262.489 1.693.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.007-1.413.248-.694.248-1.289.173-1.414-.074-.124-.273-.198-.57-.347z"/>
+          <path d="M12.004 2C6.476 2 2 6.477 2 12.004c0 2.115.632 4.078 1.729 5.74L2 22l4.407-1.154A9.963 9.963 0 0 0 12.004 22c5.527 0 10.004-4.477 10.004-9.996C22.008 6.477 17.53 2 12.004 2Z"/>
+        </svg>
+      </g>
+    </svg>
+  )
+}
 const BLANK_BUCKET = { name:'', color:'#6366f1' }
 const BLANK_TASK   = { title:'', bucket_id:'', assigned_to:'', due_date:'', priority:'medium', status:'pending', notes:'' }
 
@@ -262,7 +286,7 @@ function MiniMonth({ year, month, events, selRange, onDayMouseDown, onDayMouseEn
 
 // ── TaskCard (draggable) ──────────────────────────────────────────────────────
 
-function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange }) {
+function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange, onSendWhatsApp }) {
   const [hov,setHov]=useState(false)
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:task.id})
   const st=taskStatusStyle(task.status)
@@ -283,12 +307,28 @@ function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange }) {
           </div>
         )}
         <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'var(--text-1)',lineHeight:1.4,paddingRight:hov?46:0}}>{task.title}</p>
+        {task.whatsapp_sent_count > 0 && (
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:10,fontWeight:700,color:'#166534',background:'#dcfce7',borderRadius:999,padding:'4px 8px',marginBottom:6}}>
+            <CheckCircle2 size={12} color='#16a34a' />
+            <span>{task.whatsapp_sent_count} WhatsApp</span>
+          </div>
+        )}
         {task.notes&&!isDragging&&<p style={{margin:'0 0 6px',fontSize:11,color:'var(--text-3)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',lineHeight:1.4}}>{task.notes}</p>}
         {task.assigned_to&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:4}}><User size={11} color="var(--text-3)"/><span style={{fontSize:12,color:'var(--text-2)'}}>{task.assigned_to}</span></div>}
         {task.due_date&&<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}><CalendarDays size={11} color={overdue?'#ef4444':'var(--text-3)'}/><span style={{fontSize:12,color:overdue?'#ef4444':'var(--text-2)',fontWeight:overdue?600:400}}>{fmtDate(task.due_date)}{overdue?' ⚠':''}</span></div>}
-        <div style={{display:'flex',justifyContent:'flex-end'}}>
+        <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'center'}}>
+          {!task.parent_id && (
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <button onClick={e=>{e.stopPropagation();onSendWhatsApp?.(task.id)}}
+                aria-label={task.whatsapp_sent_count>0 ? `WhatsApp sent ${task.whatsapp_sent_count} time(s)` : 'Send WhatsApp'}
+                style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:task.whatsapp_sent_count>0?38:30,height:task.whatsapp_sent_count>0?38:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to&&task.whatsapp_sent_count===0?'pointer':'not-allowed',opacity:task.assigned_to&&task.whatsapp_sent_count===0?1:0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}
+                disabled={!task.assigned_to||task.whatsapp_sent_count>0}>
+                <WhatsAppIcon size={14} ringCount={task.whatsapp_sent_count} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
+              </button>
+            </div>
+          )}
           <button onClick={e=>{e.stopPropagation();onAssign?.(task)}}
-            style={{background:'#2563eb',border:'none',borderRadius:20,padding:'7px 16px',fontSize:12,color:'#fff',cursor:'pointer',fontWeight:600,marginTop:6,whiteSpace:'nowrap',transition:'all 0.2s'}}>
+            style={{background:'#2563eb',border:'none',borderRadius:20,padding:'7px 16px',fontSize:12,color:'#fff',cursor:'pointer',fontWeight:600,marginTop:6,whiteSpace:'nowrap',transition:'all 0.2s',flex:1}}>
             {assignLabel}
           </button>
         </div>
@@ -349,15 +389,15 @@ function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,savin
       <div {...attributes} {...listeners} style={{cursor:'grab',display:'flex',alignItems:'center',color:'var(--text-3)',flexShrink:0}}>
         <GripVertical size={14}/>
       </div>
+      {!isSubtask&&(
+        <button onClick={()=>onToggleCollapse?.(task.category)} disabled={saving} title={collapsed ? 'Expand category' : 'Collapse category'} aria-expanded={!collapsed} style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:14,padding:'0 4px',display:'flex',alignItems:'center',flexShrink:0}}>
+          {collapsed ? <ChevronRight size={16}/> : <ChevronDown size={16}/>}        
+        </button>
+      )}
       {editing?(
         <input ref={inputRef} autoFocus value={value} onChange={e=>setValue(e.target.value)} onBlur={handleSave} onKeyDown={e=>{if(e.key==='Enter')handleSave()}} style={{flex:1,padding:'4px 6px',fontSize:12,border:`1px solid ${taskColor}`,borderRadius:4,outline:'none'}} disabled={saving}/>
       ):(
         <span onDoubleClick={()=>{setEditing(true);setValue(task.subcategory||task.category||'')}} style={{flex:1,fontSize:13,color:taskColor,cursor:'text',padding:'2px 4px',borderRadius:3,userSelect:'none',fontWeight:isSubtask?500:600}}>{task.subcategory||task.category}</span>
-      )}
-      {!isSubtask&&(
-        <button onClick={()=>onToggleCollapse?.(task.category)} disabled={saving} title={collapsed ? 'Expand category' : 'Collapse category'} style={{background:'transparent',border:'none',color:'var(--text-3)',cursor:'pointer',fontSize:14,padding:'0 4px',display:'flex',alignItems:'center'}}>
-          {collapsed ? <ChevronRight size={16}/> : <ChevronDown size={16}/>}        
-        </button>
       )}
       {!isSubtask&&(
         <button onClick={()=>onAddSubtask(task.id)} disabled={saving || !task.id} style={{background:'transparent',border:'none',color:taskColor,cursor:task.id?'pointer':'not-allowed',fontSize:14,padding:'0 4px',fontWeight:600}}>+</button>
@@ -369,7 +409,7 @@ function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,savin
 
 // ── CanvasDropZone ────────────────────────────────────────────────────────────
 
-function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditTask,libCreatedTaskIds=[], libraryCategories=[]}){
+function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditTask,onSendWhatsApp,onToggleCategory,collapsedCategories={},libCreatedTaskIds=[]}){
   const {setNodeRef,isOver}=useDroppable({id:'canvas-drop-zone'})
   const topTasks = tasks.filter(t=>t.parent_id==null)
   const subtasksByParent = {}
@@ -378,14 +418,7 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
     subtasksByParent[t.parent_id].push(t)
   })
 
-  const isCategoryTask = task => !task.parent_id && libraryCategories.includes(task.title)
-  const getRowCount = task => {
-    if(isCategoryTask(task)){
-      const subtasks = subtasksByParent[task.id] || []
-      return Math.max(3, 3 + subtasks.length)
-    }
-    return 1
-  }
+  const isCategoryTask = task => !task.parent_id && (subtasksByParent[task.id]?.length > 0)
 
   const handleAddSubtaskClick = async (e, task) => {
     e.stopPropagation()
@@ -395,42 +428,58 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
 
   function CategorySlot({ task, subtasks }){
     const {setNodeRef: setTaskDropRef, isOver: isOverTask} = useDroppable({id:`task-${task.id}`})
-    const rowCount = getRowCount(task)
     const parentAssignees = task.assigned_to ? String(task.assigned_to).trim() : ''
     return (
-      <div ref={setTaskDropRef} style={{minHeight:rowCount * 70,background:isOverTask?'rgba(37,99,235,0.08)':'#fff',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,boxShadow:'0 8px 24px rgba(15,23,42,0.08)',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
-        <div style={{padding:'14px 14px'}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-            <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:10,flexWrap:'nowrap'}}>
-              <div style={{fontSize:15,fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{task.title}</div>
+      <div ref={setTaskDropRef} style={{background:isOverTask?'rgba(37,99,235,0.08)':'#fff',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,boxShadow:'0 8px 24px rgba(15,23,42,0.08)',display:'flex',flexDirection:'column'}}>
+          <div style={{padding:'10px 12px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'36px 1fr min-content',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {isCategoryTask(task) ? (
+                <button onClick={e=>{e.stopPropagation(); onToggleCategory?.(task.id)}} title={collapsedCategories[task.id] ? 'Expand category' : 'Collapse category'} aria-expanded={!collapsedCategories[task.id]} style={{background:'transparent',border:'none',padding:'6px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'var(--text-3)',flexShrink:0}}>
+                  {collapsedCategories[task.id] ? <ChevronRight size={16}/> : <ChevronDown size={16}/>}              
+                </button>
+              ) : null}
+            </div>
+
+            <div style={{minWidth:0, display:'flex', alignItems:'center', gap:10}}>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--text-1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title}</div>
               {parentAssignees && (
-                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                   <User size={12} color='var(--text-3)' />
                   <span>{parentAssignees}</span>
                 </div>
               )}
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end',minWidth:176,marginRight:8}}>
+
+            <div style={{display:'flex',alignItems:'center',gap:8,justifyContent:'flex-end',minWidth:176,marginRight:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <button onClick={e=>{e.stopPropagation(); onSendWhatsApp?.(task.id)}} disabled={!task.assigned_to || task.whatsapp_sent_count>0} aria-label={task.whatsapp_sent_count>0 ? `WhatsApp sent ${task.whatsapp_sent_count} time(s)` : 'Send WhatsApp'} style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:task.whatsapp_sent_count>0?38:30,height:task.whatsapp_sent_count>0?38:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to && task.whatsapp_sent_count===0 ? 'pointer' : 'not-allowed',opacity:task.assigned_to && task.whatsapp_sent_count===0 ? 1 : 0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}>
+                  <WhatsAppIcon size={14} ringCount={task.whatsapp_sent_count} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
+                </button>
+                {task.whatsapp_sent_count>0 && (
+                  <span style={{fontSize:11,fontWeight:700,color:'#166534',background:'#dcfce7',borderRadius:999,padding:'4px 8px'}}>{task.whatsapp_sent_count}</span>
+                )}
+              </div>
               {isCategoryTask(task)&&(
-                <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:11,padding:'5px 7px'}}>+ Subtask</button>
+                <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:12,padding:'4px 8px',whiteSpace:'nowrap',height:28,lineHeight:1,display:'inline-flex',alignItems:'center',borderRadius:8}}>+ Subtask</button>
               )}
               <button onClick={e=>{e.stopPropagation(); onAssignTask?.(task)}} style={{...btnS,fontSize:11,padding:'5px 7px',whiteSpace:'nowrap',...(task.assigned_to?{background:'var(--text-1)',color:'var(--accent-text)',borderColor:'var(--text-1)'}:{})}}>{task.assigned_to ? 'Re-Assign' : 'Assign'}</button>
               <button onClick={e=>{e.stopPropagation(); onDeleteTask(task.id)}} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={14}/></button>
             </div>
           </div>
           {task.description && <div style={{fontSize:12,color:'var(--text-3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.description}</div>}
-          {subtasks.length>0 && (
-            <div style={{padding:'10px 0 0',borderTop:'1px solid #eef2f7',display:'flex',flexDirection:'column',gap:8}}>
+          {!collapsedCategories[task.id] && subtasks.length>0 && (
+            <div style={{padding:'8px 0 0',borderTop:'1px solid #eef2f7',display:'flex',flexDirection:'column',gap:6}}>
               {subtasks.map(subtask=>{
                 const childAssignees = subtask.assigned_to ? String(subtask.assigned_to).trim() : ''
                 const showReport = Boolean(childAssignees && parentAssignees && childAssignees !== parentAssignees)
-                return (
-                  <div key={subtask.id} style={{display:'grid',gridTemplateColumns:'10px minmax(0,1fr) min-content',columnGap:8,alignItems:'center',gap:4,padding:'10px 14px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10}}>
+                  return (
+                  <div key={subtask.id} style={{display:'grid',gridTemplateColumns:'26px minmax(0,1fr) min-content',columnGap:8,alignItems:'center',gap:4,padding:'8px 12px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10}}>
                     <div />
                     <div style={{minWidth:0,display:'flex',alignItems:'center',gap:8,flexWrap:'nowrap'}}>
                       <div style={{fontSize:13,color:'#1f2937',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>{subtask.title}</div>
                       {(childAssignees || showReport) && (
-                        <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0,marginLeft:26}}>
+                        <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'var(--text-2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}>
                           <User size={11} color='var(--text-3)' />
                           <span>
                             {childAssignees}
@@ -520,8 +569,8 @@ function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,sa
           <div style={{fontSize:13,fontWeight:700,color:'var(--text-1)'}}>Task Library</div>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <button onClick={onAddCategory} disabled={saving} title="Add a new task category" style={{...btnP,fontSize:12,padding:'6px 12px',whiteSpace:'nowrap',flexShrink:0,height:32,display:'flex',alignItems:'center',gap:6}}>+ Task</button>
-            <button onClick={toggleAll} disabled={categories.length===0} title={allCollapsed ? 'Expand all' : 'Collapse all'} style={{background:'transparent',border:'none',padding:6,display:'flex',alignItems:'center',justifyContent:'center',cursor:categories.length? 'pointer':'default',flexShrink:0,transition:'transform 0.12s,background 0.12s',borderRadius:6}}
-              onMouseEnter={e=>{e.currentTarget.style.background='rgba(15,23,42,0.04)';e.currentTarget.style.transform='scale(1.05)'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.transform='none'}}>{allCollapsed ? <ChevronRight size={14} color="var(--text-3)"/> : <ChevronDown size={14} color="var(--text-3)"/>}</button>
+            <button onClick={toggleAll} disabled={categories.length===0} title={allCollapsed ? 'Expand all categories' : 'Collapse all categories'} aria-label={allCollapsed ? 'Expand all categories' : 'Collapse all categories'} style={{background:'transparent',border:'none',padding:8,display:'flex',alignItems:'center',justifyContent:'center',cursor:categories.length? 'pointer':'default',flexShrink:0,transition:'transform 0.12s,background 0.12s',borderRadius:8}}
+              onMouseEnter={e=>{e.currentTarget.style.background='rgba(15,23,42,0.04)';e.currentTarget.style.transform='scale(1.05)'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.transform='none'}}>{allCollapsed ? <ChevronRight size={16} color="var(--text-3)"/> : <ChevronDown size={16} color="var(--text-3)"/>}</button>
           </div>
         </div>
         <input placeholder="Search..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:'100%',padding:'6px 8px',fontSize:12,border:'1px solid var(--card-border,#f8fafc)',borderRadius:6,outline:'none',background:'var(--input-bg,#f8fafc)'}}/>
@@ -578,7 +627,7 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
       </div>
       <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'10px 8px 12px',minHeight:72,background:isOver?`${bucket.color}12`:'transparent',transition:'background 0.15s'}}>
         <SortableContext items={tasks.map(t=>t.id)} strategy={verticalListSortingStrategy}>
-          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onAssign={onAssignTask} onDelete={onDeleteTask} onStatusChange={onStatusChange}/>) }
+          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onAssign={onAssignTask} onDelete={onDeleteTask} onStatusChange={onStatusChange} onSendWhatsApp={handleSendWhatsApp}/>) }
         </SortableContext>
         {tasks.length===0&&<div style={{textAlign:'center',padding:'14px 8px',color:'var(--text-3)',fontSize:12,userSelect:'none'}}>Drop tasks here</div>}
       </div>
@@ -637,7 +686,9 @@ function EventCard({event,onClick,onEdit,onDelete}){
           </span>
         )}
       </div>
-      <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700,color:'var(--text-1)',lineHeight:1.3,paddingRight:hov?56:0,textDecoration:event.status==='cancelled'?'line-through':'none'}}>{event.name}</h3>
+      <div style={{margin:'0 0 6px',display:'flex',alignItems:'center'}}>
+        <div style={{background:ec.dot,color:'#fff',padding:'6px 12px',borderRadius:10,fontSize:14,fontWeight:700,lineHeight:1.2,display:'inline-block',textDecoration:event.status==='cancelled'?'line-through':'none'}}>{event.name}</div>
+      </div>
       <p style={{margin:'0 0 8px',fontSize:12,color:'var(--text-3)',display:'flex',alignItems:'center',gap:4}}><CalendarDays size={11}/>{dr}</p>
   
       <p style={{margin:0,fontSize:11,color:'var(--text-3)'}}>Open board →</p>
@@ -1073,7 +1124,9 @@ function CarryForwardModal({currentEvent,allEvents,onCarryForward,onClose}){
       const src=allEvents.find(e=>e.id===id)
       const isFixed=src?.date_fixed||false
       setAdvance(isFixed)
-      setPreview({buckets:b.length,tasks:t.length,hasDates:t.some(x=>x.due_date),isFixed})
+      const parentTasks=t.filter(x=>!x.parent_id).length
+      const childTasks=t.filter(x=>x.parent_id).length
+      setPreview({buckets:b.length,tasks:t.length,parentTasks,childTasks,hasDates:t.some(x=>x.due_date),isFixed})
     }finally{setLoading(false)}
   }
   async function handleCopy(){
@@ -1096,7 +1149,11 @@ function CarryForwardModal({currentEvent,allEvents,onCarryForward,onClose}){
       {preview&&!loading&&(
         <div style={{borderRadius:8,margin:'6px 0 12px',fontSize:13,color:'var(--text-2)'}}>
           <div style={{background:'var(--input-bg,#f1f5f9)',borderRadius:8,padding:'11px 14px'}}>
-            <strong>{preview.buckets}</strong> buckets · <strong>{preview.tasks}</strong> tasks
+            {preview.buckets > 0 ? (
+              <><strong>{preview.buckets}</strong> Buckets · <strong>{preview.tasks}</strong> Tasks</>
+            ) : (
+              <><strong>{preview.parentTasks}</strong> Categor{preview.parentTasks===1?'y':'ies'} · <strong>{preview.childTasks}</strong> Subtask{preview.childTasks===1?'':'s'}</>
+            )}
           </div>
           {preview.isFixed?(
             <div style={{background:'#dcfce7',borderRadius:8,padding:'10px 14px',marginTop:8,display:'flex',alignItems:'flex-start',gap:8}}>
@@ -1174,6 +1231,11 @@ export default function EventPlannerPage(){
   const [libraryRecentlyAddedId, setLibraryRecentlyAddedId] = useState(null)
   const [volunteers, setVolunteers] = useState([])
   const [members,   setMembers]   = useState([])
+  const tasksRef = useRef(tasks)
+  const delayedWhatsAppQueue = useRef(new Map())
+
+  useEffect(()=>{ tasksRef.current = tasks }, [tasks])
+  useEffect(()=>{ return ()=>{ delayedWhatsAppQueue.current.forEach(item=>clearTimeout(item.timerId)); delayedWhatsAppQueue.current.clear() } }, [])
   const [selEvent,  setSelEvent]  = useState(null)
   const [loading,   setLoading]   = useState(true)
 
@@ -1224,6 +1286,7 @@ export default function EventPlannerPage(){
   const [activeTask,setActiveTask]=useState(null)
   const [activeLibraryTask,setActiveLibraryTask]=useState(null)
   const [libCreatedTaskIds,setLibCreatedTaskIds]=useState([])
+  const [collapsedCanvasCategories,setCollapsedCanvasCategories]=useState({})
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}))
 
   // ── Data loaders ────────────────────────────────────────────
@@ -1255,6 +1318,76 @@ export default function EventPlannerPage(){
     try{setLibraryTasks(await getTaskLibrary())}catch{}
   },[])
 
+  function scheduleDelayedWhatsAppNotification(taskId, recipients, buildMessage, delayMs = 180000, notificationKey = 'default') {
+    if(!taskId || !Array.isArray(recipients) || recipients.length === 0) return
+    const validRecipients = recipients.filter(r => r?.whatsapp)
+    if(validRecipients.length === 0) return
+
+    const queue = delayedWhatsAppQueue.current
+    const queueKey = `${taskId}::${notificationKey}`
+    const existing = queue.get(queueKey)
+    if(existing) {
+      validRecipients.forEach(recipient => existing.recipientsMap.set(recipient.whatsapp, recipient))
+      return
+    }
+
+    const item = {
+      recipientsMap: new Map(validRecipients.map(recipient => [recipient.whatsapp, recipient])),
+      buildMessage,
+      timerId: null,
+    }
+
+    item.timerId = setTimeout(async () => {
+      queue.delete(queueKey)
+      const recipientsToSend = Array.from(item.recipientsMap.values())
+      if(recipientsToSend.length === 0) return
+
+      try {
+        const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
+        if(error || !church) {
+          console.error('[WhatsApp] Failed to load church config', error)
+          toast('WhatsApp notification could not be sent','error')
+          return
+        }
+
+        const sendResults = await Promise.allSettled(recipientsToSend.map(async recipient => {
+          const message = buildMessage(recipient)
+          try {
+            const result = await sendWhatsAppMessage(church, { to: recipient.whatsapp, message })
+            return { recipient: recipient.name, status: 'fulfilled', result }
+          } catch (err) {
+            console.error('[WhatsApp] send failed for', recipient.name, { error: err, message })
+            return { recipient: recipient.name, status: 'rejected', reason: err?.message || String(err) }
+          }
+        }))
+
+        const successes = sendResults.filter(r => r.status === 'fulfilled')
+        const failures = sendResults.filter(r => r.status === 'rejected')
+        if(successes.length){
+          toast(`WhatsApp sent to ${successes.map(r=>r.recipient).join(', ')}`,'success')
+          const task = tasksRef.current.find(t=>t.id===taskId)
+          const currentCount = Number(task?.whatsapp_sent_count || 0)
+          const newCount = currentCount + successes.length
+          try{
+            await saveTask(taskId, { whatsapp_sent_count: newCount }, profile?.email)
+            setTasks(prev => prev.map(t => t.id===taskId ? { ...t, whatsapp_sent_count: newCount } : t))
+          } catch(err){
+            console.error('[WhatsApp] failed to update send count', err)
+          }
+        }
+        if(failures.length){
+          console.error('[WhatsApp] send failures', failures)
+          toast(`WhatsApp failed for ${failures.map(r => `${r.recipient}: ${r.reason}`).join(', ')}`,'error')
+        }
+      } catch (err) {
+        console.error('[WhatsApp] delayed send error', err)
+        toast('WhatsApp notification could not be sent','error')
+      }
+    }, delayMs)
+
+    queue.set(queueKey, item)
+  }
+
   useEffect(()=>{loadEvents()},[loadEvents])
   useEffect(()=>{
     const onKey=(e)=>{if(e.key==='Escape')setTooltip(null)}
@@ -1268,7 +1401,13 @@ export default function EventPlannerPage(){
   },[])
   
   useEffect(()=>{
-    supabase.from('members').select('id,first_name,last_name').eq('status','active').order('first_name').then(({data})=>setMembers(data||[]))
+    supabase.from('members').select('id,first_name,last_name').eq('is_active', true).order('first_name').then(({data,error})=>{
+      if(error){
+        console.error('Failed loading active members:', error)
+        return
+      }
+      setMembers(data||[])
+    })
   },[])
 
   // Global mouseup — finalise calendar drag-select
@@ -1389,34 +1528,217 @@ export default function EventPlannerPage(){
         notes:form.notes||null,
       }
       if(!form.id) payload.sort_order=tasks.filter(t=>t.bucket_id===form.bucket_id).length
-      await saveTask(form.id||null,payload,profile?.email)
+      const savedTaskId = await saveTask(form.id||null,payload,profile?.email)
       toast(form.id?'Task updated':'Task added','success')
       setTaskModal(null);setTaskDefBkt(null);await loadBoard(selEvent.id)
 
-      const assignedVolunteerId = form.assigned_volunteer_id ? String(form.assigned_volunteer_id) : null
-      const previousVolunteerId = form.id ? String(tasks.find(t=>t.id===form.id)?.assigned_volunteer_id || '') : null
-      if(assignedVolunteerId && assignedVolunteerId !== previousVolunteerId){
-        const volunteerInfo = volunteers.find(v=>String(v.id)===assignedVolunteerId)
-        if(volunteerInfo?.whatsapp){
-          try{
-            const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
-            if(!error && church){
-              const eventDates = selEvent?.start_date
-                ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
-                  ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
-                  : ` (${fmtDate(selEvent.start_date)})`
-                : selEvent?.year ? ` (${selEvent.year})` : ''
-              const message = `You have been assigned "${form.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please prepare accordingly.`
-              await sendWhatsAppMessage(church, { to: volunteerInfo.whatsapp, message })
-              toast(`WhatsApp sent to ${volunteerInfo.name}`,'success')
-            }
-          }catch(err){
-            toast('Failed to send WhatsApp notification','error')
-          }
-        }
-      }
     }catch{toast('Failed to save task','error')}
   }
+
+  function resolveAssignedVolunteerIds(task){
+    if(task.assigned_volunteer_id) return [String(task.assigned_volunteer_id)]
+    if(!task.assigned_to) return []
+    return String(task.assigned_to)
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean)
+      .map(name => volunteers.find(vol => vol.name === name)?.id)
+      .filter(Boolean)
+      .map(String)
+  }
+
+  function buildTaskWhatsAppRecipients(task){
+    return resolveAssignedVolunteerIds(task).flatMap(id => {
+      const volunteer = volunteers.find(v => String(v.id) === String(id))
+      if(!volunteer) return []
+      return [{
+        task,
+        whatsapp: volunteer.whatsapp || '',
+        name: volunteer.name,
+        volunteerId: id,
+      }]
+    })
+  }
+
+  async function handleSendWhatsApp(taskId){
+    const task = tasks.find(t => t.id === taskId)
+    if(!task){
+      toast('Task not found','error')
+      return
+    }
+
+    const childTasks = tasks.filter(t => t.parent_id === task.id)
+    const recipients = [task, ...childTasks].flatMap(buildTaskWhatsAppRecipients)
+    if(recipients.length === 0){
+      toast('Select a volunteer with WhatsApp before sending','error')
+      return
+    }
+
+    const validRecipients = recipients.filter(r => r.whatsapp)
+    if(validRecipients.length === 0){
+      toast('Assigned volunteer(s) do not have WhatsApp numbers','error')
+      return
+    }
+
+    try{
+      const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
+      if(error || !church){
+        toast('WhatsApp configuration unavailable','error')
+        return
+      }
+
+      const sendResults = await Promise.allSettled(validRecipients.map(async recipient => {
+        const message = buildTaskWhatsAppMessage(recipient.task, recipient)
+        await sendWhatsAppMessage(church, { to: recipient.whatsapp, message })
+        return recipient
+      }))
+
+      const successes = sendResults.filter(r => r.status === 'fulfilled').map(r => r.value)
+      const failures = sendResults.filter(r => r.status === 'rejected')
+      if(successes.length){
+        toast(`WhatsApp sent to ${successes.map(r=>r.name).join(', ')}`,'success')
+        const currentCount = Number(task.whatsapp_sent_count || 0)
+        const newCount = currentCount + successes.length
+        await saveTask(taskId, { whatsapp_sent_count: newCount }, profile?.email)
+        setTasks(prev => prev.map(t => t.id===taskId ? { ...t, whatsapp_sent_count: newCount } : t))
+        scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 1), 180000, 'followup-1')
+        scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 2), 360000, 'followup-2')
+      }
+      if(failures.length){
+        const failureMessages = failures.map(r => {
+          const reason = r.reason
+          return reason?.message ? reason.message : String(reason)
+        })
+        console.error('[WhatsApp] send failures', failures)
+        toast(`WhatsApp failed for ${failures.length} contact(s): ${failureMessages.join(' ; ')}`,'error')
+      }
+    }catch(err){
+      console.error('WhatsApp send failed', err)
+      const msg = String(err?.message || err || '')
+      if(msg.toLowerCase().includes('relogin')){
+        toast('WhatsApp account requires relogin in your Soft7 / WhatsApp gateway','error')
+      } else if(msg.toLowerCase().includes('not connected') || msg.toLowerCase().includes('not ready')){
+        toast('WhatsApp gateway is not connected. Please check the Soft7 session.','error')
+      } else {
+        toast(msg || 'WhatsApp send failed','error')
+      }
+    }
+  }
+
+  function buildTaskWhatsAppMessage(task, recipient){
+    const eventDates = selEvent?.start_date
+      ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
+        ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
+        : ` (${fmtDate(selEvent.start_date)})`
+      : selEvent?.year ? ` (${fmtDate(selEvent.year)})` : ''
+    
+    // Get co-assignees on this task
+    const coAssigneeIds = resolveAssignedVolunteerIds(task)
+    const coAssignees = coAssigneeIds
+      .map(id => volunteers.find(v => String(v.id) === String(id)))
+      .filter(Boolean)
+      .filter(v => v.id !== recipient.volunteerId)
+      .map(v => `"${v.name}"`)
+    
+    // Get child subtasks and their assignees (for parent tasks only)
+    const childTasks = task.parent_id ? [] : tasks.filter(t => t.parent_id === task.id)
+    const childInfo = childTasks.length > 0 
+      ? childTasks
+          .flatMap(child => {
+            const childAssigneeIds = resolveAssignedVolunteerIds(child)
+            return childAssigneeIds
+              .map(id => volunteers.find(v => String(v.id) === String(id)))
+              .filter(Boolean)
+              .map(v => `${v.name} for ${child.title.trim()}`)
+          })
+      : []
+    
+    // Get parent task info (for subtasks only)
+    const parentTask = task.parent_id ? tasks.find(t => t.id === task.parent_id) : null
+    const parentAssigneeIds = parentTask ? resolveAssignedVolunteerIds(parentTask) : []
+    const parentInfo = parentTask && parentAssigneeIds.length > 0
+      ? `${parentAssigneeIds
+          .map(id => volunteers.find(v => String(v.id) === String(id)))
+          .filter(Boolean)
+          .map(v => v.name)
+          .join(' and ')} for ${parentTask.title.trim()}`
+      : ''
+    
+    let msg = `Dear ${recipient.name},\n\nYou have been assigned "${task.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please prepare accordingly.`
+    
+    if(coAssignees.length > 0){
+      msg += `\n\nYou and ${coAssignees.join(', ')} are working on this together.`
+    }
+    
+    if(childInfo.length > 0){
+      msg += `\n\nPlease coordinate with ${childInfo.join(', ')}.`
+    }
+    
+    if(parentInfo){
+      msg += `\n\nPlease coordinate with ${parentInfo}.`
+    }
+    
+    msg += '\n\nThank you for your extended support.'
+    return msg
+  }
+
+  function buildTaskWhatsAppFollowupMessage(task, recipient, followUpNumber){
+    const eventDates = selEvent?.start_date
+      ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
+        ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
+        : ` (${fmtDate(selEvent.start_date)})`
+      : selEvent?.year ? ` (${fmtDate(selEvent.year)})` : ''
+    
+    // Get co-assignees on this task
+    const coAssigneeIds = resolveAssignedVolunteerIds(task)
+    const coAssignees = coAssigneeIds
+      .map(id => volunteers.find(v => String(v.id) === String(id)))
+      .filter(Boolean)
+      .filter(v => v.id !== recipient.volunteerId)
+      .map(v => `"${v.name}"`)
+    
+    // Get child subtasks and their assignees (for parent tasks only)
+    const childTasks = task.parent_id ? [] : tasks.filter(t => t.parent_id === task.id)
+    const childInfo = childTasks.length > 0 
+      ? childTasks
+          .flatMap(child => {
+            const childAssigneeIds = resolveAssignedVolunteerIds(child)
+            return childAssigneeIds
+              .map(id => volunteers.find(v => String(v.id) === String(id)))
+              .filter(Boolean)
+              .map(v => `${v.name} for ${child.title.trim()}`)
+          })
+      : []
+    
+    // Get parent task info (for subtasks only)
+    const parentTask = task.parent_id ? tasks.find(t => t.id === task.parent_id) : null
+    const parentAssigneeIds = parentTask ? resolveAssignedVolunteerIds(parentTask) : []
+    const parentInfo = parentTask && parentAssigneeIds.length > 0
+      ? `${parentAssigneeIds
+          .map(id => volunteers.find(v => String(v.id) === String(id)))
+          .filter(Boolean)
+          .map(v => v.name)
+          .join(' and ')} for ${parentTask.title.trim()}`
+      : ''
+    
+    let msg = `Dear ${recipient.name},\n\nReminder ${followUpNumber}: You are assigned "${task.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please ensure you are ready.`
+    
+    if(coAssignees.length > 0){
+      msg += `\n\nYou and ${coAssignees.join(', ')} are working on this together.`
+    }
+    
+    if(childInfo.length > 0){
+      msg += `\n\nPlease coordinate with ${childInfo.join(', ')}.`
+    }
+    
+    if(parentInfo){
+      msg += `\n\nPlease coordinate with ${parentInfo}.`
+    }
+    
+    msg += '\n\nThank you for your extended support.'
+    return msg
+  }
+
 
   async function handleSaveLibraryTask(form){
     try{
@@ -1576,78 +1898,9 @@ export default function EventPlannerPage(){
       const selected = volunteers.filter(v=>ids.includes(String(v.id)))
       const assigned_to = selected.map(v=>v.name).join(', ') || null
       const assigned_volunteer_id = ids.length===1 ? Number(ids[0]) : null
-      await saveTask(taskId, { assigned_to, assigned_volunteer_id }, profile?.email)
+      await saveTask(taskId, { assigned_to, assigned_volunteer_id, whatsapp_sent_count: 0 }, profile?.email)
       toast('Assignment saved','success')
 
-      const whatsappRecipients = selected.filter(v=>v.whatsapp)
-      if(whatsappRecipients.length){
-        try{
-          const task = tasks.find(t=>t.id===taskId)
-          const selectedNames = selected.map(v=>v.name)
-
-          const { data: church, error } = await supabase.from('churches').select('*').limit(1).single()
-          if(!error && church){
-            const eventDates = selEvent?.start_date
-              ? selEvent.end_date && selEvent.end_date !== selEvent.start_date
-                ? ` (${fmtDate(selEvent.start_date)} – ${fmtDate(selEvent.end_date)})`
-                : ` (${fmtDate(selEvent.start_date)})`
-              : selEvent?.year ? ` (${selEvent.year})` : ''
-
-            const sendResults = await Promise.allSettled(whatsappRecipients.map(async recipient => {
-              const otherNames = selectedNames.filter(name=>name!==recipient.name)
-              const assignmentLine = otherNames.length > 0
-                ? `You and "${otherNames.join(', ')}" have been assigned the task "${task?.title || assigned_to}" for the event "${selEvent?.name || 'the event'}"${eventDates}. Please prepare accordingly.`
-                : `You have been assigned the task "${task?.title || assigned_to}" for the event "${selEvent?.name || 'the event'}"${eventDates}. Please prepare accordingly.`
-
-              const coordinationAssignments = []
-              if(task){
-                if(task.parent_id){
-                  const parentTask = tasks.find(t=>t.id===task.parent_id)
-                  if(parentTask && parentTask.assigned_to && parentTask.assigned_to !== recipient.name){
-                    coordinationAssignments.push({person: parentTask.assigned_to, title: parentTask.title})
-                  }
-                  tasks.filter(t=>t.parent_id===task.parent_id && t.id!==task.id && t.assigned_to && t.assigned_to !== recipient.name).forEach(subtask=>{
-                    coordinationAssignments.push({person: subtask.assigned_to, title: subtask.title})
-                  })
-                } else {
-                  tasks.filter(t=>t.parent_id===task.id && t.assigned_to && t.assigned_to !== recipient.name).forEach(subtask=>{
-                    coordinationAssignments.push({person: subtask.assigned_to, title: subtask.title})
-                  })
-                }
-              }
-
-              const coordinationLines = coordinationAssignments.map(r => `Please coordinate with ${r.person} for ${r.title}.`).join('\n')
-              const message = [
-                `Dear ${recipient.name},`,
-                assignmentLine,
-                coordinationLines || null,
-                'Thank you for your extended support.'
-              ].filter(Boolean).join('\n\n')
-
-              try {
-                return { recipient: recipient.name, status: 'fulfilled', result: await sendWhatsAppMessage(church, { to: recipient.whatsapp, message }) }
-              } catch (err) {
-                console.error('WhatsApp send failed for', recipient.name, { error: err, message })
-                return { recipient: recipient.name, status: 'rejected', reason: err?.message || String(err) }
-              }
-            }))
-
-            const successes = sendResults.filter(r => r.status === 'fulfilled')
-            const failures = sendResults.filter(r => r.status === 'rejected')
-            console.debug('[handleSaveAssign] WhatsApp send results', sendResults)
-            if(successes.length){
-              toast(`WhatsApp sent to ${successes.map(r => r.recipient).join(', ')} (check console for details)`,'success')
-            }
-            if(failures.length){
-              console.error('WhatsApp send failures', failures)
-              toast(`WhatsApp failed for ${failures.map(r => `${r.recipient}: ${r.reason}`).join(', ')}`,'error')
-            }
-          }
-        }catch(err){
-          console.error('Failed to send WhatsApp notification:', err)
-          toast('Assignment saved, but WhatsApp notification failed','error')
-        }
-      }
 
       setAssignModal(null)
       await loadBoard(selEvent.id)
@@ -1862,6 +2115,16 @@ export default function EventPlannerPage(){
   function boardBucketTasks(id){return boardTasks.filter(t=>t.bucket_id===id).sort((a,b)=>a.sort_order-b.sort_order)}
   const assignees=[...new Set(tasks.map(t=>t.assigned_to).filter(Boolean))].sort()
   const hasFilter=!!(fStatus||fPriority||fAssignee)
+
+  const canvasCategoryTaskIds = boardTasks
+    .filter(t => t.parent_id == null && boardTasks.some(child => child.parent_id === t.id))
+    .map(t => t.id)
+  const allCanvasCollapsed = canvasCategoryTaskIds.length > 0 && canvasCategoryTaskIds.every(id => collapsedCanvasCategories[id])
+  const toggleAllCanvasCategories = () => setCollapsedCanvasCategories(prev => {
+    const next = { ...prev }
+    canvasCategoryTaskIds.forEach(id => { next[id] = !allCanvasCollapsed })
+    return next
+  })
 
   const todayStr=toDateStr(new Date())
 
@@ -2340,6 +2603,9 @@ export default function EventPlannerPage(){
               </div>
             )}
             <div style={{display:'flex',gap:6,flexShrink:0}}>
+              <button onClick={toggleAllCanvasCategories} disabled={canvasCategoryTaskIds.length===0} title={allCanvasCollapsed ? 'Expand all categories' : 'Collapse all categories'} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}>
+                {allCanvasCollapsed ? <ChevronRight size={12}/> : <ChevronDown size={12}/>} {allCanvasCollapsed ? 'Expand all' : 'Collapse all'}
+              </button>
               <button onClick={()=>setEventModal(selEvent)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Pencil size={12}/>Edit</button>
               <button onClick={()=>setCarryModal(true)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Copy size={12}/>Copy from…</button>
             </div>
@@ -2352,7 +2618,16 @@ export default function EventPlannerPage(){
         <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div style={{display:'flex',flex:1,overflow:'hidden',gap:16}}>
             <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',gap:16,minWidth:0}}>
-              <CanvasDropZone tasks={boardTasks.filter(t=>!t.bucket_id)} onDeleteTask={handleDeleteTask} onAddSubtask={handleAddSubtask} onAssignTask={handleOpenAssignModal} libCreatedTaskIds={libCreatedTaskIds} libraryCategories={libraryTasks.filter(t=>!t.subcategory).map(t=>t.category.trim()).filter(Boolean)} />
+              <CanvasDropZone
+                tasks={boardTasks.filter(t=>!t.bucket_id)}
+                onDeleteTask={handleDeleteTask}
+                onAddSubtask={handleAddSubtask}
+                onAssignTask={handleOpenAssignModal}
+                onSendWhatsApp={handleSendWhatsApp}
+                onToggleCategory={id => setCollapsedCanvasCategories(prev => ({ ...prev, [id]: !prev[id] }))}
+                collapsedCategories={collapsedCanvasCategories}
+                libCreatedTaskIds={libCreatedTaskIds}
+              />
               {buckets.length>0 && (
                   <div style={{display:'flex',flexDirection:'column',gap:16,overflowY:'auto',paddingBottom:12}}>
                     {buckets.map(bucket=>(

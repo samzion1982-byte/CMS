@@ -833,23 +833,53 @@ export async function carryForward(sourceEventId, targetEventId, advanceDates = 
     bucketMap[b.id] = data.id
   }
 
+  // First pass: insert all tasks with parent_id = null temporarily
   const taskRows = sourceTasks
-    .filter(t => bucketMap[t.bucket_id])
+    .filter(t => !t.bucket_id || bucketMap[t.bucket_id])
     .map(t => ({
       event_id:    targetEventId,
-      bucket_id:   bucketMap[t.bucket_id],
+      bucket_id:   t.bucket_id ? bucketMap[t.bucket_id] : null,
       title:       t.title,
       description: t.description,
-      assigned_to: t.assigned_to,
+      assigned_to: null,
       priority:    t.priority,
       status:      'pending',
       sort_order:  t.sort_order,
       due_date:    advanceDates && t.due_date ? advanceOneYear(t.due_date) : null,
+      parent_id:   null, // Will be remapped in second pass
     }))
 
-  if (taskRows.length > 0) {
-    const { error } = await supabase.from('event_tasks').insert(taskRows)
-    if (error) throw error
+  if (taskRows.length === 0) {
+    return { buckets: sourceBuckets.length, tasks: 0 }
+  }
+
+  const { error: insertError } = await supabase.from('event_tasks').insert(taskRows)
+  if (insertError) throw insertError
+
+  // Second pass: create task ID mapping and update parent_id for child tasks
+  const targetTasks = await getTasks(targetEventId)
+  const taskMap = {}
+  
+  for (let i = 0; i < sourceTasks.length; i++) {
+    if (!sourceTasks[i].bucket_id || bucketMap[sourceTasks[i].bucket_id]) {
+      taskMap[sourceTasks[i].id] = targetTasks.find(
+        t => t.title === sourceTasks[i].title && 
+             t.bucket_id === (sourceTasks[i].bucket_id ? bucketMap[sourceTasks[i].bucket_id] : null)
+      )?.id
+    }
+  }
+
+  // Update parent_id for tasks that have parents
+  const tasksWithParents = sourceTasks.filter(t => t.parent_id && taskMap[t.id])
+  for (const sourceTask of tasksWithParents) {
+    const newParentId = taskMap[sourceTask.parent_id]
+    if (newParentId && taskMap[sourceTask.id]) {
+      const { error } = await supabase
+        .from('event_tasks')
+        .update({ parent_id: newParentId })
+        .eq('id', taskMap[sourceTask.id])
+      if (error) throw error
+    }
   }
 
   return { buckets: sourceBuckets.length, tasks: taskRows.length }
