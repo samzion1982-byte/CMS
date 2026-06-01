@@ -548,7 +548,7 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
         <button onClick={()=>onEditBucket(bucket)} style={{background:'none',border:'none',cursor:'pointer',padding:2,display:'flex',alignItems:'center'}}><Pencil size={12} color="var(--text-3)"/></button>
         <button onClick={()=>onDeleteBucket(bucket)} style={{background:'none',border:'none',cursor:'pointer',padding:2,display:'flex',alignItems:'center'}}><Trash2 size={12} color="#ef4444"/></button>
       </div>
-      <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'10px 8px 4px',minHeight:72,background:isOver?`${bucket.color}12`:'transparent',transition:'background 0.15s'}}>
+      <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'10px 8px 12px',minHeight:72,background:isOver?`${bucket.color}12`:'transparent',transition:'background 0.15s'}}>
         <SortableContext items={tasks.map(t=>t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onDelete={onDeleteTask} onStatusChange={onStatusChange}/>)}
         </SortableContext>
