@@ -17,36 +17,43 @@ tasks.forEach(task => {
 
 const normalizeNames = value => [...new Set(String(value || '').split(/[;,]+/).map(v => v.trim()).filter(Boolean))]
 const topLevelTasks = tasks.filter(task => !task.parent_id)
+
+// group by title
+const grouped = {}
+topLevelTasks.forEach(t => {
+  const key = (t.title || '').toLowerCase()
+  if (!grouped[key]) grouped[key] = []
+  grouped[key].push(t)
+})
+
 const rows = []
-
-topLevelTasks.forEach(task => {
-  const children = childrenByParent[task.id] || []
-  const parentAssigneesArr = normalizeNames(task.assigned_to)
+Object.values(grouped).forEach(group => {
+  const parentAssigneesArr = [...new Set(group.flatMap(g => normalizeNames(g.assigned_to)))]
   const parentAssignees = parentAssigneesArr.join(', ')
-  const childAssigneesArr = [...new Set(children.flatMap(c => normalizeNames(c.assigned_to)))]
-  const childAssignees = childAssigneesArr.join(', ')
+  const allChildren = []
+  group.forEach(g => { allChildren.push(...(childrenByParent[g.id] || [])) })
 
+  const unassignedSubtasks = allChildren.filter(c => normalizeNames(c.assigned_to).length === 0)
   rows.push({
-    task: task.title || '',
-    subtasks: children.map(child => child.title || '').join('; '),
+    task: group[0].title || '',
+    subtasks: unassignedSubtasks.map(c => c.title || '').join('; '),
     assigned_to: parentAssignees,
-    sub_assigned_to: childAssignees,
+    sub_assigned_to: '',
     reports_to: '',
-    whatsapp_count: Number(task.whatsapp_sent_count || 0),
-    notes: task.notes || '',
+    whatsapp_count: Number(Math.max(...group.map(t => t.whatsapp_sent_count || 0))),
+    notes: group[0].notes || '',
   })
 
-  children.forEach(child => {
+  allChildren.forEach(child => {
     const childAssignedArr = normalizeNames(child.assigned_to)
+    if (childAssignedArr.length === 0) return
     const childAssigned = childAssignedArr.join(', ')
-    const reportsToArr = parentAssigneesArr.filter(a => !childAssignedArr.includes(a))
-    const reportsTo = reportsToArr.join(', ')
     rows.push({
-      task: task.title || '',
-      subtasks: child.title || '',
-      assigned_to: childAssigned,
-      sub_assigned_to: '',
-      reports_to: reportsTo,
+      task: group[0].title || '',
+      subtasks: '» ' + (child.title || ''),
+      assigned_to: parentAssignees,
+      sub_assigned_to: childAssigned,
+      reports_to: parentAssignees,
       whatsapp_count: Number(child.whatsapp_sent_count || 0),
       notes: child.notes || '',
     })

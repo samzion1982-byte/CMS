@@ -23,31 +23,46 @@ function buildEventTaskRowsSample() {
 
   const normalizeNames = value => [...new Set(String(value || '').split(/[;,]+/).map(v => v.trim()).filter(Boolean))]
   const topLevelTasks = tasks.filter(t => !t.parent_id)
+
+  // Group top-level tasks by title so duplicate parent tasks (same name) are merged
+  const grouped = {}
+  topLevelTasks.forEach(t => {
+    const key = (t.title || '').toLowerCase()
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(t)
+  })
+
   const rows = []
 
-  topLevelTasks.forEach(task => {
-    const children = childrenByParent[task.id] || []
-    const parentAssigneesArr = normalizeNames(task.assigned_to)
+  Object.values(grouped).forEach(group => {
+    const parentAssigneesArr = [...new Set(group.flatMap(g => normalizeNames(g.assigned_to)))]
     const parentAssignees = parentAssigneesArr.join(', ')
-    const unassignedSubtasks = children.filter(child => !normalizeNames(child.assigned_to).length)
+
+    const allChildren = []
+    group.forEach(g => {
+      const kids = childrenByParent[g.id] || []
+      allChildren.push(...kids)
+    })
+
+    const unassignedSubtasks = allChildren.filter(c => normalizeNames(c.assigned_to).length === 0)
 
     rows.push({
-      task: task.title || '',
+      task: group[0].title || '',
       subtasks: unassignedSubtasks.map(child => child.title || '').join('; '),
       assigned_to: parentAssignees,
       sub_assigned_to: '',
       reports_to: '',
-      whatsapp_count: Number(task.whatsapp_sent_count || 0),
-      notes: task.notes || '',
+      whatsapp_count: Number(Math.max(...group.map(t => t.whatsapp_sent_count || 0))),
+      notes: group[0].notes || '',
     })
 
-    children.forEach(child => {
+    allChildren.forEach(child => {
       const childAssignedArr = normalizeNames(child.assigned_to)
       if (childAssignedArr.length === 0) return
       const childAssigned = childAssignedArr.join(', ')
       rows.push({
-        task: task.title || '',
-        subtasks: `» ${child.title || ''}`,
+        task: group[0].title || '',
+        subtasks: '» ' + (child.title || ''),
         assigned_to: parentAssignees,
         sub_assigned_to: childAssigned,
         reports_to: parentAssignees,
