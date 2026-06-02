@@ -17,7 +17,7 @@ import {
   Calendar, Plus, ChevronLeft, ChevronRight, ChevronDown, Pencil, Trash2,
   User, CalendarDays, Copy, LayoutGrid, CheckCircle2, List,
   Grid3X3, Filter, X, SlidersHorizontal, Search, BarChart2,
-  AlertCircle, Clock, Repeat, Settings, GripVertical,
+  AlertCircle, Clock, Repeat, Settings, GripVertical, Download, FileSpreadsheet,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -25,14 +25,16 @@ import { useToast } from '../lib/toast'
 import {
   getEvents, saveEvent, deleteEvent,
   getBuckets, saveBucket, deleteBucket,
-  getTasks, saveTask, deleteTask,
+  getTasks, getTasksForEvents, saveTask, deleteTask,
   updateTaskOrder, updateBucketOrder, moveTask, carryForward,
   getTaskLibrary, updateLibraryTaskOrder, cloneLibraryTaskToEvent,
   addLibraryCategory, updateLibraryItemName, addLibrarySubtask, deleteLibraryItem,
   getEventVolunteers, saveEventVolunteer, deleteEventVolunteer, replaceEventPlannerMasterData,
+  getBucketsForEvents,
   autoFillRecurring,
 } from '../lib/eventPlannerLib'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
+import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,102 @@ function normalizeDateKey(s) {
   if (!s) return ''
   const v = String(s)
   return v.length >= 10 ? v.slice(0, 10) : v
+}
+
+function getEventDateRange(event) {
+  if (!event) return ''
+  if (event.start_date) {
+    return event.end_date && event.end_date !== event.start_date
+      ? `${fmtDate(event.start_date)} – ${fmtDate(event.end_date)}`
+      : fmtDate(event.start_date)
+  }
+  return event.year ? String(event.year) : '—'
+}
+
+function safeFileName(value) {
+  return String(value || '')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120) || 'export'
+}
+
+function normalizeSheetName(value) {
+  return String(value || 'Sheet')
+    .replace(/[\\/?*\[\]:]/g, '')
+    .slice(0, 28)
+    .trim() || 'Sheet'
+}
+
+function getEventTypeLabel(type) {
+  return EVENT_TYPES.find(t => t.value === type)?.label || String(type || 'Event')
+}
+
+function getEventStatusLabel(status) {
+  return evtStatusStyle(status).label || String(status || 'Status')
+}
+
+function buildEventTaskRows(event, buckets, tasks) {
+  const parentById = new Map((tasks || []).map(t => [t.id, t]))
+  const childrenByParent = {}
+  ;(tasks || []).forEach(task => {
+    if (task.parent_id) {
+      if (!childrenByParent[task.parent_id]) childrenByParent[task.parent_id] = []
+      childrenByParent[task.parent_id].push(task)
+    }
+  })
+
+  const topLevelTasks = (tasks || []).filter(task => !task.parent_id)
+  const normalizeNames = value => [...new Set(String(value || '').split(/[;,]+/).map(v => v.trim()).filter(Boolean))]
+  const rows = []
+
+  topLevelTasks.forEach(task => {
+    const children = childrenByParent[task.id] || []
+    const parentAssigneesArr = normalizeNames(task.assigned_to)
+    const parentAssignees = parentAssigneesArr.join(', ')
+    const unassignedSubtasks = children.filter(child => !normalizeNames(child.assigned_to).length)
+
+    rows.push({
+      task: task.title || '',
+      subtasks: unassignedSubtasks.map(child => child.title || '').join('; '),
+      assigned_to: parentAssignees,
+      sub_assigned_to: '',
+      reports_to: '',
+      whatsapp_count: Number(task.whatsapp_sent_count || 0),
+      notes: task.notes || '',
+    })
+
+    children.forEach(child => {
+      const childAssignedArr = normalizeNames(child.assigned_to)
+      if (childAssignedArr.length === 0) return
+      const childAssigned = childAssignedArr.join(', ')
+      rows.push({
+        task: task.title || '',
+        subtasks: `» ${child.title || ''}`,
+        assigned_to: parentAssignees,
+        sub_assigned_to: childAssigned,
+        reports_to: parentAssignees,
+        whatsapp_count: Number(child.whatsapp_sent_count || 0),
+        notes: child.notes || '',
+      })
+    })
+  })
+
+  // In case there are orphan subtasks without a parent task
+  ;(tasks || []).filter(task => task.parent_id && !parentById.has(task.parent_id)).forEach(child => {
+    rows.push({
+      task: child.title || '',
+      subtasks: '',
+      assigned_to: '',
+      sub_assigned_to: child.assigned_to || '',
+      reports_to: '',
+      whatsapp_count: Number(child.whatsapp_sent_count || 0),
+      notes: child.notes || '',
+    })
+  })
+
+  return rows
 }
 
 // Returns anchor (start-of-week) for the current week; ws: 0–6
@@ -655,7 +753,7 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
 
 // ── EventCard (cards view) ────────────────────────────────────────────────────
 
-function EventCard({event,onClick,onEdit,onDelete}){
+function EventCard({event,onClick,onEdit,onDelete,onExport}){
   const [hov,setHov]=useState(false)
   const ec=eventColor(event), es=evtStatusStyle(event.status)
   const dr=event.start_date?(event.end_date&&event.end_date!==event.start_date?`${fmtDate(event.start_date)} – ${fmtDate(event.end_date)}`:fmtDate(event.start_date)):event.year?String(event.year):'—'
@@ -664,6 +762,7 @@ function EventCard({event,onClick,onEdit,onDelete}){
     <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onClick(event)}
       style={{background:'var(--card-bg,#fff)',border:`1px solid var(--card-border,#e2e8f0)`,borderTop:`3px solid ${ec.dot}`,borderRadius:10,padding:'16px 16px 14px',cursor:'pointer',position:'relative',boxShadow:hov?'0 4px 16px rgba(0,0,0,0.08)':'0 1px 3px rgba(0,0,0,0.04)',transform:hov?'translateY(-1px)':'none',transition:'box-shadow 0.15s,transform 0.12s',opacity:dim?0.7:1}}>
       {hov&&<div style={{position:'absolute',top:10,right:10,display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
+        <button onClick={()=>onExport?.(event)} style={{background:'var(--input-bg)',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Download size={13} color="var(--text-2)"/></button>
         <button onClick={()=>onEdit(event)} style={{background:'var(--input-bg)',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Pencil size={13} color="var(--text-2)"/></button>
         <button onClick={()=>onDelete(event)} style={{background:'#fef2f2',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Trash2 size={13} color="#ef4444"/></button>
       </div>}
@@ -1279,6 +1378,10 @@ export default function EventPlannerPage(){
   const [search,      setSearch]      = useState('')
   const [showSearch,  setShowSearch]  = useState(false)
 
+  // Exporting state
+  const [exportingEventId, setExportingEventId] = useState(null)
+  const [exportingAll, setExportingAll] = useState(false)
+
   // Completion summary
   const [summaryModal,setSummaryModal]= useState(false)
 
@@ -1430,6 +1533,129 @@ export default function EventPlannerPage(){
     setPrevView(view);setSelEvent(event);setView('board');setFStatus('');setFPriority('');setFAssignee('');
     loadBoard(event.id);loadLibraryTasks();loadVolunteers()
   }
+
+  async function exportEvent(event) {
+    if (!event) return
+    setExportingEventId(event.id)
+    try {
+      const [buckets, tasks] = await Promise.all([getBuckets(event.id), getTasks(event.id)])
+      const rows = buildEventTaskRows(event, buckets, tasks)
+      const columns = [
+        { header: 'Task', key: 'task', align: 'left' },
+        { header: 'Subtasks', key: 'subtasks', align: 'left' },
+        { header: 'Assigned To', key: 'assigned_to', align: 'left' },
+        { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
+        { header: 'Reports To', key: 'reports_to', align: 'left' },
+        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
+        { header: 'Notes', key: 'notes', align: 'left' },
+      ]
+      const titleLines = [
+        { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+        { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
+      ]
+      const safeName = safeFileName(event.name || `Event_${event.id}`)
+      const dateLabel = safeFileName(event.start_date || event.year || new Date().toISOString().slice(0, 10))
+      await exportToExcelWithTitle(columns, rows, 'Tasks', `Event_${safeName}_${dateLabel}.xlsx`, titleLines)
+    } catch (error) {
+      console.error('Export event failed', error)
+      toast('Failed to export event to Excel','error')
+    } finally {
+      setExportingEventId(null)
+    }
+  }
+
+  async function exportCurrentEvent() {
+    if (!selEvent) {
+      toast('Select an event to export first','error')
+      return
+    }
+    await exportEvent(selEvent)
+  }
+
+  async function exportAllEvents() {
+    if (!events?.length) {
+      toast('No events available to export','info')
+      return
+    }
+    setExportingAll(true)
+    try {
+      const eventIds = events.map(e => e.id).filter(Boolean)
+      const [buckets, tasks] = await Promise.all([
+        getBucketsForEvents(eventIds),
+        getTasksForEvents(eventIds),
+      ])
+      const bucketsByEvent = eventIds.reduce((map, id) => map.set(id, []), new Map())
+      const tasksByEvent   = eventIds.reduce((map, id) => map.set(id, []), new Map())
+      for (const bucket of buckets) {
+        bucketsByEvent.get(bucket.event_id)?.push(bucket)
+      }
+      for (const task of tasks) {
+        tasksByEvent.get(task.event_id)?.push(task)
+      }
+
+      const summaryColumns = [
+        { header: 'Event Name', key: 'event_name', align: 'left' },
+        { header: 'Type', key: 'event_type', align: 'left' },
+        { header: 'Status', key: 'status', align: 'left' },
+        { header: 'Dates', key: 'dates', align: 'left' },
+        { header: 'Year', key: 'year', align: 'center' },
+        { header: 'Task Count', key: 'task_count', align: 'center' },
+      ]
+      const summaryRows = events.map(event => ({
+        event_name: event.name || '',
+        event_type: getEventTypeLabel(event.event_type),
+        status: getEventStatusLabel(event.status),
+        dates: getEventDateRange(event),
+        year: event.year || '',
+        task_count: (tasksByEvent.get(event.id) || []).length,
+      }))
+
+      const usedSheetNames = new Set(['Summary'])
+      const sheets = [{ name: 'Summary', columns: summaryColumns, rows: summaryRows }]
+      const taskColumns = [
+        { header: 'Task', key: 'task', align: 'left' },
+        { header: 'Subtasks', key: 'subtasks', align: 'left' },
+        { header: 'Assigned To', key: 'assigned_to', align: 'left' },
+        { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
+        { header: 'Reports To', key: 'reports_to', align: 'left' },
+        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
+        { header: 'Notes', key: 'notes', align: 'left' },
+      ]
+
+      for (const event of events) {
+        const bucketList = bucketsByEvent.get(event.id) || []
+        const taskList = tasksByEvent.get(event.id) || []
+        const rows = buildEventTaskRows(event, bucketList, taskList)
+        let baseName = normalizeSheetName(event.name || `Event_${event.id}`)
+        if (!baseName) baseName = `Event_${event.id}`
+        let sheetName = baseName
+        let counter = 1
+        while (usedSheetNames.has(sheetName)) {
+          sheetName = `${baseName.slice(0, 24)}_${counter++}`
+        }
+        usedSheetNames.add(sheetName)
+
+        sheets.push({
+          name: sheetName,
+          columns: taskColumns,
+          rows,
+          titleLines: [
+            { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+            { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
+          ],
+        })
+      }
+
+      const dateLabel = new Date().toISOString().slice(0, 10)
+      await exportMultiSheetWithTitle(sheets, `Event_Planner_All_Events_${dateLabel}.xlsx`)
+    } catch (error) {
+      console.error('Export all events failed', error)
+      toast('Failed to export all events','error')
+    } finally {
+      setExportingAll(false)
+    }
+  }
+
   function backFromBoard(){ setView(prevView);setSelEvent(null);setBuckets([]);setTasks([]) }
 
   // ── Calendar nav ────────────────────────────────────────────
@@ -2181,6 +2407,10 @@ export default function EventPlannerPage(){
             ))}
           </div>
           
+          <button onClick={exportAllEvents} disabled={exportingAll || events.length===0}
+            style={{...btnP,display:'flex',alignItems:'center',gap:6,background:'#16a34a',opacity:(exportingAll || events.length===0)?0.6:1,padding:'6px 14px',fontSize:12.5}}>
+            <FileSpreadsheet size={15}/>{exportingAll ? 'Exporting…' : 'Export All'}
+          </button>
           <button onClick={()=>navigate('/events/settings')} title="Event Settings"
             style={{...btnS,display:'flex',alignItems:'center',padding:'7px 10px'}}>
             <Settings size={15}/>
@@ -2558,7 +2788,7 @@ export default function EventPlannerPage(){
           </div>
         ):(
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
-            {filteredEvents.map(e=><EventCard key={e.id} event={e} onClick={openBoard} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
+            {filteredEvents.map(e=><EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
           </div>
         )}
       </div>
@@ -2605,6 +2835,10 @@ export default function EventPlannerPage(){
             <div style={{display:'flex',gap:6,flexShrink:0}}>
               <button onClick={toggleAllCanvasCategories} disabled={canvasCategoryTaskIds.length===0} title={allCanvasCollapsed ? 'Expand all categories' : 'Collapse all categories'} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}>
                 {allCanvasCollapsed ? <ChevronRight size={12}/> : <ChevronDown size={12}/>} {allCanvasCollapsed ? 'Expand all' : 'Collapse all'}
+              </button>
+              <button onClick={exportCurrentEvent} disabled={!selEvent || exportingEventId===selEvent?.id}
+                style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px',background:'#16a34a',color:'#fff',border:'none',opacity:(!selEvent || exportingEventId===selEvent?.id)?0.6:1}}>
+                <FileSpreadsheet size={12}/>{exportingEventId===selEvent?.id ? 'Exporting…' : 'Export'}
               </button>
               <button onClick={()=>setEventModal(selEvent)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Pencil size={12}/>Edit</button>
               <button onClick={()=>setCarryModal(true)} style={{...btnS,display:'flex',alignItems:'center',gap:4,fontSize:12,padding:'5px 10px'}}><Copy size={12}/>Copy from…</button>

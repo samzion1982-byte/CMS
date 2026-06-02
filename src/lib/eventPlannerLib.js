@@ -79,7 +79,29 @@ export async function getTasks(eventId) {
   return data || []
 }
 
+export async function getTasksForEvents(eventIds) {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return []
+  const { data, error } = await supabase.from('event_tasks')
+    .select('*')
+    .in('event_id', eventIds)
+    .order('event_id')
+    .order('sort_order')
+    .order('created_at')
+  if (error) throw error
+  return data || []
+}
 
+export async function getBucketsForEvents(eventIds) {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return []
+  const { data, error } = await supabase.from('event_task_buckets')
+    .select('*')
+    .in('event_id', eventIds)
+    .order('event_id')
+    .order('sort_order')
+    .order('created_at')
+  if (error) throw error
+  return data || []
+}
 
 export async function saveTask(id, payload, userEmail) {
   const now = new Date().toISOString()
