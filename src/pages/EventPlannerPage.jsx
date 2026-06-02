@@ -194,25 +194,33 @@ function buildEventTaskRows(event, buckets, tasks) {
       allChildren.push(...kids)
     })
 
-    // Merge subtasks (both unassigned and assigned) into a single parent row
+    // Parent row: keep unassigned subtasks
     const unassignedSubtasks = allChildren.filter(c => normalizeNames(c.assigned_to).length === 0)
     const assignedChildren = allChildren.filter(c => normalizeNames(c.assigned_to).length > 0)
 
-    const mergedSubtasks = [
-      ...unassignedSubtasks.map(c => c.title || ''),
-      ...assignedChildren.map(c => '» ' + (c.title || '')),
-    ].filter(Boolean).join('; ')
-
-    const subAssignedList = [...new Set(assignedChildren.flatMap(c => normalizeNames(c.assigned_to)))]
-
     rows.push({
       task: group[0].title || '',
-      subtasks: mergedSubtasks,
+      subtasks: unassignedSubtasks.map(child => child.title || '').join('; '),
       assigned_to: parentAssignees,
-      sub_assigned_to: subAssignedList.join('; '),
-      reports_to: assignedChildren.length ? parentAssignees : '',
+      sub_assigned_to: '',
+      reports_to: '',
       whatsapp_count: Number(Math.max(...group.map(t => t.whatsapp_sent_count || 0))),
       notes: group[0].notes || '',
+    })
+
+    // Emit a separate row for each assigned child (child becomes its own row)
+    assignedChildren.forEach(child => {
+      const childAssignedArr = normalizeNames(child.assigned_to)
+      const childAssigned = childAssignedArr.join(', ')
+      rows.push({
+        task: group[0].title || '',
+        subtasks: '» ' + (child.title || ''),
+        assigned_to: parentAssignees,
+        sub_assigned_to: childAssigned,
+        reports_to: parentAssignees,
+        whatsapp_count: Number(child.whatsapp_sent_count || 0),
+        notes: child.notes || '',
+      })
     })
   })
 
@@ -2323,8 +2331,11 @@ export default function EventPlannerPage(){
 
   // ── Derived ─────────────────────────────────────────────────
 
-  const years=[...new Set(events.map(e=>e.year).filter(Boolean))].sort((a,b)=>b-a)
-  const filteredEvents=yearFilter?events.filter(e=>e.year===yearFilter):events
+  const getEventYear = e => e.year || (e.start_date ? parseInt(e.start_date.slice(0,4), 10) : null)
+  const years=[...new Set(events.map(e=>getEventYear(e)).filter(Boolean))].sort((a,b)=>b-a)
+  const filteredEvents=yearFilter
+    ? events.filter(e=>getEventYear(e)===yearFilter)
+    : events
 
   // Calendar filter
   const hasCalFilter=!!(calFilter.type||calFilter.status)
@@ -2798,9 +2809,37 @@ export default function EventPlannerPage(){
             <Calendar size={48} style={{opacity:0.18,marginBottom:14}}/><p style={{fontSize:15,fontWeight:500}}>No events</p>
           </div>
         ):(
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
-            {filteredEvents.map(e=><EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
-          </div>
+          (()=>{
+            const cardsByYear = {}
+            filteredEvents.forEach(e => {
+              const yr = e.year || (e.start_date ? e.start_date.slice(0,4) : 'Other')
+              if (!cardsByYear[yr]) cardsByYear[yr] = []
+              cardsByYear[yr].push(e)
+            })
+            const sortedYears = Object.keys(cardsByYear).sort((a,b)=>{
+              const na = Number(a)
+              const nb = Number(b)
+              if (!isNaN(na) && !isNaN(nb)) return nb - na
+              if (isNaN(na)) return 1
+              if (isNaN(nb)) return -1
+              return 0
+            })
+            return (
+              <>
+                {sortedYears.map(yr => (
+                  <div key={yr} style={{marginBottom:20}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                      <span style={{fontSize:12,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{yr}</span>
+                      <div style={{flex:1,height:1,background:'var(--card-border,#e2e8f0)'}}/>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
+                      {cardsByYear[yr].map(e=><EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )
+          })()
         )}
       </div>
     )
