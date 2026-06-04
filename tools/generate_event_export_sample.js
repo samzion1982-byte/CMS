@@ -47,21 +47,29 @@ function buildEventTaskRowsSample() {
     const unassignedSubtasks = allChildren.filter(c => normalizeNames(c.assigned_to).length === 0)
     const assignedChildren = allChildren.filter(c => normalizeNames(c.assigned_to).length > 0)
 
-    const mergedSubtasks = [
-      ...unassignedSubtasks.map(c => c.title || ''),
-      ...assignedChildren.map(c => '» ' + (c.title || '')),
-    ].filter(Boolean).join('; ')
-
-    const subAssignedList = [...new Set(assignedChildren.flatMap(c => normalizeNames(c.assigned_to)))]
-
     rows.push({
       task: group[0].title || '',
-      subtasks: mergedSubtasks,
+      subtasks: unassignedSubtasks.map(child => child.title || '').join('; '),
       assigned_to: parentAssignees,
-      sub_assigned_to: subAssignedList.join('; '),
-      reports_to: assignedChildren.length ? parentAssignees : '',
+      sub_assigned_to: '',
+      reports_to: '',
       whatsapp_count: Number(Math.max(...group.map(t => t.whatsapp_sent_count || 0))),
       notes: group[0].notes || '',
+    })
+
+    assignedChildren.forEach(child => {
+      const childAssignedArr = normalizeNames(child.assigned_to)
+      if (childAssignedArr.length === 0) return
+      const childAssigned = childAssignedArr.join(', ')
+      rows.push({
+        task: group[0].title || '',
+        subtasks: '» ' + (child.title || ''),
+        assigned_to: parentAssignees,
+        sub_assigned_to: childAssigned,
+        reports_to: parentAssignees,
+        whatsapp_count: Number(child.whatsapp_sent_count || 0),
+        notes: child.notes || '',
+      })
     })
   })
 

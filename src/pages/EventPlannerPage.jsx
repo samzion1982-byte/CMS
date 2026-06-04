@@ -14,7 +14,7 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Calendar, Plus, ChevronLeft, ChevronRight, ChevronDown, Pencil, Trash2,
+  Calendar, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Pencil, Trash2,
   User, CalendarDays, Copy, LayoutGrid, CheckCircle2, List,
   Grid3X3, Filter, X, SlidersHorizontal, Search, BarChart2,
   AlertCircle, Clock, Repeat, Settings, GripVertical, Download, FileSpreadsheet,
@@ -403,7 +403,7 @@ function MiniMonth({ year, month, events, selRange, onDayMouseDown, onDayMouseEn
 
 // ── TaskCard (draggable) ──────────────────────────────────────────────────────
 
-function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange, onSendWhatsApp }) {
+function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange, onSendWhatsApp, onMoveUp, onMoveDown }) {
   const [hov,setHov]=useState(false)
   const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:task.id})
   const st=taskStatusStyle(task.status)
@@ -415,6 +415,10 @@ function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange, onSendWhat
       <div style={{background:'var(--card-bg,#fff)',border:'1px solid var(--card-border,#e2e8f0)',borderLeft:`3px solid ${priorityColor(task.priority)}`,borderRadius:8,padding:'10px 12px',cursor:isDragging?'grabbing':'grab',position:'relative',boxShadow:hov?'0 2px 8px rgba(0,0,0,0.09)':'none',transition:'box-shadow 0.15s'}}>
         {hov&&!isDragging&&(
           <div style={{position:'absolute',top:6,right:6,display:'flex',gap:3,zIndex:1}}>
+            <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMoveUp?.(task.id)}} disabled={!onMoveUp}
+              style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:onMoveUp?'pointer':'default',display:'flex',alignItems:'center',opacity:onMoveUp?1:0.4}}><ChevronUp size={11} color="var(--text-2)"/></button>
+            <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onMoveDown?.(task.id)}} disabled={!onMoveDown}
+              style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:onMoveDown?'pointer':'default',display:'flex',alignItems:'center',opacity:onMoveDown?1:0.4}}><ChevronDown size={11} color="var(--text-2)"/></button>
             <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onEdit(task)}}
               style={{background:'var(--input-bg,#f1f5f9)',border:'none',borderRadius:5,padding:'3px 5px',cursor:'pointer',display:'flex',alignItems:'center'}}><Pencil size={11} color="var(--text-2)"/></button>
                 <button onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onAssign?.(task)}}
@@ -526,14 +530,16 @@ function LibraryItemRow({task,isSubtask,onNameChange,onAddSubtask,onDelete,savin
 
 // ── CanvasDropZone ────────────────────────────────────────────────────────────
 
-function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditTask,onSendWhatsApp,onToggleCategory,collapsedCategories={},libCreatedTaskIds=[]}){
+function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditTask,onSendWhatsApp,onToggleCategory,collapsedCategories={},libCreatedTaskIds=[],onMoveTaskUp,onMoveTaskDown}){
   const {setNodeRef,isOver}=useDroppable({id:'canvas-drop-zone'})
-  const topTasks = tasks.filter(t=>t.parent_id==null)
+  const sortByOrder = (a,b)=> (a.sort_order||0)-(b.sort_order||0) || (new Date(a.created_at||0) - new Date(b.created_at||0))
+  const topTasks = tasks.filter(t=>t.parent_id==null).slice().sort(sortByOrder)
   const subtasksByParent = {}
   tasks.filter(t=>t.parent_id!=null).forEach(t=>{
     if(!subtasksByParent[t.parent_id]) subtasksByParent[t.parent_id]=[]
     subtasksByParent[t.parent_id].push(t)
   })
+  Object.values(subtasksByParent).forEach(arr=>arr.sort(sortByOrder))
 
   const isCategoryTask = task => !task.parent_id && (subtasksByParent[task.id]?.length > 0)
 
@@ -546,6 +552,9 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
   function CategorySlot({ task, subtasks }){
     const {setNodeRef: setTaskDropRef, isOver: isOverTask} = useDroppable({id:`task-${task.id}`})
     const parentAssignees = task.assigned_to ? String(task.assigned_to).trim() : ''
+    const taskIndex = topTasks.findIndex(t=>t.id===task.id)
+    const canMoveTaskUp = taskIndex > 0
+    const canMoveTaskDown = taskIndex !== -1 && taskIndex < topTasks.length - 1
     return (
       <div ref={setTaskDropRef} style={{background:isOverTask?'rgba(37,99,235,0.08)':'#fff',border:'1px solid var(--card-border,#e2e8f0)',borderRadius:12,boxShadow:'0 8px 24px rgba(15,23,42,0.08)',display:'flex',flexDirection:'column'}}>
           <div style={{padding:'10px 12px'}}>
@@ -577,6 +586,8 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
                   <span style={{fontSize:11,fontWeight:700,color:'#166534',background:'#dcfce7',borderRadius:999,padding:'4px 8px'}}>{task.whatsapp_sent_count}</span>
                 )}
               </div>
+              <button onClick={e=>{e.stopPropagation(); onMoveTaskUp?.(task.id)}} disabled={!onMoveTaskUp || !canMoveTaskUp} title="Move up" style={{background:'transparent',border:'none',cursor:onMoveTaskUp && canMoveTaskUp ? 'pointer':'default',padding:4,display:'flex',alignItems:'center',color:'var(--text-3)',opacity:onMoveTaskUp && canMoveTaskUp ? 1 : 0.25}}><ChevronUp size={14}/></button>
+              <button onClick={e=>{e.stopPropagation(); onMoveTaskDown?.(task.id)}} disabled={!onMoveTaskDown || !canMoveTaskDown} title="Move down" style={{background:'transparent',border:'none',cursor:onMoveTaskDown && canMoveTaskDown ? 'pointer':'default',padding:4,display:'flex',alignItems:'center',color:'var(--text-3)',opacity:onMoveTaskDown && canMoveTaskDown ? 1 : 0.25}}><ChevronDown size={14}/></button>
               {isCategoryTask(task)&&(
                 <button onClick={e=>handleAddSubtaskClick(e, task)} style={{...btnS,fontSize:12,padding:'4px 8px',whiteSpace:'nowrap',height:28,lineHeight:1,display:'inline-flex',alignItems:'center',borderRadius:8}}>+ Subtask</button>
               )}
@@ -607,6 +618,8 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
                       )}
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end'}}>
+                      <button onClick={e=>{e.stopPropagation(); onMoveTaskUp?.(subtask.id)}} disabled={!onMoveTaskUp || subtasks.findIndex(st=>st.id===subtask.id)===0} title="Move up" style={{background:'transparent',border:'none',cursor:onMoveTaskUp ? 'pointer':'default',padding:4,display:'flex',alignItems:'center',color:'var(--text-3)',opacity: onMoveTaskUp && subtasks.findIndex(st=>st.id===subtask.id)!==0 ? 1 : 0.25}}><ChevronUp size={12}/></button>
+                      <button onClick={e=>{e.stopPropagation(); onMoveTaskDown?.(subtask.id)}} disabled={!onMoveTaskDown || subtasks.findIndex(st=>st.id===subtask.id)===subtasks.length-1} title="Move down" style={{background:'transparent',border:'none',cursor:onMoveTaskDown ? 'pointer':'default',padding:4,display:'flex',alignItems:'center',color:'var(--text-3)',opacity: onMoveTaskDown && subtasks.findIndex(st=>st.id===subtask.id)!==subtasks.length-1 ? 1 : 0.25}}><ChevronDown size={12}/></button>
                       <button onClick={e=>{e.stopPropagation(); onAssignTask?.(subtask)}} style={{...btnS,fontSize:11,padding:'5px 8px',whiteSpace:'nowrap',...(subtask.assigned_to?{background:'var(--text-1)',color:'var(--accent-text)',borderColor:'var(--text-1)'}:{})}}>{subtask.assigned_to ? 'Re-Assign' : 'Assign'}</button>
                       <button onClick={e=>{e.stopPropagation(); onDeleteTask(subtask.id)}} title="Delete subtask" style={{background:'none',border:'none',cursor:'pointer',color:'#ef4444',padding:4}}><Trash2 size={12}/></button>
                     </div>
@@ -721,7 +734,7 @@ function LibraryPanel({tasks,onNameChange,onAddSubtask,onDelete,onAddCategory,sa
 
 // ── BucketColumn ──────────────────────────────────────────────────────────────
 
-function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEditTask,onDeleteTask,onStatusChange,onMoveLeft,onMoveRight,onQuickAdd,onAssignTask}){
+function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEditTask,onDeleteTask,onStatusChange,onMoveLeft,onMoveRight,onQuickAdd,onAssignTask,onMoveUp,onMoveDown}){
   const {setNodeRef,isOver}=useDroppable({id:bucket.id})
   const [quickTitle,setQuickTitle]=useState('')
   const [isQuickAdd,setIsQuickAdd]=useState(false)
@@ -744,7 +757,7 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
       </div>
       <div ref={setNodeRef} style={{flex:1,overflowY:'auto',padding:'10px 8px 12px',minHeight:72,background:isOver?`${bucket.color}12`:'transparent',transition:'background 0.15s'}}>
         <SortableContext items={tasks.map(t=>t.id)} strategy={verticalListSortingStrategy}>
-          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onAssign={onAssignTask} onDelete={onDeleteTask} onStatusChange={onStatusChange} onSendWhatsApp={handleSendWhatsApp}/>) }
+          {tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEditTask} onAssign={onAssignTask} onDelete={onDeleteTask} onStatusChange={onStatusChange} onSendWhatsApp={handleSendWhatsApp} onMoveUp={()=>onMoveUp?.(task)} onMoveDown={()=>onMoveDown?.(task)}/>) }
         </SortableContext>
         {tasks.length===0&&<div style={{textAlign:'center',padding:'14px 8px',color:'var(--text-3)',fontSize:12,userSelect:'none'}}>Drop tasks here</div>}
       </div>
@@ -772,42 +785,42 @@ function BucketColumn({bucket,tasks,onAddTask,onEditBucket,onDeleteBucket,onEdit
 
 // ── EventCard (cards view) ────────────────────────────────────────────────────
 
-function EventCard({event,onClick,onEdit,onDelete,onExport}){
+function EventCard({event,onClick,onEdit,onDelete,onExport,compact=false}){
   const [hov,setHov]=useState(false)
   const ec=eventColor(event), es=evtStatusStyle(event.status)
   const dr=event.start_date?(event.end_date&&event.end_date!==event.start_date?`${fmtDate(event.start_date)} – ${fmtDate(event.end_date)}`:fmtDate(event.start_date)):event.year?String(event.year):'—'
   const dim=event.status==='completed'||event.status==='cancelled'
   return(
     <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onClick(event)}
-      style={{background:'var(--card-bg,#fff)',border:`1px solid var(--card-border,#e2e8f0)`,borderTop:`3px solid ${ec.dot}`,borderRadius:10,padding:'16px 16px 14px',cursor:'pointer',position:'relative',boxShadow:hov?'0 4px 16px rgba(0,0,0,0.08)':'0 1px 3px rgba(0,0,0,0.04)',transform:hov?'translateY(-1px)':'none',transition:'box-shadow 0.15s,transform 0.12s',opacity:dim?0.7:1}}>
+      style={{background:'var(--card-bg,#fff)',border:`1px solid var(--card-border,#e2e8f0)`,borderTop:`3px solid ${ec.dot}`,borderRadius:10,padding:compact?'12px 12px 10px':'16px 16px 14px',cursor:'pointer',position:'relative',boxShadow:hov?'0 4px 16px rgba(0,0,0,0.08)':'0 1px 3px rgba(0,0,0,0.04)',transform:hov?'translateY(-1px)':'none',transition:'box-shadow 0.15s,transform 0.12s',opacity:dim?0.7:1}}>
       {hov&&<div style={{position:'absolute',top:10,right:10,display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
         <button onClick={()=>onExport?.(event)} style={{background:'var(--input-bg)',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Download size={13} color="var(--text-2)"/></button>
         <button onClick={()=>onEdit(event)} style={{background:'var(--input-bg)',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Pencil size={13} color="var(--text-2)"/></button>
         <button onClick={()=>onDelete(event)} style={{background:'#fef2f2',border:'none',borderRadius:6,padding:'4px 6px',cursor:'pointer',display:'flex',alignItems:'center'}}><Trash2 size={13} color="#ef4444"/></button>
       </div>}
-      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
-        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:ec.bg,color:ec.text,textTransform:'uppercase'}}>{event.event_type}</span>
-        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:es.bg,color:es.text,textTransform:'uppercase'}}>{es.label}</span>
+      <div style={{display:'flex',alignItems:'center',gap:compact?4:6,marginBottom:compact?6:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:compact?9:10,fontWeight:700,padding:compact?'1px 5px':'2px 7px',borderRadius:20,background:ec.bg,color:ec.text,textTransform:'uppercase'}}>{event.event_type}</span>
+        <span style={{fontSize:compact?9:10,fontWeight:700,padding:compact?'1px 5px':'2px 7px',borderRadius:20,background:es.bg,color:es.text,textTransform:'uppercase'}}>{es.label}</span>
         {event.event_type==='annual'&&event.is_recurring&&(
-          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#eff6ff',color:'#2563eb',display:'flex',alignItems:'center',gap:3}}>
-            <Repeat size={9}/>Recurring
+          <span style={{fontSize:compact?9:10,fontWeight:700,padding:compact?'1px 5px':'2px 7px',borderRadius:20,background:'#eff6ff',color:'#2563eb',display:'flex',alignItems:'center',gap:compact?2:3}}>
+            <Repeat size={compact?8:9}/>Recurring
           </span>
         )}
         {event.event_type==='annual'&&event.date_fixed&&(
-          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#dcfce7',color:'#16a34a',display:'flex',alignItems:'center',gap:3}}>
-            <CalendarDays size={9}/>Fixed Date
+          <span style={{fontSize:compact?9:10,fontWeight:700,padding:compact?'1px 5px':'2px 7px',borderRadius:20,background:'#dcfce7',color:'#16a34a',display:'flex',alignItems:'center',gap:compact?2:3}}>
+            <CalendarDays size={compact?8:9}/>Fixed Date
           </span>
         )}
         {event.event_type==='annual'&&event.is_recurring&&!event.date_fixed&&!event.start_date&&(
-          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:'#fff7ed',color:'#c2410c',display:'flex',alignItems:'center',gap:3}}>
-            <AlertCircle size={9}/>Needs Scheduling
+          <span style={{fontSize:compact?9:10,fontWeight:700,padding:compact?'1px 5px':'2px 7px',borderRadius:20,background:'#fff7ed',color:'#c2410c',display:'flex',alignItems:'center',gap:compact?2:3}}>
+            <AlertCircle size={compact?8:9}/>Needs Scheduling
           </span>
         )}
       </div>
       <div style={{margin:'0 0 6px',display:'flex',alignItems:'center'}}>
-        <div style={{background:ec.dot,color:'#fff',padding:'6px 12px',borderRadius:10,fontSize:14,fontWeight:700,lineHeight:1.2,display:'inline-block',textDecoration:event.status==='cancelled'?'line-through':'none'}}>{event.name}</div>
+        <div style={{background:ec.dot,color:'#fff',padding:compact?'5px 10px':'6px 12px',borderRadius:10,fontSize:compact?13:14,fontWeight:700,lineHeight:1.2,display:'inline-block',textDecoration:event.status==='cancelled'?'line-through':'none'}}>{event.name}</div>
       </div>
-      <p style={{margin:'0 0 8px',fontSize:12,color:'var(--text-3)',display:'flex',alignItems:'center',gap:4}}><CalendarDays size={11}/>{dr}</p>
+      <p style={{margin:'0 0 8px',fontSize:compact?11:12,color:'var(--text-3)',display:'flex',alignItems:'center',gap:4}}><CalendarDays size={compact?10:11}/>{dr}</p>
   
       <p style={{margin:0,fontSize:11,color:'var(--text-3)'}}>Open board →</p>
     </div>
@@ -970,69 +983,75 @@ function CompletionSummaryModal({ event, buckets, tasks, onClose }) {
 // ── EventFormModal ────────────────────────────────────────────────────────────
 
 function EventFormModal({initial,onSave,onClose}){
-  const [form,setForm]=useState({...BLANK_EVENT,...initial})
+  const normalizedInitial = {
+    ...BLANK_EVENT,
+    ...initial,
+    event_type: String(initial?.event_type || BLANK_EVENT.event_type).toLowerCase(),
+  }
+  const [form,setForm]=useState(normalizedInitial)
   const [saving,setSaving]=useState(false)
+  const isAnnual = String(form.event_type || '').toLowerCase() === 'annual'
   function f(k){return e=>{const v=e.target.value;setForm(p=>{const n={...p,[k]:v};if(k==='start_date'&&v)n.year=parseInt(v.split('-')[0])||p.year;return n})}}
+  function getRecurringLabel(){
+    if(!form.year) return null
+    const nextYears = Array.from({ length: form.recurring_years || 1 }, (_, i) => parseInt(form.year) + i + 1).join(', ')
+    return form.date_fixed
+      ? `Will create ${form.name || 'this event'} for ${nextYears} with the same dates.`
+      : `Will tentatively book ${form.name || 'this event'} for ${nextYears} — dates can be updated later.`
+  }
   async function handleSave(){if(!form.name.trim())return;setSaving(true);await onSave(form);setSaving(false)}
   return(
     <Modal onClose={onClose} width={500}>
       <ModalTitle onClose={onClose}>{initial?.id?'Edit Event':'New Event'}</ModalTitle>
       <ModalBody>
       <Field label="Event Name *"><input autoFocus style={iSt} value={form.name} onChange={f('name')} placeholder="e.g. New Year Service"/></Field>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <Field label="Type"><select style={iSt} value={form.event_type} onChange={f('event_type')}>{EVENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></Field>
-        <Field label="Status"><select style={iSt} value={form.status} onChange={f('status')}>{EVENT_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></Field>
         <Field label="Year"><input style={iSt} type="number" value={form.year} onChange={f('year')}/></Field>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <Field label="Start Date"><input style={iSt} type="date" value={form.start_date} onChange={f('start_date')}/></Field>
         <Field label="End Date"><input style={iSt} type="date" value={form.end_date} onChange={f('end_date')}/></Field>
       </div>
-      {form.event_type==='annual'&&(
-        <div style={{background:'var(--input-bg,#f1f5f9)',borderRadius:8,padding:'12px 14px',marginTop:2,display:'flex',flexDirection:'column',gap:10}}>
-          {/* Fixed date */}
-          <label style={{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',userSelect:'none'}}>
-            <input type="checkbox" checked={!!form.date_fixed} onChange={e=>setForm(p=>({...p,date_fixed:e.target.checked}))}
-              style={{accentColor:'var(--accent,#2563eb)',marginTop:2,width:14,height:14,flexShrink:0}}/>
-            <div>
-              <span style={{fontSize:13,fontWeight:600,color:'var(--text-1)'}}>Date is fixed (same day every year)</span>
-              {form.date_fixed
-                ? <p style={{margin:'3px 0 0',fontSize:11,color:'#16a34a'}}>e.g. Christmas (Dec 25), New Year (Jan 1) — dates carry forward automatically.</p>
-                : <p style={{margin:'3px 0 0',fontSize:11,color:'var(--text-3)'}}>e.g. VBS, Camp — dates vary and require rescheduling each year.</p>
-              }
-            </div>
-          </label>
-          <div style={{height:1,background:'var(--card-border,#e2e8f0)'}}/>
-          {/* Recurring */}
-          <label style={{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',userSelect:'none'}}>
-            <input type="checkbox" checked={!!form.is_recurring} onChange={e=>setForm(p=>({...p,is_recurring:e.target.checked}))}
-              style={{accentColor:'var(--accent,#2563eb)',marginTop:2,width:14,height:14,flexShrink:0}}/>
-            <div style={{flex:1}}>
-              <span style={{fontSize:13,fontWeight:600,color:'var(--text-1)'}}>Recurring — auto-books future years</span>
-              {form.is_recurring?(
-                <>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:7}}>
-                    <span style={{fontSize:12,color:'var(--text-2)',whiteSpace:'nowrap'}}>Book ahead for:</span>
-                    <select value={form.recurring_years||1} onChange={e=>setForm(p=>({...p,recurring_years:parseInt(e.target.value)}))}
-                      style={{fontSize:12,padding:'3px 8px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-1)',cursor:'pointer',outline:'none'}}>
-                      {[1,2,3,5,10].map(n=><option key={n} value={n}>{n} {n===1?'year':'years'}</option>)}
-                    </select>
-                  </div>
-                  {form.year&&(
-                    <p style={{margin:'5px 0 0',fontSize:11,color:'var(--accent,#2563eb)'}}>
-                      {form.date_fixed
-                        ? `Will create ${form.name||'this event'} for ${Array.from({length:form.recurring_years||1},(_,i)=>parseInt(form.year)+i+1).join(', ')} with the same dates.`
-                        : `Will tentatively book ${form.name||'this event'} for ${Array.from({length:form.recurring_years||1},(_,i)=>parseInt(form.year)+i+1).join(', ')} — dates can be updated later.`}
-                    </p>
-                  )}
-                </>
-              ):(
-                <p style={{margin:'3px 0 0',fontSize:11,color:'var(--text-3)'}}>Off — manage each year manually.</p>
-              )}
-            </div>
-          </label>
-        </div>
-      )}
+      <div style={{background:'var(--input-bg,#f1f5f9)',borderRadius:8,padding:'12px 14px',marginTop:2,display:'flex',flexDirection:'column',gap:10}}>
+        {/* Fixed date */}
+        <label style={{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',userSelect:'none'}}>
+          <input type="checkbox" checked={!!form.date_fixed} onChange={e=>setForm(p=>({...p,date_fixed:e.target.checked}))}
+            style={{accentColor:'var(--accent,#2563eb)',marginTop:2,width:14,height:14,flexShrink:0}}/>
+          <div>
+            <span style={{fontSize:13,fontWeight:600,color:'var(--text-1)'}}>Date is fixed (same day every year)</span>
+            {form.date_fixed
+              ? <p style={{margin:'3px 0 0',fontSize:11,color:'#16a34a'}}>e.g. Christmas (Dec 25), New Year (Jan 1) — dates carry forward automatically.</p>
+              : <p style={{margin:'3px 0 0',fontSize:11,color:'var(--text-3)'}}>e.g. VBS, Camp — dates vary and require rescheduling each year.</p>
+            }
+          </div>
+        </label>
+        <div style={{height:1,background:'var(--card-border,#e2e8f0)'}}/>
+        {/* Recurring */}
+        <label style={{display:'flex',alignItems:'flex-start',gap:9,cursor:'pointer',userSelect:'none'}}>
+          <input type="checkbox" checked={!!form.is_recurring} onChange={e=>setForm(p=>({...p,is_recurring:e.target.checked}))}
+            style={{accentColor:'var(--accent,#2563eb)',marginTop:2,width:14,height:14,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <span style={{fontSize:13,fontWeight:600,color:'var(--text-1)'}}>Recurring - auto-books future years</span>
+            {form.is_recurring ? (
+              <div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginTop:7}}>
+                  <span style={{fontSize:12,color:'var(--text-2)',whiteSpace:'nowrap'}}>Book ahead for:</span>
+                  <select value={form.recurring_years||1} onChange={e=>setForm(p=>({...p,recurring_years:parseInt(e.target.value)}))}
+                    style={{fontSize:12,padding:'3px 8px',borderRadius:6,border:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',color:'var(--text-1)',cursor:'pointer',outline:'none'}}>
+                    {[1,2,3,5,10].map(n=><option key={n} value={n}>{n} {n===1?'year':'years'}</option>)}
+                  </select>
+                </div>
+                {form.year && (
+                  <p style={{margin:'5px 0 0',fontSize:11,color:'var(--accent,#2563eb)'}}>{getRecurringLabel()}</p>
+                )}
+              </div>
+            ) : (
+              <p style={{margin:'3px 0 0',fontSize:11,color:'var(--text-3)'}}>Off - manage each year manually.</p>
+            )}
+          </div>
+        </label>
+      </div>
       
       <Field label="Event Colour (overrides type colour)">
         <ColorPicker value={form.color} onChange={c=>setForm(p=>({...p,color:c}))}/>
@@ -1333,6 +1352,7 @@ export default function EventPlannerPage(){
   const [view,       setView]       = useState('month')
   const [prevView,   setPrevView]   = useState('month')
   const [yearFilter, setYearFilter] = useState(null)
+  const [yearSortAsc, setYearSortAsc] = useState(false)
 
   // Calendar navigation
   const [calYear,  setCalYear]  = useState(new Date().getFullYear())
@@ -1400,6 +1420,7 @@ export default function EventPlannerPage(){
   // Exporting state
   const [exportingEventId, setExportingEventId] = useState(null)
   const [exportingAll, setExportingAll] = useState(false)
+  const [exportingFilteredCards, setExportingFilteredCards] = useState(false)
 
   // Completion summary
   const [summaryModal,setSummaryModal]= useState(false)
@@ -1675,6 +1696,90 @@ export default function EventPlannerPage(){
     }
   }
 
+  async function exportFilteredCards() {
+    if (!filteredEvents?.length) {
+      toast('No events visible to export','info')
+      return
+    }
+    setExportingFilteredCards(true)
+    try {
+      const eventIds = filteredEvents.map(e => e.id).filter(Boolean)
+      const [buckets, tasks] = await Promise.all([
+        getBucketsForEvents(eventIds),
+        getTasksForEvents(eventIds),
+      ])
+      const bucketsByEvent = eventIds.reduce((map, id) => map.set(id, []), new Map())
+      const tasksByEvent   = eventIds.reduce((map, id) => map.set(id, []), new Map())
+      for (const bucket of buckets) {
+        bucketsByEvent.get(bucket.event_id)?.push(bucket)
+      }
+      for (const task of tasks) {
+        tasksByEvent.get(task.event_id)?.push(task)
+      }
+
+      const summaryColumns = [
+        { header: 'Event Name', key: 'event_name', align: 'left' },
+        { header: 'Type', key: 'event_type', align: 'left' },
+        { header: 'Status', key: 'status', align: 'left' },
+        { header: 'Dates', key: 'dates', align: 'left' },
+        { header: 'Year', key: 'year', align: 'center' },
+        { header: 'Task Count', key: 'task_count', align: 'center' },
+      ]
+      const summaryRows = filteredEvents.map(event => ({
+        event_name: event.name || '',
+        event_type: getEventTypeLabel(event.event_type),
+        status: getEventStatusLabel(event.status),
+        dates: getEventDateRange(event),
+        year: event.year || '',
+        task_count: (tasksByEvent.get(event.id) || []).length,
+      }))
+
+      const usedSheetNames = new Set(['Summary'])
+      const sheets = [{ name: 'Summary', columns: summaryColumns, rows: summaryRows }]
+      const taskColumns = [
+        { header: 'Task', key: 'task', align: 'left' },
+        { header: 'Subtasks', key: 'subtasks', align: 'left' },
+        { header: 'Assigned To', key: 'assigned_to', align: 'left' },
+        { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
+        { header: 'Reports To', key: 'reports_to', align: 'left' },
+        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
+        { header: 'Notes', key: 'notes', align: 'left' },
+      ]
+
+      for (const event of filteredEvents) {
+        const bucketList = bucketsByEvent.get(event.id) || []
+        const taskList = tasksByEvent.get(event.id) || []
+        const rows = buildEventTaskRows(event, bucketList, taskList)
+        let baseName = normalizeSheetName(event.name || `Event_${event.id}`)
+        if (!baseName) baseName = `Event_${event.id}`
+        let sheetName = baseName
+        let counter = 1
+        while (usedSheetNames.has(sheetName)) {
+          sheetName = `${baseName.slice(0, 24)}_${counter++}`
+        }
+        usedSheetNames.add(sheetName)
+
+        sheets.push({
+          name: sheetName,
+          columns: taskColumns,
+          rows,
+          titleLines: [
+            { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+            { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
+          ],
+        })
+      }
+
+      const dateLabel = new Date().toISOString().slice(0, 10)
+      await exportMultiSheetWithTitle(sheets, `Event_Planner_Cards_Events_${dateLabel}.xlsx`)
+    } catch (error) {
+      console.error('Export filtered card events failed', error)
+      toast('Failed to export cards task list','error')
+    } finally {
+      setExportingFilteredCards(false)
+    }
+  }
+
   function backFromBoard(){ setView(prevView);setSelEvent(null);setBuckets([]);setTasks([]) }
 
   // ── Calendar nav ────────────────────────────────────────────
@@ -1697,7 +1802,7 @@ export default function EventPlannerPage(){
     try{
       const yr=parseInt(form.year)||null
       const payload={
-        name:form.name.trim(),event_type:form.event_type,
+        name:form.name.trim(),event_type:String(form.event_type||'annual').toLowerCase(),
         start_date:form.start_date||null,end_date:form.end_date||null,
         year:yr,color:form.color||null,
         status:form.status||'planning',
@@ -2092,6 +2197,34 @@ export default function EventPlannerPage(){
     }
   }
 
+  async function handleMoveTask(taskId, direction){
+    const task = tasks.find(t => t.id === taskId)
+    if(!task) return
+    const siblings = tasks
+      .filter(t => task.parent_id != null
+        ? t.parent_id === task.parent_id
+        : t.parent_id == null && t.bucket_id === task.bucket_id)
+      .slice()
+      .sort((a,b)=> (a.sort_order||0)-(b.sort_order||0) || (new Date(a.created_at||0) - new Date(b.created_at||0)))
+
+    const index = siblings.findIndex(t=>t.id===taskId)
+    const target = index + direction
+    if(index === -1 || target < 0 || target >= siblings.length) return
+
+    const reordered = arrayMove(siblings, index, target)
+    setTasks(p => p.map(t => {
+      const nextIndex = reordered.findIndex(r=>r.id===t.id)
+      return nextIndex === -1 ? t : { ...t, sort_order: nextIndex }
+    }))
+
+    try{
+      await updateTaskOrder(reordered)
+    }catch(err){
+      console.error('Failed to move task:', err)
+      await loadBoard(selEvent.id)
+    }
+  }
+
   async function handleAddSubtask(parentTaskId, subtaskTitle){
     try{
       console.log('EventPlanner: handleAddSubtask', { parentTaskId, subtaskTitle, selEventId: selEvent?.id })
@@ -2331,11 +2464,8 @@ export default function EventPlannerPage(){
 
   // ── Derived ─────────────────────────────────────────────────
 
-  const getEventYear = e => e.year || (e.start_date ? parseInt(e.start_date.slice(0,4), 10) : null)
-  const years=[...new Set(events.map(e=>getEventYear(e)).filter(Boolean))].sort((a,b)=>b-a)
-  const filteredEvents=yearFilter
-    ? events.filter(e=>getEventYear(e)===yearFilter)
-    : events
+  const years=[...new Set(events.map(e=>e.year).filter(Boolean))].sort((a,b)=>b-a)
+  const filteredEvents=yearFilter?events.filter(e=>e.year===yearFilter):events
 
   // Calendar filter
   const hasCalFilter=!!(calFilter.type||calFilter.status)
@@ -2792,15 +2922,42 @@ export default function EventPlannerPage(){
   // ── Render: Cards ────────────────────────────────────────────
 
   function renderCards(){
+    const allYearKeys = filteredEvents.length > 0
+      ? [...new Set(filteredEvents.map(e => e.year || 'Unscheduled'))]
+      : []
+    const yearGroups = allYearKeys.sort((a,b)=>{
+      if (a === 'Unscheduled') return 1
+      if (b === 'Unscheduled') return -1
+      const diff = Number(a) - Number(b)
+      return yearSortAsc ? diff : -diff
+    })
+    const eventsByYear = filteredEvents.reduce((map, event) => {
+      const yearKey = event.year || 'Unscheduled'
+      if (!map[yearKey]) map[yearKey] = []
+      map[yearKey].push(event)
+      return map
+    }, {})
+    const showYearSections = !yearFilter && yearGroups.length > 1
+
     return(
       <div style={{padding:'0 24px 24px'}}>
         {years.length>0&&(
-          <div style={{display:'flex',gap:6,marginBottom:18,flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:6,marginBottom:18,flexWrap:'wrap',alignItems:'center'}}>
             {[null,...years].map(y=>(
               <button key={y??'all'} onClick={()=>setYearFilter(y)} style={{padding:'4px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',border:yearFilter===y?'2px solid var(--accent,#2563eb)':'1px solid var(--card-border,#e2e8f0)',background:yearFilter===y?'var(--accent,#2563eb)':'transparent',color:yearFilter===y?'#fff':'var(--text-2)'}}>
                 {y??'All'}
               </button>
             ))}
+            {!yearFilter && (
+              <button onClick={()=>setYearSortAsc(prev => !prev)} style={{padding:'4px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid var(--card-border,#e2e8f0)',background:'var(--input-bg,#f8fafc)',color:'var(--text-2)'}}>
+                Sort {yearSortAsc ? 'Ascending' : 'Descending'}
+              </button>
+            )}
+            {filteredEvents.length > 0 && (
+              <button onClick={exportFilteredCards} disabled={exportingFilteredCards} style={{padding:'4px 14px',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid var(--card-border,#e2e8f0)',background:exportingFilteredCards?'var(--card-border,#e2e8f0)':'var(--accent,#2563eb)',color:'#fff'}}>
+                {exportingFilteredCards ? 'Exporting…' : `Download ${filteredEvents.length === 1 ? 'event' : 'events'}`}
+              </button>
+            )}
           </div>
         )}
         {loading?<p style={{color:'var(--text-3)',fontSize:14}}>Loading…</p>
@@ -2809,37 +2966,27 @@ export default function EventPlannerPage(){
             <Calendar size={48} style={{opacity:0.18,marginBottom:14}}/><p style={{fontSize:15,fontWeight:500}}>No events</p>
           </div>
         ):(
-          (()=>{
-            const cardsByYear = {}
-            filteredEvents.forEach(e => {
-              const yr = e.year || (e.start_date ? e.start_date.slice(0,4) : 'Other')
-              if (!cardsByYear[yr]) cardsByYear[yr] = []
-              cardsByYear[yr].push(e)
-            })
-            const sortedYears = Object.keys(cardsByYear).sort((a,b)=>{
-              const na = Number(a)
-              const nb = Number(b)
-              if (!isNaN(na) && !isNaN(nb)) return nb - na
-              if (isNaN(na)) return 1
-              if (isNaN(nb)) return -1
-              return 0
-            })
-            return (
-              <>
-                {sortedYears.map(yr => (
-                  <div key={yr} style={{marginBottom:20}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                      <span style={{fontSize:12,fontWeight:700,color:'var(--text-3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{yr}</span>
-                      <div style={{flex:1,height:1,background:'var(--card-border,#e2e8f0)'}}/>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
-                      {cardsByYear[yr].map(e=><EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
-                    </div>
+          showYearSections ? (
+            <div style={{display:'flex',flexDirection:'column',gap:26}}>
+              {yearGroups.map(year => (
+                <div key={year}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:14,flexWrap:'wrap'}}>
+                    <h3 style={{margin:0,fontSize:18,fontWeight:700,color:'var(--text-1)'}}>{year === 'Unscheduled' ? 'Unscheduled' : year}</h3>
+                    <span style={{fontSize:12,color:'var(--text-3)',fontWeight:600}}>{eventsByYear[year].length} {eventsByYear[year].length === 1 ? 'event' : 'events'}</span>
                   </div>
-                ))}
-              </>
-            )
-          })()
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:12}}>
+                    {eventsByYear[year].map(e=>(
+                      <EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent} compact />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
+              {filteredEvents.map(e=><EventCard key={e.id} event={e} onClick={openBoard} onExport={exportEvent} onEdit={ev=>setEventModal(ev)} onDelete={handleDeleteEvent}/>)}
+            </div>
+          )
         )}
       </div>
     )
@@ -2911,6 +3058,8 @@ export default function EventPlannerPage(){
                 onToggleCategory={id => setCollapsedCanvasCategories(prev => ({ ...prev, [id]: !prev[id] }))}
                 collapsedCategories={collapsedCanvasCategories}
                 libCreatedTaskIds={libCreatedTaskIds}
+                onMoveTaskUp={id=>handleMoveTask(id,-1)}
+                onMoveTaskDown={id=>handleMoveTask(id,1)}
               />
               {buckets.length>0 && (
                   <div style={{display:'flex',flexDirection:'column',gap:16,overflowY:'auto',paddingBottom:12}}>
@@ -2926,6 +3075,8 @@ export default function EventPlannerPage(){
                       onAssignTask={handleOpenAssignModal}
                       onDeleteTask={handleDeleteTask}
                       onStatusChange={handleStatusToggle}
+                      onMoveUp={taskId=>handleMoveTask(taskId,-1)}
+                      onMoveDown={taskId=>handleMoveTask(taskId,1)}
                       onMoveLeft={buckets.findIndex(b=>b.id===bucket.id)>0?()=>handleMoveBucket(bucket.id,-1):null}
                       onMoveRight={buckets.findIndex(b=>b.id===bucket.id)<buckets.length-1?()=>handleMoveBucket(bucket.id,1):null}
                       onQuickAdd={handleOpenTaskModal}

@@ -22,6 +22,29 @@ function cellBorder(isTop, isBottom, isLeft, isRight) {
   }
 }
 
+function mergeTaskColumn(ws, dataStart, totalRows) {
+  const dataEnd = dataStart + totalRows - 1
+  let r = dataStart
+  while (r <= dataEnd) {
+    const v = String(ws.getCell(r, 1).value ?? '').trim()
+    if (!v) { r++; continue }
+    let end = r
+    while (end + 1 <= dataEnd && String(ws.getCell(end + 1, 1).value ?? '').trim() === v) end++
+    if (end > r) {
+      ws.mergeCells(r, 1, end, 1)
+      const cell = ws.getCell(r, 1)
+      cell.alignment = { vertical: 'middle', horizontal: 'left' }
+      cell.border = {
+        top:    r === dataStart ? outerMed : innerThin,
+        bottom: end === dataEnd ? outerMed : innerThin,
+        left:   outerMed,
+        right:  innerThin,
+      }
+    }
+    r = end + 1
+  }
+}
+
 function populateSheet(ws, columns, rows) {
   const totalRows  = rows.length
   const lastColIdx = columns.length
@@ -62,6 +85,10 @@ function populateSheet(ws, columns, rows) {
       else if (isAlt)  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
     })
   })
+
+  if (totalRows > 0) {
+    mergeTaskColumn(ws, 2, totalRows)
+  }
 }
 
 function downloadBuffer(buffer, fileName) {
@@ -145,6 +172,10 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
       else if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_BG } }
     })
   })
+
+  if (totalRows > 0) {
+    mergeTaskColumn(ws, lastTitle + 2, totalRows)
+  }
 
   const buffer = await wb.xlsx.writeBuffer()
   downloadBuffer(buffer, fileName)
@@ -246,6 +277,10 @@ export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
         }
       })
     })
+
+    if (totalRows > 0) {
+      mergeTaskColumn(ws, titleLines.length + 2, totalRows)
+    }
   }
 
   downloadBuffer(await wb.xlsx.writeBuffer(), fileName)
