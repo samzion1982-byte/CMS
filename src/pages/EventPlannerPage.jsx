@@ -101,7 +101,7 @@ function toDateStr(d) {
 function fmtDate(s) {
   if (!s) return ''
   const [y,m,d] = s.split('-')
-  return `${d}/${m}/${y}`
+  return `${d}-${m}-${y}`
 }
 
 function fmtDateTime(date) {
