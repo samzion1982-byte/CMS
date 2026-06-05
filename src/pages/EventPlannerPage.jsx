@@ -78,27 +78,11 @@ function getDaySingle(ws){ const A=['S','M','T','W','T','F','S']; return [...A.s
 const BLANK_EVENT  = { name:'', event_type:'annual', start_date:'', end_date:'', year:new Date().getFullYear(), color:null, status:'planning', date_fixed:false, is_recurring:false }
 
 function addOneYear(ds){ if(!ds)return null; const[y,m,d]=ds.split('-'); return `${parseInt(y)+1}-${m}-${d}` }
-function WhatsAppIcon({ size=14, ringCount=0, color='#fff' }){
-  const padding = 2
-  const svgSize = size + (ringCount * 4)
-  const centerX = svgSize / 2
-  const centerY = svgSize / 2
-  const iconRadius = size / 2
-  
+function WhatsAppIcon({ size=14, color='#fff' }){
   return (
-    <svg width={svgSize} height={svgSize} viewBox={`0 0 ${svgSize} ${svgSize}`} xmlns="http://www.w3.org/2000/svg">
-      {/* Outer rings */}
-      {ringCount >= 1 && <circle cx={centerX} cy={centerY} r={iconRadius + 2} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
-      {ringCount >= 2 && <circle cx={centerX} cy={centerY} r={iconRadius + 4.5} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
-      {ringCount >= 3 && <circle cx={centerX} cy={centerY} r={iconRadius + 7} fill="none" stroke="#25d366" strokeWidth="1.5"/>}
-      
-      {/* Icon */}
-      <g transform={`translate(${(svgSize - size) / 2}, ${(svgSize - size) / 2})`}>
-        <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
-          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.671.15-.198.297-.767.967-.94 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.447-.52.149-.173.198-.297.298-.497.099-.198.05-.372-.025-.521-.075-.148-.671-1.611-.92-2.207-.242-.579-.487-.5-.671-.51l-.572-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.71.306 1.262.489 1.693.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.007-1.413.248-.694.248-1.289.173-1.414-.074-.124-.273-.198-.57-.347z"/>
-          <path d="M12.004 2C6.476 2 2 6.477 2 12.004c0 2.115.632 4.078 1.729 5.74L2 22l4.407-1.154A9.963 9.963 0 0 0 12.004 22c5.527 0 10.004-4.477 10.004-9.996C22.008 6.477 17.53 2 12.004 2Z"/>
-        </svg>
-      </g>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.671.15-.198.297-.767.967-.94 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.447-.52.149-.173.198-.297.298-.497.099-.198.05-.372-.025-.521-.075-.148-.671-1.611-.92-2.207-.242-.579-.487-.5-.671-.51l-.572-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.71.306 1.262.489 1.693.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.007-1.413.248-.694.248-1.289.173-1.414-.074-.124-.273-.198-.57-.347z"/>
+      <path d="M12.004 2C6.476 2 2 6.477 2 12.004c0 2.115.632 4.078 1.729 5.74L2 22l4.407-1.154A9.963 9.963 0 0 0 12.004 22c5.527 0 10.004-4.477 10.004-9.996C22.008 6.477 17.53 2 12.004 2Z"/>
     </svg>
   )
 }
@@ -117,6 +101,41 @@ function fmtDate(s) {
   if (!s) return ''
   const [y,m,d] = s.split('-')
   return `${d}/${m}/${y}`
+}
+
+function fmtDateTime(date) {
+  if (!date) return ''
+  const pad = v => String(v).padStart(2, '0')
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function fmtDateTimeValue(value) {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isFinite(date.getTime()) ? fmtDateTime(date) : ''
+}
+
+function parseDateOnly(dateString) {
+  if (!dateString) return null
+  const [year, month, day] = String(dateString).split('-').map(v => parseInt(v, 10))
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day, 9, 0, 0)
+}
+
+function getEventWhatsAppSchedule(event) {
+  const startDate = parseDateOnly(event?.start_date)
+  if (!startDate) {
+    return {
+      whatsapp_scheduled: '',
+      whatsapp_followup_1: '',
+      whatsapp_followup_2: '',
+    }
+  }
+  return {
+    whatsapp_scheduled: fmtDateTime(startDate),
+    whatsapp_followup_1: fmtDateTime(new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000)),
+    whatsapp_followup_2: fmtDateTime(new Date(startDate.getTime() - 2 * 24 * 60 * 60 * 1000)),
+  }
 }
 
 function normalizeDateKey(s) {
@@ -182,7 +201,16 @@ function buildEventTaskRows(event, buckets, tasks) {
 
   const rows = []
 
+  const getTaskWhatsAppTimestamps = task => ({
+    whatsapp_scheduled: fmtDateTimeValue(task?.whatsapp_sent_at),
+    whatsapp_followup_1: fmtDateTimeValue(task?.whatsapp_followup_1_sent_at),
+    whatsapp_followup_2: fmtDateTimeValue(task?.whatsapp_followup_2_sent_at),
+  })
+
   Object.values(grouped).forEach(group => {
+    const rootTask = group.find(t => t.whatsapp_sent_at || t.whatsapp_followup_1_sent_at || t.whatsapp_followup_2_sent_at) || group[0]
+    const whatsappActual = getTaskWhatsAppTimestamps(rootTask)
+
     // Combine parent assignees from all parents with same title
     const parentAssigneesArr = [...new Set(group.flatMap(g => normalizeNames(g.assigned_to)))]
     const parentAssignees = parentAssigneesArr.join(', ')
@@ -205,6 +233,9 @@ function buildEventTaskRows(event, buckets, tasks) {
       sub_assigned_to: '',
       reports_to: '',
       whatsapp_count: Number(Math.max(...group.map(t => t.whatsapp_sent_count || 0))),
+      whatsapp_scheduled: whatsappActual.whatsapp_scheduled,
+      whatsapp_followup_1: whatsappActual.whatsapp_followup_1,
+      whatsapp_followup_2: whatsappActual.whatsapp_followup_2,
       notes: group[0].notes || '',
     })
 
@@ -219,6 +250,9 @@ function buildEventTaskRows(event, buckets, tasks) {
         sub_assigned_to: childAssigned,
         reports_to: parentAssignees,
         whatsapp_count: Number(child.whatsapp_sent_count || 0),
+        whatsapp_scheduled: whatsappActual.whatsapp_scheduled,
+        whatsapp_followup_1: whatsappActual.whatsapp_followup_1,
+        whatsapp_followup_2: whatsappActual.whatsapp_followup_2,
         notes: child.notes || '',
       })
     })
@@ -226,6 +260,11 @@ function buildEventTaskRows(event, buckets, tasks) {
 
   // In case there are orphan subtasks without a parent task
   ;(tasks || []).filter(task => task.parent_id && !parentById.has(task.parent_id)).forEach(child => {
+    const childWhatsApp = {
+      whatsapp_scheduled: fmtDateTimeValue(child.whatsapp_sent_at),
+      whatsapp_followup_1: fmtDateTimeValue(child.whatsapp_followup_1_sent_at),
+      whatsapp_followup_2: fmtDateTimeValue(child.whatsapp_followup_2_sent_at),
+    }
     rows.push({
       task: child.title || '',
       subtasks: '',
@@ -233,6 +272,9 @@ function buildEventTaskRows(event, buckets, tasks) {
       sub_assigned_to: child.assigned_to || '',
       reports_to: '',
       whatsapp_count: Number(child.whatsapp_sent_count || 0),
+      whatsapp_scheduled: childWhatsApp.whatsapp_scheduled,
+      whatsapp_followup_1: childWhatsApp.whatsapp_followup_1,
+      whatsapp_followup_2: childWhatsApp.whatsapp_followup_2,
       notes: child.notes || '',
     })
   })
@@ -442,9 +484,9 @@ function TaskCard({ task, onEdit, onAssign, onDelete, onStatusChange, onSendWhat
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <button onClick={e=>{e.stopPropagation();onSendWhatsApp?.(task.id)}}
                 aria-label={task.whatsapp_sent_count>0 ? `WhatsApp sent ${task.whatsapp_sent_count} time(s)` : 'Send WhatsApp'}
-                style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:task.whatsapp_sent_count>0?38:30,height:task.whatsapp_sent_count>0?38:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to&&task.whatsapp_sent_count===0?'pointer':'not-allowed',opacity:task.assigned_to&&task.whatsapp_sent_count===0?1:0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}
+                style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to&&task.whatsapp_sent_count===0?'pointer':'not-allowed',opacity:task.assigned_to&&task.whatsapp_sent_count===0?1:0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}
                 disabled={!task.assigned_to||task.whatsapp_sent_count>0}>
-                <WhatsAppIcon size={14} ringCount={task.whatsapp_sent_count} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
+                <WhatsAppIcon size={14} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
               </button>
             </div>
           )}
@@ -579,8 +621,8 @@ function CanvasDropZone({tasks=[],onDeleteTask,onAddSubtask,onAssignTask,onEditT
 
             <div style={{display:'flex',alignItems:'center',gap:8,justifyContent:'flex-end',minWidth:176,marginRight:8}}>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <button onClick={e=>{e.stopPropagation(); onSendWhatsApp?.(task.id)}} disabled={!task.assigned_to || task.whatsapp_sent_count>0} aria-label={task.whatsapp_sent_count>0 ? `WhatsApp sent ${task.whatsapp_sent_count} time(s)` : 'Send WhatsApp'} style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:task.whatsapp_sent_count>0?38:30,height:task.whatsapp_sent_count>0?38:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to && task.whatsapp_sent_count===0 ? 'pointer' : 'not-allowed',opacity:task.assigned_to && task.whatsapp_sent_count===0 ? 1 : 0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}>
-                  <WhatsAppIcon size={14} ringCount={task.whatsapp_sent_count} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
+                <button onClick={e=>{e.stopPropagation(); onSendWhatsApp?.(task.id)}} disabled={!task.assigned_to || task.whatsapp_sent_count>0} aria-label={task.whatsapp_sent_count>0 ? `WhatsApp sent ${task.whatsapp_sent_count} time(s)` : 'Send WhatsApp'} style={{background:task.whatsapp_sent_count>0?'#16a34a':'transparent',border:'none',borderRadius:'50%',width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',cursor:task.assigned_to && task.whatsapp_sent_count===0 ? 'pointer' : 'not-allowed',opacity:task.assigned_to && task.whatsapp_sent_count===0 ? 1 : 0.45,transition:'all 0.2s',flexShrink:0,outline:'none',padding:0}}>
+                  <WhatsAppIcon size={14} color={task.whatsapp_sent_count>0?'#fff':'#25d366'} />
                 </button>
                 {task.whatsapp_sent_count>0 && (
                   <span style={{fontSize:11,fontWeight:700,color:'#166534',background:'#dcfce7',borderRadius:999,padding:'4px 8px'}}>{task.whatsapp_sent_count}</span>
@@ -1411,7 +1453,7 @@ export default function EventPlannerPage(){
   }
 
   // Calendar filter
-  const [calFilter,   setCalFilter]   = useState({ type:'', status:'' })
+  const [calFilter,   setCalFilter]   = useState({ type:'' })
 
   // Search
   const [search,      setSearch]      = useState('')
@@ -1460,6 +1502,24 @@ export default function EventPlannerPage(){
   const loadLibraryTasks=useCallback(async()=>{
     try{setLibraryTasks(await getTaskLibrary())}catch{}
   },[])
+
+  function getWhatsAppReminderDelay(notificationKey){
+    if(!selEvent?.start_date) return null
+    const eventStart = parseDateOnly(selEvent.start_date)
+    if(!eventStart) return null
+
+    const now = Date.now()
+    let targetTime = null
+
+    if(notificationKey === 'followup-1') {
+      targetTime = eventStart.getTime() - 7 * 24 * 60 * 60 * 1000
+    } else if(notificationKey === 'followup-2') {
+      targetTime = eventStart.getTime() - 2 * 24 * 60 * 60 * 1000
+    }
+
+    if(targetTime === null || targetTime <= now) return null
+    return targetTime - now
+  }
 
   function scheduleDelayedWhatsAppNotification(taskId, recipients, buildMessage, delayMs = 180000, notificationKey = 'default') {
     if(!taskId || !Array.isArray(recipients) || recipients.length === 0) return
@@ -1510,10 +1570,18 @@ export default function EventPlannerPage(){
           toast(`WhatsApp sent to ${successes.map(r=>r.recipient).join(', ')}`,'success')
           const task = tasksRef.current.find(t=>t.id===taskId)
           const currentCount = Number(task?.whatsapp_sent_count || 0)
-          const newCount = currentCount + successes.length
+          const newCount = currentCount + 1
+          const sentAt = new Date().toISOString()
           try{
-            await saveTask(taskId, { whatsapp_sent_count: newCount }, profile?.email)
-            setTasks(prev => prev.map(t => t.id===taskId ? { ...t, whatsapp_sent_count: newCount } : t))
+            const updateKey = notificationKey === 'followup-1'
+              ? 'whatsapp_followup_1_sent_at'
+              : notificationKey === 'followup-2'
+                ? 'whatsapp_followup_2_sent_at'
+                : 'whatsapp_sent_at'
+            const payload = { whatsapp_sent_count: newCount }
+            if (updateKey) payload[updateKey] = sentAt
+            await saveTask(taskId, payload, profile?.email)
+            setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...payload } : t))
           } catch(err){
             console.error('[WhatsApp] failed to update send count', err)
           }
@@ -1586,8 +1654,10 @@ export default function EventPlannerPage(){
         { header: 'Assigned To', key: 'assigned_to', align: 'left' },
         { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
         { header: 'Reports To', key: 'reports_to', align: 'left' },
-        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
         { header: 'Notes', key: 'notes', align: 'left' },
+        { header: 'WhatsApp 1st Notification', key: 'whatsapp_scheduled', align: 'center', merge: true },
+        { header: 'WhatsApp 2nd Notification', key: 'whatsapp_followup_1', align: 'center', merge: true },
+        { header: 'WhatsApp Final Notification', key: 'whatsapp_followup_2', align: 'center', merge: true },
       ]
       const titleLines = [
         { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
@@ -1641,7 +1711,18 @@ export default function EventPlannerPage(){
         { header: 'Year', key: 'year', align: 'center' },
         { header: 'Task Count', key: 'task_count', align: 'center' },
       ]
-      const summaryRows = events.map(event => ({
+      const compareEvents = (a, b) => {
+        const yearA = Number(a.year) || Number.MAX_SAFE_INTEGER
+        const yearB = Number(b.year) || Number.MAX_SAFE_INTEGER
+        if (yearA !== yearB) return yearA - yearB
+        const dateA = String(a.start_date || '')
+        const dateB = String(b.start_date || '')
+        if (dateA !== dateB) return dateA.localeCompare(dateB)
+        return String(a.name || '').localeCompare(String(b.name || ''))
+      }
+
+      const sortedEvents = [...events].sort(compareEvents)
+      const summaryRows = sortedEvents.map(event => ({
         event_name: event.name || '',
         event_type: getEventTypeLabel(event.event_type),
         status: getEventStatusLabel(event.status),
@@ -1649,20 +1730,30 @@ export default function EventPlannerPage(){
         year: event.year || '',
         task_count: (tasksByEvent.get(event.id) || []).length,
       }))
+      const yearGroups = [...new Set(sortedEvents.map(e => String(e.year || 'Unknown')))]
+      const yearTabColors = ['FF122A61','FF1D4F27','FF4D2F73','FF7A2B2B','FF4B3E2F','FF1F4046']
+      const getYearTabColor = year => {
+        const index = yearGroups.indexOf(String(year || 'Unknown'))
+        return yearTabColors[index % yearTabColors.length]
+      }
+      const summaryTabColor = 'FF800000' // Maroon for summary sheet
 
-      const usedSheetNames = new Set(['Summary'])
-      const sheets = [{ name: 'Summary', columns: summaryColumns, rows: summaryRows }]
       const taskColumns = [
         { header: 'Task', key: 'task', align: 'left' },
         { header: 'Subtasks', key: 'subtasks', align: 'left' },
         { header: 'Assigned To', key: 'assigned_to', align: 'left' },
         { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
         { header: 'Reports To', key: 'reports_to', align: 'left' },
-        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
         { header: 'Notes', key: 'notes', align: 'left' },
+        { header: 'WhatsApp 1st Notification', key: 'whatsapp_scheduled', align: 'center', merge: true },
+        { header: 'WhatsApp 2nd Notification', key: 'whatsapp_followup_1', align: 'center', merge: true },
+        { header: 'WhatsApp Final Notification', key: 'whatsapp_followup_2', align: 'center', merge: true },
       ]
 
-      for (const event of events) {
+      const usedSheetNames = new Set(['Summary'])
+      const sheets = []
+
+      for (const event of sortedEvents) {
         const bucketList = bucketsByEvent.get(event.id) || []
         const taskList = tasksByEvent.get(event.id) || []
         const rows = buildEventTaskRows(event, bucketList, taskList)
@@ -1683,9 +1774,11 @@ export default function EventPlannerPage(){
             { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
             { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
           ],
+          tabColor: getYearTabColor(event.year),
         })
       }
 
+      sheets.push({ name: 'Summary', columns: summaryColumns, rows: summaryRows, tabColor: summaryTabColor })
       const dateLabel = new Date().toISOString().slice(0, 10)
       await exportMultiSheetWithTitle(sheets, `Event_Planner_All_Events_${dateLabel}.xlsx`)
     } catch (error) {
@@ -1725,7 +1818,18 @@ export default function EventPlannerPage(){
         { header: 'Year', key: 'year', align: 'center' },
         { header: 'Task Count', key: 'task_count', align: 'center' },
       ]
-      const summaryRows = filteredEvents.map(event => ({
+      const compareEvents = (a, b) => {
+        const yearA = Number(a.year) || Number.MAX_SAFE_INTEGER
+        const yearB = Number(b.year) || Number.MAX_SAFE_INTEGER
+        if (yearA !== yearB) return yearA - yearB
+        const dateA = String(a.start_date || '')
+        const dateB = String(b.start_date || '')
+        if (dateA !== dateB) return dateA.localeCompare(dateB)
+        return String(a.name || '').localeCompare(String(b.name || ''))
+      }
+
+      const sortedEvents = [...filteredEvents].sort(compareEvents)
+      const summaryRows = sortedEvents.map(event => ({
         event_name: event.name || '',
         event_type: getEventTypeLabel(event.event_type),
         status: getEventStatusLabel(event.status),
@@ -1733,20 +1837,30 @@ export default function EventPlannerPage(){
         year: event.year || '',
         task_count: (tasksByEvent.get(event.id) || []).length,
       }))
+      const yearGroups = [...new Set(sortedEvents.map(e => String(e.year || 'Unknown')))]
+      const yearTabColors = ['FF122A61','FF1D4F27','FF4D2F73','FF7A2B2B','FF4B3E2F','FF1F4046']
+      const getYearTabColor = year => {
+        const index = yearGroups.indexOf(String(year || 'Unknown'))
+        return yearTabColors[index % yearTabColors.length]
+      }
+      const summaryTabColor = 'FF800000' // Maroon for summary sheet
 
-      const usedSheetNames = new Set(['Summary'])
-      const sheets = [{ name: 'Summary', columns: summaryColumns, rows: summaryRows }]
       const taskColumns = [
         { header: 'Task', key: 'task', align: 'left' },
         { header: 'Subtasks', key: 'subtasks', align: 'left' },
         { header: 'Assigned To', key: 'assigned_to', align: 'left' },
         { header: 'Sub Assigned To', key: 'sub_assigned_to', align: 'left' },
         { header: 'Reports To', key: 'reports_to', align: 'left' },
-        { header: 'WhatsApp Count', key: 'whatsapp_count', align: 'center' },
         { header: 'Notes', key: 'notes', align: 'left' },
+        { header: 'WhatsApp 1st Notification', key: 'whatsapp_scheduled', align: 'center', merge: true },
+        { header: 'WhatsApp 2nd Notification', key: 'whatsapp_followup_1', align: 'center', merge: true },
+        { header: 'WhatsApp Final Notification', key: 'whatsapp_followup_2', align: 'center', merge: true },
       ]
 
-      for (const event of filteredEvents) {
+      const usedSheetNames = new Set(['Summary'])
+      const sheets = []
+
+      for (const event of sortedEvents) {
         const bucketList = bucketsByEvent.get(event.id) || []
         const taskList = tasksByEvent.get(event.id) || []
         const rows = buildEventTaskRows(event, bucketList, taskList)
@@ -1767,9 +1881,11 @@ export default function EventPlannerPage(){
             { text: event.name || 'Event', bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
             { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
           ],
+          tabColor: getYearTabColor(event.year),
         })
       }
 
+      sheets.push({ name: 'Summary', columns: summaryColumns, rows: summaryRows, tabColor: summaryTabColor })
       const dateLabel = new Date().toISOString().slice(0, 10)
       await exportMultiSheetWithTitle(sheets, `Event_Planner_Cards_Events_${dateLabel}.xlsx`)
     } catch (error) {
@@ -1897,6 +2013,13 @@ export default function EventPlannerPage(){
       .map(String)
   }
 
+  function formatVolunteerList(names){
+    if(names.length === 0) return ''
+    if(names.length === 1) return names[0]
+    if(names.length === 2) return `${names[0]} and ${names[1]}`
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  }
+
   function buildTaskWhatsAppRecipients(task){
     return resolveAssignedVolunteerIds(task).flatMap(id => {
       const volunteer = volunteers.find(v => String(v.id) === String(id))
@@ -1948,11 +2071,20 @@ export default function EventPlannerPage(){
       if(successes.length){
         toast(`WhatsApp sent to ${successes.map(r=>r.name).join(', ')}`,'success')
         const currentCount = Number(task.whatsapp_sent_count || 0)
-        const newCount = currentCount + successes.length
-        await saveTask(taskId, { whatsapp_sent_count: newCount }, profile?.email)
-        setTasks(prev => prev.map(t => t.id===taskId ? { ...t, whatsapp_sent_count: newCount } : t))
-        scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 1), 180000, 'followup-1')
-        scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 2), 360000, 'followup-2')
+        const newCount = currentCount + 1
+        const sentAt = new Date().toISOString()
+        await saveTask(taskId, { whatsapp_sent_count: newCount, whatsapp_sent_at: sentAt }, profile?.email)
+        setTasks(prev => prev.map(t => t.id===taskId ? { ...t, whatsapp_sent_count: newCount, whatsapp_sent_at: sentAt } : t))
+
+        const delay1 = getWhatsAppReminderDelay('followup-1')
+        if(delay1 != null){
+          scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 1), delay1, 'followup-1')
+        }
+
+        const delay2 = getWhatsAppReminderDelay('followup-2')
+        if(delay2 != null){
+          scheduleDelayedWhatsAppNotification(taskId, successes, recipient => buildTaskWhatsAppFollowupMessage(recipient.task, recipient, 2), delay2, 'followup-2')
+        }
       }
       if(failures.length){
         const failureMessages = failures.map(r => {
@@ -1987,8 +2119,8 @@ export default function EventPlannerPage(){
     const coAssignees = coAssigneeIds
       .map(id => volunteers.find(v => String(v.id) === String(id)))
       .filter(Boolean)
-      .filter(v => v.id !== recipient.volunteerId)
-      .map(v => `"${v.name}"`)
+      .filter(v => String(v.id) !== String(recipient.volunteerId))
+      .map(v => v.name)
     
     // Get child subtasks and their assignees (for parent tasks only)
     const childTasks = task.parent_id ? [] : tasks.filter(t => t.parent_id === task.id)
@@ -2017,7 +2149,7 @@ export default function EventPlannerPage(){
     let msg = `Dear ${recipient.name},\n\nYou have been assigned "${task.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please prepare accordingly.`
     
     if(coAssignees.length > 0){
-      msg += `\n\nYou and ${coAssignees.join(', ')} are working on this together.`
+      msg += `\n\nYou and ${formatVolunteerList(coAssignees)} are working on this together.`
     }
     
     if(childInfo.length > 0){
@@ -2044,8 +2176,8 @@ export default function EventPlannerPage(){
     const coAssignees = coAssigneeIds
       .map(id => volunteers.find(v => String(v.id) === String(id)))
       .filter(Boolean)
-      .filter(v => v.id !== recipient.volunteerId)
-      .map(v => `"${v.name}"`)
+      .filter(v => String(v.id) !== String(recipient.volunteerId))
+      .map(v => v.name)
     
     // Get child subtasks and their assignees (for parent tasks only)
     const childTasks = task.parent_id ? [] : tasks.filter(t => t.parent_id === task.id)
@@ -2074,7 +2206,7 @@ export default function EventPlannerPage(){
     let msg = `Dear ${recipient.name},\n\nReminder ${followUpNumber}: You are assigned "${task.title.trim()}" for ${selEvent?.name || 'the event'}${eventDates}. Please ensure you are ready.`
     
     if(coAssignees.length > 0){
-      msg += `\n\nYou and ${coAssignees.join(', ')} are working on this together.`
+      msg += `\n\nYou and ${formatVolunteerList(coAssignees)} are working on this together.`
     }
     
     if(childInfo.length > 0){
@@ -2468,10 +2600,9 @@ export default function EventPlannerPage(){
   const filteredEvents=yearFilter?events.filter(e=>e.year===yearFilter):events
 
   // Calendar filter
-  const hasCalFilter=!!(calFilter.type||calFilter.status)
+  const hasCalFilter=!!calFilter.type
   const calFilteredEvents=hasCalFilter?events.filter(e=>{
     if(calFilter.type&&e.event_type!==calFilter.type)return false
-    if(calFilter.status&&e.status!==calFilter.status)return false
     return true
   }):events
 
@@ -2580,11 +2711,7 @@ export default function EventPlannerPage(){
               <option value="">All Types</option>
               {EVENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-            <select value={calFilter.status} onChange={e=>setCalFilter(f=>({...f,status:e.target.value}))} style={selSt}>
-              <option value="">All Statuses</option>
-              {EVENT_STATUSES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-            {hasCalFilter&&<button onClick={()=>setCalFilter({type:'',status:''})} style={{display:'flex',alignItems:'center',gap:3,background:'none',border:'none',cursor:'pointer',fontSize:11,color:'var(--text-3)',padding:'2px 4px'}}><X size={11}/>Clear</button>}
+            {hasCalFilter&&<button onClick={()=>setCalFilter({type:''})} style={{display:'flex',alignItems:'center',gap:3,background:'none',border:'none',cursor:'pointer',fontSize:11,color:'var(--text-3)',padding:'2px 4px'}}><X size={11}/>Clear</button>}
             {hasCalFilter&&<span style={{fontSize:11,color:'var(--accent,#2563eb)',fontWeight:600}}>{calFilteredEvents.length}/{events.length} events shown</span>}
           </div>
         )}
@@ -2619,7 +2746,7 @@ export default function EventPlannerPage(){
               onDayMouseEnter={(ds,x,y)=>{if(calDragRef.current.active){const s=calDragRef.current.start;calDragRef.current.end=ds;setSelRange({start:s<=ds?s:ds,end:s<=ds?ds:s})}}}
               onDayMouseUp={(ds,x,y)=>{if(calDragRef.current.start===calDragRef.current.end)handleDayClick(ds,x,y)}}
               onDayContextMenu={(e,ds)=>handleDayContextMenu(e,ds)}
-              onMonthClick={()=>{setCalMonth(new Date(calYear,i,1));setView('month');setCalFilter({type:'',status:''});}}
+              onMonthClick={()=>{setCalMonth(new Date(calYear,i,1));setView('month');setCalFilter({type:''});}}
               onEventClick={openBoard}
               ws={ws}
             />

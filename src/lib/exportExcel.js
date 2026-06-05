@@ -22,27 +22,74 @@ function cellBorder(isTop, isBottom, isLeft, isRight) {
   }
 }
 
-function mergeTaskColumn(ws, dataStart, totalRows) {
+function mergeAdjacentColumn(ws, dataStart, totalRows, colIdx) {
   const dataEnd = dataStart + totalRows - 1
   let r = dataStart
   while (r <= dataEnd) {
-    const v = String(ws.getCell(r, 1).value ?? '').trim()
-    if (!v) { r++; continue }
+    const v = String(ws.getCell(r, colIdx).value ?? '')
     let end = r
-    while (end + 1 <= dataEnd && String(ws.getCell(end + 1, 1).value ?? '').trim() === v) end++
+    while (end + 1 <= dataEnd && String(ws.getCell(end + 1, colIdx).value ?? '') === v) end++
     if (end > r) {
-      ws.mergeCells(r, 1, end, 1)
-      const cell = ws.getCell(r, 1)
-      cell.alignment = { vertical: 'middle', horizontal: 'left' }
-      cell.border = {
-        top:    r === dataStart ? outerMed : innerThin,
-        bottom: end === dataEnd ? outerMed : innerThin,
-        left:   outerMed,
-        right:  innerThin,
+      try {
+        ws.mergeCells(r, colIdx, end, colIdx)
+        const cell = ws.getCell(r, colIdx)
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        cell.border = {
+          top:    r === dataStart ? outerMed : innerThin,
+          bottom: end === dataEnd ? outerMed : innerThin,
+          left:   colIdx === 1 ? outerMed : innerThin,
+          right:  innerThin,
+        }
+      } catch (err) {
+        console.warn('[Excel Export] merge failed for col', colIdx, 'rows', r, 'to', end, err)
       }
     }
     r = end + 1
   }
+}
+
+function mergeColumns(ws, dataStart, totalRows, columns) {
+  if (!Array.isArray(columns) || totalRows <= 0) return
+  const mergeCols = []
+  columns.forEach((col, idx) => {
+    if (col?.merge || idx === 0) mergeCols.push(idx + 1)
+  })
+
+  const dataEnd = dataStart + totalRows - 1
+  const rowGroups = []
+  let r = dataStart
+  while (r <= dataEnd) {
+    const value = String(ws.getCell(r, 1).value ?? '').trim()
+    let end = r
+    while (end + 1 <= dataEnd && String(ws.getCell(end + 1, 1).value ?? '').trim() === value) end++
+    rowGroups.push({ start: r, end })
+    r = end + 1
+  }
+
+  mergeCols.forEach(colIdx => {
+    if (colIdx === 1) {
+      mergeAdjacentColumn(ws, dataStart, totalRows, colIdx)
+      return
+    }
+
+    rowGroups.forEach(group => {
+      if (group.end > group.start) {
+        try {
+          ws.mergeCells(group.start, colIdx, group.end, colIdx)
+          const cell = ws.getCell(group.start, colIdx)
+          cell.alignment = { vertical: 'middle', horizontal: 'center' }
+          cell.border = {
+            top:    group.start === dataStart ? outerMed : innerThin,
+            bottom: group.end === dataEnd ? outerMed : innerThin,
+            left:   colIdx === 1 ? outerMed : innerThin,
+            right:  innerThin,
+          }
+        } catch (err) {
+          console.warn('[Excel Export] merge failed for col', colIdx, 'rows', group.start, 'to', group.end, err)
+        }
+      }
+    })
+  })
 }
 
 function populateSheet(ws, columns, rows) {
@@ -87,7 +134,7 @@ function populateSheet(ws, columns, rows) {
   })
 
   if (totalRows > 0) {
-    mergeTaskColumn(ws, 2, totalRows)
+    mergeColumns(ws, 2, totalRows, columns)
   }
 }
 
@@ -95,7 +142,16 @@ function downloadBuffer(buffer, fileName) {
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
-  a.href = url; a.download = fileName; a.click()
+  a.href = url
+  a.download = fileName
+  a.style.display = 'none'
+  if (document.body) {
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } else {
+    a.click()
+  }
   URL.revokeObjectURL(url)
 }
 
@@ -174,7 +230,11 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
   })
 
   if (totalRows > 0) {
-    mergeTaskColumn(ws, lastTitle + 2, totalRows)
+    try {
+      mergeColumns(ws, lastTitle + 2, totalRows, columns)
+    } catch (err) {
+      console.warn('[Excel Export] mergeColumns failed', err)
+    }
   }
 
   const buffer = await wb.xlsx.writeBuffer()
@@ -186,7 +246,7 @@ export async function exportToExcelWithTitle(columns, rows, sheetName, fileName,
 //  Multi-sheet export with per-sheet title blocks
 //
 //  sheetConfigs: [{ name, columns, rows, titleLines }]
-//  Column schema: { header, key, align?, numFmt? }
+//  Column schema: { header, key, align?, numFmt?, merge? }
 // ─────────────────────────────────────────────────────────────────
 export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
   const ExcelJS = (await import('exceljs')).default
@@ -194,12 +254,13 @@ export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
   wb.creator = 'Church CMS'
   wb.created = new Date()
 
-  for (const { name, columns, rows, titleLines = [] } of sheetConfigs) {
+  for (const { name, columns, rows, titleLines = [], tabColor } of sheetConfigs) {
     const colCount  = columns.length
     const hasGroups = columns.some(c => c.group)
     const frozenRow = titleLines.length + 1
 
     const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: frozenRow }] })
+    if (tabColor) ws.properties.tabColor = { argb: tabColor }
 
     // Column widths — auto-fit using formatted value length for numeric columns
     ws.columns = columns.map(c => {
@@ -279,7 +340,11 @@ export async function exportMultiSheetWithTitle(sheetConfigs, fileName) {
     })
 
     if (totalRows > 0) {
-      mergeTaskColumn(ws, titleLines.length + 2, totalRows)
+      try {
+        mergeColumns(ws, titleLines.length + 2, totalRows, columns)
+      } catch (err) {
+        console.warn('[Excel Export] mergeColumns failed', err)
+      }
     }
   }
 
