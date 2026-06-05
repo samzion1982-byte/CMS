@@ -22,6 +22,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import { formatDate } from '../lib/date'
 import {
   getEvents, saveEvent, deleteEvent,
   getBuckets, saveBucket, deleteBucket,
@@ -106,7 +107,7 @@ function fmtDate(s) {
 function fmtDateTime(date) {
   if (!date) return ''
   const pad = v => String(v).padStart(2, '0')
-  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function fmtDateTimeValue(value) {
@@ -1664,7 +1665,7 @@ export default function EventPlannerPage(){
         { text: `${getEventTypeLabel(event.event_type)} · ${getEventDateRange(event)}`, size: 11 },
       ]
       const safeName = safeFileName(event.name || `Event_${event.id}`)
-      const dateLabel = safeFileName(event.start_date || event.year || new Date().toISOString().slice(0, 10))
+      const dateLabel = safeFileName(formatDate(event.start_date) || String(event.year) || new Date().toLocaleDateString('en-IN'))
       await exportToExcelWithTitle(columns, rows, 'Tasks', `Event_${safeName}_${dateLabel}.xlsx`, titleLines)
     } catch (error) {
       console.error('Export event failed', error)
@@ -1779,7 +1780,7 @@ export default function EventPlannerPage(){
       }
 
       sheets.push({ name: 'Summary', columns: summaryColumns, rows: summaryRows, tabColor: summaryTabColor })
-      const dateLabel = new Date().toISOString().slice(0, 10)
+      const dateLabel = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).split('/').join('-')
       await exportMultiSheetWithTitle(sheets, `Event_Planner_All_Events_${dateLabel}.xlsx`)
     } catch (error) {
       console.error('Export all events failed', error)
@@ -1886,7 +1887,7 @@ export default function EventPlannerPage(){
       }
 
       sheets.push({ name: 'Summary', columns: summaryColumns, rows: summaryRows, tabColor: summaryTabColor })
-      const dateLabel = new Date().toISOString().slice(0, 10)
+      const dateLabel = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).split('/').join('-')
       await exportMultiSheetWithTitle(sheets, `Event_Planner_Cards_Events_${dateLabel}.xlsx`)
     } catch (error) {
       console.error('Export filtered card events failed', error)
