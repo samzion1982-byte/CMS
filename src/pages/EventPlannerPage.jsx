@@ -1228,6 +1228,11 @@ function AssignModal({initial, volunteers, onSave, onClose}){
 
   const roles = [...new Set(volunteers.map(v=>v.role).filter(Boolean))]
   const available = role ? volunteers.filter(v=>v.role===role) : volunteers
+  
+  // Check if task is already assigned
+  const isAssigned = !!(initial?.assigned_to || initial?.assigned_volunteer_id)
+  // Check if all volunteers are unselected
+  const isAllUnselected = selectedIds.length === 0
 
   function toggleSel(id){
     setSelectedIds(s=> s.includes(id) ? s.filter(x=>x!==id) : [...s,id])
@@ -1267,15 +1272,22 @@ function AssignModal({initial, volunteers, onSave, onClose}){
           <div style={{fontSize:12,color:'var(--text-3)'}}>{selectedVolunteers.length} selected</div>
           <div style={{display:'flex',gap:8}}>
             <button style={btnS} onClick={onClose}>Cancel</button>
-            <button style={{...btnP,opacity:selectedIds.length?1:0.5,cursor:selectedIds.length?'pointer':'not-allowed'}} onClick={async ()=>{
-              if(selectedIds.length===0){
-                toast('Select at least one volunteer to assign','error')
+            <button style={{...btnP,opacity:(selectedIds.length||isAllUnselected&&isAssigned)?1:0.5,cursor:(selectedIds.length||isAllUnselected&&isAssigned)?'pointer':'not-allowed'}} onClick={async ()=>{
+              // If no volunteers selected and task is already assigned, unassign
+              if(isAllUnselected && isAssigned){
+                await onSave(initial.id, [])
                 return
               }
-              const ids = selectedIds.slice()
-              await onSave(initial.id, ids)
-            }} disabled={!selectedIds.length}>
-              {selectedIds.length>1?'Assign (multiple)':'Assign'}
+              // If volunteers selected, assign them
+              if(selectedIds.length>0){
+                const ids = selectedIds.slice()
+                await onSave(initial.id, ids)
+                return
+              }
+              // Otherwise show error
+              toast('Select at least one volunteer to assign','error')
+            }} disabled={!selectedIds.length && !(isAllUnselected&&isAssigned)}>
+              {isAllUnselected && isAssigned ? 'Unassign' : selectedIds.length>1?'Assign (multiple)':'Assign'}
             </button>
           </div>
         </div>
@@ -2402,10 +2414,16 @@ export default function EventPlannerPage(){
   async function handleSaveAssign(taskId, volunteerIds){
     try{
       const ids = Array.isArray(volunteerIds) ? volunteerIds : []
+      
+      // If no volunteers, unassign the task
       if(ids.length === 0){
-        toast('Select at least one volunteer to assign','error')
+        await saveTask(taskId, { assigned_to: null, assigned_volunteer_id: null, whatsapp_sent_count: 0 }, profile?.email)
+        toast('Assignment removed','success')
+        setAssignModal(null)
+        await loadBoard(selEvent.id)
         return
       }
+
       const selected = volunteers.filter(v=>ids.includes(String(v.id)))
       const assigned_to = selected.map(v=>v.name).join(', ') || null
       const assigned_volunteer_id = ids.length===1 ? Number(ids[0]) : null
@@ -2418,6 +2436,8 @@ export default function EventPlannerPage(){
     }catch(err){
       console.error('Failed to save assignment:', err)
       toast(err?.message || 'Failed to save assignment','error')
+    }
+  }
     }
   }
 
