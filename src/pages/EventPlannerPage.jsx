@@ -2438,8 +2438,6 @@ export default function EventPlannerPage(){
       toast(err?.message || 'Failed to save assignment','error')
     }
   }
-    }
-  }
 
   // ── Carry forward ───────────────────────────────────────────
 
