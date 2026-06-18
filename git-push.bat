@@ -3,34 +3,40 @@ cd /d "%~dp0"
 
 echo.
 echo =========================================
-echo   Church CMS - Push to GitHub
+echo   Zion Solutions - Sync & Push
 echo =========================================
 echo.
+
+:: Stage everything first to prevent "unstaged changes" errors during pull
+git add .
 
 git status
 
 echo.
-set /p MSG=Enter commit message:
+set /p MSG=Enter commit message (Required): 
 
 if "%MSG%"=="" (
-    echo No message entered. Aborting.
+    echo.
+    echo [ERROR] Commit message is required.
     pause
     exit /b
 )
 
-echo.
-echo Adding all changes...
-git add .
-
 echo Committing...
 git commit -m "%MSG%"
 
+echo Syncing with GitHub (Pulling remote changes)...
+echo.
+echo Syncing with GitHub...
+git pull origin main --rebase
+
+echo.
 echo Pushing to GitHub...
-git push
+git push origin main
 
 echo.
 echo =========================================
-echo   Done! GitHub is up to date.
+echo   Done! Your website is being updated.
 echo =========================================
 echo.
 pause
