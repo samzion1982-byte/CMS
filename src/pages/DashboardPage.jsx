@@ -9,10 +9,18 @@ import {
   Wifi, WifiOff, Settings, Info, BarChart3, Heart, Lock, Unlock,
 } from 'lucide-react'
 import Highcharts from 'highcharts'
-import HighchartsReact from 'highcharts-react-official'
-import highcharts3d from 'highcharts/highcharts-3d'
+import 'highcharts/highcharts-3d'
+import * as HighchartsReactModule from 'highcharts-react-official'
 
-highcharts3d(Highcharts)
+function resolveDefault(mod) {
+  let current = mod
+  while (current && typeof current !== 'function' && current.default) {
+    current = current.default
+  }
+  return current
+}
+
+const HighchartsReact = resolveDefault(HighchartsReactModule)
 
 /* ── Stat Card — clean white with colored icon badge ─────────── */
 function StatCard({ icon: Icon, label, value, sub, iconBg, iconColor, loading }) {
