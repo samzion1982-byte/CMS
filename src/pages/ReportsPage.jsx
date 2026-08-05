@@ -83,14 +83,14 @@ export default function ReportsPage() {
   const [dateTo,   setDateTo]   = useState('')
 
   // ── tabs ───────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('full')   // 'full' | 'payhead'
+  const [activeTab, setActiveTab] = useState('full')   // 'full' | 'multipayhead' | 'payhead'
 
   // ── reference data ─────────────────────────────────────────────
   const [FYS,     setFYS]     = useState([])   // available FYs from receipts table
   const [allCats, setAllCats] = useState([])   // { id, name, sort_order }
   const [church,  setChurch]  = useState(null)
   const [selCat,  setSelCat]  = useState('')
-
+  const [selCats, setSelCats] = useState([])
   // ── report state ───────────────────────────────────────────────
   const [loading,   setLoading]   = useState(false)
   const [generated, setGenerated] = useState(false)
@@ -148,17 +148,19 @@ export default function ReportsPage() {
     if (!filterFY)                         { toast('Select a financial year', 'error'); return }
     if (!dateFrom || !dateTo)              { toast('Select a date range', 'error'); return }
     if (activeTab === 'payhead' && !selCat){ toast('Select a payment head', 'error'); return }
+    if (activeTab === 'multipayhead' && !selCats.length){ toast('Select at least one payment head', 'error'); return }
     setLoading(true)
     setGenerated(false)
     try {
       if (activeTab === 'full') await generateFull()
-      else                       await generatePayHead()
+      else if (activeTab === 'payhead') await generatePayHead()
+      else await generateMultiPayHead()
       setGenerated(true)
     } catch (e) {
       toast(e.message, 'error')
     }
     setLoading(false)
-  }, [activeTab, dateFrom, dateTo, filterFY, selCat, allCats]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, dateFrom, dateTo, filterFY, selCat, selCats, allCats]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── full report ────────────────────────────────────────────────
   const generateFull = async () => {
@@ -274,6 +276,86 @@ export default function ReportsPage() {
     setPaySubView('list')
   }
 
+  const generateMultiPayHead = async () => {
+    const selectedCatNames = allCats.filter(c => selCats.includes(c.name)).map(c => c.name)
+    if (!selectedCatNames.length) { toast('Select at least one payment head', 'error'); return }
+
+    const selectedSet = new Set(selectedCatNames)
+    const { data, error } = await supabase.rpc('get_receipt_report', {
+      p_date_from: dateFrom,
+      p_date_to:   dateTo,
+      p_fy:        filterFY || null,
+    })
+    if (error) throw error
+    const rows = data || []
+
+    const pivotMap = {}
+    const recMeta = {}
+    const recOrder = []
+
+    rows.forEach(row => {
+      if (!selectedSet.has(row.cat_name)) return
+      const id = row.receipt_id
+      if (!recMeta[id]) {
+        recMeta[id] = {
+          receipt_number: row.receipt_number || '',
+          receipt_date:   row.receipt_date   || '',
+          payment_mode:   row.payment_mode   || '',
+          member_id:      row.member_id      || '',
+          member_name:    row.member_name    || '',
+          grand_total:    0,
+        }
+        recOrder.push(id)
+      }
+      if (!pivotMap[id]) pivotMap[id] = {}
+      pivotMap[id][row.cat_name] = (pivotMap[id][row.cat_name] || 0) + (row.item_total || 0)
+      recMeta[id].grand_total += row.item_total || 0
+    })
+
+    const orderedCats = allCats.filter(c => selectedSet.has(c.name)).map(c => c.name)
+    setReportCats(orderedCats)
+
+    const bRows = recOrder.map(id => {
+      const row = { ...recMeta[id] }
+      orderedCats.forEach(cat => { row[cat] = pivotMap[id]?.[cat] || 0 })
+      return row
+    })
+    setBreakupRows(bRows)
+
+    const receiptNos = [...new Set(bRows.map(r => r.receipt_number).filter(Boolean))]
+    if (receiptNos.length) {
+      const { data: mData } = await supabase
+        .from('receipts')
+        .select('receipt_number, month_paid')
+        .in('receipt_number', receiptNos)
+      const mMap = {}
+      for (const r of mData || []) mMap[r.receipt_number] = r.month_paid || ''
+      setPayMonthMap(mMap)
+    } else {
+      setPayMonthMap({})
+    }
+
+    const summMap = {}
+    rows.forEach(row => {
+      if (!selectedSet.has(row.cat_name)) return
+      const mode = recMeta[row.receipt_id]?.payment_mode || 'Unknown'
+      if (!summMap[row.cat_name]) summMap[row.cat_name] = {}
+      summMap[row.cat_name][mode] = (summMap[row.cat_name][mode] || 0) + (row.item_total || 0)
+    })
+    const sRows = orderedCats.map(cat => {
+      const row = { cat_name: cat, bank_total: 0, row_total: 0 }
+      PAYMENT_MODES.forEach(mode => {
+        const val = summMap[cat]?.[mode] || 0
+        row[mode] = val
+        row.row_total += val
+      })
+      row.bank_total = BANK_MODES.reduce((s, m) => s + (row[m] || 0), 0)
+      return row
+    })
+    setSummaryRows(sRows)
+    setGrandTotal(bRows.reduce((s, r) => s + r.grand_total, 0))
+  }
+
   // ── Excel export ───────────────────────────────────────────────
   const exportExcel = async () => {
     const ts          = new Date().toLocaleDateString('en-IN').replace(/\//g, '-')
@@ -356,6 +438,151 @@ export default function ReportsPage() {
           ],
         },
       ], `Receipt_Report_${filterFY || 'All'}_${ts}.xlsx`)
+
+    } else if (activeTab === 'multipayhead') {
+      const selectedHeads = selCats.join(', ')
+      const multiTitleLines = [
+        { text: churchName, bold: true, size: 14, bg: '1E3A5F', color: 'FFFFFF' },
+        { text: selectedHeads ? `Multi Payment Head Report: ${selectedHeads}` : 'Multi Payment Head Report', bold: true, size: 12, bg: '0369A1', color: 'FFFFFF' },
+        { text: dateLabel, bold: false, size: 10, bg: 'EEF3FA', color: '1E3A5F' },
+      ]
+
+      const listCols = [
+        { header: 'R.No',        key: 'receipt_number', align: 'left'   },
+        { header: 'Date',        key: 'receipt_date',   align: 'center' },
+        { header: 'Mode',        key: 'payment_mode',   align: 'center' },
+        { header: 'Member ID',   key: 'member_id',      align: 'center' },
+        { header: 'Member Name', key: 'member_name',    align: 'left'   },
+        ...reportCats.map(cat => ({ header: cat, key: cat, align: 'right', numFmt: '#,##0' })),
+        { header: 'Total',      key: 'grand_total',    align: 'right', numFmt: '#,##0' },
+      ]
+      const listData = [
+        ...breakupRows.map(r => ({ ...r, receipt_date: fmtDateExcel(r.receipt_date) })),
+        {
+          receipt_number: '', receipt_date: '', payment_mode: '', member_id: '', member_name: 'TOTAL',
+          ...reportCats.reduce((acc, cat) => ({ ...acc, [cat]: breakupRows.reduce((s, row) => s + (row[cat] || 0), 0) }), {}),
+          grand_total: grandTotal,
+          _bold: true,
+        },
+      ]
+
+      const memberMap = {}
+      for (const row of breakupRows) {
+        const key = row.member_id || row.member_name
+        if (!memberMap[key]) {
+          memberMap[key] = { member_id: row.member_id, member_name: row.member_name, rows: [], totals: {}, totalAmt: 0, totalMonths: 0 }
+          reportCats.forEach(cat => { memberMap[key].totals[cat] = 0 })
+        }
+        const monthsStr = payMonthMap[row.receipt_number] || ''
+        const monthCount = monthsStr ? monthsStr.split(',').map(s => s.trim()).filter(Boolean).length : 0
+        const detailRow = {
+          receipt_number: row.receipt_number,
+          receipt_date: fmtDateExcel(row.receipt_date),
+          payment_mode: row.payment_mode,
+          member_id: row.member_id,
+          member_name: row.member_name,
+          months_paid: monthCount ? `${monthCount} Month${monthCount !== 1 ? 's' : ''}` : '',
+        }
+        reportCats.forEach(cat => {
+          detailRow[cat] = row[cat] || 0
+          memberMap[key].totals[cat] += row[cat] || 0
+        })
+        detailRow.total = reportCats.reduce((s, cat) => s + (detailRow[cat] || 0), 0)
+        memberMap[key].rows.push(detailRow)
+        memberMap[key].totalAmt += detailRow.total
+        memberMap[key].totalMonths += monthCount
+      }
+      const memberGroups = Object.values(memberMap).sort((a, b) => {
+        const na = Number(a.member_id), nb = Number(b.member_id)
+        if (!isNaN(na) && !isNaN(nb)) return na - nb
+        return String(a.member_id).localeCompare(String(b.member_id))
+      })
+
+      const mwCols = [
+        { header: 'R.No',        key: 'receipt_number', align: 'left'   },
+        { header: 'Date',        key: 'receipt_date',   align: 'center' },
+        { header: 'Mode',        key: 'payment_mode',   align: 'center' },
+        { header: 'Member ID',   key: 'member_id',      align: 'center' },
+        { header: 'Member Name', key: 'member_name',    align: 'left'   },
+        { header: 'Months Paid', key: 'months_paid',    align: 'center' },
+        ...reportCats.map(cat => ({ header: cat, key: cat, align: 'right', numFmt: '#,##0' })),
+        { header: 'Total',      key: 'total',          align: 'right', numFmt: '#,##0' },
+      ]
+      const mwData = []
+      let mwGrand = 0
+      for (const grp of memberGroups) {
+        for (const row of grp.rows) {
+          mwData.push(row)
+        }
+        mwData.push({
+          receipt_number: '', receipt_date: '', payment_mode: '', member_id: '',
+          member_name: `${grp.member_name} — TOTAL`, months_paid: grp.totalMonths ? `${grp.totalMonths} Month${grp.totalMonths !== 1 ? 's' : ''}` : '',
+          ...reportCats.reduce((acc, cat) => ({ ...acc, [cat]: grp.totals[cat] || 0 }), {}),
+          total: grp.totalAmt,
+          _bold: true,
+        })
+        mwGrand += grp.totalAmt
+      }
+      mwData.push({
+        receipt_number: '', receipt_date: '', payment_mode: '', member_id: '', member_name: 'GRAND TOTAL', months_paid: '',
+        ...reportCats.reduce((acc, cat) => ({ ...acc, [cat]: breakupRows.reduce((s, row) => s + (row[cat] || 0), 0) }), {}),
+        total: grandTotal,
+        _bold: true,
+      })
+
+      const mthCols = [
+        { header: 'Member ID',   key: 'member_id',   align: 'center' },
+        { header: 'Member Name', key: 'member_name', align: 'left'   },
+        ...FY_MONTHS.map((m, idx) => ({ header: FY_MON_S[idx], key: m, align: 'right', numFmt: '#,##0' })),
+        { header: 'Total', key: 'row_total', align: 'right', numFmt: '#,##0' },
+      ]
+      const monthwiseMap = {}
+      for (const row of breakupRows) {
+        const key = row.member_id || row.member_name
+        if (!monthwiseMap[key]) {
+          monthwiseMap[key] = { member_id: row.member_id, member_name: row.member_name, months: {} }
+          FY_MONTHS.forEach(m => { monthwiseMap[key].months[m] = 0 })
+        }
+        const monthsStr = payMonthMap[row.receipt_number] || ''
+        const monthsPaid = monthsStr ? monthsStr.split(',').map(s => s.trim()).filter(Boolean) : []
+        const rowTotal = reportCats.reduce((s, cat) => s + (row[cat] || 0), 0)
+        if (monthsPaid.length > 0) {
+          const perMonth = rowTotal / monthsPaid.length
+          for (const mp of monthsPaid) {
+            const matched = FY_MONTHS.find(m => m.toLowerCase() === mp.toLowerCase())
+            if (matched) monthwiseMap[key].months[matched] += perMonth
+          }
+        } else if (row.receipt_date) {
+          const d = new Date(row.receipt_date + 'T00:00:00')
+          const mName = d.toLocaleString('en-US', { month: 'long' })
+          const matched = FY_MONTHS.find(m => m.toLowerCase() === mName.toLowerCase())
+          if (matched) monthwiseMap[key].months[matched] += rowTotal
+        }
+      }
+      const mthData = Object.values(monthwiseMap)
+        .sort((a, b) => {
+          const na = Number(a.member_id), nb = Number(b.member_id)
+          if (!isNaN(na) && !isNaN(nb)) return na - nb
+          return String(a.member_id).localeCompare(String(b.member_id))
+        })
+        .map(mem => {
+          const row = { member_id: mem.member_id, member_name: mem.member_name }
+          let rowTotal = 0
+          FY_MONTHS.forEach(m => { row[m] = mem.months[m] > 0 ? mem.months[m] : 0; rowTotal += row[m] })
+          row.row_total = rowTotal
+          return row
+        })
+      const mthTotalRow = { member_id: '', member_name: 'TOTAL', _bold: true }
+      let mthGrandTotal = 0
+      FY_MONTHS.forEach(m => { mthTotalRow[m] = mthData.reduce((s, row) => s + (row[m] || 0), 0); mthGrandTotal += mthTotalRow[m] })
+      mthTotalRow.row_total = mthGrandTotal
+      mthData.push(mthTotalRow)
+
+      await exportMultiSheetWithTitle([
+        { name: 'Transaction List', columns: listCols, rows: listData, titleLines: multiTitleLines },
+        { name: 'Member-wise Detail', columns: mwCols, rows: mwData, titleLines: [...multiTitleLines.slice(0,1), { text: 'Detailed Member-wise', bold: true, size: 12, bg: '166534', color: 'FFFFFF' }, multiTitleLines[2]] },
+        { name: 'Monthwise Tabulated', columns: mthCols, rows: mthData, titleLines: [...multiTitleLines.slice(0,1), { text: 'Monthwise Tabulated', bold: true, size: 12, bg: '7C3AED', color: 'FFFFFF' }, multiTitleLines[2]] },
+      ], `Multi_Payment_Head_Report_${filterFY || 'All'}_${ts}.xlsx`)
 
     } else {
       // ── Sheet 1: Transaction List ──────────────────────────────
@@ -516,8 +743,9 @@ export default function ReportsPage() {
         borderRadius: 10, padding: 4, width: 'fit-content',
       }}>
         {[
-          { id: 'full',    label: 'Full Report',       Icon: List },
-          { id: 'payhead', label: 'By Payment Head',   Icon: Tag  },
+          { id: 'full',         label: 'Full Report',           Icon: List },
+          { id: 'multipayhead', label: 'Multi Payment Heads',  Icon: Tag  },
+          { id: 'payhead',      label: 'By Payment Head',       Icon: Tag  },
         ].map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -568,6 +796,21 @@ export default function ReportsPage() {
           <input ref={toRef} type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="field-input" />
         </div>
 
+        {activeTab === 'multipayhead' && (
+          <div style={{ minWidth: 260 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Payment Heads</label>
+            <select
+              multiple
+              value={selCats}
+              onChange={e => setSelCats(Array.from(e.target.selectedOptions, o => o.value))}
+              className="field-input"
+              style={{ minWidth: 260, minHeight: 140, paddingRight: 8, whiteSpace: 'normal' }}
+            >
+              {allCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Ctrl+click or Shift+click to select multiple heads.</div>
+          </div>
+        )}
         {activeTab === 'payhead' && (
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Payment Head</label>
@@ -600,7 +843,9 @@ export default function ReportsPage() {
           <p style={{ color: 'var(--text-3)', fontSize: 13, marginTop: 4, marginBottom: 0 }}>
             {activeTab === 'full'
               ? 'Generates Receipt Breakup and Summary by payment mode'
-              : 'Select a payment head to see all receipts for that category'}
+              : activeTab === 'payhead'
+                ? 'Select a payment head to see all receipts for that category'
+                : 'Select one or more payment heads to see receipts across those categories'}
           </p>
         </div>
       )}
@@ -614,7 +859,7 @@ export default function ReportsPage() {
       {/* ════════════════════════════════════════════════════════
           FULL REPORT
       ════════════════════════════════════════════════════════ */}
-      {generated && !loading && activeTab === 'full' && (
+      {generated && !loading && (activeTab === 'full' || activeTab === 'multipayhead') && (
         <>
           {/* ── Receipt Breakup ─────────────────────────────── */}
           <div className="card" style={{ overflow: 'hidden', marginBottom: 20 }}>
