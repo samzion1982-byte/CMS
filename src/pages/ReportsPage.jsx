@@ -107,6 +107,8 @@ export default function ReportsPage() {
   const [paySubView,   setPaySubView]   = useState('list')   // 'list' | 'memberwise' | 'monthwise'
   const [payMonthMap,  setPayMonthMap]  = useState({})        // receipt_number → month_paid string
 
+  const [catDropdownOpen, setCatDropdownOpen] = useState(false)
+  const catDropdownRef = useRef(null)
   const fromRef = useRef(null)
   const toRef   = useRef(null)
 
@@ -125,6 +127,17 @@ export default function ReportsPage() {
     const fySet = (fyRows || []).map(r => r.financial_year).filter(Boolean)
     setFYS(fySet)
   }
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (catDropdownRef.current && !catDropdownRef.current.contains(event.target)) {
+        setCatDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const fetchLastReceiptDate = async (fy) => {
     let q = supabase.from('receipts').select('receipt_date').order('receipt_date', { ascending: false }).limit(1)
@@ -768,6 +781,7 @@ export default function ReportsPage() {
       <div className="card" style={{
         padding: '16px 20px', marginBottom: 20,
         display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap',
+        overflow: 'visible',
       }}>
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Financial Year</label>
@@ -797,18 +811,35 @@ export default function ReportsPage() {
         </div>
 
         {activeTab === 'multipayhead' && (
-          <div style={{ minWidth: 260 }}>
+          <div ref={catDropdownRef} style={{ position: 'relative', minWidth: 260 }}>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 4 }}>Payment Heads</label>
-            <select
-              multiple
-              value={selCats}
-              onChange={e => setSelCats(Array.from(e.target.selectedOptions, o => o.value))}
+            <button
+              type="button"
+              onClick={() => setCatDropdownOpen(prev => !prev)}
               className="field-input"
-              style={{ minWidth: 260, minHeight: 140, paddingRight: 8, whiteSpace: 'normal' }}
+              style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 42, paddingRight: 12 }}
             >
-              {allCats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Ctrl+click or Shift+click to select multiple heads.</div>
+              <span style={{ whiteSpace: 'normal', textAlign: 'left' }}>
+                {selCats.length ? selCats.join(', ') : 'Select payment heads'}
+              </span>
+              <ChevronDown size={14} style={{ color: 'var(--text-3)' }} />
+            </button>
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,0.08)', zIndex: 999, maxHeight: 220, overflowY: 'auto', display: catDropdownOpen ? 'block' : 'none' }}>
+              {allCats.map(c => (
+                <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={selCats.includes(c.name)}
+                    onChange={e => {
+                      const checked = e.target.checked
+                      setSelCats(prev => checked ? [...prev, c.name] : prev.filter(name => name !== c.name))
+                    }}
+                    style={{ width: 14, height: 14, accentColor: 'var(--accent)' }}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{c.name}</span>
+                </label>
+              ))}
+            </div>
           </div>
         )}
         {activeTab === 'payhead' && (
