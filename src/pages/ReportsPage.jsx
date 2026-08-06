@@ -658,8 +658,8 @@ export default function ReportsPage() {
                       onClick={() => setSelCats(allCats.map(c => c.name))}
                       style={{
                         width: 38, height: 38, borderRadius: 10, border: '1px solid var(--card-border)',
-                        background: selCats.length !== allCats.length && allCats.length ? 'var(--accent)' : 'transparent',
-                        color: selCats.length !== allCats.length && allCats.length ? '#fff' : 'var(--text-2)',
+                        background: selCats.length === allCats.length && allCats.length ? 'var(--accent)' : 'transparent',
+                        color: selCats.length === allCats.length && allCats.length ? '#fff' : 'var(--text-2)',
                         cursor: 'pointer', display: 'grid', placeItems: 'center',
                       }}
                     >
@@ -671,8 +671,8 @@ export default function ReportsPage() {
                       onClick={() => setSelCats([])}
                       style={{
                         width: 38, height: 38, borderRadius: 10, border: '1px solid var(--card-border)',
-                        background: selCats.length === allCats.length && allCats.length ? 'var(--accent)' : 'transparent',
-                        color: selCats.length === allCats.length && allCats.length ? '#fff' : 'var(--text-2)',
+                        background: selCats.length === 0 && allCats.length ? 'var(--accent)' : 'transparent',
+                        color: selCats.length === 0 && allCats.length ? '#fff' : 'var(--text-2)',
                         cursor: 'pointer', display: 'grid', placeItems: 'center',
                       }}
                     >
