@@ -3,12 +3,21 @@
  *
  * Location comes only from the user-entered device/setup form —
  * we do NOT capture IP or browser geolocation (both are inaccurate).
+ *
+ * Capture rules:
+ * - Known device ID  → write device fields into the login row at insert time
+ * - Cache flush (new device ID, known user) → silently re-bind device, no popup
+ * - Truly new user/device → show one-time setup popup, then tag the login
  */
 
 import { adminSupabase } from './supabase'
 
-/* Insert a new login row (device/location filled later by the setup form) */
-export async function insertLoginLog({ userId, email, fullName, role, userAgent }) {
+/* Insert a login row. Optional device fields are written atomically so we
+   never race a separate tag against an older unclosed session. */
+export async function insertLoginLog({
+  userId, email, fullName, role, userAgent,
+  deviceId, userName, location, org,
+} = {}) {
   const { data, error } = await adminSupabase
     .from('login_logs')
     .insert({
@@ -17,6 +26,10 @@ export async function insertLoginLog({ userId, email, fullName, role, userAgent 
       full_name:  fullName  || null,
       user_role:  role      || null,
       user_agent: userAgent || null,
+      device_id:  deviceId  || null,
+      user_name:  userName  || null,
+      location:   location  || null,
+      org:        org       || null,
     })
     .select('id')
     .single()
@@ -92,11 +105,9 @@ export async function checkDeviceRegistered(deviceId) {
 }
 
 // Fallback lookup by user_id — used when the device_id was lost (cache/cookie
-// cleared). If the user previously registered on any device, reuse that info
-// and silently re-associate the new device_id.
+// cleared). If the user previously registered on any device, reuse that info.
 export async function checkDeviceRegisteredByUser(userId) {
   if (!userId) return null
-  // Prefer the most-recent row that has avatar_name set; fall back to overall most-recent
   const { data: recent } = await adminSupabase
     .from('user_devices')
     .select('org_name, user_name, location, avatar_name')
@@ -106,7 +117,6 @@ export async function checkDeviceRegisteredByUser(userId) {
     .maybeSingle()
   if (!recent) return null
   if (recent.avatar_name) return recent
-  // Most-recent row has no avatar_name — look for it in any other row
   const { data: withAvatar } = await adminSupabase
     .from('user_devices')
     .select('avatar_name')
@@ -120,7 +130,6 @@ export async function checkDeviceRegisteredByUser(userId) {
 export async function saveDevice({ deviceId, userId, orgName, userName, location, avatarName }) {
   let resolvedAvatar = avatarName || null
 
-  // If blank, carry forward whatever is already stored for this user
   if (!resolvedAvatar && userId) {
     const { data: existing } = await adminSupabase
       .from('user_devices')
@@ -140,7 +149,6 @@ export async function saveDevice({ deviceId, userId, orgName, userName, location
     .upsert(payload, { onConflict: 'device_id' })
   if (error) throw error
 
-  // Sync to every other row so future device changes always carry the value
   if (userId && resolvedAvatar) {
     await adminSupabase
       .from('user_devices')
@@ -150,16 +158,18 @@ export async function saveDevice({ deviceId, userId, orgName, userName, location
   }
 }
 
-/* Apply device details to the best matching login log for this user.
-   Prefers the most recent untagged row (device_id null); falls back to the
-   active session (logout_at null) so Edit Device Info can backfill the
-   current login after a cache flush. Retries to handle fire-and-forget insert. */
+/**
+ * Tag the most recent untagged login (device_id IS NULL) for this user.
+ * Used after the one-time setup popup / Edit Device Info.
+ * Does NOT fall back to an older active session — that caused blank new rows
+ * when the insert was still in flight.
+ */
 export async function tagLoginWithDevice(userId, { deviceId, userName, location, org }) {
   if (!userId) return
   const payload = { device_id: deviceId, user_name: userName, location, org }
 
-  for (let i = 0; i < 6; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 1000))
+  for (let i = 0; i < 8; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 500))
 
     const { data: untagged } = await adminSupabase
       .from('login_logs')
@@ -172,26 +182,45 @@ export async function tagLoginWithDevice(userId, { deviceId, userName, location,
 
     if (untagged?.id) {
       await adminSupabase.from('login_logs').update(payload).eq('id', untagged.id)
-      return
+      return true
     }
+  }
+  return false
+}
 
-    // No untagged row yet — only fall back to active session on later retries
-    // (give insertLoginLog time to land) or on the final attempt.
-    if (i < 2) continue
+/**
+ * Update the current active session with device details (Edit Device Info).
+ * Prefer untagged rows; otherwise update the open session.
+ */
+export async function updateActiveLoginDevice(userId, { deviceId, userName, location, org }) {
+  if (!userId) return
+  const payload = { device_id: deviceId, user_name: userName, location, org }
 
-    const { data: active } = await adminSupabase
-      .from('login_logs')
-      .select('id')
-      .eq('user_id', userId)
-      .is('logout_at', null)
-      .order('login_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+  const { data: untagged } = await adminSupabase
+    .from('login_logs')
+    .select('id')
+    .eq('user_id', userId)
+    .is('device_id', null)
+    .order('login_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-    if (active?.id) {
-      await adminSupabase.from('login_logs').update(payload).eq('id', active.id)
-      return
-    }
+  if (untagged?.id) {
+    await adminSupabase.from('login_logs').update(payload).eq('id', untagged.id)
+    return
+  }
+
+  const { data: active } = await adminSupabase
+    .from('login_logs')
+    .select('id')
+    .eq('user_id', userId)
+    .is('logout_at', null)
+    .order('login_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (active?.id) {
+    await adminSupabase.from('login_logs').update(payload).eq('id', active.id)
   }
 }
 

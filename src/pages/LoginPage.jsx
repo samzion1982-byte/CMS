@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
-import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, tagLoginWithDevice } from '../lib/loginLogs'
+import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, insertLoginLog } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -65,21 +65,16 @@ export default function LoginPage() {
     setStatus('authenticating')
     setError('')
     sessionStorage.setItem('login_welcome', '1')  // flag checked by PublicRoute to delay redirect
+    // Clear any leftover setup flag from a prior attempt
+    sessionStorage.removeItem('device_setup_pending')
 
     try {
       const devId = getOrCreateDeviceId()
       const knownByDevice = await checkDeviceRegistered(devId)
 
-      // Write partial flag early — AppLayout may mount mid-signIn (during getProfile)
-      // and will poll until userId is filled in or the flag is removed.
-      if (!knownByDevice) {
-        sessionStorage.setItem('device_setup_pending', JSON.stringify({ deviceId: devId }))
-      }
-
-      const { error: err, data: authData } = await signIn(email.trim(), password)
+      const { error: err, data: authData, profile } = await signIn(email.trim(), password)
 
       if (err) {
-        sessionStorage.removeItem('device_setup_pending')
         sessionStorage.removeItem('login_welcome')
         setError(err.message)
         setInputErr(true)
@@ -89,50 +84,55 @@ export default function LoginPage() {
         setStatus('welcome')
         const uid = authData?.user?.id
 
+        // Resolve device meta before writing the login row (atomic insert).
+        // Popup is ONLY for a truly new user/device — never after a cache flush
+        // when we already know this user from a prior registration.
+        let deviceMeta = null
+
         if (knownByDevice) {
-          // Same device ID found — tag log and proceed
-          tagLoginWithDevice(uid, { deviceId: devId, userName: knownByDevice.user_name, location: knownByDevice.location, org: knownByDevice.org_name })
+          deviceMeta = {
+            deviceId: devId,
+            userName: knownByDevice.user_name,
+            location: knownByDevice.location,
+            org:      knownByDevice.org_name,
+          }
         } else {
-          // Device ID not found (e.g. cache/cookie flush) — reuse prior registration if any
           const knownByUser = await checkDeviceRegisteredByUser(uid)
           if (knownByUser) {
-            // Re-bind this new device_id and tag the login immediately so User Name /
-            // Area / City are never blank. Still show the confirm popup so they can
-            // correct city if they logged in from a different place.
-            saveDevice({
-              deviceId:   devId,
-              userId:     uid,
-              orgName:    knownByUser.org_name || '',
-              userName:   knownByUser.user_name || '',
-              location:   knownByUser.location || '',
-              avatarName: knownByUser.avatar_name || null,
-            }).catch(err => console.warn('[login] rebind device failed:', err))
-
-            tagLoginWithDevice(uid, {
+            // Cache/cookie flush: new device ID, known user — silent re-bind, no popup
+            try {
+              await saveDevice({
+                deviceId:   devId,
+                userId:     uid,
+                orgName:    knownByUser.org_name || '',
+                userName:   knownByUser.user_name || '',
+                location:   knownByUser.location || '',
+                avatarName: knownByUser.avatar_name || null,
+              })
+            } catch (rebindErr) {
+              console.warn('[login] rebind device failed:', rebindErr)
+            }
+            deviceMeta = {
               deviceId: devId,
               userName: knownByUser.user_name,
               location: knownByUser.location,
               org:      knownByUser.org_name,
-            })
-
-            const loc = knownByUser.location || ''
-            const idx = loc.lastIndexOf(', ')
-            sessionStorage.setItem('device_setup_pending', JSON.stringify({
-              deviceId: devId,
-              userId: uid,
-              prefill: {
-                userName:   knownByUser.user_name   || '',
-                orgName:    knownByUser.org_name    || '',
-                area:       idx !== -1 ? loc.slice(0, idx) : '',
-                city:       idx !== -1 ? loc.slice(idx + 2) : loc,
-                avatarName: knownByUser.avatar_name || '',
-              },
-            }))
+            }
           } else {
-            // Truly new user/device — complete the flag so AppLayout shows the popup
+            // Truly new — ask once via the setup popup; login row is written blank for now
             sessionStorage.setItem('device_setup_pending', JSON.stringify({ deviceId: devId, userId: uid }))
           }
         }
+
+        // Await so the row lands with device fields already filled (when known)
+        await insertLoginLog({
+          userId:    uid,
+          email:     profile?.email || email.trim(),
+          fullName:  profile?.full_name,
+          role:      profile?.role,
+          userAgent: navigator.userAgent,
+          ...(deviceMeta || {}),
+        })
       }
     } catch (ex) {
       sessionStorage.removeItem('device_setup_pending')

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Monitor, Loader2 } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
-import { saveDevice, tagLoginWithDevice, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser } from '../../lib/loginLogs'
+import { saveDevice, tagLoginWithDevice, updateActiveLoginDevice, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser } from '../../lib/loginLogs'
 import Sidebar from './Sidebar'
 import Header, { HEADER_H } from './Header'
 
@@ -78,14 +78,19 @@ export default function AppLayout({ children }) {
         location,
         avatarName: deviceForm.avatarName?.trim() || null,
       })
-      // Always tag/update the current login — including Edit Device Info —
-      // so User Name / Area / City are not left blank after a cache flush.
-      tagLoginWithDevice(pendingInfo.userId, {
+      const meta = {
         deviceId: pendingInfo.deviceId,
         userName: deviceForm.userName,
         location,
         org: deviceForm.orgName,
-      })
+      }
+      if (isEditMode) {
+        // Backfill / refresh the current open session
+        await updateActiveLoginDevice(pendingInfo.userId, meta)
+      } else {
+        // First-time setup — tag the blank login row created at sign-in
+        await tagLoginWithDevice(pendingInfo.userId, meta)
+      }
     } catch (e) { console.error(e) }
     if (deviceForm.avatarName?.trim()) {
       localStorage.setItem('avatar_display_name', deviceForm.avatarName.trim())
