@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Lock, Eye, EyeOff, Building2, FileText, ExternalLink, Plus, Loader2,
-  X, Upload, Trash2, ArrowLeft, Settings, Link2,
+  X, Upload, Trash2, ArrowLeft, Settings, Link2, Image as ImageIcon, File,
 } from 'lucide-react'
 import { useToast } from '../../lib/toast'
 import { useAuth } from '../../lib/AuthContext'
@@ -237,18 +237,113 @@ function UploadDocModal({ asset, onClose, onSaved }) {
   )
 }
 
+function fmtDocDate(d) {
+  if (!d) return ''
+  const [y, m, day] = String(d).slice(0, 10).split('-')
+  return `${day}-${m}-${y}`
+}
+
+function fileKind(doc) {
+  const mime = (doc.mime_type || '').toLowerCase()
+  const name = (doc.file_name || doc.title || '').toLowerCase()
+  if (mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/.test(name)) return 'image'
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  return 'other'
+}
+
+function DocPreview({ doc }) {
+  if (!doc?.file_url) {
+    return (
+      <div style={{
+        height: '100%', minHeight: 360, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', gap: 8, padding: 24,
+      }}>
+        <FileText size={36} style={{ opacity: 0.45 }} />
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Select a document</p>
+        <p style={{ margin: 0, fontSize: 12, textAlign: 'center' }}>Choose a file from the list to preview it here.</p>
+      </div>
+    )
+  }
+
+  const kind = fileKind(doc)
+
+  if (kind === 'image') {
+    return (
+      <div style={{
+        height: '100%', minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#0f172a08', padding: 16, overflow: 'auto',
+      }}>
+        <img
+          src={doc.file_url}
+          alt={doc.title || 'Document'}
+          style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 280px)', objectFit: 'contain', borderRadius: 8 }}
+        />
+      </div>
+    )
+  }
+
+  if (kind === 'pdf') {
+    return (
+      <iframe
+        title={doc.title || 'PDF'}
+        src={`${doc.file_url}#toolbar=1&navpanes=0`}
+        style={{
+          width: '100%', height: '100%', minHeight: 480, border: 'none',
+          background: '#f8fafc',
+        }}
+      />
+    )
+  }
+
+  return (
+    <div style={{
+      height: '100%', minHeight: 360, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', color: 'var(--text-2)', gap: 12, padding: 32,
+    }}>
+      <File size={40} style={{ color: 'var(--text-3)', opacity: 0.6 }} />
+      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-1)', textAlign: 'center' }}>
+        {doc.title}
+      </p>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)', textAlign: 'center' }}>
+        Preview not available for this file type. Open it in a new tab.
+      </p>
+      <a
+        href={doc.file_url}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px',
+          background: 'var(--accent)', color: '#fff', borderRadius: 8, fontSize: 13,
+          fontWeight: 700, textDecoration: 'none',
+        }}
+      >
+        <ExternalLink size={14} /> Open file
+      </a>
+    </div>
+  )
+}
+
 function AssetDetail({ asset, onBack }) {
   const toast = useToast()
   const { profile } = useAuth()
   const [docs, setDocs] = useState([])
+  const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [busy, setBusy] = useState(null)
 
-  const load = useCallback(async () => {
+  const selected = docs.find(d => d.id === selectedId) || null
+
+  const load = useCallback(async (preferId = null) => {
     setLoading(true)
     try {
-      setDocs(await getFixedAssetDocuments(asset.id))
+      const list = await getFixedAssetDocuments(asset.id)
+      setDocs(list)
+      setSelectedId(prev => {
+        if (preferId && list.some(d => d.id === preferId)) return preferId
+        if (prev && list.some(d => d.id === prev)) return prev
+        return list[0]?.id || null
+      })
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -263,22 +358,18 @@ function AssetDetail({ asset, onBack }) {
     try {
       await softDeleteFixedAssetDocument(doc.id, profile?.full_name || profile?.email || null)
       toast('Document removed.', 'success')
-      await load()
+      const next = docs.filter(d => d.id !== doc.id)
+      const nextId = selectedId === doc.id ? (next[0]?.id || null) : selectedId
+      await load(nextId)
     } catch (e) {
       toast(e.message, 'error')
     }
     setBusy(null)
   }
 
-  function fmtDate(d) {
-    if (!d) return ''
-    const [y, m, day] = String(d).slice(0, 10).split('-')
-    return `${day}-${m}-${y}`
-  }
-
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <button onClick={onBack} style={{
           padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)',
           borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -311,7 +402,7 @@ function AssetDetail({ asset, onBack }) {
       </div>
 
       {asset.description && (
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>{asset.description}</p>
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>{asset.description}</p>
       )}
 
       {loading ? (
@@ -333,48 +424,145 @@ function AssetDetail({ asset, onBack }) {
           </button>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          {docs.map(doc => (
-            <div key={doc.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-              borderBottom: '1px solid var(--card-border)',
+        <div
+          className="card fixed-doc-split"
+          style={{
+            padding: 0, overflow: 'hidden',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(220px, 280px) 1fr',
+            minHeight: 480,
+          }}
+        >
+          {/* Sidebar */}
+          <div style={{
+            borderRight: '1px solid var(--card-border)',
+            background: 'var(--table-header-bg, #f8fafc)',
+            display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 220px)',
+          }}>
+            <div style={{
+              padding: '12px 14px', borderBottom: '1px solid var(--card-border)',
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--text-3)',
             }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: 10, background: '#eff6ff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                <FileText size={18} color="#1d4ed8" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{doc.title}</p>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-                  {[doc.doc_type, doc.doc_date ? fmtDate(doc.doc_date) : null, formatFileSize(doc.file_size)]
-                    .filter(Boolean).join(' · ')}
-                </p>
-              </div>
-              {doc.file_url && (
-                <a href={doc.file_url} target="_blank" rel="noreferrer" title="Open"
-                  style={{
-                    padding: '6px 8px', background: '#eff6ff', border: '1px solid #bfdbfe',
-                    borderRadius: 6, color: '#1d4ed8', display: 'inline-flex', textDecoration: 'none',
-                  }}>
-                  <ExternalLink size={13} />
-                </a>
-              )}
-              <button onClick={() => handleDelete(doc)} disabled={busy === doc.id} title="Remove"
-                style={{
-                  padding: '6px 8px', background: '#fff5f5', border: '1px solid #fca5a5',
-                  borderRadius: 6, cursor: 'pointer', color: '#b91c1c', display: 'inline-flex',
-                }}>
-                {busy === doc.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              </button>
+              Documents ({docs.length})
             </div>
-          ))}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {docs.map(doc => {
+                const active = doc.id === selectedId
+                const kind = fileKind(doc)
+                const Icon = kind === 'image' ? ImageIcon : FileText
+                return (
+                  <div
+                    key={doc.id}
+                    style={{
+                      display: 'flex', alignItems: 'stretch',
+                      borderBottom: '1px solid var(--card-border)',
+                      background: active ? 'var(--card-bg)' : 'transparent',
+                      boxShadow: active ? 'inset 3px 0 0 var(--accent)' : 'none',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(doc.id)}
+                      style={{
+                        flex: 1, textAlign: 'left', padding: '11px 12px', border: 'none',
+                        background: 'transparent', cursor: 'pointer', display: 'flex', gap: 10,
+                        alignItems: 'flex-start', minWidth: 0,
+                      }}
+                    >
+                      <Icon size={16} style={{
+                        color: active ? 'var(--accent)' : 'var(--text-3)',
+                        marginTop: 2, flexShrink: 0,
+                      }} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{
+                          display: 'block', fontSize: 13, fontWeight: active ? 800 : 600,
+                          color: 'var(--text-1)', lineHeight: 1.3,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {doc.title}
+                        </span>
+                        <span style={{
+                          display: 'block', marginTop: 3, fontSize: 11, color: 'var(--text-3)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {[doc.doc_type, doc.doc_date ? fmtDocDate(doc.doc_date) : null, formatFileSize(doc.file_size)]
+                            .filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', padding: '6px 6px 6px 0', gap: 4 }}>
+                      {doc.file_url && (
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" title="Open in new tab"
+                          onClick={e => e.stopPropagation()}
+                          style={{
+                            padding: 5, borderRadius: 6, color: '#1d4ed8', display: 'inline-flex',
+                            textDecoration: 'none',
+                          }}>
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); handleDelete(doc) }}
+                        disabled={busy === doc.id}
+                        title="Remove"
+                        style={{
+                          padding: 5, background: 'none', border: 'none', borderRadius: 6,
+                          cursor: 'pointer', color: '#b91c1c', display: 'inline-flex',
+                        }}
+                      >
+                        {busy === doc.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Preview pane */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--card-bg)' }}>
+            {selected && (
+              <div style={{
+                padding: '10px 14px', borderBottom: '1px solid var(--card-border)',
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              }}>
+                <p style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text-1)', minWidth: 0 }}>
+                  {selected.title}
+                </p>
+                {selected.file_url && (
+                  <a href={selected.file_url} target="_blank" rel="noreferrer" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px',
+                    borderRadius: 7, border: '1px solid #bfdbfe', background: '#eff6ff',
+                    color: '#1d4ed8', fontSize: 12, fontWeight: 700, textDecoration: 'none',
+                  }}>
+                    <ExternalLink size={12} /> Open
+                  </a>
+                )}
+              </div>
+            )}
+            <div style={{ flex: 1, minHeight: 420 }}>
+              <DocPreview doc={selected} />
+            </div>
+          </div>
         </div>
       )}
 
+      {/* Mobile stack: simple CSS via media is limited in inline styles — add overflow wrap */}
+      <style>{`
+        @media (max-width: 800px) {
+          .fixed-doc-split { grid-template-columns: 1fr !important; }
+          .fixed-doc-split > div:first-child { max-height: 220px !important; border-right: none !important; border-bottom: 1px solid var(--card-border); }
+        }
+      `}</style>
+
       {uploadOpen && (
-        <UploadDocModal asset={asset} onClose={() => setUploadOpen(false)} onSaved={load} />
+        <UploadDocModal
+          asset={asset}
+          onClose={() => setUploadOpen(false)}
+          onSaved={async () => { await load() }}
+        />
       )}
     </div>
   )
