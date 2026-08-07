@@ -237,6 +237,110 @@ export function isAssetOnHand(asset, asOnDate) {
   return true
 }
 
+/**
+ * Stock Movement — move qty out of an in-stock line.
+ * Partial: reduce source qty and create a new out line.
+ * Full: set stock_out_date (and optional condition) on the same line.
+ */
+export async function moveStockOut(sourceAsset, {
+  quantity,
+  stock_out_date,
+  condition_id = null,
+  notes = null,
+  performed_by = null,
+} = {}) {
+  if (!sourceAsset?.id) throw new Error('Source asset is required.')
+  if (sourceAsset.stock_out_date) throw new Error('This line is already moved out of stock.')
+
+  const available = Math.max(1, Number(sourceAsset.quantity) || 1)
+  const moveQty = Math.max(1, parseInt(quantity, 10) || 0)
+  if (moveQty < 1) throw new Error('Move quantity must be at least 1.')
+  if (moveQty > available) throw new Error(`Cannot move ${moveQty} — only ${available} in stock.`)
+
+  const outDate = stock_out_date || new Date().toISOString().slice(0, 10)
+  if (sourceAsset.stock_in_date && outDate < sourceAsset.stock_in_date) {
+    throw new Error('Stock Out date cannot be before Stock In date.')
+  }
+
+  const unitPrice = sourceAsset.unit_price != null ? Number(sourceAsset.unit_price) : null
+  const srcCost = sourceAsset.purchase_value != null ? Number(sourceAsset.purchase_value) : null
+  const movedCost = unitPrice != null
+    ? Math.round(unitPrice * moveQty * 100) / 100
+    : (srcCost != null ? Math.round((srcCost / available) * moveQty * 100) / 100 : null)
+  const remainQty = available - moveQty
+  const remainCost = remainQty > 0
+    ? (unitPrice != null
+      ? Math.round(unitPrice * remainQty * 100) / 100
+      : (srcCost != null && movedCost != null ? Math.round((srcCost - movedCost) * 100) / 100 : srcCost))
+    : null
+
+  const noteText = (notes || '').trim() || null
+  const movementNote = `Moved out ${moveQty} from #${sourceAsset.serial_no}`
+
+  // Full move-out: update same row
+  if (moveQty === available) {
+    const { data, error } = await supabase
+      .from('assets')
+      .update({
+        stock_out_date: outDate,
+        condition_id: condition_id || sourceAsset.condition_id || null,
+        notes: [sourceAsset.notes, noteText].filter(Boolean).join(' · ') || null,
+        updated_by: performed_by,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', sourceAsset.id)
+      .select(ASSET_SELECT)
+      .single()
+    if (error) throw error
+    return { source: data, moved: data, mode: 'full' }
+  }
+
+  // Partial: shrink source, insert out line
+  const { data: source, error: srcErr } = await supabase
+    .from('assets')
+    .update({
+      quantity: remainQty,
+      purchase_value: remainCost,
+      updated_by: performed_by,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', sourceAsset.id)
+    .select(ASSET_SELECT)
+    .single()
+  if (srcErr) throw srcErr
+
+  const { data: moved, error: movErr } = await supabase
+    .from('assets')
+    .insert({
+      asset_category:   sourceAsset.asset_category || 'movable',
+      location_id:      sourceAsset.location_id || null,
+      item_type_id:     sourceAsset.item_type_id || null,
+      description:      sourceAsset.description,
+      condition_id:     condition_id || sourceAsset.condition_id || null,
+      quantity:         moveQty,
+      stock_in_date:    sourceAsset.stock_in_date,
+      stock_out_date:   outDate,
+      warranty_upto:    sourceAsset.warranty_upto || null,
+      unit_price:       unitPrice,
+      purchase_value:   movedCost,
+      invoice_no:       sourceAsset.invoice_no || null,
+      invoice_date:     sourceAsset.invoice_date || null,
+      supplier_name:    sourceAsset.supplier_name || null,
+      supplier_address: sourceAsset.supplier_address || null,
+      supplier_contact: sourceAsset.supplier_contact || null,
+      photo_url:        sourceAsset.photo_url || null,
+      photo_path:       sourceAsset.photo_path || null,
+      notes:            [movementNote, noteText].filter(Boolean).join(' · '),
+      created_by:       performed_by,
+      updated_by:       performed_by,
+    })
+    .select(ASSET_SELECT)
+    .single()
+  if (movErr) throw movErr
+
+  return { source, moved, mode: 'split' }
+}
+
 export async function softDeleteAsset(id, updatedBy = null) {
   const { error } = await supabase
     .from('assets')

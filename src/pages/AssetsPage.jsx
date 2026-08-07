@@ -8,13 +8,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   Package, Settings, Plus, Pencil, Trash2, Loader2, X, Save,
   Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown,
-  Folder, FolderOpen, CornerDownRight,
+  Folder, FolderOpen, CornerDownRight, ArrowRightLeft,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
-  getAssets, saveAsset, softDeleteAsset,
+  getAssets, saveAsset, softDeleteAsset, moveStockOut,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
   masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
@@ -623,6 +623,156 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   )
 }
 
+/* ── Stock Movement modal ──────────────────────────────────────── */
+
+function StockMovementModal({ asset, conditions, onDone, onClose }) {
+  const toast = useToast()
+  const available = Math.max(1, Number(asset.quantity) || 1)
+  const damagedId = conditions.find(c => /damaged/i.test(c.name))?.id || ''
+  const [qty, setQty] = useState(String(Math.min(1, available)))
+  const [outDate, setOutDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [conditionId, setConditionId] = useState(damagedId || asset.condition_id || '')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const moveQty = Math.max(0, parseInt(qty, 10) || 0)
+  const remain = available - moveQty
+  const canSave = moveQty >= 1 && moveQty <= available && !!outDate
+
+  async function handleMove() {
+    if (!canSave) return
+    setSaving(true)
+    try {
+      const result = await onDone({
+        quantity: moveQty,
+        stock_out_date: outDate,
+        condition_id: conditionId || null,
+        notes: notes.trim() || null,
+      })
+      if (result?.mode === 'full') {
+        toast(`Moved all ${moveQty} out of stock.`, 'success')
+      } else {
+        toast(`Moved ${moveQty} out — ${remain} remain in stock.`, 'success')
+      }
+      onClose()
+    } catch (e) {
+      toast(e.message || 'Stock movement failed', 'error')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div style={{
+        background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 460,
+        overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{
+          padding: '18px 22px 14px', borderBottom: '1px solid var(--card-border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ArrowRightLeft size={16} style={{ color: 'var(--accent)' }} />
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Stock Movement</p>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+                Move out from #{asset.serial_no} · {asset.description}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{
+            padding: '10px 12px', borderRadius: 8, background: 'var(--table-header-bg)',
+            fontSize: 12, color: 'var(--text-2)',
+          }}>
+            Currently in stock: <strong style={{ color: 'var(--text-1)' }}>{available}</strong>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <FL>Qty to move out *</FL>
+              <input
+                type="number" min="1" max={available} step="1" value={qty}
+                onChange={e => setQty(e.target.value)}
+                style={INPUT} autoFocus
+              />
+            </div>
+            <div>
+              <FL>Stock Out Date *</FL>
+              <input type="date" value={outDate} onChange={e => setOutDate(e.target.value)} style={INPUT} />
+            </div>
+          </div>
+
+          <div>
+            <FL optional>Condition after move</FL>
+            <select value={conditionId} onChange={e => setConditionId(e.target.value)} style={INPUT}>
+              <option value="">— Keep current —</option>
+              {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <FL optional>Notes</FL>
+            <input
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. Damaged beyond repair"
+              style={INPUT}
+            />
+          </div>
+
+          {moveQty >= 1 && moveQty <= available && (
+            <div style={{
+              fontSize: 12, color: 'var(--text-2)', padding: '10px 12px', borderRadius: 8,
+              background: 'var(--accent-subtle, #eff6ff)', border: '1px solid var(--card-border)',
+              lineHeight: 1.45,
+            }}>
+              {moveQty === available ? (
+                <>All <strong>{available}</strong> will be marked Stock Out on {outDate}.</>
+              ) : (
+                <>
+                  Create out line for <strong>{moveQty}</strong>; keep <strong>{remain}</strong> in stock on the original line.
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{
+          padding: '14px 22px', borderTop: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'flex-end', gap: 10,
+        }}>
+          <button onClick={onClose}
+            style={{
+              padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)',
+              borderRadius: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-2)',
+            }}>
+            Cancel
+          </button>
+          <button onClick={handleMove} disabled={saving || !canSave}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
+              background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+              fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
+              opacity: saving || !canSave ? 0.65 : 1,
+            }}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
+            Move Out
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Coming soon placeholder ───────────────────────────────────── */
 
 function ComingSoon({ label }) {
@@ -651,6 +801,7 @@ export default function AssetsPage() {
   const [conditions, setConditions] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | {} | asset
+  const [moveAsset, setMoveAsset] = useState(null)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterLoc, setFilterLoc] = useState('')
@@ -722,6 +873,15 @@ export default function AssetsPage() {
     }, id)
     toast(id ? 'Asset updated.' : 'Asset added.', 'success')
     await loadAssets()
+  }
+
+  async function handleStockMove(payload) {
+    const result = await moveStockOut(moveAsset, {
+      ...payload,
+      performed_by: profile?.full_name || profile?.email || null,
+    })
+    await loadAssets()
+    return result
   }
 
   async function handleDelete(asset) {
@@ -984,6 +1144,16 @@ export default function AssetsPage() {
                             {fmtMoney(a.purchase_value ?? a.unit_price)}
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {!a.stock_out_date && (
+                              <button onClick={() => setMoveAsset(a)} title="Stock Movement — move out"
+                                style={{
+                                  padding: '5px 7px', marginRight: 4, background: '#eff6ff',
+                                  border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
+                                  color: '#1d4ed8', display: 'inline-flex',
+                                }}>
+                                <ArrowRightLeft size={13} />
+                              </button>
+                            )}
                             <button onClick={() => setModal(a)} title="Edit"
                               style={{
                                 padding: '5px 7px', marginRight: 4, background: 'var(--table-header-bg)',
@@ -1020,6 +1190,15 @@ export default function AssetsPage() {
           conditions={conditions}
           onSave={handleSave}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {moveAsset && (
+        <StockMovementModal
+          asset={moveAsset}
+          conditions={conditions}
+          onDone={handleStockMove}
+          onClose={() => setMoveAsset(null)}
         />
       )}
     </div>
