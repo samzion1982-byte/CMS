@@ -1395,7 +1395,7 @@ export default function AssetsPage() {
                 onClick={() => setModal({})}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
-                  background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                  background: 'var(--sidebar-bg, #1e293b)', color: '#fff', border: 'none', borderRadius: 8,
                   fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}
               >
@@ -1537,7 +1537,7 @@ export default function AssetsPage() {
                 <button onClick={() => setModal({})}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 18px',
-                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                    background: 'var(--sidebar-bg, #1e293b)', color: '#fff', border: 'none', borderRadius: 8,
                     fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   }}>
                   <Plus size={14} /> Add Asset
