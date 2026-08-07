@@ -3,11 +3,11 @@
    Tabs: Movable Assets (active) · Fixed Assets · Documents (later)
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Package, Settings, Plus, Pencil, Trash2, Loader2, X, Save,
-  Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown,
+  Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown, ChevronRight,
   Folder, FolderOpen, CornerDownRight, ArrowRightLeft,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
@@ -921,6 +921,7 @@ export default function AssetsPage() {
   const [filterCond, setFilterCond] = useState('')
   const [asOnDate, setAsOnDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [deleting, setDeleting] = useState(null)
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set())
 
   const loadMasters = useCallback(async () => {
     const [locs, types, conds] = await Promise.all([
@@ -948,13 +949,29 @@ export default function AssetsPage() {
   useEffect(() => { loadMasters().catch(e => toast(e.message, 'error')) }, [loadMasters, toast])
   useEffect(() => { loadAssets() }, [loadAssets])
 
+  function assetGroupKey(a) {
+    return [
+      (a.description || '').trim().toLowerCase(),
+      a.item_type_id || '',
+      a.location_id || '',
+    ].join('||')
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return assets.filter(a => {
       if (filterType && a.item_type_id !== filterType) return false
       if (filterLoc && a.location_id !== filterLoc) return false
       if (filterCond && a.condition_id !== filterCond) return false
-      if (asOnDate && !isAssetOnHand(a, asOnDate)) return false
+
+      if (asOnDate) {
+        // Not acquired yet as of that date
+        if (a.stock_in_date && a.stock_in_date > asOnDate) return false
+        // Moved out on/before that date: hide from default on-hand view,
+        // but keep visible when filtering by condition (e.g. Damaged)
+        if (!filterCond && a.stock_out_date && a.stock_out_date <= asOnDate) return false
+      }
+
       if (!q) return true
       const hay = [
         a.description, a.serial_no, a.location?.name, a.item_type?.name,
@@ -964,10 +981,53 @@ export default function AssetsPage() {
     })
   }, [assets, search, filterType, filterLoc, filterCond, asOnDate])
 
+  const groups = useMemo(() => {
+    const map = new Map()
+    for (const a of filtered) {
+      const key = assetGroupKey(a)
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(a)
+    }
+    return [...map.entries()].map(([key, lines]) => {
+      const sorted = [...lines].sort((a, b) =>
+        String(a.stock_in_date || '').localeCompare(String(b.stock_in_date || ''))
+        || (a.serial_no || 0) - (b.serial_no || 0)
+      )
+      const onHandLines = sorted.filter(l => isAssetOnHand(l, asOnDate || null))
+      const qtyOnHand = onHandLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const costOnHand = onHandLines.reduce((s, l) => {
+        const c = l.purchase_value != null ? Number(l.purchase_value) : null
+        return s + (c != null && Number.isFinite(c) ? c : 0)
+      }, 0)
+      const hasCost = onHandLines.some(l => l.purchase_value != null || l.unit_price != null)
+      const primary = onHandLines[0] || sorted[0]
+      const allOut = onHandLines.length === 0
+      return {
+        key,
+        lines: sorted,
+        primary,
+        qtyOnHand,
+        costOnHand,
+        hasCost,
+        lineCount: sorted.length,
+        allOut,
+      }
+    }).sort((a, b) => a.primary.description.localeCompare(b.primary.description))
+  }, [filtered, asOnDate])
+
   const qtyOnHand = useMemo(
-    () => filtered.reduce((s, a) => s + (Number(a.quantity) || 1), 0),
-    [filtered]
+    () => groups.reduce((s, g) => s + g.qtyOnHand, 0),
+    [groups]
   )
+
+  function toggleGroup(key) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const hasFilters = !!(search || filterType || filterLoc || filterCond)
 
@@ -1171,8 +1231,8 @@ export default function AssetsPage() {
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
               {asOnDate
-                ? <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {filtered.length} line{filtered.length === 1 ? '' : 's'}</>
-                : <>Showing {filtered.length} of {assets.length} item{assets.length === 1 ? '' : 's'}</>
+                ? <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{filterCond ? ' (incl. matching moved-out lines)' : ''}</>
+                : <>Showing {groups.length} item{groups.length === 1 ? '' : 's'} ({filtered.length} stock line{filtered.length === 1 ? '' : 's'})</>
               }
             </p>
           </div>
@@ -1182,7 +1242,7 @@ export default function AssetsPage() {
               <Loader2 size={24} className="animate-spin" style={{ display: 'block', margin: '0 auto 8px' }} />
               Loading assets…
             </div>
-          ) : filtered.length === 0 ? (
+          ) : groups.length === 0 ? (
             <div className="card" style={{ padding: '48px 24px', textAlign: 'center' }}>
               <ImageOff size={28} style={{ color: 'var(--text-3)', margin: '0 auto 10px', display: 'block', opacity: 0.5 }} />
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', margin: '0 0 4px' }}>
@@ -1210,9 +1270,9 @@ export default function AssetsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: 'var(--table-header-bg)', borderBottom: '1px solid var(--card-border)' }}>
-                      {['#', 'Photo', 'Description', 'Type', 'Location', 'Qty', 'Stock In', 'Stock Out', 'Condition', 'Cost', ''].map(h => (
-                        <th key={h || 'actions'} style={{
-                          textAlign: h === '' ? 'right' : 'left',
+                      {['', 'Photo', 'Description', 'Qty', 'Type', 'Location', 'Stock', 'Condition', 'Cost', ''].map((h, i) => (
+                        <th key={h || `h${i}`} style={{
+                          textAlign: h === 'Qty' ? 'center' : (h === '' && i > 0 ? 'right' : 'left'),
                           padding: '10px 14px', fontSize: 10, fontWeight: 700,
                           textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)',
                           whiteSpace: 'nowrap',
@@ -1221,87 +1281,203 @@ export default function AssetsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map(a => {
+                    {groups.map(g => {
+                      const a = g.primary
                       const condColor = a.condition?.color || '#64748b'
+                      const open = expandedGroups.has(g.key) || g.lineCount === 1
+                      const multi = g.lineCount > 1
                       return (
-                        <tr key={a.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-3)', fontFamily: 'monospace', width: 48 }}>
-                            {a.serial_no}
-                          </td>
-                          <td style={{ padding: '8px 14px', width: 56 }}>
-                            <div style={{
-                              width: 40, height: 40, borderRadius: 8, overflow: 'hidden',
-                              background: 'var(--table-header-bg)', display: 'flex',
-                              alignItems: 'center', justifyContent: 'center',
+                        <Fragment key={g.key}>
+                          <tr
+                            onClick={() => multi && toggleGroup(g.key)}
+                            style={{
+                              borderBottom: '1px solid var(--card-border)',
+                              cursor: multi ? 'pointer' : 'default',
+                              background: multi && open ? 'rgba(37,99,235,0.03)' : 'transparent',
+                            }}
+                          >
+                            <td style={{ padding: '10px 8px', width: 36, textAlign: 'center' }}>
+                              {multi ? (
+                                open
+                                  ? <ChevronDown size={14} style={{ color: 'var(--accent)' }} />
+                                  : <ChevronRight size={14} style={{ color: 'var(--text-3)' }} />
+                              ) : (
+                                <span style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 11 }}>#{a.serial_no}</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px 14px', width: 56 }}>
+                              <div style={{
+                                width: 40, height: 40, borderRadius: 8, overflow: 'hidden',
+                                background: 'var(--table-header-bg)', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {a.photo_url
+                                  ? <img src={a.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <Camera size={14} style={{ color: 'var(--text-3)', opacity: 0.45 }} />
+                                }
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 14px', maxWidth: 280 }}>
+                              <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-1)' }}>{a.description}</p>
+                              {multi && (
+                                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+                                  {g.lineCount} stock lines · click to {open ? 'collapse' : 'expand'}
+                                </p>
+                              )}
+                            </td>
+                            <td style={{
+                              padding: '10px 14px', fontFamily: 'monospace', textAlign: 'center',
+                              fontWeight: 800, fontSize: 14,
+                              color: g.allOut ? 'var(--text-3)' : 'var(--text-1)',
                             }}>
-                              {a.photo_url
-                                ? <img src={a.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <Camera size={14} style={{ color: 'var(--text-3)', opacity: 0.45 }} />
-                              }
-                            </div>
-                          </td>
-                          <td style={{ padding: '10px 14px', maxWidth: 260 }}>
-                            <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-1)' }}>{a.description}</p>
-                            {a.supplier_name && (
-                              <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>{a.supplier_name}</p>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {a.item_type ? masterDisplayName(a.item_type, itemTypes) : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {a.location ? masterDisplayName(a.location, locations) : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', fontFamily: 'monospace', textAlign: 'center' }}>
-                            {a.quantity ?? 1}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
-                            {fmtDate(a.stock_in_date)}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
-                            {a.stock_out_date ? fmtDate(a.stock_out_date) : (
-                              <span style={{ color: '#16a34a', fontWeight: 600 }}>In stock</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>
-                            {a.condition ? (
-                              <span style={{
-                                fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6,
-                                background: `${condColor}18`, color: condColor, whiteSpace: 'nowrap',
+                              {g.qtyOnHand}
+                            </td>
+                            <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                              {a.item_type ? masterDisplayName(a.item_type, itemTypes) : '—'}
+                            </td>
+                            <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                              {a.location ? masterDisplayName(a.location, locations) : '—'}
+                            </td>
+                            <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                              {g.allOut ? (
+                                <span style={{ color: '#b91c1c', fontWeight: 600 }}>Moved out</span>
+                              ) : (
+                                <span style={{ color: '#16a34a', fontWeight: 600 }}>In stock</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              {multi ? (
+                                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>See lines</span>
+                              ) : a.condition ? (
+                                <span style={{
+                                  fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6,
+                                  background: `${condColor}18`, color: condColor, whiteSpace: 'nowrap',
+                                }}>
+                                  {a.condition.name}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                              {g.hasCost ? fmtMoney(g.costOnHand) : '—'}
+                            </td>
+                            <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                              <button onClick={() => setMoveAsset(a)} title="Stock Movement — in / out"
+                                style={{
+                                  padding: '5px 7px', marginRight: 4, background: '#eff6ff',
+                                  border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
+                                  color: '#1d4ed8', display: 'inline-flex',
+                                }}>
+                                <ArrowRightLeft size={13} />
+                              </button>
+                              {!multi && (
+                                <>
+                                  <button onClick={() => setModal(a)} title="Edit"
+                                    style={{
+                                      padding: '5px 7px', marginRight: 4, background: 'var(--table-header-bg)',
+                                      border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer',
+                                      color: 'var(--text-2)', display: 'inline-flex',
+                                    }}>
+                                    <Pencil size={13} />
+                                  </button>
+                                  <button onClick={() => handleDelete(a)} disabled={deleting === a.id} title="Remove"
+                                    style={{
+                                      padding: '5px 7px', background: '#fff5f5', border: '1px solid #fca5a5',
+                                      borderRadius: 6, cursor: 'pointer', color: '#b91c1c', display: 'inline-flex',
+                                    }}>
+                                    {deleting === a.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+
+                          {multi && open && g.lines.map(line => {
+                            const lc = line.condition?.color || '#64748b'
+                            return (
+                              <tr key={line.id} style={{
+                                borderBottom: '1px solid var(--card-border)',
+                                background: 'rgba(0,0,0,0.015)',
                               }}>
-                                {a.condition.name}
-                              </span>
-                            ) : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {fmtMoney(a.purchase_value ?? a.unit_price)}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            <button onClick={() => setMoveAsset(a)} title="Stock Movement — in / out"
-                              style={{
-                                padding: '5px 7px', marginRight: 4, background: '#eff6ff',
-                                border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
-                                color: '#1d4ed8', display: 'inline-flex',
-                              }}>
-                              <ArrowRightLeft size={13} />
-                            </button>
-                            <button onClick={() => setModal(a)} title="Edit"
-                              style={{
-                                padding: '5px 7px', marginRight: 4, background: 'var(--table-header-bg)',
-                                border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer',
-                                color: 'var(--text-2)', display: 'inline-flex',
-                              }}>
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => handleDelete(a)} disabled={deleting === a.id} title="Remove"
-                              style={{
-                                padding: '5px 7px', background: '#fff5f5', border: '1px solid #fca5a5',
-                                borderRadius: 6, cursor: 'pointer', color: '#b91c1c', display: 'inline-flex',
-                              }}>
-                              {deleting === a.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                            </button>
-                          </td>
-                        </tr>
+                                <td style={{ padding: '8px 8px', textAlign: 'center', color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 11 }}>
+                                  #{line.serial_no}
+                                </td>
+                                <td style={{ padding: '6px 14px' }}>
+                                  <div style={{
+                                    width: 28, height: 28, borderRadius: 6, overflow: 'hidden', marginLeft: 6,
+                                    background: 'var(--table-header-bg)', display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center',
+                                  }}>
+                                    {line.photo_url
+                                      ? <img src={line.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      : <Camera size={11} style={{ color: 'var(--text-3)', opacity: 0.4 }} />
+                                    }
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 14px 8px 28px', color: 'var(--text-2)', fontSize: 12 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                    <CornerDownRight size={12} style={{ color: 'var(--accent)', opacity: 0.7 }} />
+                                    Stock line
+                                    {line.notes && (
+                                      <span style={{ color: 'var(--text-3)', fontSize: 11 }}>· {line.notes}</span>
+                                    )}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px 14px', fontFamily: 'monospace', textAlign: 'center', color: 'var(--text-1)', fontWeight: 700 }}>
+                                  {line.quantity ?? 1}
+                                </td>
+                                <td style={{ padding: '8px 14px', color: 'var(--text-3)', fontSize: 12 }} colSpan={2}>
+                                  In {fmtDate(line.stock_in_date)}
+                                  {line.stock_out_date ? ` → Out ${fmtDate(line.stock_out_date)}` : ''}
+                                </td>
+                                <td style={{ padding: '8px 14px', fontSize: 12 }}>
+                                  {line.stock_out_date ? (
+                                    <span style={{ color: '#b91c1c', fontWeight: 600 }}>Moved out</span>
+                                  ) : (
+                                    <span style={{ color: '#16a34a', fontWeight: 600 }}>In stock</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '8px 14px' }}>
+                                  {line.condition ? (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6,
+                                      background: `${lc}18`, color: lc, whiteSpace: 'nowrap',
+                                    }}>
+                                      {line.condition.name}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                                <td style={{ padding: '8px 14px', fontFamily: 'monospace', color: 'var(--text-2)', fontSize: 12 }}>
+                                  {fmtMoney(line.purchase_value ?? line.unit_price)}
+                                </td>
+                                <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                  <button onClick={() => setMoveAsset(line)} title="Stock Movement"
+                                    style={{
+                                      padding: '4px 6px', marginRight: 4, background: '#eff6ff',
+                                      border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
+                                      color: '#1d4ed8', display: 'inline-flex',
+                                    }}>
+                                    <ArrowRightLeft size={12} />
+                                  </button>
+                                  <button onClick={() => setModal(line)} title="Edit"
+                                    style={{
+                                      padding: '4px 6px', marginRight: 4, background: 'var(--table-header-bg)',
+                                      border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer',
+                                      color: 'var(--text-2)', display: 'inline-flex',
+                                    }}>
+                                    <Pencil size={12} />
+                                  </button>
+                                  <button onClick={() => handleDelete(line)} disabled={deleting === line.id} title="Remove"
+                                    style={{
+                                      padding: '4px 6px', background: '#fff5f5', border: '1px solid #fca5a5',
+                                      borderRadius: 6, cursor: 'pointer', color: '#b91c1c', display: 'inline-flex',
+                                    }}>
+                                    {deleting === line.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </Fragment>
                       )
                     })}
                   </tbody>
