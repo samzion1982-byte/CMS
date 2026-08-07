@@ -19,23 +19,125 @@ export const ASSET_CATEGORIES = [
 
 export const PHOTO_MAX_BYTES = 1024 * 1024 // 1 MB
 
-/** Split flat master rows into parents + children-by-parent. */
+/** Build nested tree with `.children` (Chart of Accounts style). */
 export function buildMasterTree(rows = []) {
-  const parents = rows.filter(r => !r.parent_id)
-  const byParent = {}
-  rows.filter(r => r.parent_id).forEach(r => {
-    if (!byParent[r.parent_id]) byParent[r.parent_id] = []
-    byParent[r.parent_id].push(r)
+  const byId = {}
+  rows.forEach(r => { byId[r.id] = { ...r, children: [] } })
+  const roots = []
+  rows.forEach(r => {
+    const node = byId[r.id]
+    if (r.parent_id && byId[r.parent_id]) {
+      byId[r.parent_id].children.push(node)
+    } else {
+      roots.push(node)
+    }
   })
-  return { parents, byParent }
+  const sortRec = (nodes) => {
+    nodes.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+    nodes.forEach(n => sortRec(n.children || []))
+  }
+  sortRec(roots)
+  return roots
 }
 
-/** Label for dropdown/table: "Parent › Child" when nested. */
+/** Flat map of parent_id → direct children (unsorted helper). */
+export function groupByParent(rows = []) {
+  const byParent = {}
+  rows.forEach(r => {
+    const key = r.parent_id || '__root__'
+    if (!byParent[key]) byParent[key] = []
+    byParent[key].push(r)
+  })
+  Object.values(byParent).forEach(list =>
+    list.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+  )
+  return byParent
+}
+
+/** Full breadcrumb path: "A › B › C". */
 export function masterDisplayName(row, allRows = []) {
   if (!row) return '—'
-  if (!row.parent_id) return row.name
-  const parent = allRows.find(r => r.id === row.parent_id)
-  return parent ? `${parent.name} › ${row.name}` : row.name
+  const byId = Object.fromEntries(allRows.map(r => [r.id, r]))
+  const parts = [row.name]
+  let cur = row
+  const seen = new Set([row.id])
+  while (cur.parent_id && byId[cur.parent_id] && !seen.has(cur.parent_id)) {
+    cur = byId[cur.parent_id]
+    seen.add(cur.id)
+    parts.unshift(cur.name)
+  }
+  return parts.join(' › ')
+}
+
+/** Depth-first flatten of nested tree for <select> options. */
+export function flattenMasterOptions(rows = []) {
+  const tree = buildMasterTree(rows)
+  const out = []
+  function walk(nodes, depth) {
+    nodes.forEach(n => {
+      out.push({ ...n, depth })
+      if (n.children?.length) walk(n.children, depth + 1)
+    })
+  }
+  walk(tree, 0)
+  return out
+}
+
+export function getAllMasterDescendants(nodeId, allRows = []) {
+  const kids = allRows.filter(r => r.parent_id === nodeId)
+  return kids.reduce((acc, k) => acc.concat(k, getAllMasterDescendants(k.id, allRows)), [])
+}
+
+export function isMasterDescendant(ancestorId, nodeId, allRows = []) {
+  const byId = Object.fromEntries(allRows.map(r => [r.id, r]))
+  let cur = byId[nodeId]
+  while (cur?.parent_id) {
+    if (cur.parent_id === ancestorId) return true
+    cur = byId[cur.parent_id]
+  }
+  return false
+}
+
+/** Move a master row: dropPos = 'on' | 'before' | 'after' (COA-style). */
+export async function moveMasterItem(table, dragNode, targetNode, dropPos, allRows) {
+  if (!dragNode || !targetNode || dragNode.id === targetNode.id) return
+  if (isMasterDescendant(dragNode.id, targetNode.id, allRows)) {
+    throw new Error('Cannot move an item into its own sub-category')
+  }
+
+  if (dropPos === 'on') {
+    const siblings = allRows
+      .filter(r => r.parent_id === targetNode.id && r.id !== dragNode.id)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    const sort_order = siblings.length ? (siblings[siblings.length - 1].sort_order || 0) + 10 : 10
+    const { error } = await supabase.from(table).update({
+      parent_id: targetNode.id,
+      sort_order,
+    }).eq('id', dragNode.id)
+    if (error) throw error
+    return
+  }
+
+  const newParentId = targetNode.parent_id || null
+  const siblings = allRows
+    .filter(r => (r.parent_id || null) === newParentId && r.id !== dragNode.id)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+  const idx = siblings.findIndex(a => a.id === targetNode.id)
+  siblings.splice(dropPos === 'before' ? idx : idx + 1, 0, dragNode)
+
+  for (let i = 0; i < siblings.length; i++) {
+    const sort_order = i * 10
+    if (siblings[i].id === dragNode.id) {
+      const { error } = await supabase.from(table).update({
+        parent_id: newParentId,
+        sort_order,
+      }).eq('id', dragNode.id)
+      if (error) throw error
+    } else {
+      const { error } = await supabase.from(table).update({ sort_order }).eq('id', siblings[i].id)
+      if (error) throw error
+    }
+  }
 }
 
 export async function getAssetLocations(activeOnly = true) {

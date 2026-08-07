@@ -16,22 +16,19 @@ import {
   getAssets, saveAsset, softDeleteAsset,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
-  buildMasterTree, masterDisplayName,
+  masterDisplayName, flattenMasterOptions,
 } from '../lib/assetsLib'
 
-/** Hierarchical <select> options: parent, then indented children. */
+/** Hierarchical <select> options with indentation for any depth. */
 function MasterOptions({ rows, placeholder = '— Select —' }) {
-  const { parents, byParent } = buildMasterTree(rows)
+  const flat = flattenMasterOptions(rows)
   return (
     <>
       <option value="">{placeholder}</option>
-      {parents.map(p => (
-        <optgroup key={p.id} label={p.name}>
-          <option value={p.id}>{p.name}</option>
-          {(byParent[p.id] || []).map(c => (
-            <option key={c.id} value={c.id}>↳ {c.name}</option>
-          ))}
-        </optgroup>
+      {flat.map(n => (
+        <option key={n.id} value={n.id}>
+          {`${'\u00A0\u00A0'.repeat(n.depth)}${n.depth ? '↳ ' : ''}${n.name}`}
+        </option>
       ))}
     </>
   )
