@@ -1124,8 +1124,10 @@ export default function AssetsPage() {
 
   function assetExportColumns() {
     return [
-      { header: 'Description', key: 'description', align: 'left', merge: false },
-      { header: 'Total Quantity', key: 'total_qty', align: 'center' },
+      // Description merges adjacent identical values (grouped stock lines)
+      { header: 'Description', key: 'description', align: 'left' },
+      { header: 'Total Qty', key: 'total_qty', align: 'center', merge: true },
+      { header: 'Sub Qty', key: 'sub_qty', align: 'center' },
       { header: 'Type', key: 'type', align: 'left', merge: false },
       { header: 'Location', key: 'location', align: 'left', merge: false },
       { header: 'Stock Status', key: 'stock', align: 'center' },
@@ -1140,45 +1142,46 @@ export default function AssetsPage() {
     ]
   }
 
-  /** One row per description group (no stock-line sub-rows, no TOTAL row). */
-  function buildGroupedExportRows(sourceGroups) {
-    return sourceGroups.map(g => {
-      const a = g.primary
-      const cost = g.lines.reduce((s, l) => {
-        const c = l.purchase_value != null ? Number(l.purchase_value) : null
-        return s + (c != null && Number.isFinite(c) ? c : 0)
-      }, 0)
-      const hasCost = g.lines.some(l => l.purchase_value != null || l.unit_price != null)
-      const stockIns = g.lines.map(l => l.stock_in_date).filter(Boolean).sort()
-      const stockOuts = g.lines.map(l => l.stock_out_date).filter(Boolean).sort()
-      const userNotes = [...new Set(
-        g.lines.map(l => userFacingNotes(l.notes)).filter(Boolean)
-      )].join(' · ')
-      const condNames = [...new Set(g.lines.map(l => l.condition?.name).filter(Boolean))]
+  /**
+   * Line-level rows with description grouping (merged in Excel).
+   * Total Qty = group total (also merged); Sub Qty = line quantity.
+   */
+  function buildLineExportRows(sourceGroups) {
+    // Invisible suffix so same description at different locations doesn't cross-merge
+    function mergeSuffix(key) {
+      let h = 0
+      const s = String(key || '')
+      for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+      return '\u200B'.repeat((Math.abs(h) % 40) + 1)
+    }
 
-      function dateRange(dates) {
-        if (!dates.length) return ''
-        const first = fmtDate(dates[0])
-        const last = fmtDate(dates[dates.length - 1])
-        return first === last ? first : `${first} – ${last}`
+    const rows = []
+    for (const g of sourceGroups) {
+      const totalQty = g.qtyDisplay
+      const desc = `${g.primary?.description || g.lines[0]?.description || ''}${mergeSuffix(g.key)}`
+      for (const line of g.lines) {
+        const subQty = Number(line.quantity) || 1
+        const cost = line.purchase_value != null && Number.isFinite(Number(line.purchase_value))
+          ? Number(line.purchase_value) : null
+        rows.push({
+          description: desc,
+          total_qty: totalQty,
+          sub_qty: subQty,
+          type: line.item_type ? masterDisplayName(line.item_type, itemTypes) : '',
+          location: line.location ? masterDisplayName(line.location, locations) : '',
+          stock: line.stock_out_date ? 'Moved out' : 'In stock',
+          stock_in: line.stock_in_date ? fmtDate(line.stock_in_date) : '',
+          stock_out: line.stock_out_date ? fmtDate(line.stock_out_date) : '',
+          condition: line.condition?.name || '',
+          unit_price: line.unit_price != null ? Number(line.unit_price) : '',
+          cost: cost != null ? cost : '',
+          supplier: line.supplier_name || '',
+          invoice: line.invoice_no || '',
+          notes: userFacingNotes(line.notes),
+        })
       }
-
-      return {
-        description: a.description || '',
-        total_qty: g.qtyDisplay,
-        type: a.item_type ? masterDisplayName(a.item_type, itemTypes) : '',
-        location: a.location ? masterDisplayName(a.location, locations) : '',
-        stock: g.allOut ? 'Moved out' : 'In stock',
-        stock_in: dateRange(stockIns),
-        stock_out: dateRange(stockOuts),
-        condition: condNames.length <= 1 ? (condNames[0] || '') : condNames.join(', '),
-        unit_price: a.unit_price != null ? Number(a.unit_price) : '',
-        cost: hasCost ? cost : '',
-        supplier: a.supplier_name || '',
-        invoice: a.invoice_no || '',
-        notes: userNotes,
-      }
-    })
+    }
+    return rows
   }
 
   function groupAssetsForExport(list) {
@@ -1221,9 +1224,7 @@ export default function AssetsPage() {
       if (filterType && a.item_type_id !== filterType) return false
       if (filterLoc && a.location_id !== filterLoc) return false
       if (asOnDate) {
-        // Acquired after as-on date → exclude
         if (a.stock_in_date && a.stock_in_date > asOnDate) return false
-        // Keep moved-out lines so Damaged / Not Working sheets are populated
       }
       if (!q) return true
       const hay = [
@@ -1238,7 +1239,7 @@ export default function AssetsPage() {
     return {
       name: String(name || 'Sheet').slice(0, 31),
       columns: assetExportColumns(),
-      rows: buildGroupedExportRows(sourceGroups),
+      rows: buildLineExportRows(sourceGroups),
       tabColor: tabColor ? String(tabColor).replace('#', '') : undefined,
       titleLines: titleExtra,
     }
@@ -1246,7 +1247,6 @@ export default function AssetsPage() {
 
   async function handleExport() {
     if (groups.length === 0 && !filterCond) {
-      // Still allow export if condition sheets may have moved-out data
       const anyCond = conditions.some(c => assetsForConditionSheet(c.id).length > 0)
       if (!anyCond) {
         toast('Nothing to export.', 'error')
@@ -1286,11 +1286,9 @@ export default function AssetsPage() {
         ]
       }
 
-      // All conditions filter → multi-sheet: All Conditions + each condition
       if (!filterCond) {
         const sheets = []
 
-        // 1) All Conditions (on-hand / current list view)
         if (groups.length > 0) {
           sheets.push(makeSheet(
             'All Conditions',
@@ -1300,7 +1298,6 @@ export default function AssetsPage() {
           ))
         }
 
-        // 2) One sheet per configured condition — include moved-out (fixes empty Damaged)
         for (const c of conditions) {
           const lines = assetsForConditionSheet(c.id)
           sheets.push(makeSheet(
@@ -1311,7 +1308,6 @@ export default function AssetsPage() {
           ))
         }
 
-        // 3) Unspecified (no condition) if any
         const none = assetsForConditionSheet('__none__')
         if (none.length > 0) {
           sheets.push(makeSheet(
@@ -1331,7 +1327,6 @@ export default function AssetsPage() {
         await exportMultiSheetWithTitle(sheets, `Assets_${stamp}.xlsx`)
       } else {
         const condName = conditions.find(c => c.id === filterCond)?.name || 'Condition'
-        // Prefer groups from UI; fall back to condition sheet source (includes moved-out)
         const exportGroups = groups.length > 0
           ? groups
           : groupAssetsForExport(assetsForConditionSheet(filterCond))
@@ -1342,7 +1337,7 @@ export default function AssetsPage() {
         }
         await exportToExcelWithTitle(
           assetExportColumns(),
-          buildGroupedExportRows(exportGroups),
+          buildLineExportRows(exportGroups),
           condName.slice(0, 31),
           `Assets_${stamp}.xlsx`,
           titleFor(`Condition: ${condName}`),

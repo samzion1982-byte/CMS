@@ -22,7 +22,7 @@ function cellBorder(isTop, isBottom, isLeft, isRight) {
   }
 }
 
-function mergeAdjacentColumn(ws, dataStart, totalRows, colIdx) {
+function mergeAdjacentColumn(ws, dataStart, totalRows, colIdx, align = 'center') {
   const dataEnd = dataStart + totalRows - 1
   let r = dataStart
   while (r <= dataEnd) {
@@ -33,7 +33,7 @@ function mergeAdjacentColumn(ws, dataStart, totalRows, colIdx) {
       try {
         ws.mergeCells(r, colIdx, end, colIdx)
         const cell = ws.getCell(r, colIdx)
-        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        cell.alignment = { vertical: 'middle', horizontal: align }
         cell.border = {
           top:    r === dataStart ? outerMed : innerThin,
           bottom: end === dataEnd ? outerMed : innerThin,
@@ -68,8 +68,9 @@ function mergeColumns(ws, dataStart, totalRows, columns) {
   }
 
   mergeCols.forEach(colIdx => {
+    const align = columns[colIdx - 1]?.align || 'center'
     if (colIdx === 1) {
-      mergeAdjacentColumn(ws, dataStart, totalRows, colIdx)
+      mergeAdjacentColumn(ws, dataStart, totalRows, colIdx, align)
       return
     }
 
@@ -78,7 +79,7 @@ function mergeColumns(ws, dataStart, totalRows, columns) {
         try {
           ws.mergeCells(group.start, colIdx, group.end, colIdx)
           const cell = ws.getCell(group.start, colIdx)
-          cell.alignment = { vertical: 'middle', horizontal: 'center' }
+          cell.alignment = { vertical: 'middle', horizontal: align }
           cell.border = {
             top:    group.start === dataStart ? outerMed : innerThin,
             bottom: group.end === dataEnd ? outerMed : innerThin,
