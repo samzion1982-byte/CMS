@@ -7,7 +7,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Package, Settings, Plus, Pencil, Trash2, Loader2, X, Save,
-  Search, Camera, ImageOff, Filter, RotateCcw,
+  Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown,
+  Folder, FolderOpen, CornerDownRight,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
@@ -16,28 +17,216 @@ import {
   getAssets, saveAsset, softDeleteAsset,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
-  masterDisplayName, flattenMasterOptions,
+  masterDisplayName, flattenMasterOptions, buildMasterTree,
 } from '../lib/assetsLib'
-
-/** Hierarchical <select> options with indentation for any depth. */
-function MasterOptions({ rows, placeholder = '— Select —' }) {
-  const flat = flattenMasterOptions(rows)
-  return (
-    <>
-      <option value="">{placeholder}</option>
-      {flat.map(n => (
-        <option key={n.id} value={n.id}>
-          {`${'\u00A0\u00A0'.repeat(n.depth)}${n.depth ? '↳ ' : ''}${n.name}`}
-        </option>
-      ))}
-    </>
-  )
-}
 
 const INPUT = {
   height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)',
   borderRadius: 8, fontSize: 13, background: 'var(--input-bg)',
   color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', width: '100%',
+}
+
+function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —' }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
+  const wrapRef = useRef(null)
+  const btnRef = useRef(null)
+  const tree = useMemo(() => buildMasterTree(rows), [rows])
+  const selected = rows.find(r => r.id === value) || null
+  const label = selected ? masterDisplayName(selected, rows) : ''
+
+  useEffect(() => {
+    function onDown(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+
+  function openDrop() {
+    if (!btnRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - r.bottom
+    const openUp = spaceBelow < 300 && r.top > spaceBelow
+    setPos({
+      top: openUp ? undefined : r.bottom + 4,
+      bottom: openUp ? window.innerHeight - r.top + 4 : undefined,
+      left: r.left,
+      width: Math.max(r.width, 240),
+    })
+    setOpen(true)
+  }
+
+  const q = query.trim().toLowerCase()
+
+  function nodeMatches(node) {
+    if (!q) return true
+    if (node.name.toLowerCase().includes(q)) return true
+    return (node.children || []).some(nodeMatches)
+  }
+
+  function pick(id) {
+    onChange(id)
+    setOpen(false)
+    setQuery('')
+  }
+
+  function renderNode(node, depth) {
+    if (q && !nodeMatches(node)) return null
+    const isRoot = depth === 0
+    const hasKids = node.children?.length > 0
+    const isSel = value === node.id
+    const kids = (node.children || []).map(c => renderNode(c, depth + 1)).filter(Boolean)
+
+    return (
+      <div key={node.id}>
+        <button
+          type="button"
+          onClick={() => pick(node.id)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+            padding: isRoot ? '9px 12px' : '7px 12px',
+            paddingLeft: 12 + depth * 18,
+            border: 'none', cursor: 'pointer', textAlign: 'left',
+            background: isSel
+              ? 'var(--accent-subtle, #eff6ff)'
+              : isRoot ? 'rgba(15, 23, 42, 0.04)' : 'transparent',
+            borderBottom: isRoot ? '1px solid var(--card-border)' : 'none',
+            borderLeft: !isRoot ? '3px solid var(--accent)' : '3px solid transparent',
+            borderRadius: isRoot ? 0 : '0 6px 6px 0',
+          }}
+        >
+          {isRoot
+            ? (hasKids
+              ? <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+              : <Folder size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />)
+            : <CornerDownRight size={13} style={{ color: 'var(--accent)', flexShrink: 0, opacity: 0.7 }} />
+          }
+          <span style={{
+            flex: 1,
+            fontSize: isRoot ? 13 : 12.5,
+            fontWeight: isRoot ? 700 : 500,
+            color: isSel ? 'var(--accent)' : 'var(--text-1)',
+            letterSpacing: isRoot ? '0.01em' : 'normal',
+          }}>
+            {node.name}
+          </span>
+          {isRoot && hasKids && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99,
+              background: 'var(--card-bg)', color: 'var(--text-3)',
+              border: '1px solid var(--card-border)',
+            }}>
+              {node.children.length}
+            </span>
+          )}
+          {!isRoot && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+              background: 'var(--accent-subtle, #eff6ff)', color: 'var(--accent)',
+            }}>
+              sub
+            </span>
+          )}
+        </button>
+        {kids.length > 0 && (
+          <div style={{
+            background: isRoot ? 'rgba(37, 99, 235, 0.03)' : 'transparent',
+            paddingBottom: isRoot ? 4 : 0,
+          }}>
+            {kids}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? (setOpen(false), setQuery('')) : openDrop())}
+        style={{
+          ...INPUT,
+          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+          color: label ? 'var(--text-1)' : 'var(--text-3)',
+          fontWeight: label ? 600 : 400,
+        }}
+      >
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
+          {label || placeholder}
+        </span>
+        {value ? (
+          <span
+            onClick={e => { e.stopPropagation(); onChange('') }}
+            title="Clear"
+            style={{ display: 'flex', color: 'var(--text-3)', padding: 2 }}
+          >
+            <X size={13} />
+          </span>
+        ) : (
+          <ChevronDown size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+        )}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'fixed',
+          top: pos.top,
+          bottom: pos.bottom,
+          left: pos.left,
+          width: pos.width,
+          zIndex: 4000,
+          background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+          borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.16)',
+          overflow: 'hidden', display: 'flex', flexDirection: 'column',
+          maxHeight: 320,
+        }}>
+          <div style={{ padding: 8, borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{
+                position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)',
+                color: 'var(--text-3)', pointerEvents: 'none',
+              }} />
+              <input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search…"
+                style={{ ...INPUT, height: 32, paddingLeft: 28, fontSize: 12 }}
+              />
+            </div>
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            <button
+              type="button"
+              onClick={() => pick('')}
+              style={{
+                display: 'block', width: '100%', padding: '8px 12px', border: 'none',
+                background: !value ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                color: 'var(--text-3)', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                borderBottom: '1px solid var(--card-border)',
+              }}
+            >
+              {placeholder}
+            </button>
+            {tree.length === 0 ? (
+              <p style={{ padding: 16, margin: 0, fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>
+                No options yet — add them in Asset Settings
+              </p>
+            ) : (
+              tree.map(n => renderNode(n, 0))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function FL({ children, optional }) {
@@ -240,15 +429,21 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <FL>Item Type</FL>
-              <select value={form.item_type_id} onChange={e => set('item_type_id', e.target.value)} style={INPUT}>
-                <MasterOptions rows={itemTypes} />
-              </select>
+              <MasterTreeSelect
+                rows={itemTypes}
+                value={form.item_type_id}
+                onChange={id => set('item_type_id', id)}
+                placeholder="— Select —"
+              />
             </div>
             <div>
               <FL>Location</FL>
-              <select value={form.location_id} onChange={e => set('location_id', e.target.value)} style={INPUT}>
-                <MasterOptions rows={locations} />
-              </select>
+              <MasterTreeSelect
+                rows={locations}
+                value={form.location_id}
+                onChange={id => set('location_id', id)}
+                placeholder="— Select —"
+              />
             </div>
           </div>
 
@@ -556,12 +751,22 @@ export default function AssetsPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Filter size={12} style={{ color: 'var(--text-3)' }} />
-                <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 150 }}>
-                  <MasterOptions rows={itemTypes} placeholder="All types" />
-                </select>
-                <select value={filterLoc} onChange={e => setFilterLoc(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 130 }}>
-                  <MasterOptions rows={locations} placeholder="All locations" />
-                </select>
+                <div style={{ minWidth: 170 }}>
+                  <MasterTreeSelect
+                    rows={itemTypes}
+                    value={filterType}
+                    onChange={setFilterType}
+                    placeholder="All types"
+                  />
+                </div>
+                <div style={{ minWidth: 170 }}>
+                  <MasterTreeSelect
+                    rows={locations}
+                    value={filterLoc}
+                    onChange={setFilterLoc}
+                    placeholder="All locations"
+                  />
+                </div>
                 <select value={filterCond} onChange={e => setFilterCond(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 130 }}>
                   <option value="">All conditions</option>
                   {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
