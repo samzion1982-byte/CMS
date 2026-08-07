@@ -507,7 +507,7 @@ function AppRoutes() {
         element={<PrivateRoute><AppLayout><EventSettingsPage /></AppLayout></PrivateRoute>}
       />
 
-      {/* ── Assets Module ── */}
+      {/* ── Asset Management ── */}
       <Route path="/assets"
         element={<PrivateRoute><AppLayout><AssetsPage /></AppLayout></PrivateRoute>}
       />

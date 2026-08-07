@@ -19,7 +19,7 @@ const NAV = [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },
     ]},
-    { label: 'Assets',        path: '/assets',        icon: Package        },
+    { label: 'Asset Management', path: '/assets',     icon: Package        },
   ]},
   { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },

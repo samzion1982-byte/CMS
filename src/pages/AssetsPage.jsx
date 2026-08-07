@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   AssetsPage.jsx — Church inventory register
-   Tabs: Movable Assets (active) · Buildings · Documents (later)
+   AssetsPage.jsx — Asset Management register
+   Tabs: Movable Assets (active) · Fixed Assets · Documents (later)
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -12,11 +12,30 @@ import {
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
 import {
-  ASSET_CATEGORIES,
+  ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, softDeleteAsset,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
+  buildMasterTree, masterDisplayName,
 } from '../lib/assetsLib'
+
+/** Hierarchical <select> options: parent, then indented children. */
+function MasterOptions({ rows, placeholder = '— Select —' }) {
+  const { parents, byParent } = buildMasterTree(rows)
+  return (
+    <>
+      <option value="">{placeholder}</option>
+      {parents.map(p => (
+        <optgroup key={p.id} label={p.name}>
+          <option value={p.id}>{p.name}</option>
+          {(byParent[p.id] || []).map(c => (
+            <option key={c.id} value={c.id}>↳ {c.name}</option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  )
+}
 
 const INPUT = {
   height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)',
@@ -43,6 +62,8 @@ function emptyForm(category, defaults = {}) {
     location_id: '',
     item_type_id: '',
     condition_id: defaults.workingId || '',
+    quantity: 1,
+    warranty_upto: '',
     unit_price: '',
     purchase_value: '',
     invoice_no: '',
@@ -68,6 +89,8 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         location_id: editing.location_id || '',
         item_type_id: editing.item_type_id || '',
         condition_id: editing.condition_id || workingId,
+        quantity: editing.quantity ?? 1,
+        warranty_upto: editing.warranty_upto || '',
         unit_price: editing.unit_price ?? '',
         purchase_value: editing.purchase_value ?? '',
         invoice_no: editing.invoice_no || '',
@@ -93,7 +116,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
     const f = e.target.files?.[0]
     if (!f) return
     if (!f.type.startsWith('image/')) { toast('Please choose an image file.', 'error'); return }
-    if (f.size > 5 * 1024 * 1024) { toast('Photo must be under 5 MB.', 'error'); return }
+    if (f.size > PHOTO_MAX_BYTES) { toast('Photo must be under 1 MB.', 'error'); return }
     setPhotoFile(f)
     setPhotoPreview(URL.createObjectURL(f))
     setRemovePhoto(false)
@@ -188,7 +211,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <div style={{ flex: 1 }}>
               <FL optional>Photo</FL>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.45 }}>
-                Optional. JPEG / PNG / WebP, up to 5 MB.
+                Optional. JPEG / PNG / WebP, max 1 MB.
               </p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => fileRef.current?.click()}
@@ -217,27 +240,38 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               placeholder="e.g. Wooden Pulpit" style={INPUT} autoFocus />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <FL>Item Type</FL>
               <select value={form.item_type_id} onChange={e => set('item_type_id', e.target.value)} style={INPUT}>
-                <option value="">— Select —</option>
-                {itemTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                <MasterOptions rows={itemTypes} />
               </select>
             </div>
             <div>
               <FL>Location</FL>
               <select value={form.location_id} onChange={e => set('location_id', e.target.value)} style={INPUT}>
-                <option value="">— Select —</option>
-                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                <MasterOptions rows={locations} />
               </select>
             </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
             <div>
               <FL>Condition</FL>
               <select value={form.condition_id} onChange={e => set('condition_id', e.target.value)} style={INPUT}>
                 <option value="">— Select —</option>
                 {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+            </div>
+            <div>
+              <FL>Quantity</FL>
+              <input type="number" min="1" step="1" value={form.quantity}
+                onChange={e => set('quantity', e.target.value)} style={INPUT} />
+            </div>
+            <div>
+              <FL optional>Warranty Upto</FL>
+              <input type="date" value={form.warranty_upto}
+                onChange={e => set('warranty_upto', e.target.value)} style={INPUT} />
             </div>
           </div>
 
@@ -335,7 +369,7 @@ function ComingSoon({ label }) {
       <Package size={36} style={{ color: 'var(--text-3)', margin: '0 auto 12px', display: 'block', opacity: 0.5 }} />
       <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 6px' }}>{label}</p>
       <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0, maxWidth: 360, marginInline: 'auto', lineHeight: 1.5 }}>
-        Coming next. We&apos;re focusing on movable assets first — buildings and important church documents will follow.
+        Coming next. We&apos;re focusing on movable assets first — fixed assets and important church documents will follow.
       </p>
     </div>
   )
@@ -446,7 +480,7 @@ export default function AssetsPage() {
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Package size={20} style={{ color: 'var(--accent)' }} />
-            Assets
+            Asset Management
           </h1>
           <p className="page-subtitle">Track church inventory — one entry per item</p>
         </div>
@@ -526,12 +560,10 @@ export default function AssetsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Filter size={12} style={{ color: 'var(--text-3)' }} />
                 <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 150 }}>
-                  <option value="">All types</option>
-                  {itemTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  <MasterOptions rows={itemTypes} placeholder="All types" />
                 </select>
                 <select value={filterLoc} onChange={e => setFilterLoc(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 130 }}>
-                  <option value="">All locations</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  <MasterOptions rows={locations} placeholder="All locations" />
                 </select>
                 <select value={filterCond} onChange={e => setFilterCond(e.target.value)} style={{ ...INPUT, width: 'auto', minWidth: 130 }}>
                   <option value="">All conditions</option>
@@ -587,7 +619,7 @@ export default function AssetsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: 'var(--table-header-bg)', borderBottom: '1px solid var(--card-border)' }}>
-                      {['#', 'Photo', 'Description', 'Type', 'Location', 'Condition', 'Purchase', ''].map(h => (
+                      {['#', 'Photo', 'Description', 'Type', 'Location', 'Qty', 'Condition', 'Warranty', 'Purchase', ''].map(h => (
                         <th key={h || 'actions'} style={{
                           textAlign: h === '' ? 'right' : 'left',
                           padding: '10px 14px', fontSize: 10, fontWeight: 700,
@@ -624,10 +656,13 @@ export default function AssetsPage() {
                             )}
                           </td>
                           <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {a.item_type?.name || '—'}
+                            {a.item_type ? masterDisplayName(a.item_type, itemTypes) : '—'}
                           </td>
                           <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                            {a.location?.name || '—'}
+                            {a.location ? masterDisplayName(a.location, locations) : '—'}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', fontFamily: 'monospace', textAlign: 'center' }}>
+                            {a.quantity ?? 1}
                           </td>
                           <td style={{ padding: '10px 14px' }}>
                             {a.condition ? (
@@ -638,6 +673,11 @@ export default function AssetsPage() {
                                 {a.condition.name}
                               </span>
                             ) : '—'}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                            {a.warranty_upto
+                              ? new Date(a.warranty_upto + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                              : '—'}
                           </td>
                           <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                             {fmtMoney(a.purchase_value ?? a.unit_price)}

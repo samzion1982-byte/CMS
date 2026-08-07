@@ -163,12 +163,13 @@ INSERT INTO asset_conditions (name, sort_order, color) VALUES
 ON CONFLICT (name) DO NOTHING;
 -- ── 5. Storage bucket for asset photos ───────────────────────────
 
+-- Create bucket (public; 1 MB photo limit)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'asset-photos',
   'asset-photos',
   true,
-  5242880,  -- 5 MB
+  1048576,  -- 1 MB
   ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
 ON CONFLICT (id) DO NOTHING;
