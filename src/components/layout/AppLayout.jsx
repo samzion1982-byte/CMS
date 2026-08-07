@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Monitor, Loader2 } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
-import { saveDevice, tagLoginWithDevice, getOrCreateDeviceId, checkDeviceRegistered } from '../../lib/loginLogs'
+import { saveDevice, tagLoginWithDevice, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser } from '../../lib/loginLogs'
 import Sidebar from './Sidebar'
 import Header, { HEADER_H } from './Header'
 
@@ -47,16 +47,18 @@ export default function AppLayout({ children }) {
 
   // ── Edit-mode trigger (called from Header dropdown) ─────────────
   const openEditMode = async () => {
-    const devId    = getOrCreateDeviceId()
-    const existing = await checkDeviceRegistered(devId)
-    const loc      = existing?.location || ''
-    const idx      = loc.lastIndexOf(', ')
+    const devId = getOrCreateDeviceId()
+    // Prefer this device; after a cache flush fall back to any prior registration for the user
+    const existing = (await checkDeviceRegistered(devId))
+      || (user?.id ? await checkDeviceRegisteredByUser(user.id) : null)
+    const loc = existing?.location || ''
+    const idx = loc.lastIndexOf(', ')
     setDeviceForm({
       userName:   existing?.user_name || '',
       orgName:    existing?.org_name  || '',
       area:       idx !== -1 ? loc.slice(0, idx) : '',
       city:       idx !== -1 ? loc.slice(idx + 2) : loc,
-      avatarName: localStorage.getItem('avatar_display_name') || '',
+      avatarName: localStorage.getItem('avatar_display_name') || existing?.avatar_name || '',
     })
     setPendingInfo({ deviceId: devId, userId: user?.id })
     setIsEditMode(true)
@@ -76,14 +78,14 @@ export default function AppLayout({ children }) {
         location,
         avatarName: deviceForm.avatarName?.trim() || null,
       })
-      if (!isEditMode) {
-        tagLoginWithDevice(pendingInfo.userId, {
-          deviceId: pendingInfo.deviceId,
-          userName: deviceForm.userName,
-          location,
-          org: deviceForm.orgName,
-        })
-      }
+      // Always tag/update the current login — including Edit Device Info —
+      // so User Name / Area / City are not left blank after a cache flush.
+      tagLoginWithDevice(pendingInfo.userId, {
+        deviceId: pendingInfo.deviceId,
+        userName: deviceForm.userName,
+        location,
+        org: deviceForm.orgName,
+      })
     } catch (e) { console.error(e) }
     if (deviceForm.avatarName?.trim()) {
       localStorage.setItem('avatar_display_name', deviceForm.avatarName.trim())

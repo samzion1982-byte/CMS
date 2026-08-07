@@ -150,13 +150,18 @@ export async function saveDevice({ deviceId, userId, orgName, userName, location
   }
 }
 
-/* Tag the most recent untagged login log for this user with device details.
-   Retries up to 6×1 s to handle fire-and-forget insert timing. */
+/* Apply device details to the best matching login log for this user.
+   Prefers the most recent untagged row (device_id null); falls back to the
+   active session (logout_at null) so Edit Device Info can backfill the
+   current login after a cache flush. Retries to handle fire-and-forget insert. */
 export async function tagLoginWithDevice(userId, { deviceId, userName, location, org }) {
   if (!userId) return
+  const payload = { device_id: deviceId, user_name: userName, location, org }
+
   for (let i = 0; i < 6; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 1000))
-    const { data } = await adminSupabase
+
+    const { data: untagged } = await adminSupabase
       .from('login_logs')
       .select('id')
       .eq('user_id', userId)
@@ -164,11 +169,27 @@ export async function tagLoginWithDevice(userId, { deviceId, userName, location,
       .order('login_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (data?.id) {
-      await adminSupabase
-        .from('login_logs')
-        .update({ device_id: deviceId, user_name: userName, location, org })
-        .eq('id', data.id)
+
+    if (untagged?.id) {
+      await adminSupabase.from('login_logs').update(payload).eq('id', untagged.id)
+      return
+    }
+
+    // No untagged row yet — only fall back to active session on later retries
+    // (give insertLoginLog time to land) or on the final attempt.
+    if (i < 2) continue
+
+    const { data: active } = await adminSupabase
+      .from('login_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .is('logout_at', null)
+      .order('login_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (active?.id) {
+      await adminSupabase.from('login_logs').update(payload).eq('id', active.id)
       return
     }
   }
