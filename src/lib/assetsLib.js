@@ -181,11 +181,7 @@ export async function saveAsset(payload, id = null) {
     ? Math.max(1, parseInt(payload.quantity, 10) || 1)
     : 1
 
-  const stock_in_date  = payload.stock_in_date || null
-  const stock_out_date = payload.stock_out_date || null
-  if (stock_in_date && stock_out_date && stock_out_date < stock_in_date) {
-    throw new Error('Stock Out date cannot be before Stock In date.')
-  }
+  const stock_in_date = payload.stock_in_date || null
 
   const row = {
     asset_category:   payload.asset_category || 'movable',
@@ -195,7 +191,6 @@ export async function saveAsset(payload, id = null) {
     condition_id:     payload.condition_id || null,
     quantity:         qty,
     stock_in_date,
-    stock_out_date,
     warranty_upto:    payload.warranty_upto || null,
     unit_price:       payload.unit_price != null && payload.unit_price !== '' ? Number(payload.unit_price) : null,
     purchase_value:   payload.purchase_value != null && payload.purchase_value !== '' ? Number(payload.purchase_value) : null,
@@ -209,6 +204,18 @@ export async function saveAsset(payload, id = null) {
     notes:            payload.notes?.trim() || null,
     updated_by:       payload.updated_by || null,
   }
+
+  // Stock Out is set via Stock Movement only — Add/Edit must not clear it on update
+  if ('stock_out_date' in payload) {
+    const stock_out_date = payload.stock_out_date || null
+    if (stock_in_date && stock_out_date && stock_out_date < stock_in_date) {
+      throw new Error('Stock Out date cannot be before Stock In date.')
+    }
+    row.stock_out_date = stock_out_date
+  } else if (!id) {
+    row.stock_out_date = null
+  }
+
   if (!row.description) throw new Error('Description is required.')
   if (!row.stock_in_date) throw new Error('Stock In date is required.')
 

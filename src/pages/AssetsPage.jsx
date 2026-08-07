@@ -247,7 +247,6 @@ function emptyForm(category, defaults = {}) {
     condition_id: defaults.workingId || '',
     quantity: 1,
     stock_in_date: today,
-    stock_out_date: '',
     warranty_upto: '',
     unit_price: '',
     purchase_value: '',
@@ -276,7 +275,6 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         condition_id: editing.condition_id || workingId,
         quantity: editing.quantity ?? 1,
         stock_in_date: editing.stock_in_date || new Date().toISOString().slice(0, 10),
-        stock_out_date: editing.stock_out_date || '',
         warranty_upto: editing.warranty_upto || '',
         unit_price: editing.unit_price ?? '',
         purchase_value: editing.purchase_value ?? '',
@@ -359,10 +357,6 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   async function handleSave() {
     if (!form.description.trim()) { toast('Description is required.', 'error'); return }
     if (!form.stock_in_date) { toast('Stock In date is required.', 'error'); return }
-    if (form.stock_out_date && form.stock_in_date && form.stock_out_date < form.stock_in_date) {
-      toast('Stock Out date cannot be before Stock In date.', 'error')
-      return
-    }
     setSaving(true)
     try {
       let photo_url = form.photo_url
@@ -512,23 +506,13 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div>
-              <FL>Stock In Date *</FL>
-              <input type="date" value={form.stock_in_date}
-                onChange={e => set('stock_in_date', e.target.value)} style={INPUT} />
-              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
-                When brought into account
-              </p>
-            </div>
-            <div>
-              <FL optional>Stock Out Date</FL>
-              <input type="date" value={form.stock_out_date}
-                onChange={e => set('stock_out_date', e.target.value)} style={INPUT} />
-              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
-                When moved out (leave blank if still in stock)
-              </p>
-            </div>
+          <div>
+            <FL>Stock In Date *</FL>
+            <input type="date" value={form.stock_in_date}
+              onChange={e => set('stock_in_date', e.target.value)} style={INPUT} />
+            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+              When brought into account
+            </p>
           </div>
 
           <div style={{
