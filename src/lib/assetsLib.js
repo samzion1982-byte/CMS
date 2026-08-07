@@ -341,6 +341,68 @@ export async function moveStockOut(sourceAsset, {
   return { source, moved, mode: 'split' }
 }
 
+/**
+ * Stock Movement — bring additional qty into stock, using an existing line as template.
+ * Always creates a NEW in-stock line (keeps as-on-date counts accurate).
+ */
+export async function moveStockIn(templateAsset, {
+  quantity,
+  stock_in_date,
+  unit_price = null,
+  purchase_value = null,
+  condition_id = null,
+  invoice_no = null,
+  invoice_date = null,
+  supplier_name = null,
+  notes = null,
+  performed_by = null,
+} = {}) {
+  if (!templateAsset?.id) throw new Error('Template asset is required.')
+
+  const inQty = Math.max(1, parseInt(quantity, 10) || 0)
+  if (inQty < 1) throw new Error('Quantity must be at least 1.')
+
+  const inDate = stock_in_date || new Date().toISOString().slice(0, 10)
+  const up = unit_price != null && unit_price !== ''
+    ? Number(unit_price)
+    : (templateAsset.unit_price != null ? Number(templateAsset.unit_price) : null)
+  let cost = purchase_value != null && purchase_value !== '' ? Number(purchase_value) : null
+  if (cost == null && up != null) cost = Math.round(up * inQty * 100) / 100
+
+  const noteText = (notes || '').trim() || null
+  const movementNote = `Stock in ${inQty} (added to #${templateAsset.serial_no} · ${templateAsset.description})`
+
+  const { data, error } = await supabase
+    .from('assets')
+    .insert({
+      asset_category:   templateAsset.asset_category || 'movable',
+      location_id:      templateAsset.location_id || null,
+      item_type_id:     templateAsset.item_type_id || null,
+      description:      templateAsset.description,
+      condition_id:     condition_id || templateAsset.condition_id || null,
+      quantity:         inQty,
+      stock_in_date:    inDate,
+      stock_out_date:   null,
+      warranty_upto:    templateAsset.warranty_upto || null,
+      unit_price:       up,
+      purchase_value:   cost,
+      invoice_no:       invoice_no?.trim?.() || invoice_no || templateAsset.invoice_no || null,
+      invoice_date:     invoice_date || null,
+      supplier_name:    supplier_name?.trim?.() || supplier_name || templateAsset.supplier_name || null,
+      supplier_address: templateAsset.supplier_address || null,
+      supplier_contact: templateAsset.supplier_contact || null,
+      photo_url:        templateAsset.photo_url || null,
+      photo_path:       templateAsset.photo_path || null,
+      notes:            [movementNote, noteText].filter(Boolean).join(' · '),
+      created_by:       performed_by,
+      updated_by:       performed_by,
+    })
+    .select(ASSET_SELECT)
+    .single()
+  if (error) throw error
+  return { source: templateAsset, moved: data, mode: 'in' }
+}
+
 export async function softDeleteAsset(id, updatedBy = null) {
   const { error } = await supabase
     .from('assets')
