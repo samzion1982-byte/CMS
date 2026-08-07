@@ -124,14 +124,6 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
               {node.children.length}
             </span>
           )}
-          {!isRoot && (
-            <span style={{
-              fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
-              background: 'var(--accent-subtle, #eff6ff)', color: 'var(--accent)',
-            }}>
-              sub
-            </span>
-          )}
         </button>
         {kids.length > 0 && (
           <div style={{
