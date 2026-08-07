@@ -292,34 +292,42 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   function set(key, value) { setForm(f => ({ ...f, [key]: value })) }
 
   function calcPurchaseValue(unitPrice, quantity) {
-    const up = parseFloat(unitPrice)
-    const qty = parseInt(quantity, 10)
-    if (!Number.isFinite(up) || up < 0 || !Number.isFinite(qty) || qty < 1) return ''
-    const total = up * qty
-    return Number.isInteger(total) ? String(total) : total.toFixed(2)
+    if (unitPrice === '' || unitPrice == null) return ''
+    const up = Number(unitPrice)
+    const qty = Number(quantity)
+    if (!Number.isFinite(up) || up < 0) return ''
+    if (!Number.isFinite(qty) || qty < 1) return ''
+    return String(Math.round(up * qty * 100) / 100)
   }
 
+  // Keep Purchase Value in sync with Unit Price × Quantity unless user overrides
+  useEffect(() => {
+    if (pvManual) return
+    const next = calcPurchaseValue(form.unit_price, form.quantity)
+    setForm(f => (String(f.purchase_value ?? '') === next ? f : { ...f, purchase_value: next }))
+  }, [form.unit_price, form.quantity, pvManual])
+
   function setUnitPrice(value) {
+    setPvManual(false)
     setForm(f => ({
       ...f,
       unit_price: value,
       purchase_value: calcPurchaseValue(value, f.quantity),
     }))
-    setPvManual(false)
   }
 
   function setQuantity(value) {
+    setPvManual(false)
     setForm(f => ({
       ...f,
       quantity: value,
       purchase_value: calcPurchaseValue(f.unit_price, value),
     }))
-    setPvManual(false)
   }
 
   function setPurchaseValue(value) {
     setPvManual(true)
-    set('purchase_value', value)
+    setForm(f => ({ ...f, purchase_value: value }))
   }
 
   function onPhotoPick(e) {
@@ -471,18 +479,13 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <FL>Condition</FL>
               <select value={form.condition_id} onChange={e => set('condition_id', e.target.value)} style={INPUT}>
                 <option value="">— Select —</option>
                 {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            </div>
-            <div>
-              <FL>Quantity</FL>
-              <input type="number" min="1" step="1" value={form.quantity}
-                onChange={e => set('quantity', e.target.value)} style={INPUT} />
             </div>
             <div>
               <FL optional>Warranty Upto</FL>
@@ -502,30 +505,40 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <div>
                 <FL optional>Unit Price (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.unit_price}
-                  onChange={e => set('unit_price', e.target.value)} placeholder="0.00" style={INPUT} />
+                  onChange={e => setUnitPrice(e.target.value)} placeholder="0.00" style={INPUT} />
+              </div>
+              <div>
+                <FL>Quantity</FL>
+                <input type="number" min="1" step="1" value={form.quantity}
+                  onChange={e => setQuantity(e.target.value)} style={INPUT} />
               </div>
               <div>
                 <FL optional>Purchase Value (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.purchase_value}
-                  onChange={e => set('purchase_value', e.target.value)} placeholder="0.00" style={INPUT} />
+                  onChange={e => setPurchaseValue(e.target.value)} placeholder="0.00" style={INPUT} />
+                {!pvManual && form.unit_price !== '' && form.unit_price != null && (
+                  <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                    Auto: Unit Price × Quantity
+                  </p>
+                )}
               </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <FL optional>Invoice Date</FL>
                 <input type="date" value={form.invoice_date}
                   onChange={e => set('invoice_date', e.target.value)} style={INPUT} />
               </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <FL optional>Invoice No.</FL>
                 <input value={form.invoice_no} onChange={e => set('invoice_no', e.target.value)}
                   placeholder="Invoice reference" style={INPUT} />
               </div>
-              <div>
-                <FL optional>Supplier Name</FL>
-                <input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}
-                  placeholder="Vendor name" style={INPUT} />
-              </div>
+            </div>
+            <div>
+              <FL optional>Supplier Name</FL>
+              <input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}
+                placeholder="Vendor name" style={INPUT} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
