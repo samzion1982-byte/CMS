@@ -17,7 +17,7 @@ import {
   getAssets, saveAsset, softDeleteAsset,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
-  masterDisplayName, flattenMasterOptions, buildMasterTree,
+  masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
 } from '../lib/assetsLib'
 
 const INPUT = {
@@ -234,6 +234,7 @@ function FL({ children, optional }) {
 }
 
 function emptyForm(category, defaults = {}) {
+  const today = new Date().toISOString().slice(0, 10)
   return {
     asset_category: category,
     description: '',
@@ -241,6 +242,8 @@ function emptyForm(category, defaults = {}) {
     item_type_id: '',
     condition_id: defaults.workingId || '',
     quantity: 1,
+    stock_in_date: today,
+    stock_out_date: '',
     warranty_upto: '',
     unit_price: '',
     purchase_value: '',
@@ -268,6 +271,8 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         item_type_id: editing.item_type_id || '',
         condition_id: editing.condition_id || workingId,
         quantity: editing.quantity ?? 1,
+        stock_in_date: editing.stock_in_date || new Date().toISOString().slice(0, 10),
+        stock_out_date: editing.stock_out_date || '',
         warranty_upto: editing.warranty_upto || '',
         unit_price: editing.unit_price ?? '',
         purchase_value: editing.purchase_value ?? '',
@@ -300,7 +305,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
     return String(Math.round(up * qty * 100) / 100)
   }
 
-  // Keep Purchase Value in sync with Unit Price × Quantity unless user overrides
+  // Keep Cost in sync with Unit Price × Quantity unless user overrides
   useEffect(() => {
     if (pvManual) return
     const next = calcPurchaseValue(form.unit_price, form.quantity)
@@ -349,6 +354,11 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
 
   async function handleSave() {
     if (!form.description.trim()) { toast('Description is required.', 'error'); return }
+    if (!form.stock_in_date) { toast('Stock In date is required.', 'error'); return }
+    if (form.stock_out_date && form.stock_in_date && form.stock_out_date < form.stock_in_date) {
+      toast('Stock Out date cannot be before Stock In date.', 'error')
+      return
+    }
     setSaving(true)
     try {
       let photo_url = form.photo_url
@@ -498,6 +508,25 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div>
+              <FL>Stock In Date *</FL>
+              <input type="date" value={form.stock_in_date}
+                onChange={e => set('stock_in_date', e.target.value)} style={INPUT} />
+              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                When brought into account
+              </p>
+            </div>
+            <div>
+              <FL optional>Stock Out Date</FL>
+              <input type="date" value={form.stock_out_date}
+                onChange={e => set('stock_out_date', e.target.value)} style={INPUT} />
+              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                When moved out (leave blank if still in stock)
+              </p>
+            </div>
+          </div>
+
           <div style={{
             borderTop: '1px solid var(--card-border)', paddingTop: 14,
             display: 'flex', flexDirection: 'column', gap: 14,
@@ -507,17 +536,17 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
               <div>
-                <FL optional>Unit Price (₹)</FL>
-                <input type="number" min="0" step="0.01" value={form.unit_price}
-                  onChange={e => setUnitPrice(e.target.value)} placeholder="0.00" style={INPUT} />
-              </div>
-              <div>
                 <FL>Quantity</FL>
                 <input type="number" min="1" step="1" value={form.quantity}
                   onChange={e => setQuantity(e.target.value)} style={INPUT} />
               </div>
               <div>
-                <FL optional>Purchase Value (₹)</FL>
+                <FL optional>Unit Price (₹)</FL>
+                <input type="number" min="0" step="0.01" value={form.unit_price}
+                  onChange={e => setUnitPrice(e.target.value)} placeholder="0.00" style={INPUT} />
+              </div>
+              <div>
+                <FL optional>Cost (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.purchase_value}
                   onChange={e => setPurchaseValue(e.target.value)} placeholder="0.00" style={INPUT} />
                 {!pvManual && form.unit_price !== '' && form.unit_price != null && (
@@ -578,12 +607,12 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving || !form.description.trim()}
+          <button onClick={handleSave} disabled={saving || !form.description.trim() || !form.stock_in_date}
             style={{
               display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
               background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
               fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
-              opacity: saving || !form.description.trim() ? 0.65 : 1,
+              opacity: saving || !form.description.trim() || !form.stock_in_date ? 0.65 : 1,
             }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {editing ? 'Update' : 'Save Asset'}
@@ -626,6 +655,7 @@ export default function AssetsPage() {
   const [filterType, setFilterType] = useState('')
   const [filterLoc, setFilterLoc] = useState('')
   const [filterCond, setFilterCond] = useState('')
+  const [asOnDate, setAsOnDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [deleting, setDeleting] = useState(null)
 
   const loadMasters = useCallback(async () => {
@@ -660,6 +690,7 @@ export default function AssetsPage() {
       if (filterType && a.item_type_id !== filterType) return false
       if (filterLoc && a.location_id !== filterLoc) return false
       if (filterCond && a.condition_id !== filterCond) return false
+      if (asOnDate && !isAssetOnHand(a, asOnDate)) return false
       if (!q) return true
       const hay = [
         a.description, a.serial_no, a.location?.name, a.item_type?.name,
@@ -667,9 +698,21 @@ export default function AssetsPage() {
       ].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(q)
     })
-  }, [assets, search, filterType, filterLoc, filterCond])
+  }, [assets, search, filterType, filterLoc, filterCond, asOnDate])
+
+  const qtyOnHand = useMemo(
+    () => filtered.reduce((s, a) => s + (Number(a.quantity) || 1), 0),
+    [filtered]
+  )
 
   const hasFilters = !!(search || filterType || filterLoc || filterCond)
+
+  function clearFilters() {
+    setSearch('')
+    setFilterType('')
+    setFilterLoc('')
+    setFilterCond('')
+  }
 
   async function handleSave(payload, id) {
     await saveAsset({
@@ -694,11 +737,11 @@ export default function AssetsPage() {
     setDeleting(null)
   }
 
-  function clearFilters() {
-    setSearch('')
-    setFilterType('')
-    setFilterLoc('')
-    setFilterCond('')
+  function fmtDate(d) {
+    if (!d) return '—'
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    })
   }
 
   function fmtMoney(v) {
@@ -790,8 +833,17 @@ export default function AssetsPage() {
                   style={{ ...INPUT, paddingLeft: 32 }}
                 />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Filter size={12} style={{ color: 'var(--text-3)' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>
+                  As on
+                  <input
+                    type="date"
+                    value={asOnDate}
+                    onChange={e => setAsOnDate(e.target.value)}
+                    style={{ ...INPUT, width: 'auto', minWidth: 140 }}
+                  />
+                </label>
                 <div style={{ minWidth: 170 }}>
                   <MasterTreeSelect
                     rows={itemTypes}
@@ -825,7 +877,10 @@ export default function AssetsPage() {
               </div>
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-              Showing {filtered.length} of {assets.length} item{assets.length === 1 ? '' : 's'}
+              {asOnDate
+                ? <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {filtered.length} line{filtered.length === 1 ? '' : 's'}</>
+                : <>Showing {filtered.length} of {assets.length} item{assets.length === 1 ? '' : 's'}</>
+              }
             </p>
           </div>
 
@@ -862,7 +917,7 @@ export default function AssetsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: 'var(--table-header-bg)', borderBottom: '1px solid var(--card-border)' }}>
-                      {['#', 'Photo', 'Description', 'Type', 'Location', 'Qty', 'Condition', 'Warranty', 'Purchase', ''].map(h => (
+                      {['#', 'Photo', 'Description', 'Type', 'Location', 'Qty', 'Stock In', 'Stock Out', 'Condition', 'Cost', ''].map(h => (
                         <th key={h || 'actions'} style={{
                           textAlign: h === '' ? 'right' : 'left',
                           padding: '10px 14px', fontSize: 10, fontWeight: 700,
@@ -907,6 +962,14 @@ export default function AssetsPage() {
                           <td style={{ padding: '10px 14px', color: 'var(--text-2)', fontFamily: 'monospace', textAlign: 'center' }}>
                             {a.quantity ?? 1}
                           </td>
+                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                            {fmtDate(a.stock_in_date)}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                            {a.stock_out_date ? fmtDate(a.stock_out_date) : (
+                              <span style={{ color: '#16a34a', fontWeight: 600 }}>In stock</span>
+                            )}
+                          </td>
                           <td style={{ padding: '10px 14px' }}>
                             {a.condition ? (
                               <span style={{
@@ -916,11 +979,6 @@ export default function AssetsPage() {
                                 {a.condition.name}
                               </span>
                             ) : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
-                            {a.warranty_upto
-                              ? new Date(a.warranty_upto + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                              : '—'}
                           </td>
                           <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                             {fmtMoney(a.purchase_value ?? a.unit_price)}

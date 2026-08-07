@@ -181,6 +181,12 @@ export async function saveAsset(payload, id = null) {
     ? Math.max(1, parseInt(payload.quantity, 10) || 1)
     : 1
 
+  const stock_in_date  = payload.stock_in_date || null
+  const stock_out_date = payload.stock_out_date || null
+  if (stock_in_date && stock_out_date && stock_out_date < stock_in_date) {
+    throw new Error('Stock Out date cannot be before Stock In date.')
+  }
+
   const row = {
     asset_category:   payload.asset_category || 'movable',
     location_id:      payload.location_id || null,
@@ -188,6 +194,8 @@ export async function saveAsset(payload, id = null) {
     description:      (payload.description || '').trim(),
     condition_id:     payload.condition_id || null,
     quantity:         qty,
+    stock_in_date,
+    stock_out_date,
     warranty_upto:    payload.warranty_upto || null,
     unit_price:       payload.unit_price != null && payload.unit_price !== '' ? Number(payload.unit_price) : null,
     purchase_value:   payload.purchase_value != null && payload.purchase_value !== '' ? Number(payload.purchase_value) : null,
@@ -202,6 +210,7 @@ export async function saveAsset(payload, id = null) {
     updated_by:       payload.updated_by || null,
   }
   if (!row.description) throw new Error('Description is required.')
+  if (!row.stock_in_date) throw new Error('Stock In date is required.')
 
   if (id) {
     const { data, error } = await supabase.from('assets').update(row).eq('id', id).select(ASSET_SELECT).single()
@@ -216,6 +225,16 @@ export async function saveAsset(payload, id = null) {
     .single()
   if (error) throw error
   return data
+}
+
+/** True if asset was on hand at end of asOnDate (YYYY-MM-DD). */
+export function isAssetOnHand(asset, asOnDate) {
+  if (!asOnDate) return true
+  const inDate = asset.stock_in_date
+  if (!inDate || inDate > asOnDate) return false
+  const outDate = asset.stock_out_date
+  if (outDate && outDate <= asOnDate) return false
+  return true
 }
 
 export async function softDeleteAsset(id, updatedBy = null) {
