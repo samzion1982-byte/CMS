@@ -1197,7 +1197,25 @@ export default function AssetsPage() {
     }).sort((a, b) => (a.primary?.description || '').localeCompare(b.primary?.description || ''))
   }
 
-  /** Assets for a condition sheet — includes moved-out lines (unlike All Conditions on-hand view). */
+  /** Export list: all conditions + moved-out (full status picture). */
+  function assetsForAllStatusesSheet() {
+    const q = search.trim().toLowerCase()
+    return assets.filter(a => {
+      if (filterType && a.item_type_id !== filterType) return false
+      if (filterLoc && a.location_id !== filterLoc) return false
+      if (asOnDate) {
+        if (a.stock_in_date && a.stock_in_date > asOnDate) return false
+      }
+      if (!q) return true
+      const hay = [
+        a.description, a.serial_no, a.location?.name, a.item_type?.name,
+        a.condition?.name, a.supplier_name, a.invoice_no, a.notes,
+      ].filter(Boolean).join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }
+
+  /** Assets for a condition sheet — includes moved-out lines (unlike on-hand UI view). */
   function assetsForConditionSheet(conditionId) {
     const q = search.trim().toLowerCase()
     return assets.filter(a => {
@@ -1206,6 +1224,60 @@ export default function AssetsPage() {
       } else if (a.condition_id !== conditionId) {
         return false
       }
+      if (filterType && a.item_type_id !== filterType) return false
+      if (filterLoc && a.location_id !== filterLoc) return false
+      if (asOnDate) {
+        if (a.stock_in_date && a.stock_in_date > asOnDate) return false
+      }
+      if (!q) return true
+      const hay = [
+        a.description, a.serial_no, a.location?.name, a.item_type?.name,
+        a.condition?.name, a.supplier_name, a.invoice_no, a.notes,
+      ].filter(Boolean).join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }
+
+  function normConditionName(name) {
+    return String(name || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+
+  /** Combined export groups: Working+Good, Not Working+Damaged. */
+  function conditionExportBundles() {
+    const OK = new Set(['working', 'good'])
+    const BAD = new Set(['not working', 'damaged'])
+
+    const okConds = conditions.filter(c => OK.has(normConditionName(c.name)))
+    const badConds = conditions.filter(c => BAD.has(normConditionName(c.name)))
+    const usedIds = new Set([...okConds, ...badConds].map(c => c.id))
+    const otherConds = conditions.filter(c => !usedIds.has(c.id))
+
+    return {
+      ok: {
+        sheetName: 'Working & Good',
+        label: okConds.length
+          ? `Condition: ${okConds.map(c => c.name).join(' + ')}`
+          : 'Condition: Working & Good',
+        ids: new Set(okConds.map(c => c.id)),
+        color: okConds.find(c => c.color)?.color || '#16a34a',
+      },
+      bad: {
+        sheetName: 'Not Working & Damaged',
+        label: badConds.length
+          ? `Condition: ${badConds.map(c => c.name).join(' + ')}`
+          : 'Condition: Not Working & Damaged',
+        ids: new Set(badConds.map(c => c.id)),
+        color: badConds.find(c => /damaged|not/i.test(c.name))?.color || badConds[0]?.color || '#dc2626',
+      },
+      other: otherConds,
+    }
+  }
+
+  function assetsForConditionIds(idSet) {
+    if (!idSet || idSet.size === 0) return []
+    const q = search.trim().toLowerCase()
+    return assets.filter(a => {
+      if (!idSet.has(a.condition_id)) return false
       if (filterType && a.item_type_id !== filterType) return false
       if (filterLoc && a.location_id !== filterLoc) return false
       if (asOnDate) {
@@ -1231,13 +1303,12 @@ export default function AssetsPage() {
   }
 
   async function handleExport() {
-    if (groups.length === 0 && !filterCond) {
-      const anyCond = conditions.some(c => assetsForConditionSheet(c.id).length > 0)
-      if (!anyCond) {
-        toast('Nothing to export.', 'error')
-        return
-      }
-    } else if (groups.length === 0) {
+    const allLines = assetsForAllStatusesSheet()
+    if (!filterCond && allLines.length === 0) {
+      toast('Nothing to export.', 'error')
+      return
+    }
+    if (filterCond && groups.length === 0 && assetsForConditionSheet(filterCond).length === 0) {
       toast('Nothing to export.', 'error')
       return
     }
@@ -1273,17 +1344,36 @@ export default function AssetsPage() {
 
       if (!filterCond) {
         const sheets = []
+        const bundles = conditionExportBundles()
 
-        if (groups.length > 0) {
-          sheets.push(makeSheet(
-            'All Conditions',
-            groups,
-            titleFor('Condition: All Conditions'),
-            '1E3A5F',
-          ))
-        }
+        // 1) All Conditions — every status (in stock + moved out, all conditions)
+        sheets.push(makeSheet(
+          'All Conditions',
+          groupAssetsForExport(allLines),
+          titleFor('Condition: All Conditions (all statuses)'),
+          '1E3A5F',
+        ))
 
-        for (const c of conditions) {
+        // 2) Working + Good combined
+        const okLines = assetsForConditionIds(bundles.ok.ids)
+        sheets.push(makeSheet(
+          bundles.ok.sheetName,
+          groupAssetsForExport(okLines),
+          titleFor(bundles.ok.label),
+          bundles.ok.color,
+        ))
+
+        // 3) Not Working + Damaged combined
+        const badLines = assetsForConditionIds(bundles.bad.ids)
+        sheets.push(makeSheet(
+          bundles.bad.sheetName,
+          groupAssetsForExport(badLines),
+          titleFor(bundles.bad.label),
+          bundles.bad.color,
+        ))
+
+        // Any other custom conditions (not in the two bundles)
+        for (const c of bundles.other) {
           const lines = assetsForConditionSheet(c.id)
           sheets.push(makeSheet(
             c.name,
@@ -1301,12 +1391,6 @@ export default function AssetsPage() {
             titleFor('Condition: Unspecified'),
             null,
           ))
-        }
-
-        if (sheets.length === 0) {
-          toast('Nothing to export.', 'error')
-          setExporting(false)
-          return
         }
 
         await exportMultiSheetWithTitle(sheets, `Assets_${stamp}.xlsx`)
