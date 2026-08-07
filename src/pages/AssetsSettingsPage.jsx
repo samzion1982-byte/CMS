@@ -15,7 +15,7 @@ import {
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   saveAssetLocation, saveAssetItemType, saveAssetCondition,
   deactivateMaster, deleteMaster,
-  buildMasterTree, moveMasterItem, getAllMasterDescendants,
+  buildMasterTree, moveMasterItem, reorderFlatMaster, getAllMasterDescendants,
 } from '../lib/assetsLib'
 import FixedAssetsSettingsPanel from '../components/assets/FixedAssetsSettingsPanel'
 
@@ -487,7 +487,7 @@ function HierarchicalMasterList({ tabDef }) {
   )
 }
 
-/* ── Flat conditions list ─────────────────────────────────────── */
+/* ── Flat conditions list (draggable reorder) ─────────────────── */
 
 function FlatMasterList({ tabDef }) {
   const toast = useToast()
@@ -500,6 +500,10 @@ function FlatMasterList({ tabDef }) {
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
   const [busy, setBusy] = useState(null)
+  const [dragRow, setDragRow] = useState(null)
+  const [dragId, setDragId] = useState(null)
+  const [dropId, setDropId] = useState(null)
+  const [dropPos, setDropPos] = useState(null)
   const Icon = tabDef.icon
 
   const load = useCallback(async () => {
@@ -568,6 +572,39 @@ function FlatMasterList({ tabDef }) {
     setBusy(null)
   }
 
+  function handleDragStart(row) {
+    setDragRow(row)
+    setDragId(row.id)
+  }
+
+  function handleDragOver(row, pos) {
+    if (row.id === dragId) return
+    setDropId(row.id)
+    setDropPos(pos)
+  }
+
+  function handleDragEnd() {
+    setDragRow(null)
+    setDragId(null)
+    setDropId(null)
+    setDropPos(null)
+  }
+
+  async function handleDrop(targetRow) {
+    if (!dragRow || !targetRow || dragRow.id === targetRow.id) {
+      handleDragEnd()
+      return
+    }
+    try {
+      await reorderFlatMaster(tabDef.table, dragRow, targetRow, dropPos, rows)
+      toast('Moved.', 'success')
+      await load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    handleDragEnd()
+  }
+
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{
@@ -583,7 +620,9 @@ function FlatMasterList({ tabDef }) {
           </div>
           <div>
             <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{tabDef.label}</p>
-            <p style={{ margin: 0, fontSize: 11, color: 'var(--text-3)' }}>Used in the Asset Management form</p>
+            <p style={{ margin: 0, fontSize: 11, color: 'var(--text-3)' }}>
+              Drag to rearrange — order is used in Asset Management
+            </p>
           </div>
         </div>
         {!adding && (
@@ -633,56 +672,88 @@ function FlatMasterList({ tabDef }) {
         </div>
       ) : rows.length === 0 ? (
         <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>No conditions yet.</div>
-      ) : rows.map(row => (
-        <div key={row.id} style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px',
-          borderBottom: '1px solid var(--card-border)', opacity: row.is_active ? 1 : 0.55,
-        }}>
-          {editingId === row.id ? (
-            <>
-              <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleUpdate(row); if (e.key === 'Escape') setEditingId(null) }}
-                style={{ ...INPUT, flex: 1 }} />
-              <div style={{ display: 'flex', gap: 4 }}>
-                {PRESET_COLORS.map(c => (
-                  <button key={c} type="button" onClick={() => setEditColor(c)}
+      ) : rows.map(row => {
+        const isDragging = dragId === row.id
+        const isDropOver = dropId === row.id
+        return (
+          <div key={row.id}>
+            {isDropOver && dropPos === 'before' && (
+              <div style={{ height: 2, background: 'var(--accent)', margin: '0 16px', borderRadius: 2 }} />
+            )}
+            <div
+              draggable={editingId !== row.id}
+              onDragStart={e => {
+                if (editingId === row.id) { e.preventDefault(); return }
+                e.dataTransfer.effectAllowed = 'move'
+                handleDragStart(row)
+              }}
+              onDragOver={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                const rect = e.currentTarget.getBoundingClientRect()
+                const y = e.clientY - rect.top
+                handleDragOver(row, y < rect.height / 2 ? 'before' : 'after')
+              }}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(row) }}
+              onDragEnd={handleDragEnd}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px',
+                borderBottom: isDropOver && dropPos === 'after'
+                  ? '2px solid var(--accent)'
+                  : '1px solid var(--card-border)',
+                opacity: isDragging ? 0.4 : (row.is_active ? 1 : 0.55),
+                cursor: editingId === row.id ? 'default' : 'grab',
+                background: isDropOver ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+              }}
+            >
+              {editingId === row.id ? (
+                <>
+                  <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleUpdate(row); if (e.key === 'Escape') setEditingId(null) }}
+                    style={{ ...INPUT, flex: 1 }} />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {PRESET_COLORS.map(c => (
+                      <button key={c} type="button" onClick={() => setEditColor(c)}
+                        style={{
+                          width: 18, height: 18, borderRadius: '50%', background: c, cursor: 'pointer',
+                          border: editColor === c ? '2px solid var(--text-1)' : '2px solid transparent',
+                        }} />
+                    ))}
+                  </div>
+                  <button onClick={() => handleUpdate(row)} style={{ padding: '5px 7px', background: '#16a34a', border: 'none', borderRadius: 6, cursor: 'pointer', color: '#fff', display: 'flex' }}><Check size={13} /></button>
+                  <button onClick={() => setEditingId(null)} style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={13} /></button>
+                </>
+              ) : (
+                <>
+                  <GripVertical size={13} style={{ color: 'var(--text-3)', flexShrink: 0, opacity: 0.5 }} />
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: row.color || '#64748b', flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 14, color: 'var(--text-1)', fontWeight: 500, userSelect: 'none' }}>{row.name}</span>
+                  {!row.is_active && (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#64748b' }}>INACTIVE</span>
+                  )}
+                  <button onClick={() => { setEditingId(row.id); setEditName(row.name); setEditColor(row.color || '#64748b') }}
+                    style={{ padding: '4px 6px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+                    <Pencil size={11} />
+                  </button>
+                  <button onClick={() => handleToggle(row)}
                     style={{
-                      width: 18, height: 18, borderRadius: '50%', background: c, cursor: 'pointer',
-                      border: editColor === c ? '2px solid var(--text-1)' : '2px solid transparent',
-                    }} />
-                ))}
-              </div>
-              <button onClick={() => handleUpdate(row)} style={{ padding: '5px 7px', background: '#16a34a', border: 'none', borderRadius: 6, cursor: 'pointer', color: '#fff', display: 'flex' }}><Check size={13} /></button>
-              <button onClick={() => setEditingId(null)} style={{ padding: '5px 7px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={13} /></button>
-            </>
-          ) : (
-            <>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: row.color || '#64748b', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 14, color: 'var(--text-1)', fontWeight: 500 }}>{row.name}</span>
-              {!row.is_active && (
-                <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#64748b' }}>INACTIVE</span>
+                      padding: '4px 8px', background: row.is_active ? '#fff7ed' : '#f0fdf4',
+                      border: `1px solid ${row.is_active ? '#fed7aa' : '#bbf7d0'}`,
+                      borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 700,
+                      color: row.is_active ? '#c2410c' : '#15803d',
+                    }}>
+                    {row.is_active ? 'Off' : 'On'}
+                  </button>
+                  <button onClick={() => handleDelete(row)}
+                    style={{ padding: '4px 6px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
+                    {busy === row.id ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                  </button>
+                </>
               )}
-              <button onClick={() => { setEditingId(row.id); setEditName(row.name); setEditColor(row.color || '#64748b') }}
-                style={{ padding: '4px 6px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
-                <Pencil size={11} />
-              </button>
-              <button onClick={() => handleToggle(row)}
-                style={{
-                  padding: '4px 8px', background: row.is_active ? '#fff7ed' : '#f0fdf4',
-                  border: `1px solid ${row.is_active ? '#fed7aa' : '#bbf7d0'}`,
-                  borderRadius: 6, cursor: 'pointer', fontSize: 10, fontWeight: 700,
-                  color: row.is_active ? '#c2410c' : '#15803d',
-                }}>
-                {row.is_active ? 'Off' : 'On'}
-              </button>
-              <button onClick={() => handleDelete(row)}
-                style={{ padding: '4px 6px', background: 'none', border: '1px solid var(--card-border)', borderRadius: 6, cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
-                {busy === row.id ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-              </button>
-            </>
-          )}
-        </div>
-      ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

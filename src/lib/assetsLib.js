@@ -140,6 +140,25 @@ export async function moveMasterItem(table, dragNode, targetNode, dropPos, allRo
   }
 }
 
+/** Reorder a flat master list (e.g. conditions) — before/after only, no nesting. */
+export async function reorderFlatMaster(table, dragNode, targetNode, dropPos, allRows) {
+  if (!dragNode || !targetNode || dragNode.id === targetNode.id) return
+  const pos = dropPos === 'after' ? 'after' : 'before'
+
+  const siblings = allRows
+    .filter(r => r.id !== dragNode.id)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+  const idx = siblings.findIndex(a => a.id === targetNode.id)
+  if (idx < 0) return
+  siblings.splice(pos === 'before' ? idx : idx + 1, 0, dragNode)
+
+  for (let i = 0; i < siblings.length; i++) {
+    const sort_order = i * 10
+    const { error } = await supabase.from(table).update({ sort_order }).eq('id', siblings[i].id)
+    if (error) throw error
+  }
+}
+
 export async function getAssetLocations(activeOnly = true) {
   let q = supabase.from('asset_locations').select('*').order('sort_order').order('name')
   if (activeOnly) q = q.eq('is_active', true)
