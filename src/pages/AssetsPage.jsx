@@ -286,9 +286,41 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   const [photoPreview, setPhotoPreview] = useState(editing?.photo_url || null)
   const [removePhoto, setRemovePhoto] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pvManual, setPvManual] = useState(false)
   const fileRef = useRef(null)
 
   function set(key, value) { setForm(f => ({ ...f, [key]: value })) }
+
+  function calcPurchaseValue(unitPrice, quantity) {
+    const up = parseFloat(unitPrice)
+    const qty = parseInt(quantity, 10)
+    if (!Number.isFinite(up) || up < 0 || !Number.isFinite(qty) || qty < 1) return ''
+    const total = up * qty
+    return Number.isInteger(total) ? String(total) : total.toFixed(2)
+  }
+
+  function setUnitPrice(value) {
+    setForm(f => ({
+      ...f,
+      unit_price: value,
+      purchase_value: calcPurchaseValue(value, f.quantity),
+    }))
+    setPvManual(false)
+  }
+
+  function setQuantity(value) {
+    setForm(f => ({
+      ...f,
+      quantity: value,
+      purchase_value: calcPurchaseValue(f.unit_price, value),
+    }))
+    setPvManual(false)
+  }
+
+  function setPurchaseValue(value) {
+    setPvManual(true)
+    set('purchase_value', value)
+  }
 
   function onPhotoPick(e) {
     const f = e.target.files?.[0]
@@ -345,7 +377,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
       <div style={{
-        background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 640,
+        background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 704,
         maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
       }}>
         <div style={{
