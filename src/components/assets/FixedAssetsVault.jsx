@@ -568,6 +568,16 @@ function AssetDetail({ asset, onBack }) {
   )
 }
 
+function tileAccent(assetType) {
+  switch (assetType) {
+    case 'Land': return { wash: '#ecfdf5', accent: '#059669' }
+    case 'Building': return { wash: '#f0f7f4', accent: '#1e5c48' }
+    case 'Vehicle': return { wash: '#fff7ed', accent: '#c2410c' }
+    case 'Plant & Machinery': return { wash: '#f8fafc', accent: '#475569' }
+    default: return { wash: '#f8fafc', accent: '#64748b' }
+  }
+}
+
 function TileGrid({ assets, counts, onOpen }) {
   const navigate = useNavigate()
 
@@ -593,43 +603,85 @@ function TileGrid({ assets, counts, onOpen }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-      gap: 14,
+      gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
+      gap: 12,
     }}>
-      {assets.map(a => (
-        <button
-          key={a.id}
-          type="button"
-          onClick={() => onOpen(a)}
-          style={{
-            textAlign: 'left', padding: 0, border: '1px solid var(--card-border)',
-            borderRadius: 14, background: 'var(--card-bg)', cursor: 'pointer', overflow: 'hidden',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-          }}
-        >
-          <div style={{
-            height: 120, background: 'linear-gradient(145deg, #e2e8f0 0%, #f8fafc 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-          }}>
-            {a.cover_url
-              ? <img src={a.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <Building2 size={36} style={{ color: '#94a3b8' }} />}
-          </div>
-          <div style={{ padding: '12px 14px 14px' }}>
-            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.3 }}>{a.name}</p>
-            <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-3)', fontWeight: 600 }}>
-              {[a.asset_type, a.status].filter(Boolean).join(' · ')}
-            </p>
-            <p style={{
-              margin: '10px 0 0', fontSize: 12, fontWeight: 700, color: 'var(--accent)',
-              display: 'flex', alignItems: 'center', gap: 5,
-            }}>
-              <FileText size={12} />
-              {counts[a.id] || 0} document{(counts[a.id] || 0) === 1 ? '' : 's'}
-            </p>
-          </div>
-        </button>
-      ))}
+      {assets.map(a => {
+        const tone = tileAccent(a.asset_type)
+        const docs = counts[a.id] || 0
+        return (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => onOpen(a)}
+            style={{
+              textAlign: 'left', padding: 0, border: '1px solid var(--card-border)',
+              borderRadius: 12, background: 'var(--card-bg)', cursor: 'pointer', overflow: 'hidden',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+              transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = tone.accent
+              e.currentTarget.style.boxShadow = '0 6px 18px rgba(15, 23, 42, 0.08)'
+              e.currentTarget.style.transform = 'translateY(-1px)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'var(--card-border)'
+              e.currentTarget.style.boxShadow = '0 1px 2px rgba(15, 23, 42, 0.04)'
+              e.currentTarget.style.transform = 'none'
+            }}
+          >
+            {a.cover_url ? (
+              <div style={{ height: 72, overflow: 'hidden', position: 'relative' }}>
+                <img src={a.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(to top, rgba(15,23,42,0.35), transparent 55%)',
+                }} />
+              </div>
+            ) : (
+              <div style={{
+                height: 4, background: `linear-gradient(90deg, ${tone.accent}, ${tone.accent}88)`,
+              }} />
+            )}
+
+            <div style={{ padding: a.cover_url ? '10px 12px 12px' : '14px 12px 12px' }}>
+              {!a.cover_url && (
+                <div style={{
+                  width: 34, height: 34, borderRadius: 9, marginBottom: 10,
+                  background: tone.wash, color: tone.accent,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Building2 size={16} strokeWidth={2} />
+                </div>
+              )}
+              <p style={{
+                margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--text-1)',
+                lineHeight: 1.25, letterSpacing: '-0.01em',
+              }}>
+                {a.name}
+              </p>
+              <p style={{
+                margin: '4px 0 0', fontSize: 10, color: 'var(--text-3)', fontWeight: 600,
+                letterSpacing: '0.02em',
+              }}>
+                {[a.asset_type, a.status].filter(Boolean).join(' · ')}
+              </p>
+              <div style={{
+                marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+              }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: tone.accent,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                  <FileText size={11} />
+                  {docs} doc{docs === 1 ? '' : 's'}
+                </span>
+              </div>
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }
