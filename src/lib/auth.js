@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { formatDate } from './date'
-import { fetchGeoLocation, insertLoginLog } from './loginLogs'
+import { insertLoginLog } from './loginLogs'
 
 export const ROLE_PERMISSIONS = {
   super_admin: { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:true  },
@@ -89,16 +89,13 @@ export async function signIn(email, password) {
     
     console.log('✅ Profile loaded:', profile.email)
 
-    // Fire-and-forget: capture login details without delaying the response
-    fetchGeoLocation().then(geo => {
-      insertLoginLog({
-        userId:    data.user?.id,
-        email:     profile.email,
-        fullName:  profile.full_name,
-        role:      profile.role,
-        userAgent: navigator.userAgent,
-        ...geo,
-      })
+    // Fire-and-forget: record login (device/location details come from the setup form)
+    insertLoginLog({
+      userId:    data.user?.id,
+      email:     profile.email,
+      fullName:  profile.full_name,
+      role:      profile.role,
+      userAgent: navigator.userAgent,
     })
 
     return { data, error: null }

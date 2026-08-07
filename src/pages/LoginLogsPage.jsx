@@ -39,7 +39,7 @@ function fmtDuration(loginAt, logoutAt) {
   return m ? `${h}h ${m}m` : `${h}h`
 }
 
-// Split "area, city" stored in location column; fall back to IP-based fields
+// Split "area, city" from the device form; fall back to legacy city/region columns
 function splitLocation(r) {
   if (r.location) {
     const idx = r.location.lastIndexOf(', ')

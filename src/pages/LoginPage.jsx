@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { signIn } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
-import { warmGeoLocation, getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, tagLoginWithDevice } from '../lib/loginLogs'
+import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, tagLoginWithDevice } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -57,7 +57,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (session) navigate('/dashboard')  // already logged in — redirect immediately
     getChurch().then(setChurch)
-    warmGeoLocation()
   }, []) // eslint-disable-line
 
   const handleSubmit = async e => {

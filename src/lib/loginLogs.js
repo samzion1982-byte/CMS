@@ -1,85 +1,14 @@
+/**
+ * Login logging + device registration.
+ *
+ * Location comes only from the user-entered device/setup form —
+ * we do NOT capture IP or browser geolocation (both are inaccurate).
+ */
+
 import { adminSupabase } from './supabase'
 
-const GEO_CACHE_KEY  = 'church_cms_geo_v3'        // v3 — ipinfo token
-const MANUAL_TTL_MS  = 30 * 24 * 60 * 60 * 1000  // manual correction: 30 days
-const IP_TTL_MS      =      24 * 60 * 60 * 1000  // IP result:   1 day
-
-// Pre-fetch started on login page mount so result is ready before sign-in
-let _warmPromise = null
-
-function readGeoCache() {
-  try {
-    const raw = localStorage.getItem(GEO_CACHE_KEY)
-    if (!raw) return null
-    const obj = JSON.parse(raw)
-    // Drop legacy browser-GPS cache entries
-    if (obj.source === 'gps') { localStorage.removeItem(GEO_CACHE_KEY); return null }
-    const ttl = obj.source === 'manual' ? MANUAL_TTL_MS : IP_TTL_MS
-    if (Date.now() - obj.cachedAt > ttl) { localStorage.removeItem(GEO_CACHE_KEY); return null }
-    return obj
-  } catch { return null }
-}
-
-function writeGeoCache(loc) {
-  try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ ...loc, cachedAt: Date.now() })) } catch { /* ignore */ }
-}
-
-/* Single IP lookup with 4 s timeout */
-async function ipFetch(url, map) {
-  const c = new AbortController()
-  const t = setTimeout(() => c.abort(), 4000)
-  try {
-    const res = await fetch(url, { signal: c.signal })
-    clearTimeout(t)
-    if (!res.ok) return null
-    const d = await res.json()
-    const r = map(d)
-    return r?.city || r?.region ? { source: 'ip', ...r } : null
-  } catch { clearTimeout(t); return null }
-}
-
-/* Run all IP providers in parallel — take whichever resolves first with valid data */
-async function fetchByIP() {
-  const IPINFO_TOKEN = 'e2bd6cd58f0cd7'
-  const race = Promise.any([
-    // ipinfo.io with auth token — primary, best database
-    ipFetch(`https://ipinfo.io/json?token=${IPINFO_TOKEN}`, d =>
-      d.ip ? { ipAddress: d.ip, city: d.city || null, region: d.region || null, country: d.country || null } : null),
-    ipFetch('https://get.geojs.io/v1/ip/geo.json', d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country || null })),
-    ipFetch('https://ipapi.co/json/',               d => ({ ipAddress: d.ip || null, city: d.city || null, region: d.region || null, country: d.country_name || null })),
-  ]).catch(() => null)
-  return race
-}
-
-/* Call on login page mount — starts IP lookup while the user types credentials. */
-export function warmGeoLocation() {
-  if (readGeoCache()) return           // already have fresh data
-  if (_warmPromise) return             // already running
-  _warmPromise = _resolveGeo().then(loc => { _warmPromise = null; return loc })
-}
-
-async function _resolveGeo() {
-  const loc = (await fetchByIP()) || {}
-  if (loc.city || loc.region || loc.country) writeGeoCache(loc)
-  return loc
-}
-
-/* Returns cached location, or waits for the warm-up promise, or resolves fresh. */
-export async function fetchGeoLocation() {
-  const cached = readGeoCache()
-  if (cached) return cached
-
-  // If warmGeoLocation() was called on page mount, await that promise
-  if (_warmPromise) {
-    const loc = await Promise.race([_warmPromise, new Promise(r => setTimeout(() => r(null), 3000))])
-    if (loc?.city || loc?.region) return loc
-  }
-
-  return await _resolveGeo()
-}
-
-/* Insert a new login row */
-export async function insertLoginLog({ userId, email, fullName, role, ipAddress, city, region, country, userAgent }) {
+/* Insert a new login row (device/location filled later by the setup form) */
+export async function insertLoginLog({ userId, email, fullName, role, userAgent }) {
   const { data, error } = await adminSupabase
     .from('login_logs')
     .insert({
@@ -87,10 +16,6 @@ export async function insertLoginLog({ userId, email, fullName, role, ipAddress,
       email,
       full_name:  fullName  || null,
       user_role:  role      || null,
-      ip_address: ipAddress || null,
-      city:       city      || null,
-      region:     region    || null,
-      country:    country   || null,
       user_agent: userAgent || null,
     })
     .select('id')
@@ -247,20 +172,6 @@ export async function tagLoginWithDevice(userId, { deviceId, userName, location,
       return
     }
   }
-}
-
-// ── Location manual override ──────────────────────────────────────────────────
-
-/* Manually correct location for a log row, and overwrite the local geo cache
-   so the next login on this device uses the corrected value. */
-export async function updateLoginLogLocation(id, { city, region, country }) {
-  const { error } = await adminSupabase
-    .from('login_logs')
-    .update({ city: city || null, region: region || null, country: country || null })
-    .eq('id', id)
-  if (error) throw error
-  // Persist correction into geo cache so future logins on this device are accurate
-  writeGeoCache({ source: 'manual', ipAddress: null, city: city || null, region: region || null, country: country || null })
 }
 
 /* Admin read — paginated, filterable */
