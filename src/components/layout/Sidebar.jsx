@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
-  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked,
+  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 
@@ -19,6 +19,7 @@ const NAV = [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },
     ]},
+    { label: 'Assets',        path: '/assets',        icon: Package        },
   ]},
   { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },
