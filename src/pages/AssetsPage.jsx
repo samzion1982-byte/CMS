@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
-import { useEntity } from '../lib/EntityContext'
+import { getChurch } from '../lib/supabase'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
@@ -908,7 +908,6 @@ export default function AssetsPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useAuth()
-  const { currentEntity } = useEntity()
 
   const [tab, setTab] = useState('movable')
   const [assets, setAssets] = useState([])
@@ -1190,12 +1189,12 @@ export default function AssetsPage() {
       const condName = filterCond
         ? (conditions.find(c => c.id === filterCond)?.name || '')
         : ''
+      const church = await getChurch().catch(() => null)
       const titleLines = [
-        currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
-        (currentEntity?.address || currentEntity?.city)
-          ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 }
+        church?.church_name ? { text: church.church_name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+        (church?.address || church?.city)
+          ? { text: [church.address, church.city].filter(Boolean).join(', '), size: 10 }
           : null,
-        currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
         { text: 'ASSET MANAGEMENT — MOVABLE ASSETS', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
         {
           text: [
