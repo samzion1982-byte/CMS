@@ -53,6 +53,8 @@ import YearEndClosingPage         from './pages/YearEndClosingPage'
 import EventPlannerPage           from './pages/EventPlannerPage'
 import EventRecorderPage          from './pages/EventRecorderPage'
 import EventSettingsPage          from './pages/EventSettingsPage'
+import AssetsPage                 from './pages/AssetsPage'
+import AssetsSettingsPage         from './pages/AssetsSettingsPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
 import EntityManagementPage       from './pages/EntityManagementPage'
@@ -503,6 +505,14 @@ function AppRoutes() {
       />
       <Route path="/events/settings"
         element={<PrivateRoute><AppLayout><EventSettingsPage /></AppLayout></PrivateRoute>}
+      />
+
+      {/* ── Asset Management ── */}
+      <Route path="/assets"
+        element={<PrivateRoute><AppLayout><AssetsPage /></AppLayout></PrivateRoute>}
+      />
+      <Route path="/assets/settings"
+        element={<PrivateRoute><AppLayout><AssetsSettingsPage /></AppLayout></PrivateRoute>}
       />
 
       {/* ── Simple Accounts Module ── */}
