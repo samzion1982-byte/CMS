@@ -237,6 +237,18 @@ export function isAssetOnHand(asset, asOnDate) {
   return true
 }
 
+/** Strip auto-generated stock-movement notes; keep only user-entered text. */
+export function userFacingNotes(notes) {
+  if (!notes) return ''
+  return String(notes)
+    .split(/\s*·\s*/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .filter(p => !/^Stock in \d+\s*\(added to #/i.test(p))
+    .filter(p => !/^Moved out \d+\s+from #/i.test(p))
+    .join(' · ')
+}
+
 /**
  * Stock Movement — move qty out of an in-stock line.
  * Partial: reduce source qty and create a new out line.
@@ -275,7 +287,6 @@ export async function moveStockOut(sourceAsset, {
     : null
 
   const noteText = (notes || '').trim() || null
-  const movementNote = `Moved out ${moveQty} from #${sourceAsset.serial_no}`
 
   // Full move-out: update same row
   if (moveQty === available) {
@@ -330,7 +341,7 @@ export async function moveStockOut(sourceAsset, {
       supplier_contact: sourceAsset.supplier_contact || null,
       photo_url:        sourceAsset.photo_url || null,
       photo_path:       sourceAsset.photo_path || null,
-      notes:            [movementNote, noteText].filter(Boolean).join(' · '),
+      notes:            noteText,
       created_by:       performed_by,
       updated_by:       performed_by,
     })
@@ -370,7 +381,6 @@ export async function moveStockIn(templateAsset, {
   if (cost == null && up != null) cost = Math.round(up * inQty * 100) / 100
 
   const noteText = (notes || '').trim() || null
-  const movementNote = `Stock in ${inQty} (added to #${templateAsset.serial_no} · ${templateAsset.description})`
 
   const { data, error } = await supabase
     .from('assets')
@@ -393,7 +403,7 @@ export async function moveStockIn(templateAsset, {
       supplier_contact: templateAsset.supplier_contact || null,
       photo_url:        templateAsset.photo_url || null,
       photo_path:       templateAsset.photo_path || null,
-      notes:            [movementNote, noteText].filter(Boolean).join(' · '),
+      notes:            noteText,
       created_by:       performed_by,
       updated_by:       performed_by,
     })

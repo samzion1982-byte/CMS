@@ -13,13 +13,14 @@ import {
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
 import { getChurch } from '../lib/supabase'
-import { exportToExcelWithTitle } from '../lib/exportExcel'
+import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
   masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
+  userFacingNotes,
 } from '../lib/assetsLib'
 
 const INPUT = {
@@ -1110,14 +1111,134 @@ export default function AssetsPage() {
 
   function fmtDate(d) {
     if (!d) return '—'
-    return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    })
+    // Always Indian numeric format DD/MM/YYYY
+    const [y, m, day] = String(d).slice(0, 10).split('-')
+    if (!y || !m || !day) return d
+    return `${day}/${m}/${y}`
   }
 
   function fmtMoney(v) {
     if (v == null || v === '') return '—'
     return `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+  }
+
+  function assetExportColumns() {
+    return [
+      { header: 'Description', key: 'description', align: 'left', merge: false },
+      { header: 'Total Qty', key: 'total_qty', align: 'center' },
+      { header: 'Type', key: 'type', align: 'left', merge: false },
+      { header: 'Location', key: 'location', align: 'left', merge: false },
+      { header: 'Stock Status', key: 'stock', align: 'center' },
+      { header: 'Stock In', key: 'stock_in', align: 'center' },
+      { header: 'Stock Out', key: 'stock_out', align: 'center' },
+      { header: 'Condition', key: 'condition', align: 'center' },
+      { header: 'Unit Price', key: 'unit_price', align: 'right' },
+      { header: 'Cost', key: 'cost', align: 'right' },
+      { header: 'Supplier', key: 'supplier', align: 'left', merge: false },
+      { header: 'Invoice No', key: 'invoice', align: 'left', merge: false },
+      { header: 'Notes', key: 'notes', align: 'left', merge: false },
+    ]
+  }
+
+  /** One Excel row per grouped item (no stock-line sub-rows). */
+  function buildGroupedExportRows(sourceGroups) {
+    const rows = []
+    let totalQty = 0
+    let totalCost = 0
+    for (const g of sourceGroups) {
+      const a = g.primary
+      const qty = g.qtyDisplay
+      const cost = g.hasCost ? g.costDisplay : null
+      totalQty += qty
+      if (cost != null) totalCost += cost
+
+      const stockIns = g.lines.map(l => l.stock_in_date).filter(Boolean).sort()
+      const stockOuts = g.lines.map(l => l.stock_out_date).filter(Boolean).sort()
+      const userNotes = [...new Set(
+        g.lines.map(l => userFacingNotes(l.notes)).filter(Boolean)
+      )].join(' · ')
+
+      const conditions = [...new Set(
+        g.lines.map(l => l.condition?.name).filter(Boolean)
+      )]
+
+      rows.push({
+        description: a.description || '',
+        total_qty: qty,
+        type: a.item_type ? masterDisplayName(a.item_type, itemTypes) : '',
+        location: a.location ? masterDisplayName(a.location, locations) : '',
+        stock: g.allOut ? 'Moved out' : 'In stock',
+        stock_in: stockIns.length
+          ? (stockIns[0] === stockIns[stockIns.length - 1]
+            ? fmtDate(stockIns[0])
+            : `${fmtDate(stockIns[0])} – ${fmtDate(stockIns[stockIns.length - 1])}`)
+          : '',
+        stock_out: stockOuts.length
+          ? (stockOuts[0] === stockOuts[stockOuts.length - 1]
+            ? fmtDate(stockOuts[0])
+            : `${fmtDate(stockOuts[0])} – ${fmtDate(stockOuts[stockOuts.length - 1])}`)
+          : '',
+        condition: conditions.length <= 1 ? (conditions[0] || '') : conditions.join(', '),
+        unit_price: a.unit_price != null ? Number(a.unit_price) : '',
+        cost: cost != null ? cost : '',
+        supplier: a.supplier_name || '',
+        invoice: a.invoice_no || '',
+        notes: userNotes,
+      })
+    }
+    rows.push({
+      description: 'TOTAL',
+      total_qty: totalQty,
+      type: '',
+      location: '',
+      stock: `${sourceGroups.length} item${sourceGroups.length === 1 ? '' : 's'}`,
+      stock_in: '',
+      stock_out: '',
+      condition: '',
+      unit_price: '',
+      cost: totalCost || '',
+      supplier: '',
+      invoice: '',
+      notes: '',
+      _bold: true,
+    })
+    return rows
+  }
+
+  function groupAssetsForExport(list) {
+    const map = new Map()
+    for (const a of list) {
+      const key = [
+        (a.description || '').trim().toLowerCase(),
+        a.item_type_id || '',
+        a.location_id || '',
+      ].join('||')
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(a)
+    }
+    return [...map.entries()].map(([key, lines]) => {
+      const sorted = [...lines].sort((a, b) =>
+        String(a.stock_in_date || '').localeCompare(String(b.stock_in_date || ''))
+      )
+      const onHandLines = sorted.filter(l => isAssetOnHand(l, asOnDate || null))
+      const qtyLines = sorted // already filtered to this condition/sheet
+      const qtyDisplay = qtyLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const costDisplay = qtyLines.reduce((s, l) => {
+        const c = l.purchase_value != null ? Number(l.purchase_value) : null
+        return s + (c != null && Number.isFinite(c) ? c : 0)
+      }, 0)
+      const hasCost = qtyLines.some(l => l.purchase_value != null || l.unit_price != null)
+      const primary = onHandLines[0] || sorted[0]
+      return {
+        key,
+        lines: sorted,
+        primary,
+        qtyDisplay,
+        costDisplay,
+        hasCost,
+        allOut: onHandLines.length === 0,
+      }
+    }).sort((a, b) => (a.primary?.description || '').localeCompare(b.primary?.description || ''))
   }
 
   async function handleExport() {
@@ -1127,95 +1248,84 @@ export default function AssetsPage() {
     }
     setExporting(true)
     try {
-      const cols = [
-        { header: 'Description', key: 'description', align: 'left' },
-        { header: 'Qty', key: 'qty', align: 'center' },
-        { header: 'Type', key: 'type', align: 'left' },
-        { header: 'Location', key: 'location', align: 'left' },
-        { header: 'Stock Status', key: 'stock', align: 'center' },
-        { header: 'Stock In', key: 'stock_in', align: 'center' },
-        { header: 'Stock Out', key: 'stock_out', align: 'center' },
-        { header: 'Condition', key: 'condition', align: 'center' },
-        { header: 'Unit Price', key: 'unit_price', align: 'right' },
-        { header: 'Cost', key: 'cost', align: 'right' },
-        { header: 'Supplier', key: 'supplier', align: 'left' },
-        { header: 'Invoice No', key: 'invoice', align: 'left' },
-        { header: 'Notes', key: 'notes', align: 'left' },
-      ]
-      const rows = []
-      let totalQty = 0
-      let totalCost = 0
-      for (const g of groups) {
-        for (const line of g.lines) {
-          const qty = Number(line.quantity) || 1
-          const cost = line.purchase_value != null && Number.isFinite(Number(line.purchase_value))
-            ? Number(line.purchase_value) : null
-          totalQty += qty
-          if (cost != null) totalCost += cost
-          rows.push({
-            description: line.description || '',
-            qty,
-            type: line.item_type ? masterDisplayName(line.item_type, itemTypes) : '',
-            location: line.location ? masterDisplayName(line.location, locations) : '',
-            stock: line.stock_out_date ? 'Moved out' : 'In stock',
-            stock_in: line.stock_in_date || '',
-            stock_out: line.stock_out_date || '',
-            condition: line.condition?.name || '',
-            unit_price: line.unit_price != null ? Number(line.unit_price) : '',
-            cost: cost != null ? cost : '',
-            supplier: line.supplier_name || '',
-            invoice: line.invoice_no || '',
-            notes: line.notes || '',
-          })
-        }
-      }
-      rows.push({
-        description: 'TOTAL',
-        qty: totalQty,
-        type: '',
-        location: '',
-        stock: `${rows.length} line${rows.length === 1 ? '' : 's'}`,
-        stock_in: '',
-        stock_out: '',
-        condition: '',
-        unit_price: '',
-        cost: totalCost || '',
-        supplier: '',
-        invoice: '',
-        notes: '',
-        _bold: true,
-      })
-
-      const condName = filterCond
-        ? (conditions.find(c => c.id === filterCond)?.name || '')
-        : ''
+      const cols = assetExportColumns()
       const church = await getChurch().catch(() => null)
-      const titleLines = [
+      const stamp = new Date().toISOString().slice(0, 10)
+
+      const baseTitle = [
         church?.church_name ? { text: church.church_name, bold: true, size: 13, bg: 'DBEAFE' } : null,
         (church?.address || church?.city)
           ? { text: [church.address, church.city].filter(Boolean).join(', '), size: 10 }
           : null,
         { text: 'ASSET MANAGEMENT — MOVABLE ASSETS', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
-        {
-          text: [
-            asOnDate ? `As on ${fmtDate(asOnDate)}` : null,
-            condName ? `Condition: ${condName}` : null,
-            filterType ? `Type: ${masterDisplayName(itemTypes.find(t => t.id === filterType) || { name: '' }, itemTypes)}` : null,
-            filterLoc ? `Location: ${masterDisplayName(locations.find(l => l.id === filterLoc) || { name: '' }, locations)}` : null,
-            search.trim() ? `Search: “${search.trim()}”` : null,
-          ].filter(Boolean).join('  ·  ') || 'All items',
-          size: 10,
-        },
       ].filter(Boolean)
 
-      const stamp = new Date().toISOString().slice(0, 10)
-      await exportToExcelWithTitle(
-        cols,
-        rows,
-        'Assets',
-        `Assets_${stamp}.xlsx`,
-        titleLines,
-      )
+      const filterBits = [
+        asOnDate ? `As on ${fmtDate(asOnDate)}` : null,
+        filterType ? `Type: ${masterDisplayName(itemTypes.find(t => t.id === filterType) || { name: '' }, itemTypes)}` : null,
+        filterLoc ? `Location: ${masterDisplayName(locations.find(l => l.id === filterLoc) || { name: '' }, locations)}` : null,
+        search.trim() ? `Search: “${search.trim()}”` : null,
+      ].filter(Boolean)
+
+      // All conditions → one worksheet per condition (plus Unspecified if needed)
+      if (!filterCond) {
+        const byCond = new Map()
+        for (const a of filtered) {
+          const id = a.condition_id || '__none__'
+          if (!byCond.has(id)) byCond.set(id, [])
+          byCond.get(id).push(a)
+        }
+        // Stable sheet order: configured conditions first, then unspecified
+        const ordered = []
+        for (const c of conditions) {
+          if (byCond.has(c.id)) ordered.push({ id: c.id, name: c.name, color: c.color, lines: byCond.get(c.id) })
+        }
+        if (byCond.has('__none__')) {
+          ordered.push({ id: '__none__', name: 'Unspecified', color: null, lines: byCond.get('__none__') })
+        }
+        if (ordered.length === 0) {
+          toast('Nothing to export.', 'error')
+          setExporting(false)
+          return
+        }
+
+        const sheets = ordered.map(bucket => {
+          const g = groupAssetsForExport(bucket.lines)
+          const rows = buildGroupedExportRows(g)
+          // For multi-sheet, treat each sheet as condition-filtered for stock label
+          return {
+            name: (bucket.name || 'Condition').slice(0, 31),
+            columns: cols,
+            rows,
+            tabColor: bucket.color ? String(bucket.color).replace('#', '') : undefined,
+            titleLines: [
+              ...baseTitle,
+              {
+                text: [...filterBits, `Condition: ${bucket.name}`].filter(Boolean).join('  ·  '),
+                size: 10,
+              },
+            ],
+          }
+        })
+
+        await exportMultiSheetWithTitle(sheets, `Assets_${stamp}.xlsx`)
+      } else {
+        const condName = conditions.find(c => c.id === filterCond)?.name || 'Condition'
+        const rows = buildGroupedExportRows(groups)
+        await exportToExcelWithTitle(
+          cols,
+          rows,
+          condName.slice(0, 31),
+          `Assets_${stamp}.xlsx`,
+          [
+            ...baseTitle,
+            {
+              text: [...filterBits, `Condition: ${condName}`].filter(Boolean).join('  ·  '),
+              size: 10,
+            },
+          ],
+        )
+      }
       toast('Excel exported.', 'success')
     } catch (e) {
       toast(e.message || 'Export failed.', 'error')
@@ -1553,7 +1663,7 @@ export default function AssetsPage() {
                                   </div>
                                 </td>
                                 <td style={{ padding: '8px 14px 8px 14px', color: 'var(--text-3)', fontSize: 12 }}>
-                                  {line.notes || ''}
+                                  {userFacingNotes(line.notes) || ''}
                                 </td>
                                 <td style={{ padding: '8px 14px', fontFamily: 'monospace', textAlign: 'center', color: 'var(--text-1)', fontWeight: 700 }}>
                                   {line.quantity ?? 1}

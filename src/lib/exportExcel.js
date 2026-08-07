@@ -52,7 +52,8 @@ function mergeColumns(ws, dataStart, totalRows, columns) {
   if (!Array.isArray(columns) || totalRows <= 0) return
   const mergeCols = []
   columns.forEach((col, idx) => {
-    if (col?.merge || idx === 0) mergeCols.push(idx + 1)
+    // Opt in with merge:true; col 0 merges by default unless merge:false
+    if (col?.merge === true || (idx === 0 && col?.merge !== false)) mergeCols.push(idx + 1)
   })
 
   const dataEnd = dataStart + totalRows - 1
