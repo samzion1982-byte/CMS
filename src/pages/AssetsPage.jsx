@@ -1315,7 +1315,7 @@ export default function AssetsPage() {
     setExporting(true)
     try {
       const church = await getChurch().catch(() => null)
-      const stamp = new Date().toISOString().slice(0, 10)
+      const stamp = fmtDate(new Date().toISOString().slice(0, 10))
 
       const baseTitle = [
         church?.church_name ? { text: church.church_name, bold: true, size: 13, bg: 'DBEAFE' } : null,
