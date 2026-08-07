@@ -240,12 +240,14 @@ export function isAssetOnHand(asset, asOnDate) {
 /** Strip auto-generated stock-movement notes; keep only user-entered text. */
 export function userFacingNotes(notes) {
   if (!notes) return ''
-  return String(notes)
+  let s = String(notes)
+  // Remove whole auto notes first (they can contain " · " inside parentheses)
+  s = s.replace(/Stock in \d+\s*\(added to #[^)]*\)/gi, '')
+  s = s.replace(/Moved out \d+\s+from #\d+/gi, '')
+  return s
     .split(/\s*·\s*/)
     .map(p => p.trim())
     .filter(Boolean)
-    .filter(p => !/^Stock in \d+\s*\(added to #/i.test(p))
-    .filter(p => !/^Moved out \d+\s+from #/i.test(p))
     .join(' · ')
 }
 

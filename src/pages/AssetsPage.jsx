@@ -284,7 +284,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         supplier_name: editing.supplier_name || '',
         supplier_address: editing.supplier_address || '',
         supplier_contact: editing.supplier_contact || '',
-        notes: editing.notes || '',
+        notes: userFacingNotes(editing.notes) || '',
         photo_url: editing.photo_url || null,
         photo_path: editing.photo_path || null,
       }
@@ -1125,7 +1125,8 @@ export default function AssetsPage() {
   function assetExportColumns() {
     return [
       { header: 'Description', key: 'description', align: 'left', merge: false },
-      { header: 'Total Qty', key: 'total_qty', align: 'center' },
+      { header: 'Total Quantity', key: 'total_qty', align: 'center', merge: false },
+      { header: 'Sub Qty', key: 'sub_qty', align: 'center' },
       { header: 'Type', key: 'type', align: 'left', merge: false },
       { header: 'Location', key: 'location', align: 'left', merge: false },
       { header: 'Stock Status', key: 'stock', align: 'center' },
@@ -1140,63 +1141,49 @@ export default function AssetsPage() {
     ]
   }
 
-  /** One Excel row per grouped item (no stock-line sub-rows). */
-  function buildGroupedExportRows(sourceGroups) {
+  /** Line-level rows (previous layout) with group Total Quantity + Sub Qty. */
+  function buildLineExportRows(sourceGroups) {
     const rows = []
-    let totalQty = 0
-    let totalCost = 0
+    let grandSubQty = 0
+    let grandCost = 0
     for (const g of sourceGroups) {
-      const a = g.primary
-      const qty = g.qtyDisplay
-      const cost = g.hasCost ? g.costDisplay : null
-      totalQty += qty
-      if (cost != null) totalCost += cost
-
-      const stockIns = g.lines.map(l => l.stock_in_date).filter(Boolean).sort()
-      const stockOuts = g.lines.map(l => l.stock_out_date).filter(Boolean).sort()
-      const userNotes = [...new Set(
-        g.lines.map(l => userFacingNotes(l.notes)).filter(Boolean)
-      )].join(' · ')
-
-      const conditions = [...new Set(
-        g.lines.map(l => l.condition?.name).filter(Boolean)
-      )]
-
-      rows.push({
-        description: a.description || '',
-        total_qty: qty,
-        type: a.item_type ? masterDisplayName(a.item_type, itemTypes) : '',
-        location: a.location ? masterDisplayName(a.location, locations) : '',
-        stock: g.allOut ? 'Moved out' : 'In stock',
-        stock_in: stockIns.length
-          ? (stockIns[0] === stockIns[stockIns.length - 1]
-            ? fmtDate(stockIns[0])
-            : `${fmtDate(stockIns[0])} – ${fmtDate(stockIns[stockIns.length - 1])}`)
-          : '',
-        stock_out: stockOuts.length
-          ? (stockOuts[0] === stockOuts[stockOuts.length - 1]
-            ? fmtDate(stockOuts[0])
-            : `${fmtDate(stockOuts[0])} – ${fmtDate(stockOuts[stockOuts.length - 1])}`)
-          : '',
-        condition: conditions.length <= 1 ? (conditions[0] || '') : conditions.join(', '),
-        unit_price: a.unit_price != null ? Number(a.unit_price) : '',
-        cost: cost != null ? cost : '',
-        supplier: a.supplier_name || '',
-        invoice: a.invoice_no || '',
-        notes: userNotes,
-      })
+      const totalQty = g.qtyDisplay
+      for (const line of g.lines) {
+        const subQty = Number(line.quantity) || 1
+        const cost = line.purchase_value != null && Number.isFinite(Number(line.purchase_value))
+          ? Number(line.purchase_value) : null
+        grandSubQty += subQty
+        if (cost != null) grandCost += cost
+        rows.push({
+          description: line.description || '',
+          total_qty: totalQty,
+          sub_qty: subQty,
+          type: line.item_type ? masterDisplayName(line.item_type, itemTypes) : '',
+          location: line.location ? masterDisplayName(line.location, locations) : '',
+          stock: line.stock_out_date ? 'Moved out' : 'In stock',
+          stock_in: line.stock_in_date ? fmtDate(line.stock_in_date) : '',
+          stock_out: line.stock_out_date ? fmtDate(line.stock_out_date) : '',
+          condition: line.condition?.name || '',
+          unit_price: line.unit_price != null ? Number(line.unit_price) : '',
+          cost: cost != null ? cost : '',
+          supplier: line.supplier_name || '',
+          invoice: line.invoice_no || '',
+          notes: userFacingNotes(line.notes),
+        })
+      }
     }
     rows.push({
       description: 'TOTAL',
-      total_qty: totalQty,
+      total_qty: '',
+      sub_qty: grandSubQty,
       type: '',
       location: '',
-      stock: `${sourceGroups.length} item${sourceGroups.length === 1 ? '' : 's'}`,
+      stock: `${rows.length} line${rows.length === 1 ? '' : 's'}`,
       stock_in: '',
       stock_out: '',
       condition: '',
       unit_price: '',
-      cost: totalCost || '',
+      cost: grandCost || '',
       supplier: '',
       invoice: '',
       notes: '',
@@ -1221,24 +1208,26 @@ export default function AssetsPage() {
         String(a.stock_in_date || '').localeCompare(String(b.stock_in_date || ''))
       )
       const onHandLines = sorted.filter(l => isAssetOnHand(l, asOnDate || null))
-      const qtyLines = sorted // already filtered to this condition/sheet
-      const qtyDisplay = qtyLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
-      const costDisplay = qtyLines.reduce((s, l) => {
-        const c = l.purchase_value != null ? Number(l.purchase_value) : null
-        return s + (c != null && Number.isFinite(c) ? c : 0)
-      }, 0)
-      const hasCost = qtyLines.some(l => l.purchase_value != null || l.unit_price != null)
+      const qtyDisplay = sorted.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
       const primary = onHandLines[0] || sorted[0]
       return {
         key,
         lines: sorted,
         primary,
         qtyDisplay,
-        costDisplay,
-        hasCost,
         allOut: onHandLines.length === 0,
       }
     }).sort((a, b) => (a.primary?.description || '').localeCompare(b.primary?.description || ''))
+  }
+
+  function makeSheet(name, sourceGroups, titleExtra, tabColor) {
+    return {
+      name: String(name || 'Sheet').slice(0, 31),
+      columns: assetExportColumns(),
+      rows: buildLineExportRows(sourceGroups),
+      tabColor: tabColor ? String(tabColor).replace('#', '') : undefined,
+      titleLines: titleExtra,
+    }
   }
 
   async function handleExport() {
@@ -1248,7 +1237,6 @@ export default function AssetsPage() {
     }
     setExporting(true)
     try {
-      const cols = assetExportColumns()
       const church = await getChurch().catch(() => null)
       const stamp = new Date().toISOString().slice(0, 10)
 
@@ -1267,63 +1255,59 @@ export default function AssetsPage() {
         search.trim() ? `Search: “${search.trim()}”` : null,
       ].filter(Boolean)
 
-      // All conditions → one worksheet per condition (plus Unspecified if needed)
+      function titleFor(condLabel) {
+        return [
+          ...baseTitle,
+          {
+            text: [...filterBits, condLabel].filter(Boolean).join('  ·  ') || condLabel,
+            size: 10,
+          },
+        ]
+      }
+
+      // All conditions filter → multi-sheet: All Conditions + each condition
       if (!filterCond) {
-        const byCond = new Map()
-        for (const a of filtered) {
-          const id = a.condition_id || '__none__'
-          if (!byCond.has(id)) byCond.set(id, [])
-          byCond.get(id).push(a)
-        }
-        // Stable sheet order: configured conditions first, then unspecified
-        const ordered = []
+        const sheets = []
+
+        // 1) All Conditions (current filtered view)
+        sheets.push(makeSheet(
+          'All Conditions',
+          groups,
+          titleFor('Condition: All Conditions'),
+          '1E3A5F',
+        ))
+
+        // 2) One sheet per configured condition (Working, Not Working, …)
         for (const c of conditions) {
-          if (byCond.has(c.id)) ordered.push({ id: c.id, name: c.name, color: c.color, lines: byCond.get(c.id) })
-        }
-        if (byCond.has('__none__')) {
-          ordered.push({ id: '__none__', name: 'Unspecified', color: null, lines: byCond.get('__none__') })
-        }
-        if (ordered.length === 0) {
-          toast('Nothing to export.', 'error')
-          setExporting(false)
-          return
+          const lines = filtered.filter(a => a.condition_id === c.id)
+          sheets.push(makeSheet(
+            c.name,
+            groupAssetsForExport(lines),
+            titleFor(`Condition: ${c.name}`),
+            c.color,
+          ))
         }
 
-        const sheets = ordered.map(bucket => {
-          const g = groupAssetsForExport(bucket.lines)
-          const rows = buildGroupedExportRows(g)
-          // For multi-sheet, treat each sheet as condition-filtered for stock label
-          return {
-            name: (bucket.name || 'Condition').slice(0, 31),
-            columns: cols,
-            rows,
-            tabColor: bucket.color ? String(bucket.color).replace('#', '') : undefined,
-            titleLines: [
-              ...baseTitle,
-              {
-                text: [...filterBits, `Condition: ${bucket.name}`].filter(Boolean).join('  ·  '),
-                size: 10,
-              },
-            ],
-          }
-        })
+        // 3) Unspecified (no condition) if any
+        const none = filtered.filter(a => !a.condition_id)
+        if (none.length > 0) {
+          sheets.push(makeSheet(
+            'Unspecified',
+            groupAssetsForExport(none),
+            titleFor('Condition: Unspecified'),
+            null,
+          ))
+        }
 
         await exportMultiSheetWithTitle(sheets, `Assets_${stamp}.xlsx`)
       } else {
         const condName = conditions.find(c => c.id === filterCond)?.name || 'Condition'
-        const rows = buildGroupedExportRows(groups)
         await exportToExcelWithTitle(
-          cols,
-          rows,
+          assetExportColumns(),
+          buildLineExportRows(groups),
           condName.slice(0, 31),
           `Assets_${stamp}.xlsx`,
-          [
-            ...baseTitle,
-            {
-              text: [...filterBits, `Condition: ${condName}`].filter(Boolean).join('  ·  '),
-              size: 10,
-            },
-          ],
+          titleFor(`Condition: ${condName}`),
         )
       }
       toast('Excel exported.', 'success')
