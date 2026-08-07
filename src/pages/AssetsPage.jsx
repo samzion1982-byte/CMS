@@ -8,10 +8,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   Package, Settings, Plus, Pencil, Trash2, Loader2, X, Save,
   Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown, ChevronRight,
-  Folder, FolderOpen, CornerDownRight, ArrowRightLeft,
+  Folder, FolderOpen, CornerDownRight, ArrowRightLeft, FileSpreadsheet,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
+import { useEntity } from '../lib/EntityContext'
+import { exportToExcelWithTitle } from '../lib/exportExcel'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn,
@@ -906,6 +908,7 @@ export default function AssetsPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useAuth()
+  const { currentEntity } = useEntity()
 
   const [tab, setTab] = useState('movable')
   const [assets, setAssets] = useState([])
@@ -921,6 +924,7 @@ export default function AssetsPage() {
   const [filterCond, setFilterCond] = useState('')
   const [asOnDate, setAsOnDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [deleting, setDeleting] = useState(null)
+  const [exporting, setExporting] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState(() => new Set())
 
   const loadMasters = useCallback(async () => {
@@ -999,7 +1003,15 @@ export default function AssetsPage() {
         const c = l.purchase_value != null ? Number(l.purchase_value) : null
         return s + (c != null && Number.isFinite(c) ? c : 0)
       }, 0)
-      const hasCost = onHandLines.some(l => l.purchase_value != null || l.unit_price != null)
+      // When filtering by condition (e.g. Damaged), show qty of matching lines —
+      // moved-out damaged stock is not "on hand" but must still show its quantity.
+      const qtyLines = filterCond ? sorted : onHandLines
+      const qtyDisplay = qtyLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const costDisplay = qtyLines.reduce((s, l) => {
+        const c = l.purchase_value != null ? Number(l.purchase_value) : null
+        return s + (c != null && Number.isFinite(c) ? c : 0)
+      }, 0)
+      const hasCost = qtyLines.some(l => l.purchase_value != null || l.unit_price != null)
       const primary = onHandLines[0] || sorted[0]
       const allOut = onHandLines.length === 0
       return {
@@ -1007,16 +1019,23 @@ export default function AssetsPage() {
         lines: sorted,
         primary,
         qtyOnHand,
+        qtyDisplay,
         costOnHand,
+        costDisplay,
         hasCost,
         lineCount: sorted.length,
         allOut,
       }
     }).sort((a, b) => a.primary.description.localeCompare(b.primary.description))
-  }, [filtered, asOnDate])
+  }, [filtered, asOnDate, filterCond])
 
   const qtyOnHand = useMemo(
     () => groups.reduce((s, g) => s + g.qtyOnHand, 0),
+    [groups]
+  )
+
+  const qtyDisplayTotal = useMemo(
+    () => groups.reduce((s, g) => s + g.qtyDisplay, 0),
     [groups]
   )
 
@@ -1102,6 +1121,109 @@ export default function AssetsPage() {
     return `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
   }
 
+  async function handleExport() {
+    if (groups.length === 0) {
+      toast('Nothing to export.', 'error')
+      return
+    }
+    setExporting(true)
+    try {
+      const cols = [
+        { header: 'Description', key: 'description', align: 'left' },
+        { header: 'Qty', key: 'qty', align: 'center' },
+        { header: 'Type', key: 'type', align: 'left' },
+        { header: 'Location', key: 'location', align: 'left' },
+        { header: 'Stock Status', key: 'stock', align: 'center' },
+        { header: 'Stock In', key: 'stock_in', align: 'center' },
+        { header: 'Stock Out', key: 'stock_out', align: 'center' },
+        { header: 'Condition', key: 'condition', align: 'center' },
+        { header: 'Unit Price', key: 'unit_price', align: 'right' },
+        { header: 'Cost', key: 'cost', align: 'right' },
+        { header: 'Supplier', key: 'supplier', align: 'left' },
+        { header: 'Invoice No', key: 'invoice', align: 'left' },
+        { header: 'Notes', key: 'notes', align: 'left' },
+      ]
+      const rows = []
+      let totalQty = 0
+      let totalCost = 0
+      for (const g of groups) {
+        for (const line of g.lines) {
+          const qty = Number(line.quantity) || 1
+          const cost = line.purchase_value != null && Number.isFinite(Number(line.purchase_value))
+            ? Number(line.purchase_value) : null
+          totalQty += qty
+          if (cost != null) totalCost += cost
+          rows.push({
+            description: line.description || '',
+            qty,
+            type: line.item_type ? masterDisplayName(line.item_type, itemTypes) : '',
+            location: line.location ? masterDisplayName(line.location, locations) : '',
+            stock: line.stock_out_date ? 'Moved out' : 'In stock',
+            stock_in: line.stock_in_date || '',
+            stock_out: line.stock_out_date || '',
+            condition: line.condition?.name || '',
+            unit_price: line.unit_price != null ? Number(line.unit_price) : '',
+            cost: cost != null ? cost : '',
+            supplier: line.supplier_name || '',
+            invoice: line.invoice_no || '',
+            notes: line.notes || '',
+          })
+        }
+      }
+      rows.push({
+        description: 'TOTAL',
+        qty: totalQty,
+        type: '',
+        location: '',
+        stock: `${rows.length} line${rows.length === 1 ? '' : 's'}`,
+        stock_in: '',
+        stock_out: '',
+        condition: '',
+        unit_price: '',
+        cost: totalCost || '',
+        supplier: '',
+        invoice: '',
+        notes: '',
+        _bold: true,
+      })
+
+      const condName = filterCond
+        ? (conditions.find(c => c.id === filterCond)?.name || '')
+        : ''
+      const titleLines = [
+        currentEntity?.name ? { text: currentEntity.name, bold: true, size: 13, bg: 'DBEAFE' } : null,
+        (currentEntity?.address || currentEntity?.city)
+          ? { text: [currentEntity.address, currentEntity.city].filter(Boolean).join(', '), size: 10 }
+          : null,
+        currentEntity?.diocese ? { text: currentEntity.diocese, size: 10, italic: true } : null,
+        { text: 'ASSET MANAGEMENT — MOVABLE ASSETS', bold: true, size: 12, bg: '1E3A5F', color: 'FFFFFF' },
+        {
+          text: [
+            asOnDate ? `As on ${fmtDate(asOnDate)}` : null,
+            condName ? `Condition: ${condName}` : null,
+            filterType ? `Type: ${masterDisplayName(itemTypes.find(t => t.id === filterType) || { name: '' }, itemTypes)}` : null,
+            filterLoc ? `Location: ${masterDisplayName(locations.find(l => l.id === filterLoc) || { name: '' }, locations)}` : null,
+            search.trim() ? `Search: “${search.trim()}”` : null,
+          ].filter(Boolean).join('  ·  ') || 'All items',
+          size: 10,
+        },
+      ].filter(Boolean)
+
+      const stamp = new Date().toISOString().slice(0, 10)
+      await exportToExcelWithTitle(
+        cols,
+        rows,
+        'Assets',
+        `Assets_${stamp}.xlsx`,
+        titleLines,
+      )
+      toast('Excel exported.', 'success')
+    } catch (e) {
+      toast(e.message || 'Export failed.', 'error')
+    }
+    setExporting(false)
+  }
+
   return (
     <div className="page-container">
       {/* Header */}
@@ -1125,16 +1247,34 @@ export default function AssetsPage() {
             <Settings size={15} />
           </button>
           {tab === 'movable' && (
-            <button
-              onClick={() => setModal({})}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
-                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              <Plus size={14} /> Add Asset
-            </button>
+            <>
+              <button
+                onClick={handleExport}
+                disabled={exporting || loading || groups.length === 0}
+                title="Export to Excel"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px',
+                  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+                  fontSize: 13, fontWeight: 600, cursor: exporting || groups.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: exporting || groups.length === 0 ? 0.6 : 1,
+                }}
+              >
+                {exporting
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <FileSpreadsheet size={14} />}
+                Export
+              </button>
+              <button
+                onClick={() => setModal({})}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
+                  background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} /> Add Asset
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1231,7 +1371,9 @@ export default function AssetsPage() {
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
               {asOnDate
-                ? <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{filterCond ? ' (incl. matching moved-out lines)' : ''}</>
+                ? filterCond
+                  ? <>Matching lines as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyDisplayTotal}</strong> unit{qtyDisplayTotal === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{qtyOnHand !== qtyDisplayTotal ? ` (${qtyOnHand} still on hand)` : ''}</>
+                  : <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}</>
                 : <>Showing {groups.length} item{groups.length === 1 ? '' : 's'} ({filtered.length} stock line{filtered.length === 1 ? '' : 's'})</>
               }
             </p>
@@ -1301,9 +1443,7 @@ export default function AssetsPage() {
                                 open
                                   ? <ChevronDown size={14} style={{ color: 'var(--accent)' }} />
                                   : <ChevronRight size={14} style={{ color: 'var(--text-3)' }} />
-                              ) : (
-                                <span style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 11 }}>#{a.serial_no}</span>
-                              )}
+                              ) : null}
                             </td>
                             <td style={{ padding: '8px 14px', width: 56 }}>
                               <div style={{
@@ -1328,9 +1468,9 @@ export default function AssetsPage() {
                             <td style={{
                               padding: '10px 14px', fontFamily: 'monospace', textAlign: 'center',
                               fontWeight: 800, fontSize: 14,
-                              color: g.allOut ? 'var(--text-3)' : 'var(--text-1)',
+                              color: (!filterCond && g.allOut) ? 'var(--text-3)' : 'var(--text-1)',
                             }}>
-                              {g.qtyOnHand}
+                              {g.qtyDisplay}
                             </td>
                             <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                               {a.item_type ? masterDisplayName(a.item_type, itemTypes) : '—'}
@@ -1358,7 +1498,7 @@ export default function AssetsPage() {
                               ) : '—'}
                             </td>
                             <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                              {g.hasCost ? fmtMoney(g.costOnHand) : '—'}
+                              {g.hasCost ? fmtMoney(g.costDisplay) : '—'}
                             </td>
                             <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                               <button onClick={() => setMoveAsset(a)} title="Stock Movement — in / out"
@@ -1398,8 +1538,8 @@ export default function AssetsPage() {
                                 borderBottom: '1px solid var(--card-border)',
                                 background: 'rgba(0,0,0,0.015)',
                               }}>
-                                <td style={{ padding: '8px 8px', textAlign: 'center', color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 11 }}>
-                                  #{line.serial_no}
+                                <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                                  <CornerDownRight size={12} style={{ color: 'var(--accent)', opacity: 0.7 }} />
                                 </td>
                                 <td style={{ padding: '6px 14px' }}>
                                   <div style={{
@@ -1413,14 +1553,8 @@ export default function AssetsPage() {
                                     }
                                   </div>
                                 </td>
-                                <td style={{ padding: '8px 14px 8px 28px', color: 'var(--text-2)', fontSize: 12 }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                    <CornerDownRight size={12} style={{ color: 'var(--accent)', opacity: 0.7 }} />
-                                    Stock line
-                                    {line.notes && (
-                                      <span style={{ color: 'var(--text-3)', fontSize: 11 }}>· {line.notes}</span>
-                                    )}
-                                  </span>
+                                <td style={{ padding: '8px 14px 8px 14px', color: 'var(--text-3)', fontSize: 12 }}>
+                                  {line.notes || ''}
                                 </td>
                                 <td style={{ padding: '8px 14px', fontFamily: 'monospace', textAlign: 'center', color: 'var(--text-1)', fontWeight: 700 }}>
                                   {line.quantity ?? 1}
