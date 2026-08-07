@@ -569,7 +569,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         <div style={{
           padding: '14px 22px', borderTop: '1px solid var(--card-border)',
           display: 'flex', justifyContent: 'flex-end', gap: 10,
-          position: 'sticky', bottom: 0, background: 'var(--card-bg)',
+          background: 'var(--card-bg)', flexShrink: 0,
         }}>
           <button onClick={onClose}
             style={{
