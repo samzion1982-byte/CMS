@@ -12,6 +12,8 @@ import {
   FIXED_ASSET_TYPES, FIXED_ASSET_STATUSES, FIXED_COVER_MAX_BYTES,
   getFixedAssets, saveFixedAsset, softDeleteFixedAsset,
   uploadFixedAssetCover, removeFixedAssetFile,
+  isFixedAssetsUnlocked, lockFixedAssets, touchFixedAssetsActivity,
+  shouldAutoLockFixedAssets,
 } from '../../lib/fixedAssetsLib'
 
 const INPUT = {
@@ -212,6 +214,30 @@ export default function FixedAssetsSettingsPanel() {
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null) // null | {} | row
   const [busy, setBusy] = useState(null)
+
+  // Keep Fixed Assets vault session alive / auto-lock while managing tiles
+  useEffect(() => {
+    if (!isFixedAssetsUnlocked()) return undefined
+    if (shouldAutoLockFixedAssets()) {
+      lockFixedAssets()
+      toast('Fixed Assets locked after 5 minutes of inactivity.', 'success')
+      return undefined
+    }
+    touchFixedAssetsActivity()
+    const bump = () => touchFixedAssetsActivity()
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel']
+    events.forEach(ev => window.addEventListener(ev, bump, { passive: true }))
+    const tick = window.setInterval(() => {
+      if (shouldAutoLockFixedAssets()) {
+        lockFixedAssets()
+        toast('Fixed Assets locked after 5 minutes of inactivity.', 'success')
+      }
+    }, 15_000)
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, bump))
+      window.clearInterval(tick)
+    }
+  }, [toast])
 
   const load = useCallback(async () => {
     setLoading(true)

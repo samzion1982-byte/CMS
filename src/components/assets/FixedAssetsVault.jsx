@@ -11,8 +11,9 @@ import {
 import { useToast } from '../../lib/toast'
 import { useAuth } from '../../lib/AuthContext'
 import {
-  FIXED_ASSETS_MASTER_PASSWORD,
+  FIXED_ASSETS_MASTER_PASSWORD, FIXED_ASSETS_IDLE_MS,
   isFixedAssetsUnlocked, unlockFixedAssets, lockFixedAssets,
+  touchFixedAssetsActivity, shouldAutoLockFixedAssets,
   getFixedAssets, countFixedAssetDocuments,
   getFixedAssetDocuments, saveFixedAssetDocument,
   softDeleteFixedAssetDocument, formatFileSize,
@@ -22,6 +23,139 @@ const INPUT = {
   height: 42, padding: '0 14px', border: '1.5px solid var(--card-border)',
   borderRadius: 10, fontSize: 14, background: 'var(--input-bg)',
   color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', width: '100%',
+}
+
+/** Keep vault unlocked only while the user stays active. */
+function useFixedAssetsIdleLock(enabled, onLock) {
+  const onLockRef = useRef(onLock)
+  onLockRef.current = onLock
+
+  useEffect(() => {
+    if (!enabled) return undefined
+
+    if (shouldAutoLockFixedAssets()) {
+      lockFixedAssets()
+      onLockRef.current?.()
+      return undefined
+    }
+
+    touchFixedAssetsActivity()
+
+    const bump = () => touchFixedAssetsActivity()
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel']
+    events.forEach(ev => window.addEventListener(ev, bump, { passive: true }))
+
+    const tick = window.setInterval(() => {
+      if (shouldAutoLockFixedAssets()) {
+        lockFixedAssets()
+        onLockRef.current?.()
+      }
+    }, 15_000)
+
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, bump))
+      window.clearInterval(tick)
+    }
+  }, [enabled])
+}
+
+function MasterPasswordModal({
+  title = 'Master Password',
+  message,
+  confirmLabel = 'Confirm',
+  onConfirm,
+  onClose,
+}) {
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState(false)
+  const inputRef = useRef(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [])
+
+  async function attempt() {
+    if (password !== FIXED_ASSETS_MASTER_PASSWORD) {
+      setError('Incorrect master password.')
+      setPassword('')
+      return
+    }
+    setWorking(true)
+    try {
+      await onConfirm()
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }} onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 400,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '20px 22px 8px', textAlign: 'center' }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 14, background: '#fee2e2',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px',
+          }}>
+            <Lock size={20} color="#b91c1c" />
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>{title}</p>
+          {message && (
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>{message}</p>
+          )}
+        </div>
+        <div style={{ padding: '14px 22px 22px' }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>
+            Master Password
+          </label>
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <input
+              ref={inputRef}
+              type={showPw ? 'text' : 'password'}
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError('') }}
+              onKeyDown={e => e.key === 'Enter' && attempt()}
+              placeholder="Enter master password…"
+              style={{
+                ...INPUT, height: 40, fontSize: 13, paddingRight: 42,
+                letterSpacing: showPw ? 'normal' : '0.12em',
+                border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}`,
+              }}
+            />
+            <button type="button" onClick={() => setShowPw(v => !v)} style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex',
+            }}>
+              {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          {error && <p style={{ fontSize: 12, color: '#b91c1c', fontWeight: 600, margin: '0 0 10px' }}>{error}</p>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={onClose} style={{
+              flex: 1, height: 40, borderRadius: 8, border: '1.5px solid var(--card-border)',
+              background: 'var(--card-bg)', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)',
+            }}>Cancel</button>
+            <button type="button" onClick={attempt} disabled={!password || working} style={{
+              flex: 2, height: 40, borderRadius: 8, border: 'none',
+              background: password ? '#b91c1c' : '#e5e7eb', color: password ? '#fff' : '#9ca3af',
+              fontSize: 13, fontWeight: 700, cursor: password ? 'pointer' : 'not-allowed',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            }}>
+              {working ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function LockScreen({ onUnlock }) {
@@ -331,6 +465,7 @@ function AssetDetail({ asset, onBack }) {
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [busy, setBusy] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const selected = docs.find(d => d.id === selectedId) || null
 
@@ -352,12 +487,14 @@ function AssetDetail({ asset, onBack }) {
 
   useEffect(() => { load() }, [load])
 
-  async function handleDelete(doc) {
-    if (!confirm(`Remove “${doc.title}”?`)) return
+  async function confirmDeleteDoc() {
+    const doc = deleteTarget
+    if (!doc) return
     setBusy(doc.id)
     try {
       await softDeleteFixedAssetDocument(doc.id, profile?.full_name || profile?.email || null)
       toast('Document removed.', 'success')
+      setDeleteTarget(null)
       const next = docs.filter(d => d.id !== doc.id)
       const nextId = selectedId === doc.id ? (next[0]?.id || null) : selectedId
       await load(nextId)
@@ -504,7 +641,7 @@ function AssetDetail({ asset, onBack }) {
                       )}
                       <button
                         type="button"
-                        onClick={e => { e.stopPropagation(); handleDelete(doc) }}
+                        onClick={e => { e.stopPropagation(); setDeleteTarget(doc) }}
                         disabled={busy === doc.id}
                         title="Remove"
                         style={{
@@ -562,6 +699,16 @@ function AssetDetail({ asset, onBack }) {
           asset={asset}
           onClose={() => setUploadOpen(false)}
           onSaved={async () => { await load() }}
+        />
+      )}
+
+      {deleteTarget && (
+        <MasterPasswordModal
+          title="Delete document"
+          message={`Enter the master password to permanently remove “${deleteTarget.title}” from this vault.`}
+          confirmLabel="Delete document"
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={confirmDeleteDoc}
         />
       )}
     </div>
@@ -689,11 +836,19 @@ function TileGrid({ assets, counts, onOpen }) {
 export default function FixedAssetsVault() {
   const toast = useToast()
   const navigate = useNavigate()
-  const [unlocked, setUnlocked] = useState(() => isFixedAssetsUnlocked())
+  const [unlocked, setUnlocked] = useState(() => isFixedAssetsUnlocked() && !shouldAutoLockFixedAssets())
   const [assets, setAssets] = useState([])
   const [counts, setCounts] = useState({})
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState(null)
+
+  const handleAutoLock = useCallback(() => {
+    setSelected(null)
+    setUnlocked(false)
+    toast('Fixed Assets locked after 5 minutes of inactivity.', 'success')
+  }, [toast])
+
+  useFixedAssetsIdleLock(unlocked, handleAutoLock)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -726,7 +881,7 @@ export default function FixedAssetsVault() {
             {selected ? 'Documents' : 'Property tiles'}
           </p>
           <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-            Manage tiles in Settings · documents stay inside each tile
+            Auto-locks after {Math.round(FIXED_ASSETS_IDLE_MS / 60000)} min idle · manage tiles in Settings
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

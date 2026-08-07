@@ -7,6 +7,9 @@ import { supabase } from './supabase'
 /** Same master password used across sensitive CMS settings. */
 export const FIXED_ASSETS_MASTER_PASSWORD = 'Master007))&'
 export const FIXED_ASSETS_UNLOCK_KEY = 'fixed_assets_unlocked'
+export const FIXED_ASSETS_ACTIVITY_KEY = 'fixed_assets_last_activity'
+/** Auto-lock vault after this much inactivity (ms). */
+export const FIXED_ASSETS_IDLE_MS = 5 * 60 * 1000
 
 export const FIXED_ASSET_TYPES = [
   'Land',
@@ -35,12 +38,32 @@ export function isFixedAssetsUnlocked() {
   }
 }
 
+export function touchFixedAssetsActivity() {
+  try {
+    sessionStorage.setItem(FIXED_ASSETS_ACTIVITY_KEY, String(Date.now()))
+  } catch { /* ignore */ }
+}
+
 export function unlockFixedAssets() {
   sessionStorage.setItem(FIXED_ASSETS_UNLOCK_KEY, '1')
+  touchFixedAssetsActivity()
 }
 
 export function lockFixedAssets() {
   sessionStorage.removeItem(FIXED_ASSETS_UNLOCK_KEY)
+  sessionStorage.removeItem(FIXED_ASSETS_ACTIVITY_KEY)
+}
+
+/** True if unlocked session has been idle longer than FIXED_ASSETS_IDLE_MS. */
+export function shouldAutoLockFixedAssets() {
+  if (!isFixedAssetsUnlocked()) return false
+  try {
+    const last = Number(sessionStorage.getItem(FIXED_ASSETS_ACTIVITY_KEY) || 0)
+    if (!last) return true
+    return Date.now() - last >= FIXED_ASSETS_IDLE_MS
+  } catch {
+    return true
+  }
 }
 
 export async function getFixedAssets(includeInactive = false) {
