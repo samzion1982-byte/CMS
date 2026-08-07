@@ -386,12 +386,13 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
     }}>
       <div style={{
         background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 704,
-        maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+        maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
+        display: 'flex', flexDirection: 'column',
       }}>
         <div style={{
           padding: '18px 22px 14px', borderBottom: '1px solid var(--card-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1,
+          background: 'var(--card-bg)', flexShrink: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Package size={16} style={{ color: 'var(--accent)' }} />
@@ -404,7 +405,10 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           </button>
         </div>
 
-        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{
+          padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
+          overflowY: 'auto', flex: 1, minHeight: 0,
+        }}>
           {/* Photo */}
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
             <div
