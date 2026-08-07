@@ -14,6 +14,7 @@ import { useToast } from '../lib/toast'
 import { useAuth } from '../lib/AuthContext'
 import { getChurch } from '../lib/supabase'
 import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
+import FixedAssetsVault from '../components/assets/FixedAssetsVault'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn,
@@ -1402,6 +1403,19 @@ export default function AssetsPage() {
               </button>
             </>
           )}
+          {tab === 'building' && (
+            <button
+              onClick={() => navigate('/assets/settings?tab=fixed-assets')}
+              title="Manage Fixed Asset tiles"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px',
+                background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8,
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)',
+              }}
+            >
+              <Settings size={14} /> Manage tiles
+            </button>
+          )}
         </div>
       </div>
 
@@ -1433,9 +1447,7 @@ export default function AssetsPage() {
         ))}
       </div>
 
-      {tab !== 'movable' ? (
-        <ComingSoon label={ASSET_CATEGORIES.find(c => c.id === tab)?.label} />
-      ) : (
+      {tab === 'movable' ? (
         <>
           {/* Filters */}
           <div className="card" style={{ padding: '12px 14px', marginBottom: 14 }}>
@@ -1746,6 +1758,10 @@ export default function AssetsPage() {
             </div>
           )}
         </>
+      ) : tab === 'building' ? (
+        <FixedAssetsVault />
+      ) : (
+        <ComingSoon label={ASSET_CATEGORIES.find(c => c.id === tab)?.label} />
       )}
 
       {modal && (

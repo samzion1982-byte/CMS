@@ -13,7 +13,7 @@ const ASSET_SELECT = `
 
 export const ASSET_CATEGORIES = [
   { id: 'movable',  label: 'Movable Assets', enabled: true  },
-  { id: 'building', label: 'Fixed Assets',   enabled: false },
+  { id: 'building', label: 'Fixed Assets',   enabled: true  },
   { id: 'document', label: 'Documents',      enabled: false },
 ]
 

@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Settings, ArrowLeft, Plus, Pencil, Trash2, Check, X,
   Loader2, MapPin, Tag, HeartPulse, GripVertical,
-  ChevronDown, ChevronRight, Folder,
+  ChevronDown, ChevronRight, Folder, Building2,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
 import {
@@ -17,11 +17,13 @@ import {
   deactivateMaster, deleteMaster,
   buildMasterTree, moveMasterItem, getAllMasterDescendants,
 } from '../lib/assetsLib'
+import FixedAssetsSettingsPanel from '../components/assets/FixedAssetsSettingsPanel'
 
 const TABS = [
-  { id: 'locations',  label: 'Locations',  icon: MapPin,     table: 'asset_locations',  load: getAssetLocations,  save: saveAssetLocation,  hierarchical: true  },
-  { id: 'types',      label: 'Item Types', icon: Tag,        table: 'asset_item_types', load: getAssetItemTypes,  save: saveAssetItemType,  hierarchical: true  },
-  { id: 'conditions', label: 'Conditions', icon: HeartPulse, table: 'asset_conditions', load: getAssetConditions, save: saveAssetCondition, hierarchical: false },
+  { id: 'locations',    label: 'Locations',     icon: MapPin,     table: 'asset_locations',  load: getAssetLocations,  save: saveAssetLocation,  hierarchical: true,  kind: 'master' },
+  { id: 'types',        label: 'Item Types',    icon: Tag,        table: 'asset_item_types', load: getAssetItemTypes,  save: saveAssetItemType,  hierarchical: true,  kind: 'master' },
+  { id: 'conditions',   label: 'Conditions',    icon: HeartPulse, table: 'asset_conditions', load: getAssetConditions, save: saveAssetCondition, hierarchical: false, kind: 'master' },
+  { id: 'fixed-assets', label: 'Fixed Assets',  icon: Building2,  hierarchical: false, kind: 'fixed' },
 ]
 
 const PRESET_COLORS = [
@@ -687,7 +689,13 @@ function FlatMasterList({ tabDef }) {
 
 export default function AssetsSettingsPage() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState('locations')
+  const [tab, setTab] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('tab')
+      if (q && TABS.some(t => t.id === q)) return q
+    } catch { /* ignore */ }
+    return 'locations'
+  })
   const tabDef = TABS.find(t => t.id === tab)
 
   return (
@@ -711,7 +719,7 @@ export default function AssetsSettingsPage() {
               <Settings size={18} style={{ color: 'var(--accent)' }} />
               Asset Settings
             </h1>
-            <p className="page-subtitle">Locations & item types nest like Chart of Accounts — drag to move</p>
+            <p className="page-subtitle">Masters for movable inventory · Fixed Asset tiles for the vault</p>
           </div>
         </div>
       </div>
@@ -746,10 +754,13 @@ export default function AssetsSettingsPage() {
         })}
       </div>
 
-      {tabDef?.hierarchical
-        ? <HierarchicalMasterList key={tabDef.id} tabDef={tabDef} />
-        : <FlatMasterList key={tabDef.id} tabDef={tabDef} />
-      }
+      {tabDef?.kind === 'fixed' ? (
+        <FixedAssetsSettingsPanel />
+      ) : tabDef?.hierarchical ? (
+        <HierarchicalMasterList key={tabDef.id} tabDef={tabDef} />
+      ) : (
+        <FlatMasterList key={tabDef.id} tabDef={tabDef} />
+      )}
     </div>
   )
 }
