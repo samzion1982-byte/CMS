@@ -1,7 +1,7 @@
 import { adminSupabase } from './supabase'
 
 const GEO_CACHE_KEY  = 'church_cms_geo_v3'        // v3 — ipinfo token
-const GPS_TTL_MS     = 30 * 24 * 60 * 60 * 1000  // GPS result: 30 days
+const MANUAL_TTL_MS  = 30 * 24 * 60 * 60 * 1000  // manual correction: 30 days
 const IP_TTL_MS      =      24 * 60 * 60 * 1000  // IP result:   1 day
 
 // Pre-fetch started on login page mount so result is ready before sign-in
@@ -12,7 +12,9 @@ function readGeoCache() {
     const raw = localStorage.getItem(GEO_CACHE_KEY)
     if (!raw) return null
     const obj = JSON.parse(raw)
-    const ttl = (obj.source === 'gps' || obj.source === 'manual') ? GPS_TTL_MS : IP_TTL_MS
+    // Drop legacy browser-GPS cache entries
+    if (obj.source === 'gps') { localStorage.removeItem(GEO_CACHE_KEY); return null }
+    const ttl = obj.source === 'manual' ? MANUAL_TTL_MS : IP_TTL_MS
     if (Date.now() - obj.cachedAt > ttl) { localStorage.removeItem(GEO_CACHE_KEY); return null }
     return obj
   } catch { return null }
@@ -20,33 +22,6 @@ function readGeoCache() {
 
 function writeGeoCache(loc) {
   try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ ...loc, cachedAt: Date.now() })) } catch { /* ignore */ }
-}
-
-/* GPS → Nominatim reverse geocode. Browser remembers permission; prompt appears once. */
-async function fetchByGPS() {
-  if (!navigator?.geolocation) return null
-  const coords = await new Promise(resolve =>
-    navigator.geolocation.getCurrentPosition(p => resolve(p.coords), () => resolve(null), { timeout: 7000, maximumAge: 60000 })
-  )
-  if (!coords) return null
-  try {
-    const controller = new AbortController()
-    const t = setTimeout(() => controller.abort(), 5000)
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json`,
-      { signal: controller.signal, headers: { 'Accept-Language': 'en' } }
-    )
-    clearTimeout(t)
-    if (!res.ok) return null
-    const { address: a = {} } = await res.json()
-    return {
-      source:    'gps',
-      ipAddress: null,
-      city:      a.city || a.town || a.village || a.county || null,
-      region:    a.state || null,
-      country:   a.country || null,
-    }
-  } catch { return null }
 }
 
 /* Single IP lookup with 4 s timeout */
@@ -76,8 +51,7 @@ async function fetchByIP() {
   return race
 }
 
-/* Call on login page mount — starts GPS + IP in parallel while the user
-   types credentials. Result is ready (or nearly so) by sign-in time. */
+/* Call on login page mount — starts IP lookup while the user types credentials. */
 export function warmGeoLocation() {
   if (readGeoCache()) return           // already have fresh data
   if (_warmPromise) return             // already running
@@ -85,8 +59,7 @@ export function warmGeoLocation() {
 }
 
 async function _resolveGeo() {
-  const [gps, ip] = await Promise.all([fetchByGPS(), fetchByIP()])
-  const loc = gps || ip || {}
+  const loc = (await fetchByIP()) || {}
   if (loc.city || loc.region || loc.country) writeGeoCache(loc)
   return loc
 }
