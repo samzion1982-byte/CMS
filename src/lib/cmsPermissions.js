@@ -3,6 +3,30 @@ import {
   buildDefaultGrants, findPageForPath, defaultPageAllowed,
 } from './cmsPages'
 
+/** Older flat keys → new leaf keys (Events split into sub-pages). */
+const LEGACY_PAGE_KEYS = {
+  events: ['events-planner', 'events-recorder', 'events-settings'],
+}
+
+function applyGrantRows(target, rowsByKey) {
+  for (const [key, allowed] of Object.entries(rowsByKey)) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      target[key] = !!allowed
+      continue
+    }
+    const mapped = LEGACY_PAGE_KEYS[key]
+    if (mapped) {
+      for (const k of mapped) {
+        if (Object.prototype.hasOwnProperty.call(target, k)) target[k] = !!allowed
+      }
+    }
+  }
+  for (const page of CMS_PAGES) {
+    if (page.alwaysOn) target[page.key] = true
+  }
+  return target
+}
+
 /**
  * Load stored grants for all configurable roles.
  * Returns { admin1: { pageKey: bool, _custom }, ... }
@@ -27,8 +51,9 @@ export async function loadAllRolePageGrants(client) {
     } else {
       const grants = {}
       for (const page of CMS_PAGES) {
-        grants[page.key] = page.alwaysOn ? true : !!rowsByRole[r.value][page.key]
+        grants[page.key] = page.alwaysOn ? true : false
       }
+      applyGrantRows(grants, rowsByRole[r.value])
       result[r.value] = { ...grants, _custom: true }
     }
   }
@@ -56,14 +81,9 @@ export async function loadRolePageGrants(client, role) {
   for (const page of CMS_PAGES) {
     grants[page.key] = page.alwaysOn ? true : false
   }
-  for (const row of data) {
-    if (Object.prototype.hasOwnProperty.call(grants, row.page_key)) {
-      grants[row.page_key] = !!row.allowed
-    }
-  }
-  for (const page of CMS_PAGES) {
-    if (page.alwaysOn) grants[page.key] = true
-  }
+  const rowsByKey = {}
+  for (const row of data) rowsByKey[row.page_key] = row.allowed
+  applyGrantRows(grants, rowsByKey)
   return grants
 }
 

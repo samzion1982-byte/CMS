@@ -1,6 +1,6 @@
 /**
- * CMS page catalog — used by CMS Permissions UI, Sidebar filtering, and route guards.
- * `match` is a path prefix (exact or startsWith match + '/').
+ * CMS page catalog — mirrors Sidebar categories & nested items.
+ * Grants are stored per leaf page key; category/folder checkboxes are aggregates.
  */
 
 export const CMS_CONFIG_ROLES = [
@@ -10,36 +10,80 @@ export const CMS_CONFIG_ROLES = [
   { value: 'demo',   label: 'Demo'   },
 ]
 
-/** Pages Super Admin can grant to other roles. */
-export const CMS_PAGES = [
-  // MAIN
-  { key: 'dashboard',       label: 'Dashboard',         group: 'MAIN',    match: '/dashboard',       alwaysOn: true },
-  { key: 'members',         label: 'Members',           group: 'MAIN',    match: '/members' },
-  { key: 'announcements',   label: 'Announcements',     group: 'MAIN',    match: '/announcements',   exclude: ['/announcements-log'] },
-  { key: 'events',          label: 'Events',            group: 'MAIN',    match: '/events' },
-  { key: 'assets',          label: 'Asset Management',  group: 'MAIN',    match: '/assets' },
-
-  // FINANCE
-  { key: 'declaration',       label: 'Declaration',       group: 'FINANCE', match: '/declaration',       adminDefault: true },
-  { key: 'receipts',          label: 'Receipt Entry',     group: 'FINANCE', match: '/receipts',          adminDefault: true },
-  { key: 'payment-schedule',  label: 'Payment Schedule',  group: 'FINANCE', match: '/payment-schedule',  adminDefault: true },
-  { key: 'accounting',        label: 'Accounts',          group: 'FINANCE', match: '/accounting',        adminDefault: true },
-  { key: 'simple-accounts',   label: 'Simple Accounts',   group: 'FINANCE', match: '/simple-accounts',   adminDefault: true },
-  { key: 'report-member',     label: 'Member Report',     group: 'FINANCE', match: '/reports/member',    adminDefault: true },
-  { key: 'member-statement',  label: 'Member Statement',  group: 'FINANCE', match: '/member-statement',  adminDefault: true },
-  { key: 'report-receipts',   label: 'Receipt Report',    group: 'FINANCE', match: '/reports',           adminDefault: true, exact: true },
-  { key: 'report-auction',    label: 'Auction Report',    group: 'FINANCE', match: '/reports/auction',   adminDefault: true },
-  { key: 'report-transfers',  label: 'Transfer Report',   group: 'FINANCE', match: '/reports/transfers', adminDefault: true },
-
-  // ADMIN (grantable — Church Setup historically available to Admin1)
-  { key: 'church-setup',      label: 'Church Setup',      group: 'ADMIN',   match: '/church-setup',      admin1Default: true },
-
-  // LOGS
-  { key: 'announcements-log',    label: 'Announcements Log',  group: 'LOGS', match: '/announcements-log',    adminDefault: true },
-  { key: 'whatsapp-receipt-log', label: 'WhatsApp Receipts',  group: 'LOGS', match: '/whatsapp-receipt-log', adminDefault: true },
-  { key: 'payment-request-log',  label: 'Payment Req. Log',   group: 'LOGS', match: '/payment-request-log',  adminDefault: true },
-  { key: 'login-logs',           label: 'Login Details',      group: 'LOGS', match: '/login-logs',           adminDefault: true },
+/**
+ * Permission tree (Categories → items / folders → sub-items).
+ * `kind: 'category' | 'folder' | 'page'`
+ * Only `page` nodes are stored in cms_role_page_access.
+ */
+export const CMS_PERMISSION_TREE = [
+  {
+    key: 'cat-main',
+    label: 'MAIN',
+    kind: 'category',
+    children: [
+      { key: 'dashboard',     label: 'Dashboard',         kind: 'page', match: '/dashboard', alwaysOn: true },
+      { key: 'members',       label: 'Members',           kind: 'page', match: '/members' },
+      { key: 'announcements', label: 'Announcements',     kind: 'page', match: '/announcements', exclude: ['/announcements-log'] },
+      {
+        key: 'folder-events',
+        label: 'Events',
+        kind: 'folder',
+        children: [
+          { key: 'events-planner',  label: 'Event Planner',  kind: 'page', match: '/events/planner' },
+          { key: 'events-recorder', label: 'Event Recorder', kind: 'page', match: '/events/recorder' },
+          { key: 'events-settings', label: 'Event Settings', kind: 'page', match: '/events/settings' },
+        ],
+      },
+      { key: 'assets', label: 'Asset Management', kind: 'page', match: '/assets' },
+    ],
+  },
+  {
+    key: 'cat-finance',
+    label: 'FINANCE',
+    kind: 'category',
+    children: [
+      { key: 'declaration',      label: 'Declaration',      kind: 'page', match: '/declaration',      adminDefault: true },
+      { key: 'receipts',         label: 'Receipt Entry',    kind: 'page', match: '/receipts',         adminDefault: true },
+      { key: 'payment-schedule', label: 'Payment Schedule', kind: 'page', match: '/payment-schedule', adminDefault: true },
+      { key: 'accounting',       label: 'Accounts',         kind: 'page', match: '/accounting',       adminDefault: true },
+      { key: 'simple-accounts',  label: 'Simple Accounts',  kind: 'page', match: '/simple-accounts',  adminDefault: true },
+      {
+        key: 'folder-reports',
+        label: 'Reports',
+        kind: 'folder',
+        children: [
+          { key: 'report-member',    label: 'Member Report',    kind: 'page', match: '/reports/member',    adminDefault: true },
+          { key: 'member-statement', label: 'Member Statement', kind: 'page', match: '/member-statement',  adminDefault: true },
+          { key: 'report-receipts',  label: 'Receipt Report',   kind: 'page', match: '/reports',           adminDefault: true, exact: true },
+          { key: 'report-auction',   label: 'Auction Report',   kind: 'page', match: '/reports/auction',   adminDefault: true },
+          { key: 'report-transfers', label: 'Transfer Report',  kind: 'page', match: '/reports/transfers', adminDefault: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'cat-admin',
+    label: 'ADMIN',
+    kind: 'category',
+    children: [
+      { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup', admin1Default: true },
+    ],
+  },
+  {
+    key: 'cat-logs',
+    label: 'LOGS',
+    kind: 'category',
+    children: [
+      { key: 'announcements-log',    label: 'Announcements Log', kind: 'page', match: '/announcements-log',    adminDefault: true },
+      { key: 'whatsapp-receipt-log', label: 'WhatsApp Receipts', kind: 'page', match: '/whatsapp-receipt-log', adminDefault: true },
+      { key: 'payment-request-log',  label: 'Payment Req. Log',  kind: 'page', match: '/payment-request-log',  adminDefault: true },
+      { key: 'login-logs',           label: 'Login Details',     kind: 'page', match: '/login-logs',           adminDefault: true },
+    ],
+  },
 ]
+
+/** Flat leaf pages (what gets saved / checked on routes). */
+export const CMS_PAGES = flattenPages(CMS_PERMISSION_TREE)
 
 /** Super Admin–only tools — never grantable via CMS Permissions. */
 export const CMS_SUPER_ONLY_MATCHES = [
@@ -47,6 +91,31 @@ export const CMS_SUPER_ONLY_MATCHES = [
   '/cms-permissions',
   '/import',
 ]
+
+function flattenPages(nodes, groupLabel = null) {
+  const out = []
+  for (const node of nodes) {
+    if (node.kind === 'category') {
+      out.push(...flattenPages(node.children || [], node.label))
+    } else if (node.kind === 'folder') {
+      out.push(...flattenPages(node.children || [], groupLabel))
+    } else if (node.kind === 'page') {
+      out.push({ ...node, group: groupLabel || node.group || '' })
+    }
+  }
+  return out
+}
+
+/** All leaf page keys under a category or folder node. */
+export function leafKeysUnder(node) {
+  if (!node) return []
+  if (node.kind === 'page') return [node.key]
+  const keys = []
+  for (const child of node.children || []) {
+    keys.push(...leafKeysUnder(child))
+  }
+  return keys
+}
 
 export function pathMatchesPage(pathname, page) {
   if (!pathname || !page?.match) return false
@@ -56,7 +125,6 @@ export function pathMatchesPage(pathname, page) {
 }
 
 export function findPageForPath(pathname) {
-  // Prefer longest / most specific match
   const hits = CMS_PAGES.filter(p => pathMatchesPage(pathname, p))
   if (!hits.length) return null
   hits.sort((a, b) => b.match.length - a.match.length)
@@ -69,7 +137,6 @@ export function defaultPageAllowed(role, page) {
   if (page.alwaysOn) return true
   if (page.admin1Default) return role === 'admin1'
   if (page.adminDefault) return role === 'admin1' || role === 'admin'
-  // MAIN (non-alwaysOn): all roles
   if (page.group === 'MAIN') return true
   return false
 }
@@ -82,10 +149,26 @@ export function buildDefaultGrants(role) {
   return grants
 }
 
+/** @deprecated use CMS_PERMISSION_TREE — kept for any callers */
 export function groupedPages() {
-  const order = ['MAIN', 'FINANCE', 'ADMIN', 'LOGS']
-  return order.map(group => ({
-    group,
-    pages: CMS_PAGES.filter(p => p.group === group),
-  })).filter(g => g.pages.length)
+  return CMS_PERMISSION_TREE.map(cat => ({
+    group: cat.label,
+    pages: leafKeysUnder(cat).map(k => CMS_PAGES.find(p => p.key === k)).filter(Boolean),
+  }))
+}
+
+/**
+ * Aggregate checkbox state for a category/folder given a role's grant map.
+ * @returns {'all'|'some'|'none'}
+ */
+export function aggregateState(node, grants) {
+  const keys = leafKeysUnder(node).filter(k => {
+    const page = CMS_PAGES.find(p => p.key === k)
+    return page && !page.alwaysOn
+  })
+  if (!keys.length) return 'all'
+  const on = keys.filter(k => !!grants?.[k]).length
+  if (on === 0) return 'none'
+  if (on === keys.length) return 'all'
+  return 'some'
 }
