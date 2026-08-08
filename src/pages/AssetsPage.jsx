@@ -956,9 +956,8 @@ export default function AssetsPage() {
       if (asOnDate) {
         // Not acquired yet as of that date
         if (a.stock_in_date && a.stock_in_date > asOnDate) return false
-        // Moved out on/before that date: hide from default on-hand view,
-        // but keep visible when filtering by condition (e.g. Damaged)
-        if (!filterCond && a.stock_out_date && a.stock_out_date <= asOnDate) return false
+        // All Conditions (and every condition filter) shows every status,
+        // including moved-out / damaged / disposed lines.
       }
 
       if (!q) return true
@@ -988,15 +987,13 @@ export default function AssetsPage() {
         const c = l.purchase_value != null ? Number(l.purchase_value) : null
         return s + (c != null && Number.isFinite(c) ? c : 0)
       }, 0)
-      // When filtering by condition (e.g. Damaged), show qty of matching lines —
-      // moved-out damaged stock is not "on hand" but must still show its quantity.
-      const qtyLines = filterCond ? sorted : onHandLines
-      const qtyDisplay = qtyLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
-      const costDisplay = qtyLines.reduce((s, l) => {
+      // Qty/cost include every matching line (all conditions / moved-out)
+      const qtyDisplay = sorted.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const costDisplay = sorted.reduce((s, l) => {
         const c = l.purchase_value != null ? Number(l.purchase_value) : null
         return s + (c != null && Number.isFinite(c) ? c : 0)
       }, 0)
-      const hasCost = qtyLines.some(l => l.purchase_value != null || l.unit_price != null)
+      const hasCost = sorted.some(l => l.purchase_value != null || l.unit_price != null)
       const primary = onHandLines[0] || sorted[0]
       const allOut = onHandLines.length === 0
       return {
@@ -1012,7 +1009,7 @@ export default function AssetsPage() {
         allOut,
       }
     }).sort((a, b) => a.primary.description.localeCompare(b.primary.description))
-  }, [filtered, asOnDate, filterCond])
+  }, [filtered, asOnDate])
 
   const qtyOnHand = useMemo(
     () => groups.reduce((s, g) => s + g.qtyOnHand, 0),
@@ -1577,9 +1574,7 @@ export default function AssetsPage() {
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
               {asOnDate
-                ? filterCond
-                  ? <>Matching lines as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyDisplayTotal}</strong> unit{qtyDisplayTotal === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{qtyOnHand !== qtyDisplayTotal ? ` (${qtyOnHand} still on hand)` : ''}</>
-                  : <>On hand as on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> unit{qtyOnHand === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}</>
+                ? <>As on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyDisplayTotal}</strong> unit{qtyDisplayTotal === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{qtyOnHand !== qtyDisplayTotal ? ` (${qtyOnHand} still on hand)` : ''}</>
                 : <>Showing {groups.length} item{groups.length === 1 ? '' : 's'} ({filtered.length} stock line{filtered.length === 1 ? '' : 's'})</>
               }
             </p>
@@ -1739,6 +1734,7 @@ export default function AssetsPage() {
 
                           {multi && open && g.lines.map(line => {
                             const lc = line.condition?.color || '#64748b'
+                            const notes = userFacingNotes(line.notes)
                             return (
                               <tr key={line.id} style={{
                                 borderBottom: '1px solid var(--card-border)',
@@ -1759,15 +1755,20 @@ export default function AssetsPage() {
                                     }
                                   </div>
                                 </td>
-                                <td style={{ padding: '8px 14px 8px 14px', color: 'var(--text-3)', fontSize: 12 }}>
-                                  {userFacingNotes(line.notes) || ''}
+                                <td style={{ padding: '8px 14px', maxWidth: 280 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-2)' }}>{line.description || '—'}</p>
+                                  {notes ? (
+                                    <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>{notes}</p>
+                                  ) : null}
                                 </td>
                                 <td style={{ padding: '8px 14px', fontFamily: 'monospace', textAlign: 'center', color: 'var(--text-1)', fontWeight: 700 }}>
                                   {line.quantity ?? 1}
                                 </td>
-                                <td style={{ padding: '8px 14px', color: 'var(--text-3)', fontSize: 12 }} colSpan={2}>
-                                  In {fmtDate(line.stock_in_date)}
-                                  {line.stock_out_date ? ` → Out ${fmtDate(line.stock_out_date)}` : ''}
+                                <td style={{ padding: '8px 14px', color: 'var(--text-2)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                                  {line.item_type ? masterDisplayName(line.item_type, itemTypes) : '—'}
+                                </td>
+                                <td style={{ padding: '8px 14px', color: 'var(--text-2)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                                  {line.location ? masterDisplayName(line.location, locations) : '—'}
                                 </td>
                                 <td style={{ padding: '8px 14px', fontSize: 12 }}>
                                   {line.stock_out_date ? (
@@ -1775,6 +1776,10 @@ export default function AssetsPage() {
                                   ) : (
                                     <span style={{ color: '#16a34a', fontWeight: 600 }}>In stock</span>
                                   )}
+                                  <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
+                                    In {fmtDate(line.stock_in_date)}
+                                    {line.stock_out_date ? ` → Out ${fmtDate(line.stock_out_date)}` : ''}
+                                  </div>
                                 </td>
                                 <td style={{ padding: '8px 14px' }}>
                                   {line.condition ? (
