@@ -1212,6 +1212,39 @@ input[type="radio"]                    { cursor: pointer; user-select: none; }
 .btn-confirm-payment:active:not(:disabled) { transform: translateY(0); }
 
 /* ═══════════════════════════════════════════════════════════════
+   ASSET MODAL — focused field double ring (orange + blue)
+   ═══════════════════════════════════════════════════════════════ */
+
+[data-asset-modal] .asset-focus-field:focus,
+[data-asset-modal] .asset-focus-field:focus-visible {
+  border-color: #f97316 !important;
+  border-width: 2px !important;
+  box-shadow: 0 0 0 2px #2563eb !important;
+  outline: none !important;
+}
+
+[data-asset-modal] .date-parts-input:focus-within {
+  border-color: #f97316 !important;
+  border-width: 2px !important;
+  box-shadow: 0 0 0 2px #2563eb !important;
+  outline: none !important;
+}
+
+[data-asset-modal] .date-parts-input input:focus,
+[data-asset-modal] .date-parts-input input:focus-visible {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+[data-asset-modal] .asset-save-btn:focus,
+[data-asset-modal] .asset-save-btn:focus-visible {
+  border: 2px solid #f97316 !important;
+  box-shadow: 0 0 0 2px #2563eb !important;
+  outline: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    ACCESSIBILITY
    ═══════════════════════════════════════════════════════════════ */
 

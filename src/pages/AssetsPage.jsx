@@ -81,8 +81,225 @@ function advanceAfterChange(el) {
 function onAdvanceKeyDown(e) {
   if (e.key !== 'Enter') return
   if (e.target?.tagName === 'TEXTAREA') return
+  // Date segments handle Enter themselves
+  if (e.target?.dataset?.datePart) return
   e.preventDefault()
   advanceAfterChange(e.target)
+}
+
+function parseIsoDateParts(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return { d: '', m: '', y: '' }
+  const [y, m, d] = String(iso).split('-')
+  return { d, m, y }
+}
+
+function daysInMonth(month, year) {
+  const mi = Number(month)
+  const yi = Number(year)
+  if (!mi || mi < 1 || mi > 12) return 31
+  if (yi && String(year).length === 4) return new Date(yi, mi, 0).getDate()
+  return 31
+}
+
+function isoFromParts(d, m, y) {
+  if (d.length !== 2 || m.length !== 2 || y.length !== 4) return ''
+  const di = Number(d)
+  const mi = Number(m)
+  const yi = Number(y)
+  if (mi < 1 || mi > 12) return ''
+  const max = daysInMonth(m, y)
+  if (di < 1 || di > max) return ''
+  return `${y}-${m}-${d}`
+}
+
+function isValidDayPrefix(text, month, year) {
+  if (!text) return true
+  if (!/^\d{1,2}$/.test(text)) return false
+  if (text.length === 1) return Number(text) <= 3
+  const n = Number(text)
+  const max = daysInMonth(month, year)
+  return n >= 1 && n <= max
+}
+
+function isValidMonthPrefix(text) {
+  if (!text) return true
+  if (!/^\d{1,2}$/.test(text)) return false
+  const n = Number(text)
+  // First digit may only be 0 or 1 (months 01–12)
+  if (text.length === 1) return n <= 1
+  // Reject 00 and 13–99 — keep focus on month
+  return n >= 1 && n <= 12
+}
+
+function isValidYearPrefix(text) {
+  if (!text) return true
+  return /^\d{1,4}$/.test(text)
+}
+
+/**
+ * DD-MM-YYYY entry. Advances day→month→year only when the segment is
+ * complete and valid (e.g. month "13" is rejected and focus stays put).
+ * Emits ISO yyyy-mm-dd when complete; '' when cleared.
+ */
+function DatePartsInput({ value, onChange, onComplete, style }) {
+  const [parts, setParts] = useState(() => parseIsoDateParts(value))
+  const dayRef = useRef(null)
+  const monthRef = useRef(null)
+  const yearRef = useRef(null)
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    if (focusedRef.current) return
+    setParts(parseIsoDateParts(value))
+  }, [value])
+
+  function commit(next, { advanceTo } = {}) {
+    setParts(next)
+    const iso = isoFromParts(next.d, next.m, next.y)
+    if (iso) {
+      onChange(iso)
+      if (advanceTo === 'done') onComplete?.(yearRef.current)
+    } else if (!next.d && !next.m && !next.y) {
+      onChange('')
+    }
+    if (advanceTo === 'month') monthRef.current?.focus()
+    if (advanceTo === 'year') yearRef.current?.focus()
+  }
+
+  function onPartChange(which, raw) {
+    const digits = raw.replace(/\D/g, '')
+    if (which === 'd') {
+      const d = digits.slice(0, 2)
+      if (!isValidDayPrefix(d, parts.m, parts.y)) return
+      const next = { ...parts, d }
+      const complete = d.length === 2 && isValidDayPrefix(d, parts.m, parts.y)
+      commit(next, { advanceTo: complete ? 'month' : undefined })
+      return
+    }
+    if (which === 'm') {
+      const m = digits.slice(0, 2)
+      // Reject invalid months like "13" — stay on month
+      if (!isValidMonthPrefix(m)) return
+      let d = parts.d
+      if (d.length === 2 && m.length === 2) {
+        const max = daysInMonth(m, parts.y)
+        if (Number(d) > max) d = String(max).padStart(2, '0')
+      }
+      const next = { ...parts, m, d }
+      const complete = m.length === 2 && Number(m) >= 1 && Number(m) <= 12
+      commit(next, { advanceTo: complete ? 'year' : undefined })
+      return
+    }
+    const y = digits.slice(0, 4)
+    if (!isValidYearPrefix(y)) return
+    let d = parts.d
+    if (d.length === 2 && parts.m.length === 2 && y.length === 4) {
+      const max = daysInMonth(parts.m, y)
+      if (Number(d) > max) d = String(max).padStart(2, '0')
+    }
+    const next = { ...parts, y, d }
+    const complete = y.length === 4 && !!isoFromParts(next.d, next.m, next.y)
+    commit(next, { advanceTo: complete ? 'done' : undefined })
+  }
+
+  function onPartKeyDown(which, e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (which === 'd') monthRef.current?.focus()
+      else if (which === 'm') yearRef.current?.focus()
+      else advanceAfterChange(e.target)
+      return
+    }
+    if (e.key === 'Backspace' && !e.currentTarget.value) {
+      e.preventDefault()
+      if (which === 'm') dayRef.current?.focus()
+      if (which === 'y') monthRef.current?.focus()
+      return
+    }
+    if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0) {
+      if (which === 'm') { e.preventDefault(); dayRef.current?.focus() }
+      if (which === 'y') { e.preventDefault(); monthRef.current?.focus() }
+    }
+    if (e.key === 'ArrowRight' && e.currentTarget.selectionStart === e.currentTarget.value.length) {
+      if (which === 'd') { e.preventDefault(); monthRef.current?.focus() }
+      if (which === 'm') { e.preventDefault(); yearRef.current?.focus() }
+    }
+  }
+
+  const segStyle = (which) => ({
+    width: which === 'y' ? 52 : 30,
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: 'var(--text-1)',
+    fontSize: 13,
+    fontWeight: 600,
+    textAlign: 'center',
+    padding: 0,
+    height: 34,
+    letterSpacing: which === 'y' ? '0.04em' : '0.06em',
+  })
+
+  return (
+    <div
+      className="asset-focus-field date-parts-input"
+      data-date-parts="1"
+      onFocusCapture={() => { focusedRef.current = true }}
+      onBlurCapture={e => {
+        if (!e.currentTarget.contains(e.relatedTarget)) focusedRef.current = false
+      }}
+      style={{
+        ...INPUT,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '0 10px',
+        ...style,
+      }}
+    >
+      <input
+        ref={dayRef}
+        data-date-part="d"
+        inputMode="numeric"
+        maxLength={2}
+        placeholder="dd"
+        value={parts.d}
+        onChange={e => onPartChange('d', e.target.value)}
+        onKeyDown={e => onPartKeyDown('d', e)}
+        onFocus={e => e.target.select()}
+        aria-label="Day"
+        style={segStyle('d')}
+      />
+      <span style={{ color: 'var(--text-3)', fontWeight: 700, userSelect: 'none' }}>-</span>
+      <input
+        ref={monthRef}
+        data-date-part="m"
+        inputMode="numeric"
+        maxLength={2}
+        placeholder="mm"
+        value={parts.m}
+        onChange={e => onPartChange('m', e.target.value)}
+        onKeyDown={e => onPartKeyDown('m', e)}
+        onFocus={e => e.target.select()}
+        aria-label="Month"
+        style={segStyle('m')}
+      />
+      <span style={{ color: 'var(--text-3)', fontWeight: 700, userSelect: 'none' }}>-</span>
+      <input
+        ref={yearRef}
+        data-date-part="y"
+        inputMode="numeric"
+        maxLength={4}
+        placeholder="yyyy"
+        value={parts.y}
+        onChange={e => onPartChange('y', e.target.value)}
+        onKeyDown={e => onPartKeyDown('y', e)}
+        onFocus={e => e.target.select()}
+        aria-label="Year"
+        style={segStyle('y')}
+      />
+    </div>
+  )
 }
 
 function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —' }) {
@@ -219,6 +436,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
           value={label}
           placeholder={placeholder}
           data-tree-trigger="1"
+          className="asset-focus-field"
           onClick={() => (open ? (setOpen(false), setQuery('')) : openDrop())}
           onFocus={() => {
             if (suppressOpenRef.current) {
@@ -666,7 +884,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <div>
               <FL>Description *</FL>
               <input value={form.description} onChange={e => set('description', e.target.value)}
-                onKeyDown={onAdvanceKeyDown}
+                onKeyDown={onAdvanceKeyDown} className="asset-focus-field"
                 placeholder="e.g. Wooden Pulpit" style={INPUT} autoFocus />
             </div>
             <div>
@@ -675,6 +893,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 type="number" min="1" step="1" value={form.quantity}
                 onChange={e => setQuantity(e.target.value)}
                 onKeyDown={onAdvanceKeyDown}
+                className="asset-focus-field"
                 disabled={!!editing}
                 style={{
                   ...INPUT,
@@ -718,6 +937,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <FL>Condition</FL>
               <select
                 value={form.condition_id}
+                className="asset-focus-field"
                 onChange={e => {
                   set('condition_id', e.target.value)
                   advanceAfterChange(e.target)
@@ -731,24 +951,20 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </div>
             <div>
               <FL optional>Warranty Upto</FL>
-              <input
-                type="date"
+              <DatePartsInput
                 value={form.warranty_upto}
-                onChange={e => set('warranty_upto', e.target.value)}
-                onKeyDown={onAdvanceKeyDown}
-                style={INPUT}
+                onChange={v => set('warranty_upto', v)}
+                onComplete={el => advanceAfterChange(el)}
               />
             </div>
           </div>
 
           <div>
             <FL>Stock In Date *</FL>
-            <input
-              type="date"
+            <DatePartsInput
               value={form.stock_in_date}
-              onChange={e => set('stock_in_date', e.target.value)}
-              onKeyDown={onAdvanceKeyDown}
-              style={INPUT}
+              onChange={v => set('stock_in_date', v)}
+              onComplete={el => advanceAfterChange(el)}
             />
             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
               When brought into account
@@ -778,6 +994,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 <input type="number" min="0" step="0.01" value={form.unit_price}
                   onChange={e => setUnitPrice(e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
+                  className="asset-focus-field"
                   placeholder="0.00" style={INPUT} />
               </div>
               <div>
@@ -785,6 +1002,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 <input type="number" min="0" step="0.01" value={form.purchase_value}
                   onChange={e => setPurchaseValue(e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
+                  className="asset-focus-field"
                   placeholder="0.00" style={INPUT} />
                 {!pvManual && form.unit_price !== '' && form.unit_price != null && (
                   <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
@@ -796,18 +1014,17 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <FL optional>Invoice Date</FL>
-                <input
-                  type="date"
+                <DatePartsInput
                   value={form.invoice_date}
-                  onChange={e => set('invoice_date', e.target.value)}
-                  onKeyDown={onAdvanceKeyDown}
-                  style={INPUT}
+                  onChange={v => set('invoice_date', v)}
+                  onComplete={el => advanceAfterChange(el)}
                 />
               </div>
               <div>
                 <FL optional>Invoice No.</FL>
                 <input value={form.invoice_no} onChange={e => set('invoice_no', e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
+                  className="asset-focus-field"
                   placeholder="Invoice reference" style={INPUT} />
               </div>
             </div>
@@ -815,6 +1032,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <FL optional>Supplier Name</FL>
               <input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}
                 onKeyDown={onAdvanceKeyDown}
+                className="asset-focus-field"
                 placeholder="Vendor name" style={INPUT} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -822,12 +1040,14 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 <FL optional>Supplier Address</FL>
                 <input value={form.supplier_address} onChange={e => set('supplier_address', e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
+                  className="asset-focus-field"
                   placeholder="Address" style={INPUT} />
               </div>
               <div>
                 <FL optional>Contact No.</FL>
                 <input value={form.supplier_contact} onChange={e => set('supplier_contact', e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
+                  className="asset-focus-field"
                   placeholder="Phone" style={INPUT} />
               </div>
             </div>
@@ -836,6 +1056,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           <div>
             <FL optional>Notes</FL>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+              className="asset-focus-field"
               rows={2} placeholder="Any additional remarks"
               style={{ ...INPUT, height: 'auto', padding: '10px 12px', resize: 'vertical' }} />
           </div>
@@ -854,6 +1075,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             Cancel
           </button>
           <button type="button" onClick={handleSave} disabled={saving || !form.description.trim() || !form.stock_in_date}
+            className="asset-focus-field asset-save-btn"
             style={{
               display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
               background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
