@@ -30,12 +30,31 @@ const INPUT = {
   color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', width: '100%',
 }
 
+function focusNextFormField(fromEl) {
+  if (!fromEl) return
+  const root = fromEl.closest('[data-asset-form]') || document
+  const withTriggers = Array.from(
+    root.querySelectorAll(
+      'input:not([disabled]):not([type="hidden"]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled])'
+    )
+  ).filter(n => {
+    if (n.offsetParent === null) return false
+    if (n.dataset.displayOnly === '1') return false
+    return true
+  })
+  const idx = withTriggers.indexOf(fromEl)
+  if (idx !== -1 && idx < withTriggers.length - 1) {
+    withTriggers[idx + 1].focus()
+  }
+}
+
 function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —' }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
   const wrapRef = useRef(null)
   const btnRef = useRef(null)
+  const searchRef = useRef(null)
   const tree = useMemo(() => buildMasterTree(rows), [rows])
   const selected = rows.find(r => r.id === value) || null
   const label = selected ? masterDisplayName(selected, rows) : ''
@@ -43,6 +62,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
   useEffect(() => {
     function onDown(e) {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        // Also ignore clicks on the fixed dropdown portal (same wrapRef covers it)
         setOpen(false)
         setQuery('')
       }
@@ -63,6 +83,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
       width: Math.max(r.width, 240),
     })
     setOpen(true)
+    requestAnimationFrame(() => searchRef.current?.focus())
   }
 
   const q = query.trim().toLowerCase()
@@ -77,6 +98,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
     onChange(id)
     setOpen(false)
     setQuery('')
+    requestAnimationFrame(() => focusNextFormField(btnRef.current))
   }
 
   function renderNode(node, depth) {
@@ -90,6 +112,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
       <div key={node.id}>
         <button
           type="button"
+          tabIndex={-1}
           onClick={() => pick(node.id)}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, width: '100%',
@@ -143,32 +166,60 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => (open ? (setOpen(false), setQuery('')) : openDrop())}
-        style={{
-          ...INPUT,
-          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-          color: label ? 'var(--text-1)' : 'var(--text-3)',
-          fontWeight: label ? 600 : 400,
-        }}
-      >
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
-          {label || placeholder}
-        </span>
+      <div style={{ position: 'relative' }}>
+        <input
+          ref={btnRef}
+          readOnly
+          value={label}
+          placeholder={placeholder}
+          onClick={() => (open ? (setOpen(false), setQuery('')) : openDrop())}
+          onKeyDown={e => {
+            // ArrowDown / Space opens list; Enter advances to next field (data-entry flow)
+            if (e.key === 'ArrowDown' || e.key === ' ') {
+              e.preventDefault()
+              if (!open) openDrop()
+            }
+            if (e.key === 'Enter' && open) {
+              e.preventDefault()
+            }
+            if (e.key === 'Escape' && open) {
+              e.preventDefault()
+              setOpen(false)
+              setQuery('')
+            }
+          }}
+          style={{
+            ...INPUT,
+            cursor: 'pointer',
+            paddingRight: 34,
+            color: label ? 'var(--text-1)' : undefined,
+            fontWeight: label ? 600 : 400,
+          }}
+        />
         {value ? (
-          <span
-            onClick={e => { e.stopPropagation(); onChange('') }}
+          <button
+            type="button"
+            tabIndex={-1}
             title="Clear"
-            style={{ display: 'flex', color: 'var(--text-3)', padding: 2 }}
+            onClick={e => { e.stopPropagation(); onChange(''); btnRef.current?.focus() }}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              display: 'flex', color: 'var(--text-3)', padding: 2, background: 'none',
+              border: 'none', cursor: 'pointer',
+            }}
           >
             <X size={13} />
-          </span>
+          </button>
         ) : (
-          <ChevronDown size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+          <ChevronDown
+            size={14}
+            style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              color: 'var(--text-3)', pointerEvents: 'none',
+            }}
+          />
         )}
-      </button>
+      </div>
 
       {open && (
         <div style={{
@@ -190,10 +241,32 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
                 color: 'var(--text-3)', pointerEvents: 'none',
               }} />
               <input
-                autoFocus
+                ref={searchRef}
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="Search…"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    // Pick first visible leaf/node match for fast keyboard entry
+                    const flat = []
+                    const walk = (nodes) => {
+                      nodes.forEach(n => {
+                        if (!q || nodeMatches(n)) flat.push(n)
+                        if (n.children?.length) walk(n.children)
+                      })
+                    }
+                    walk(tree)
+                    const hit = flat.find(n => !q || n.name.toLowerCase().includes(q))
+                    if (hit) pick(hit.id)
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setOpen(false)
+                    setQuery('')
+                    btnRef.current?.focus()
+                  }
+                }}
+                placeholder="Search… (Enter to select)"
                 style={{ ...INPUT, height: 32, paddingLeft: 28, fontSize: 12 }}
               />
             </div>
@@ -201,6 +274,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
           <div style={{ overflowY: 'auto', flex: 1 }}>
             <button
               type="button"
+              tabIndex={-1}
               onClick={() => pick('')}
               style={{
                 display: 'block', width: '100%', padding: '8px 12px', border: 'none',
@@ -417,7 +491,9 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           </button>
         </div>
 
-        <div style={{
+        <div
+          data-asset-form="1"
+          style={{
           padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16,
           overflowY: 'auto', flex: 1, minHeight: 0,
         }}>
@@ -441,14 +517,14 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                   </>
               }
             </div>
-            <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoPick} />
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPhotoPick} tabIndex={-1} />
             <div style={{ flex: 1 }}>
               <FL optional>Photo</FL>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.45 }}>
                 Optional. JPEG / PNG / WebP, max 1 MB.
               </p>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => fileRef.current?.click()}
+                <button type="button" tabIndex={-1} onClick={() => fileRef.current?.click()}
                   style={{
                     padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: 'pointer',
                     background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', color: 'var(--text-2)',
@@ -456,7 +532,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                   Choose…
                 </button>
                 {(photoPreview || form.photo_url) && (
-                  <button type="button" onClick={clearPhoto}
+                  <button type="button" tabIndex={-1} onClick={clearPhoto}
                     style={{
                       padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: 'pointer',
                       background: '#fff5f5', border: '1px solid #fca5a5', color: '#b91c1c',
@@ -552,7 +628,8 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <div>
                 <FL>Quantity</FL>
                 <input type="number" min="1" step="1" value={form.quantity}
-                  readOnly disabled
+                  readOnly disabled data-display-only="1"
+                  tabIndex={-1}
                   style={{ ...INPUT, opacity: 0.7, cursor: 'not-allowed', fontWeight: 700 }} />
                 <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
                   {editing ? 'Use Stock Movement to change quantity' : 'Set quantity next to Description above'}
@@ -618,14 +695,14 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           display: 'flex', justifyContent: 'flex-end', gap: 10,
           background: 'var(--card-bg)', flexShrink: 0,
         }}>
-          <button onClick={onClose}
+          <button type="button" tabIndex={-1} onClick={onClose}
             style={{
               padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)',
               borderRadius: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-2)',
             }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving || !form.description.trim() || !form.stock_in_date}
+          <button type="button" onClick={handleSave} disabled={saving || !form.description.trim() || !form.stock_in_date}
             style={{
               display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
               background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
