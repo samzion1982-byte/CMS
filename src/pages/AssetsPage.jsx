@@ -30,21 +30,31 @@ const INPUT = {
   color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', width: '100%',
 }
 
-function focusNextFormField(fromEl) {
-  if (!fromEl) return
-  const root = fromEl.closest('[data-asset-form]') || document
-  const withTriggers = Array.from(
+function getModalFocusables(root) {
+  if (!root) return []
+  return Array.from(
     root.querySelectorAll(
-      'input:not([disabled]):not([type="hidden"]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled])'
+      'input:not([disabled]):not([type="hidden"]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]):not([tabindex="-1"])'
     )
   ).filter(n => {
-    if (n.offsetParent === null) return false
     if (n.dataset.displayOnly === '1') return false
+    const style = window.getComputedStyle(n)
+    if (style.visibility === 'hidden' || style.display === 'none') return false
     return true
   })
-  const idx = withTriggers.indexOf(fromEl)
-  if (idx !== -1 && idx < withTriggers.length - 1) {
-    withTriggers[idx + 1].focus()
+}
+
+function focusNextFormField(fromEl) {
+  if (!fromEl) return
+  const root = fromEl.closest('[data-asset-modal]') || fromEl.closest('[data-asset-form]') || document
+  const list = getModalFocusables(root).filter(n => {
+    // Prefer main form fields over dropdown search boxes
+    if (n.dataset.treeSearch === '1') return false
+    return true
+  })
+  const idx = list.indexOf(fromEl)
+  if (idx !== -1 && idx < list.length - 1) {
+    list[idx + 1].focus()
   }
 }
 
@@ -55,6 +65,7 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
   const wrapRef = useRef(null)
   const btnRef = useRef(null)
   const searchRef = useRef(null)
+  const suppressOpenRef = useRef(false)
   const tree = useMemo(() => buildMasterTree(rows), [rows])
   const selected = rows.find(r => r.id === value) || null
   const label = selected ? masterDisplayName(selected, rows) : ''
@@ -62,7 +73,6 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
   useEffect(() => {
     function onDown(e) {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-        // Also ignore clicks on the fixed dropdown portal (same wrapRef covers it)
         setOpen(false)
         setQuery('')
       }
@@ -98,7 +108,8 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
     onChange(id)
     setOpen(false)
     setQuery('')
-    requestAnimationFrame(() => focusNextFormField(btnRef.current))
+    // Advance to next field (e.g. Item Type → Location)
+    setTimeout(() => focusNextFormField(btnRef.current), 0)
   }
 
   function renderNode(node, depth) {
@@ -172,20 +183,34 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
           readOnly
           value={label}
           placeholder={placeholder}
+          data-tree-trigger="1"
           onClick={() => (open ? (setOpen(false), setQuery('')) : openDrop())}
+          onFocus={() => {
+            if (suppressOpenRef.current) {
+              suppressOpenRef.current = false
+              return
+            }
+            if (!open) openDrop()
+          }}
           onKeyDown={e => {
-            // ArrowDown / Space opens list; Enter advances to next field (data-entry flow)
             if (e.key === 'ArrowDown' || e.key === ' ') {
               e.preventDefault()
               if (!open) openDrop()
             }
-            if (e.key === 'Enter' && open) {
-              e.preventDefault()
+            if (e.key === 'Enter') {
+              if (open) e.preventDefault()
             }
             if (e.key === 'Escape' && open) {
               e.preventDefault()
+              suppressOpenRef.current = true
               setOpen(false)
               setQuery('')
+            }
+            if (e.key === 'Tab' && open) {
+              e.preventDefault()
+              setOpen(false)
+              setQuery('')
+              setTimeout(() => focusNextFormField(btnRef.current), 0)
             }
           }}
           style={{
@@ -242,12 +267,12 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
               }} />
               <input
                 ref={searchRef}
+                data-tree-search="1"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    // Pick first visible leaf/node match for fast keyboard entry
                     const flat = []
                     const walk = (nodes) => {
                       nodes.forEach(n => {
@@ -261,9 +286,20 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault()
+                    suppressOpenRef.current = true
                     setOpen(false)
                     setQuery('')
                     btnRef.current?.focus()
+                  }
+                  if (e.key === 'Tab') {
+                    e.preventDefault()
+                    setOpen(false)
+                    setQuery('')
+                    if (e.shiftKey) {
+                      btnRef.current?.focus()
+                    } else {
+                      setTimeout(() => focusNextFormField(btnRef.current), 0)
+                    }
                   }
                 }}
                 placeholder="Search… (Enter to select)"
@@ -340,6 +376,7 @@ function emptyForm(category, defaults = {}) {
 function AssetModal({ editing, category, locations, itemTypes, conditions, onSave, onClose }) {
   const toast = useToast()
   const workingId = conditions.find(c => c.name === 'Working')?.id || ''
+  const modalRef = useRef(null)
   const [form, setForm] = useState(() => editing
     ? {
         asset_category: editing.asset_category || category,
@@ -369,6 +406,39 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   const [saving, setSaving] = useState(false)
   const [pvManual, setPvManual] = useState(false)
   const fileRef = useRef(null)
+
+  // Keep Tab/Enter inside the modal (don't jump to page filters behind the overlay)
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== 'Tab') return
+      const root = modalRef.current
+      if (!root) return
+      const list = getModalFocusables(root).filter(n => n.dataset.treeSearch !== '1')
+      if (!list.length) return
+
+      // If focus left the modal, pull it back
+      if (!root.contains(document.activeElement)) {
+        e.preventDefault()
+        list[0].focus()
+        return
+      }
+
+      const active = document.activeElement
+      // Dropdown search handles its own Tab
+      if (active?.dataset?.treeSearch === '1') return
+
+      const idx = list.indexOf(active)
+      if (idx === -1) return
+
+      e.preventDefault()
+      const next = e.shiftKey
+        ? list[(idx - 1 + list.length) % list.length]
+        : list[(idx + 1) % list.length]
+      next.focus()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [])
 
   function set(key, value) { setForm(f => ({ ...f, [key]: value })) }
 
@@ -470,7 +540,10 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
       position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
-      <div style={{
+      <div
+        ref={modalRef}
+        data-asset-modal="1"
+        style={{
         background: 'var(--card-bg)', borderRadius: 16, width: '100%', maxWidth: 704,
         maxHeight: '92vh', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
         display: 'flex', flexDirection: 'column',
@@ -486,7 +559,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               {editing ? `Edit Asset #${editing.serial_no}` : 'Add Asset'}
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+          <button type="button" tabIndex={-1} onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
             <X size={16} />
           </button>
         </div>
