@@ -339,6 +339,12 @@ async function updateAssetRow(id, patch, extraFilters = (q) => q) {
   return data
 }
 
+function lineAvailableQty(asset) {
+  const n = Number(asset?.quantity)
+  if (!Number.isFinite(n) || n < 1) return 0
+  return Math.floor(n)
+}
+
 function allocateCost(unitPrice, srcCost, available, moveQty) {
   const remainQty = available - moveQty
   const up = unitPrice != null && Number.isFinite(Number(unitPrice)) ? Number(unitPrice) : null
