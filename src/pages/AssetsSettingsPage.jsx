@@ -3,7 +3,7 @@
    like Chart of Accounts) and Conditions for Asset Management
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Settings, ArrowLeft, Plus, Pencil, Trash2, Check, X,
@@ -11,6 +11,8 @@ import {
   ChevronDown, ChevronRight, Folder, Building2,
 } from 'lucide-react'
 import { useToast } from '../lib/toast'
+import { useAuth } from '../lib/AuthContext'
+import { canAccessAssetTab } from '../lib/cmsPermissions'
 import {
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   saveAssetLocation, saveAssetItemType, saveAssetCondition,
@@ -760,6 +762,14 @@ function FlatMasterList({ tabDef }) {
 
 export default function AssetsSettingsPage() {
   const navigate = useNavigate()
+  const { profile, pageGrants } = useAuth()
+  const role = profile?.role
+
+  const visibleTabs = useMemo(() => TABS.filter(t => {
+    if (t.id === 'fixed-assets') return canAccessAssetTab('building', role, pageGrants)
+    return canAccessAssetTab('movable', role, pageGrants)
+  }), [role, pageGrants])
+
   const [tab, setTab] = useState(() => {
     try {
       const q = new URLSearchParams(window.location.search).get('tab')
@@ -767,7 +777,13 @@ export default function AssetsSettingsPage() {
     } catch { /* ignore */ }
     return 'locations'
   })
-  const tabDef = TABS.find(t => t.id === tab)
+
+  useEffect(() => {
+    if (!visibleTabs.length) return
+    if (!visibleTabs.some(t => t.id === tab)) setTab(visibleTabs[0].id)
+  }, [visibleTabs, tab])
+
+  const tabDef = visibleTabs.find(t => t.id === tab) || TABS.find(t => t.id === tab)
 
   return (
     <div className="page-container">
@@ -798,7 +814,7 @@ export default function AssetsSettingsPage() {
       <div style={{
         display: 'flex', gap: 4, borderBottom: '2px solid var(--border, #e2e8f0)', marginBottom: 20,
       }}>
-        {TABS.map(t => {
+        {visibleTabs.map(t => {
           const Icon = t.icon
           const active = tab === t.id
           return (

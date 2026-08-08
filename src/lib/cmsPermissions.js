@@ -3,10 +3,19 @@ import {
   buildDefaultGrants, findPageForPath, defaultPageAllowed,
 } from './cmsPages'
 
-/** Older flat keys → new leaf keys (Events split into sub-pages). */
+/** Older flat keys → new leaf keys. */
 const LEGACY_PAGE_KEYS = {
   events: ['events-planner', 'events-recorder', 'events-settings'],
+  assets: ['assets-movable', 'assets-fixed', 'assets-documents'],
 }
+
+const ASSET_TAB_KEYS = {
+  movable:  'assets-movable',
+  building: 'assets-fixed',
+  document: 'assets-documents',
+}
+
+const ASSET_PATH_KEYS = ['assets-movable', 'assets-fixed', 'assets-documents']
 
 function applyGrantRows(target, rowsByKey) {
   for (const [key, allowed] of Object.entries(rowsByKey)) {
@@ -124,10 +133,38 @@ export function isSuperOnlyPath(pathname) {
   )
 }
 
+function pageAllowedByKey(pageKey, role, grants) {
+  const page = CMS_PAGES.find(p => p.key === pageKey)
+  if (!page) return false
+  if (page.alwaysOn) return true
+  if (grants && Object.prototype.hasOwnProperty.call(grants, pageKey)) {
+    return !!grants[pageKey]
+  }
+  return defaultPageAllowed(role, page)
+}
+
+/** Asset Management tabs: movable | building | document */
+export function canAccessAssetTab(tabId, role, grants = null) {
+  if (role === 'super_admin') return true
+  const key = ASSET_TAB_KEYS[tabId]
+  if (!key) return false
+  return pageAllowedByKey(key, role, grants)
+}
+
+export function canAccessAnyAssetTab(role, grants = null) {
+  if (role === 'super_admin') return true
+  return ASSET_PATH_KEYS.some(k => pageAllowedByKey(k, role, grants))
+}
+
 export function canAccessPath(pathname, role, grants = null) {
   if (!pathname) return false
   if (role === 'super_admin') return true
   if (isSuperOnlyPath(pathname)) return false
+
+  // Asset Management hub + settings — allowed if any asset tab is granted
+  if (pathname === '/assets' || pathname.startsWith('/assets/')) {
+    return canAccessAnyAssetTab(role, grants)
+  }
 
   const page = findPageForPath(pathname)
   if (!page) {
@@ -137,11 +174,7 @@ export function canAccessPath(pathname, role, grants = null) {
     return false
   }
 
-  if (page.alwaysOn) return true
-  if (grants && Object.prototype.hasOwnProperty.call(grants, page.key)) {
-    return !!grants[page.key]
-  }
-  return defaultPageAllowed(role, page)
+  return pageAllowedByKey(page.key, role, grants)
 }
 
 export function canAccessNavItem(item, role, grants) {

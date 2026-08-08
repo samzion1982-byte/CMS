@@ -15,6 +15,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getChurch } from '../lib/supabase'
 import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
 import FixedAssetsVault from '../components/assets/FixedAssetsVault'
+import { canAccessAssetTab } from '../lib/cmsPermissions'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn, returnStockToHand,
@@ -1439,9 +1440,22 @@ function ComingSoon({ label }) {
 export default function AssetsPage() {
   const navigate = useNavigate()
   const toast = useToast()
-  const { profile } = useAuth()
+  const { profile, pageGrants } = useAuth()
+  const role = profile?.role
 
-  const [tab, setTab] = useState('movable')
+  const allowedCategories = useMemo(
+    () => ASSET_CATEGORIES.filter(t => canAccessAssetTab(t.id, role, pageGrants)),
+    [role, pageGrants]
+  )
+
+  const [tab, setTab] = useState(() => allowedCategories[0]?.id || 'movable')
+
+  useEffect(() => {
+    if (!allowedCategories.length) return
+    if (!allowedCategories.some(t => t.id === tab)) {
+      setTab(allowedCategories[0].id)
+    }
+  }, [allowedCategories, tab])
   const [assets, setAssets] = useState([])
   const [locations, setLocations] = useState([])
   const [itemTypes, setItemTypes] = useState([])
@@ -2044,7 +2058,7 @@ export default function AssetsPage() {
       <div style={{
         display: 'flex', gap: 4, borderBottom: '2px solid var(--border, #e2e8f0)', marginBottom: 20,
       }}>
-        {ASSET_CATEGORIES.map(t => (
+        {allowedCategories.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -2068,7 +2082,11 @@ export default function AssetsPage() {
         ))}
       </div>
 
-      {tab === 'movable' ? (
+      {!allowedCategories.length ? (
+        <div className="card" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>
+          You do not have access to any Asset Management tabs.
+        </div>
+      ) : tab === 'movable' ? (
         <>
           {/* Filters */}
           <div className="card" style={{ padding: '12px 14px', marginBottom: 14 }}>
@@ -2401,7 +2419,17 @@ export default function AssetsPage() {
           )}
         </>
       ) : tab === 'building' ? (
-        <FixedAssetsVault />
+        canAccessAssetTab('building', role, pageGrants)
+          ? <FixedAssetsVault />
+          : (
+            <div className="card" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>
+              Fixed Assets access is restricted for your role.
+            </div>
+          )
+      ) : tab === 'document' && !canAccessAssetTab('document', role, pageGrants) ? (
+        <div className="card" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>
+          Documents access is restricted for your role.
+        </div>
       ) : (
         <ComingSoon label={ASSET_CATEGORIES.find(c => c.id === tab)?.label} />
       )}

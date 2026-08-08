@@ -315,15 +315,24 @@ function PageRow({ page, depth, matrix, onToggle }) {
         fontWeight: 500,
         color: 'var(--text-1)',
       }}>
-        {page.label}
-        {page.alwaysOn && (
-          <span style={{
-            marginLeft: 8, fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
-            textTransform: 'uppercase', letterSpacing: '0.06em',
-          }}>
-            always on
-          </span>
-        )}
+                        {page.label}
+                        {page.alwaysOn && (
+                          <span style={{
+                            marginLeft: 8, fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
+                            textTransform: 'uppercase', letterSpacing: '0.06em',
+                          }}>
+                            always on
+                          </span>
+                        )}
+                        {page.sensitive && (
+                          <span style={{
+                            marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#b45309',
+                            background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 99,
+                            padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                          }}>
+                            sensitive
+                          </span>
+                        )}
       </td>
       {CMS_CONFIG_ROLES.map(r => {
         const on = !!matrix[r.value]?.[page.key]

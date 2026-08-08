@@ -34,7 +34,17 @@ export const CMS_PERMISSION_TREE = [
           { key: 'events-settings', label: 'Event Settings', kind: 'page', match: '/events/settings' },
         ],
       },
-      { key: 'assets', label: 'Asset Management', kind: 'page', match: '/assets' },
+      {
+        key: 'folder-assets',
+        label: 'Asset Management',
+        kind: 'folder',
+        children: [
+          // Tabs share /assets — access is enforced by assetTab grants, not path alone
+          { key: 'assets-movable',   label: 'Movable Assets', kind: 'page', assetTab: 'movable' },
+          { key: 'assets-fixed',     label: 'Fixed Assets',   kind: 'page', assetTab: 'building', adminDefault: true, sensitive: true },
+          { key: 'assets-documents', label: 'Documents',      kind: 'page', assetTab: 'document', adminDefault: true, sensitive: true },
+        ],
+      },
     ],
   },
   {
