@@ -1,0 +1,135 @@
+import {
+  CMS_PAGES, CMS_CONFIG_ROLES, CMS_SUPER_ONLY_MATCHES,
+  buildDefaultGrants, findPageForPath, defaultPageAllowed,
+} from './cmsPages'
+
+/**
+ * Load stored grants for all configurable roles.
+ * Returns { admin1: { pageKey: bool, _custom }, ... }
+ */
+export async function loadAllRolePageGrants(client) {
+  const { data, error } = await client
+    .from('cms_role_page_access')
+    .select('role, page_key, allowed')
+
+  if (error) throw error
+
+  const rowsByRole = {}
+  for (const row of data || []) {
+    if (!rowsByRole[row.role]) rowsByRole[row.role] = {}
+    rowsByRole[row.role][row.page_key] = !!row.allowed
+  }
+
+  const result = {}
+  for (const r of CMS_CONFIG_ROLES) {
+    if (!rowsByRole[r.value]) {
+      result[r.value] = { ...buildDefaultGrants(r.value), _custom: false }
+    } else {
+      const grants = {}
+      for (const page of CMS_PAGES) {
+        grants[page.key] = page.alwaysOn ? true : !!rowsByRole[r.value][page.key]
+      }
+      result[r.value] = { ...grants, _custom: true }
+    }
+  }
+  return result
+}
+
+/** Grants map for one role (pageKey → boolean). */
+export async function loadRolePageGrants(client, role) {
+  if (!role || role === 'super_admin') {
+    const all = {}
+    for (const p of CMS_PAGES) all[p.key] = true
+    return all
+  }
+
+  const { data, error } = await client
+    .from('cms_role_page_access')
+    .select('page_key, allowed')
+    .eq('role', role)
+
+  if (error) throw error
+
+  if (!data?.length) return buildDefaultGrants(role)
+
+  const grants = {}
+  for (const page of CMS_PAGES) {
+    grants[page.key] = page.alwaysOn ? true : false
+  }
+  for (const row of data) {
+    if (Object.prototype.hasOwnProperty.call(grants, row.page_key)) {
+      grants[row.page_key] = !!row.allowed
+    }
+  }
+  for (const page of CMS_PAGES) {
+    if (page.alwaysOn) grants[page.key] = true
+  }
+  return grants
+}
+
+/**
+ * Replace all grants for configurable roles.
+ * matrix: { admin1: { dashboard: true, ... }, ... }
+ */
+export async function saveRolePageGrants(client, matrix) {
+  const roles = CMS_CONFIG_ROLES.map(r => r.value)
+  const rows = []
+  for (const role of roles) {
+    const grants = matrix[role] || {}
+    for (const page of CMS_PAGES) {
+      rows.push({
+        role,
+        page_key: page.key,
+        allowed: page.alwaysOn ? true : !!grants[page.key],
+        updated_at: new Date().toISOString(),
+      })
+    }
+  }
+
+  const { error: delErr } = await client
+    .from('cms_role_page_access')
+    .delete()
+    .in('role', roles)
+  if (delErr) throw delErr
+
+  const { error } = await client
+    .from('cms_role_page_access')
+    .upsert(rows, { onConflict: 'role,page_key' })
+  if (error) throw error
+}
+
+export function isSuperOnlyPath(pathname) {
+  return CMS_SUPER_ONLY_MATCHES.some(
+    p => pathname === p || pathname.startsWith(p + '/')
+  )
+}
+
+export function canAccessPath(pathname, role, grants = null) {
+  if (!pathname) return false
+  if (role === 'super_admin') return true
+  if (isSuperOnlyPath(pathname)) return false
+
+  const page = findPageForPath(pathname)
+  if (!page) {
+    if (pathname.startsWith('/members')) {
+      return grants ? !!grants.members : ['admin1', 'admin', 'user', 'demo'].includes(role)
+    }
+    return false
+  }
+
+  if (page.alwaysOn) return true
+  if (grants && Object.prototype.hasOwnProperty.call(grants, page.key)) {
+    return !!grants[page.key]
+  }
+  return defaultPageAllowed(role, page)
+}
+
+export function canAccessNavItem(item, role, grants) {
+  if (role === 'super_admin') return true
+  if (item.superOnly) return false
+  if (item.children?.length) {
+    return item.children.some(c => canAccessPath(c.path, role, grants))
+  }
+  if (!item.path) return false
+  return canAccessPath(item.path, role, grants)
+}

@@ -6,9 +6,10 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
-  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package,
+  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package, Shield,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
+import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
 
 const NAV = [
   { group: 'MAIN', items: [
@@ -36,9 +37,10 @@ const NAV = [
     ]},
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
-    { label: 'Church Setup',      path: '/church-setup',    icon: Church,         superOnly: true },
-    { label: 'Users',             path: '/users',           icon: UserCog,        superOnly: true },
-    { label: 'Import Data',       path: '/import',          icon: Upload,         superOnly: true },
+    { label: 'Church Setup',      path: '/church-setup',     icon: Church },
+    { label: 'Users',             path: '/users',            icon: UserCog,        superOnly: true },
+    { label: 'CMS Permissions',   path: '/cms-permissions',  icon: Shield,         superOnly: true },
+    { label: 'Import Data',       path: '/import',           icon: Upload,         superOnly: true },
   ]},
   { group: 'LOGS', adminOnly: true, items: [
     { label: 'Announcements Log',   path: '/announcements-log',      icon: ClipboardList  },
@@ -49,11 +51,11 @@ const NAV = [
 ]
 
 export default function Sidebar({ collapsed, sidebarW, onToggle }) {
-  const { profile } = useAuth()
+  const { profile, pageGrants } = useAuth()
   const navigate    = useNavigate()
   const location    = useLocation()
-  const isSuperAdmin = profile?.role === 'super_admin'
-  const isAdmin      = ['super_admin', 'admin', 'admin1'].includes(profile?.role)
+  const role         = profile?.role
+  const isSuperAdmin = role === 'super_admin'
 
   const [accountingEnabled,       setAccountingEnabled]       = useState(false)
   const [simpleAccountingEnabled, setSimpleAccountingEnabled] = useState(false)
@@ -127,7 +129,15 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
 
         {NAV.map(group => {
           if (group.superOnly && !isSuperAdmin) return null
-          if (group.adminOnly  && !isAdmin)     return null
+
+          const visibleItems = (group.items || []).filter(item => {
+            if (item.superOnly && !isSuperAdmin) return false
+            if (item.accountingOnly && !accountingEnabled) return false
+            if (item.simpleOnly && !simpleAccountingEnabled) return false
+            return canAccessNavItem(item, role, pageGrants)
+          })
+          if (!visibleItems.length) return null
+
           const isMain = group.group === 'MAIN'
           return (
             <div key={group.group} style={{ marginBottom: 26 }}>
@@ -144,14 +154,12 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                 </div>
               )}
 
-              {group.items.map(item => {
-                if (item.superOnly && !isSuperAdmin) return null
-                if (item.accountingOnly && !accountingEnabled) return null
-                if (item.simpleOnly    && !simpleAccountingEnabled) return null
-
+              {visibleItems.map(item => {
                 if (item.children) {
+                  const visibleChildren = item.children.filter(c => canAccessPath(c.path, role, pageGrants))
+                  if (!visibleChildren.length) return null
                   const isExpanded = expandedItems.has(item.label)
-                  const isActive   = item.children.some(c => location.pathname === c.path || location.pathname.startsWith(c.path + '/'))
+                  const isActive   = visibleChildren.some(c => location.pathname === c.path || location.pathname.startsWith(c.path + '/'))
                   return (
                     <div key={item.label}>
                       <NavItem
@@ -160,9 +168,9 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                         collapsed={collapsed}
                         hasChildren
                         isExpanded={isExpanded}
-                        onClick={() => collapsed ? navigate(item.children[0].path) : toggleExpand(item.label)}
+                        onClick={() => collapsed ? navigate(visibleChildren[0].path) : toggleExpand(item.label)}
                       />
-                      {!collapsed && isExpanded && item.children.map(child => {
+                      {!collapsed && isExpanded && visibleChildren.map(child => {
                         const childActive = location.pathname === child.path
                         return (
                           <SubNavItem

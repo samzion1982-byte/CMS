@@ -324,10 +324,11 @@ export default function ChurchSetupPage() {
   }
 
   const isSuperAdmin = profile?.role === 'super_admin'
-  const isAdmin1     = profile?.role === 'admin1'
+  // Non–super-admin roles that were granted this page get the zones/categories view.
+  const isAdmin1     = profile?.role === 'admin1' || (!isSuperAdmin && !!profile?.role)
 
-  if (!isSuperAdmin && !isAdmin1) {
-    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Access denied. Super Admin or Admin1 only.</div>
+  if (!profile) {
+    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading…</div>
   }
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 size={24} className="animate-spin text-blue-500"/></div>

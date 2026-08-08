@@ -3,6 +3,7 @@ import { supabase, adminSupabase } from './supabase'
 import { getProfile, signIn as authSignIn } from './auth'
 import { useTheme } from './ThemeContext'
 import { stampLogout } from './loginLogs'
+import { loadRolePageGrants } from './cmsPermissions'
 
 const AuthContext = createContext(null)
 
@@ -10,9 +11,26 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [pageGrants, setPageGrants] = useState(null)
   const [loading, setLoading] = useState(true)
   const profileLoadingRef = useRef(false)
   const { applyProfileTheme, applyProfileFont } = useTheme()
+
+  const reloadPageGrants = useCallback(async (role) => {
+    if (!role) {
+      setPageGrants(null)
+      return null
+    }
+    try {
+      const grants = await loadRolePageGrants(supabase, role)
+      setPageGrants(grants)
+      return grants
+    } catch (e) {
+      console.warn('CMS page grants unavailable, using role defaults:', e.message)
+      setPageGrants(null)
+      return null
+    }
+  }, [])
 
   // Function to load and validate profile with deduplication
   const loadProfile = useCallback(async (sessionUser) => {
@@ -54,6 +72,7 @@ export function AuthProvider({ children }) {
       
       console.log('✅ Profile loaded successfully:', data?.email)
       setProfile(data)
+      reloadPageGrants(data?.role).catch(() => {})
 
       // Theme: DB wins if set; otherwise push localStorage value up to DB so
       // it survives future cache clears.
@@ -84,7 +103,7 @@ export function AuthProvider({ children }) {
     } finally {
       profileLoadingRef.current = false
     }
-  }, [])
+  }, [applyProfileTheme, applyProfileFont, reloadPageGrants])
 
   // Initialize auth state
   useEffect(() => {
@@ -148,6 +167,7 @@ export function AuthProvider({ children }) {
           loadProfile(newSession.user).catch(console.error)
         } else if (!newSession) {
           setProfile(null)
+          setPageGrants(null)
         }
         
         setLoading(false)
@@ -180,6 +200,7 @@ export function AuthProvider({ children }) {
       console.error('Sign out error:', error)
     }
     setProfile(null)
+    setPageGrants(null)
     setUser(null)
     setSession(null)
   }
@@ -199,6 +220,8 @@ export function AuthProvider({ children }) {
     session,
     user,
     profile,
+    pageGrants,
+    reloadPageGrants,
     loading: loading,
     initialized: !loading, // initialized is true when loading is false
     signIn,

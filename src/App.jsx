@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
 import { supabase, getChurch, LICENSE_CSV, VENDOR } from './lib/supabase'
+import { canAccessPath } from './lib/cmsPermissions'
 
 import AppLayout from './components/layout/AppLayout'
 import LoginPage from './pages/LoginPage'
@@ -10,6 +11,7 @@ import DashboardPage from './pages/DashboardPage'
 import MembersPage from './pages/MembersPage'
 import ChurchSetupPage from './pages/ChurchSetupPage'
 import UsersPage from './pages/UsersPage'
+import CmsPermissionsPage from './pages/CmsPermissionsPage'
 import ImportPage from './pages/ImportPage'
 import DeletedMembersPage from './pages/DeletedMembersPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
@@ -232,7 +234,27 @@ function PrivateRoute({ children }) {
     return <Navigate to="/login" replace />
   }
 
-  return <LicenseGate>{children}</LicenseGate>
+  return (
+    <LicenseGate>
+      <PageAccess>{children}</PageAccess>
+    </LicenseGate>
+  )
+}
+
+/** Block direct URL access when the role is not granted the page. */
+function PageAccess({ children }) {
+  const { profile, pageGrants, loading, session } = useAuth()
+  const location = useLocation()
+
+  if (loading) return null
+  if (!session) return <Navigate to="/login" replace />
+  if (!profile?.role) return null
+
+  if (!canAccessPath(location.pathname, profile.role, pageGrants)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return children
 }
 
 // 🌐 Public Route
@@ -408,6 +430,15 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <AppLayout><UsersPage /></AppLayout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/cms-permissions"
+        element={
+          <PrivateRoute>
+            <AppLayout><CmsPermissionsPage /></AppLayout>
           </PrivateRoute>
         }
       />
