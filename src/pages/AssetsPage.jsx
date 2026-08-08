@@ -17,11 +17,11 @@ import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/export
 import FixedAssetsVault from '../components/assets/FixedAssetsVault'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
-  getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn,
+  getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn, returnStockToHand,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
   masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
-  userFacingNotes,
+  userFacingNotes, findConditionId, assertStockDates,
 } from '../lib/assetsLib'
 
 const INPUT = {
@@ -357,6 +357,10 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   async function handleSave() {
     if (!form.description.trim()) { toast('Description is required.', 'error'); return }
     if (!form.stock_in_date) { toast('Stock In date is required.', 'error'); return }
+    if (editing?.stock_out_date) {
+      try { assertStockDates(form.stock_in_date, editing.stock_out_date) }
+      catch (e) { toast(e.message, 'error'); return }
+    }
     setSaving(true)
     try {
       let photo_url = form.photo_url
@@ -524,10 +528,17 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
               <div>
-                <FL>Quantity</FL>
-                <input type="number" min="1" step="1" value={form.quantity}
-                  onChange={e => setQuantity(e.target.value)} style={INPUT} />
-              </div>
+              <FL>Quantity{editing ? '' : ''}</FL>
+              <input type="number" min="1" step="1" value={form.quantity}
+                onChange={e => setQuantity(e.target.value)}
+                disabled={!!editing}
+                style={{ ...INPUT, opacity: editing ? 0.7 : 1, cursor: editing ? 'not-allowed' : undefined }} />
+              {editing && (
+                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                  Use Stock Movement to change quantity
+                </p>
+              )}
+            </div>
               <div>
                 <FL optional>Unit Price (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.unit_price}
@@ -611,20 +622,22 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
   )
 }
 
-/* ── Stock Movement modal (In + Out) ───────────────────────────── */
+/* ── Stock Movement modal (In + Out + Return) ──────────────────── */
 
 function StockMovementModal({ asset, conditions, onDone, onClose }) {
   const toast = useToast()
-  const available = Math.max(1, Number(asset.quantity) || 1)
-  const canMoveOut = !asset.stock_out_date
-  const damagedId = conditions.find(c => /damaged/i.test(c.name))?.id || ''
-  const workingId = conditions.find(c => /working/i.test(c.name))?.id || ''
+  const available = Number(asset.quantity)
+  const availableSafe = Number.isFinite(available) && available >= 1 ? Math.floor(available) : 0
+  const canMoveOut = !asset.stock_out_date && availableSafe >= 1
+  const canReturn = !!asset.stock_out_date
+  const workingId = findConditionId(conditions, ['Working', 'Good']) || ''
+  const stockInDate = asset.stock_in_date ? String(asset.stock_in_date).slice(0, 10) : ''
 
-  const [direction, setDirection] = useState(canMoveOut ? 'out' : 'in') // 'in' | 'out'
-  const [qty, setQty] = useState('1')
+  const [direction, setDirection] = useState(canMoveOut ? 'out' : (canReturn ? 'return' : 'in'))
+  const [qty, setQty] = useState(canMoveOut ? '1' : '1')
   const [moveDate, setMoveDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [conditionId, setConditionId] = useState(
-    canMoveOut ? (damagedId || asset.condition_id || '') : (workingId || asset.condition_id || '')
+    canMoveOut ? (asset.condition_id || '') : (workingId || asset.condition_id || '')
   )
   const [unitPrice, setUnitPrice] = useState(
     asset.unit_price != null ? String(asset.unit_price) : ''
@@ -650,23 +663,38 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
 
   useEffect(() => {
     if (direction === 'out') {
-      setConditionId(damagedId || asset.condition_id || '')
-      setQty(String(Math.min(1, available)))
-    } else {
+      setConditionId(asset.condition_id || '')
+      setQty(String(Math.min(1, availableSafe || 1)))
+      // Out date cannot be before stock-in
+      if (stockInDate && moveDate < stockInDate) setMoveDate(stockInDate)
+    } else if (direction === 'in') {
       setConditionId(workingId || asset.condition_id || '')
       setQty('1')
       setCostManual(false)
     }
   }, [direction]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canSaveOut = direction === 'out' && moveQty >= 1 && moveQty <= available && !!moveDate
+  const dateError = (() => {
+    if (direction !== 'out') return null
+    if (!moveDate) return 'Stock Out date is required.'
+    if (stockInDate && moveDate < stockInDate) {
+      return `Stock Out date cannot be before Stock In date (${stockInDate.split('-').reverse().join('-')}).`
+    }
+    return null
+  })()
+
+  const canSaveOut = direction === 'out' && moveQty >= 1 && moveQty <= availableSafe && !!moveDate && !dateError
   const canSaveIn = direction === 'in' && moveQty >= 1 && !!moveDate
-  const canSave = direction === 'out' ? canSaveOut : canSaveIn
+  const canSaveReturn = direction === 'return'
+  const canSave = direction === 'out' ? canSaveOut : direction === 'return' ? canSaveReturn : canSaveIn
 
   async function handleMove() {
     if (!canSave) return
     setSaving(true)
     try {
+      if (direction === 'out') {
+        assertStockDates(stockInDate, moveDate)
+      }
       const result = await onDone({
         direction,
         quantity: moveQty,
@@ -679,12 +707,16 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
         supplier_name: supplierName,
         notes: notes.trim() || null,
       })
-      if (direction === 'in') {
+      if (direction === 'return') {
+        toast(result?.mode === 'merged'
+          ? 'Returned to stock — quantity merged back into the source line.'
+          : 'Returned to stock.', 'success')
+      } else if (direction === 'in') {
         toast(`Stock in ${moveQty} recorded as new line #${result?.moved?.serial_no || ''}.`.trim(), 'success')
       } else if (result?.mode === 'full') {
         toast(`Moved all ${moveQty} out of stock.`, 'success')
       } else {
-        toast(`Moved ${moveQty} out — ${available - moveQty} remain in stock.`, 'success')
+        toast(`Moved ${moveQty} out — ${availableSafe - moveQty} remain in stock.`, 'success')
       }
       onClose()
     } catch (e) {
@@ -692,6 +724,8 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
     }
     setSaving(false)
   }
+
+  const tabCount = (canMoveOut ? 1 : 0) + 1 + (canReturn ? 1 : 0)
 
   return (
     <div style={{
@@ -713,6 +747,7 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
               <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Stock Movement</p>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
                 #{asset.serial_no} · {asset.description}
+                {stockInDate ? ` · In ${stockInDate.split('-').reverse().join('-')}` : ''}
               </p>
             </div>
           </div>
@@ -722,9 +757,8 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
         </div>
 
         <div style={{ padding: '16px 22px', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Direction toggle */}
           <div style={{
-            display: 'grid', gridTemplateColumns: canMoveOut ? '1fr 1fr' : '1fr', gap: 8,
+            display: 'grid', gridTemplateColumns: `repeat(${tabCount}, 1fr)`, gap: 8,
             padding: 4, borderRadius: 10, background: 'var(--table-header-bg)',
           }}>
             {canMoveOut && (
@@ -749,40 +783,77 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
               }}>
               Move In
             </button>
+            {canReturn && (
+              <button type="button" onClick={() => setDirection('return')}
+                style={{
+                  padding: '9px 12px', border: 'none', borderRadius: 8, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 700,
+                  background: direction === 'return' ? 'var(--card-bg)' : 'transparent',
+                  color: direction === 'return' ? '#1d4ed8' : 'var(--text-3)',
+                  boxShadow: direction === 'return' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>
+                Return to Stock
+              </button>
+            )}
           </div>
 
           <div style={{
             padding: '10px 12px', borderRadius: 8, background: 'var(--table-header-bg)',
             fontSize: 12, color: 'var(--text-2)',
           }}>
-            {direction === 'out'
-              ? <>Currently in stock on this line: <strong style={{ color: 'var(--text-1)' }}>{available}</strong></>
-              : <>Adds a <strong>new</strong> in-stock line (same item details) so historical counts stay correct.</>
-            }
+            {direction === 'out' && (
+              <>Currently in stock on this line: <strong style={{ color: 'var(--text-1)' }}>{availableSafe}</strong>
+                {stockInDate ? <> · Stock In {stockInDate.split('-').reverse().join('-')}</> : null}</>
+            )}
+            {direction === 'in' && (
+              <>Adds a <strong>new</strong> in-stock line (same item details) so historical counts stay correct.</>
+            )}
+            {direction === 'return' && (
+              <>Clears Stock Out and puts this quantity back in stock
+                {asset.source_asset_id ? ' (merges into the original line when possible)' : ''}.</>
+            )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <FL>{direction === 'out' ? 'Qty to move out *' : 'Qty to bring in *'}</FL>
-              <input
-                type="number" min="1" max={direction === 'out' ? available : undefined} step="1" value={qty}
-                onChange={e => setQty(e.target.value)}
-                style={INPUT} autoFocus
-              />
+          {direction !== 'return' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <FL>{direction === 'out' ? 'Qty to move out *' : 'Qty to bring in *'}</FL>
+                <input
+                  type="number" min="1" max={direction === 'out' ? availableSafe : undefined} step="1" value={qty}
+                  onChange={e => setQty(e.target.value)}
+                  style={INPUT} autoFocus
+                />
+              </div>
+              <div>
+                <FL>{direction === 'out' ? 'Stock Out Date *' : 'Stock In Date *'}</FL>
+                <input
+                  type="date"
+                  value={moveDate}
+                  min={direction === 'out' && stockInDate ? stockInDate : undefined}
+                  onChange={e => setMoveDate(e.target.value)}
+                  style={INPUT}
+                />
+                {dateError && (
+                  <p style={{ fontSize: 11, color: '#b91c1c', margin: '4px 0 0', fontWeight: 600 }}>{dateError}</p>
+                )}
+              </div>
             </div>
-            <div>
-              <FL>{direction === 'out' ? 'Stock Out Date *' : 'Stock In Date *'}</FL>
-              <input type="date" value={moveDate} onChange={e => setMoveDate(e.target.value)} style={INPUT} />
-            </div>
-          </div>
+          )}
 
-          <div>
-            <FL optional>Condition</FL>
-            <select value={conditionId} onChange={e => setConditionId(e.target.value)} style={INPUT}>
-              <option value="">— Select —</option>
-              {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+          {direction !== 'return' && (
+            <div>
+              <FL optional>Condition</FL>
+              <select value={conditionId} onChange={e => setConditionId(e.target.value)} style={INPUT}>
+                <option value="">— Select —</option>
+                {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {direction === 'out' && (
+                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                  Choose Damaged / Disposed / etc. only when it applies
+                </p>
+              )}
+            </div>
+          )}
 
           {direction === 'in' && (
             <>
@@ -820,28 +891,35 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
             </>
           )}
 
-          <div>
-            <FL optional>Notes</FL>
-            <input
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder={direction === 'out' ? 'e.g. Damaged beyond repair' : 'e.g. New purchase batch'}
-              style={INPUT}
-            />
-          </div>
+          {direction !== 'return' && (
+            <div>
+              <FL optional>Notes</FL>
+              <input
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder={direction === 'out' ? 'e.g. Given to school / Damaged' : 'e.g. New purchase batch'}
+                style={INPUT}
+              />
+            </div>
+          )}
 
           {canSave && (
             <div style={{
               fontSize: 12, color: 'var(--text-2)', padding: '10px 12px', borderRadius: 8,
-              background: direction === 'in' ? '#f0fdf4' : 'var(--accent-subtle, #eff6ff)',
+              background: direction === 'in' || direction === 'return' ? '#f0fdf4' : 'var(--accent-subtle, #eff6ff)',
               border: '1px solid var(--card-border)', lineHeight: 1.45,
             }}>
-              {direction === 'in' ? (
+              {direction === 'return' && (
+                <>This line will return to <strong>In stock</strong> (Stock Out cleared).</>
+              )}
+              {direction === 'in' && (
                 <>Will create a new line for <strong>{moveQty}</strong> with Stock In on {moveDate}. Existing #{asset.serial_no} stays unchanged.</>
-              ) : moveQty === available ? (
-                <>All <strong>{available}</strong> will be marked Stock Out on {moveDate}.</>
-              ) : (
-                <>Create out line for <strong>{moveQty}</strong>; keep <strong>{available - moveQty}</strong> in stock on the original line.</>
+              )}
+              {direction === 'out' && moveQty === availableSafe && (
+                <>All <strong>{availableSafe}</strong> will be marked Stock Out on {moveDate}.</>
+              )}
+              {direction === 'out' && moveQty !== availableSafe && (
+                <>Create out line for <strong>{moveQty}</strong>; keep <strong>{availableSafe - moveQty}</strong> in stock on the original line.</>
               )}
             </div>
           )}
@@ -861,12 +939,12 @@ function StockMovementModal({ asset, conditions, onDone, onClose }) {
           <button onClick={handleMove} disabled={saving || !canSave}
             style={{
               display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
-              background: direction === 'in' ? '#16a34a' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+              background: direction === 'in' || direction === 'return' ? '#16a34a' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
               fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
               opacity: saving || !canSave ? 0.65 : 1,
             }}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowRightLeft size={14} />}
-            {direction === 'in' ? 'Move In' : 'Move Out'}
+            {direction === 'in' ? 'Move In' : direction === 'return' ? 'Return to Stock' : 'Move Out'}
           </button>
         </div>
       </div>
@@ -987,13 +1065,15 @@ export default function AssetsPage() {
         const c = l.purchase_value != null ? Number(l.purchase_value) : null
         return s + (c != null && Number.isFinite(c) ? c : 0)
       }, 0)
-      // Qty/cost include every matching line (all conditions / moved-out)
-      const qtyDisplay = sorted.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
-      const costDisplay = sorted.reduce((s, l) => {
+      // Qty/cost: display on-hand as primary; keep total of all lines for reference
+      const qtyDisplay = onHandLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const qtyAllLines = sorted.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const costDisplay = onHandLines.reduce((s, l) => {
         const c = l.purchase_value != null ? Number(l.purchase_value) : null
         return s + (c != null && Number.isFinite(c) ? c : 0)
       }, 0)
-      const hasCost = sorted.some(l => l.purchase_value != null || l.unit_price != null)
+      const hasCost = onHandLines.some(l => l.purchase_value != null || l.unit_price != null)
+        || sorted.some(l => l.purchase_value != null || l.unit_price != null)
       const primary = onHandLines[0] || sorted[0]
       const allOut = onHandLines.length === 0
       return {
@@ -1002,6 +1082,7 @@ export default function AssetsPage() {
         primary,
         qtyOnHand,
         qtyDisplay,
+        qtyAllLines,
         costOnHand,
         costDisplay,
         hasCost,
@@ -1016,10 +1097,12 @@ export default function AssetsPage() {
     [groups]
   )
 
-  const qtyDisplayTotal = useMemo(
-    () => groups.reduce((s, g) => s + g.qtyDisplay, 0),
+  const qtyAllTotal = useMemo(
+    () => groups.reduce((s, g) => s + (g.qtyAllLines ?? g.qtyDisplay), 0),
     [groups]
   )
+
+  const qtyDisplayTotal = qtyOnHand
 
   function toggleGroup(key) {
     setExpandedGroups(prev => {
@@ -1052,7 +1135,9 @@ export default function AssetsPage() {
   async function handleStockMove(payload) {
     const performed_by = profile?.full_name || profile?.email || null
     let result
-    if (payload.direction === 'in') {
+    if (payload.direction === 'return') {
+      result = await returnStockToHand(moveAsset, { performed_by })
+    } else if (payload.direction === 'in') {
       result = await moveStockIn(moveAsset, {
         quantity: payload.quantity,
         stock_in_date: payload.move_date,
@@ -1079,7 +1164,10 @@ export default function AssetsPage() {
   }
 
   async function handleDelete(asset) {
-    if (!confirm(`Remove “${asset.description}” from the register?`)) return
+    const msg = asset.stock_out_date
+      ? `Remove “${asset.description}” from the register?\n\nThis hides a moved-out history line. Prefer leaving it for audit, or use Return to Stock if it was a mistake.`
+      : `Remove “${asset.description}” from the register?\n\nFor disposals/transfers use Stock Movement → Move Out so history stays. Delete only for true mistakes.`
+    if (!confirm(msg)) return
     setDeleting(asset.id)
     try {
       await softDeleteAsset(asset.id, profile?.full_name || profile?.email || null)
@@ -1108,7 +1196,7 @@ export default function AssetsPage() {
     return [
       // Description merges adjacent identical values (grouped stock lines)
       { header: 'Description', key: 'description', align: 'left' },
-      { header: 'Total Qty', key: 'total_qty', align: 'center', merge: true },
+      { header: 'On Hand', key: 'total_qty', align: 'center', merge: true },
       { header: 'Sub Qty', key: 'sub_qty', align: 'center' },
       { header: 'Type', key: 'type', align: 'left', merge: false },
       { header: 'Location', key: 'location', align: 'left', merge: false },
@@ -1182,7 +1270,7 @@ export default function AssetsPage() {
         String(a.stock_in_date || '').localeCompare(String(b.stock_in_date || ''))
       )
       const onHandLines = sorted.filter(l => isAssetOnHand(l, asOnDate || null))
-      const qtyDisplay = sorted.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
+      const qtyDisplay = onHandLines.reduce((s, l) => s + (Number(l.quantity) || 1), 0)
       const primary = onHandLines[0] || sorted[0]
       return {
         key,
@@ -1574,8 +1662,10 @@ export default function AssetsPage() {
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
               {asOnDate
-                ? <>As on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyDisplayTotal}</strong> unit{qtyDisplayTotal === 1 ? '' : 's'} across {groups.length} item{groups.length === 1 ? '' : 's'}{qtyOnHand !== qtyDisplayTotal ? ` (${qtyOnHand} still on hand)` : ''}</>
-                : <>Showing {groups.length} item{groups.length === 1 ? '' : 's'} ({filtered.length} stock line{filtered.length === 1 ? '' : 's'})</>
+                ? <>As on {fmtDate(asOnDate)}: <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> on hand
+                  {qtyAllTotal !== qtyOnHand ? <> · <strong style={{ color: 'var(--text-1)' }}>{qtyAllTotal}</strong> listed incl. moved-out</> : null}
+                  {' '}across {groups.length} item{groups.length === 1 ? '' : 's'}</>
+                : <>Showing {groups.length} item{groups.length === 1 ? '' : 's'} ({filtered.length} stock line{filtered.length === 1 ? '' : 's'}) · <strong style={{ color: 'var(--text-1)' }}>{qtyOnHand}</strong> on hand</>
               }
             </p>
           </div>
@@ -1669,9 +1759,14 @@ export default function AssetsPage() {
                             <td style={{
                               padding: '10px 14px', fontFamily: 'monospace', textAlign: 'center',
                               fontWeight: 800, fontSize: 14,
-                              color: (!filterCond && g.allOut) ? 'var(--text-3)' : 'var(--text-1)',
+                              color: g.allOut ? 'var(--text-3)' : 'var(--text-1)',
                             }}>
-                              {g.qtyDisplay}
+                              {g.qtyOnHand}
+                              {g.qtyAllLines !== g.qtyOnHand && (
+                                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', marginTop: 2 }}>
+                                  {g.qtyAllLines} total
+                                </div>
+                              )}
                             </td>
                             <td style={{ padding: '10px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                               {a.item_type ? masterDisplayName(a.item_type, itemTypes) : '—'}
@@ -1702,14 +1797,17 @@ export default function AssetsPage() {
                               {g.hasCost ? fmtMoney(g.costDisplay) : '—'}
                             </td>
                             <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                              <button onClick={() => setMoveAsset(a)} title="Stock Movement — in / out"
-                                style={{
-                                  padding: '5px 7px', marginRight: 4, background: '#eff6ff',
-                                  border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
-                                  color: '#1d4ed8', display: 'inline-flex',
-                                }}>
-                                <ArrowRightLeft size={13} />
-                              </button>
+                              {/* Stock Movement only on single-line groups — multi-line: use each stock line */}
+                              {!multi && (
+                                <button onClick={() => setMoveAsset(a)} title="Stock Movement — in / out / return"
+                                  style={{
+                                    padding: '5px 7px', marginRight: 4, background: '#eff6ff',
+                                    border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer',
+                                    color: '#1d4ed8', display: 'inline-flex',
+                                  }}>
+                                  <ArrowRightLeft size={13} />
+                                </button>
+                              )}
                               {!multi && (
                                 <>
                                   <button onClick={() => setModal(a)} title="Edit"
@@ -1728,6 +1826,9 @@ export default function AssetsPage() {
                                     {deleting === a.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                                   </button>
                                 </>
+                              )}
+                              {multi && (
+                                <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Expand lines to move</span>
                               )}
                             </td>
                           </tr>
