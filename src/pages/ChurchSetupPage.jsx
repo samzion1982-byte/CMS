@@ -6,6 +6,7 @@ import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
          Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Settings } from 'lucide-react'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
+import MasterPasswordInput from '../components/MasterPasswordInput'
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
@@ -956,7 +957,7 @@ export default function ChurchSetupPage() {
               </div>
               <div style={{ padding:'20px 22px' }}>
                 <p style={{ margin:'0 0 10px', fontSize:12, fontWeight:700, color:'var(--text-2)', textTransform:'uppercase', letterSpacing:'0.06em', fontFamily:'var(--font-ui)' }}>Enter master password to confirm</p>
-                <input ref={flushAcPwRef} type="password" value={flushAcPw}
+                <MasterPasswordInput ref={flushAcPwRef} value={flushAcPw}
                   onChange={e => { setFlushAcPw(e.target.value); setFlushAcPwErr(false) }}
                   onKeyDown={e => e.key === 'Enter' && doFlushAccounts()}
                   placeholder="Master password"

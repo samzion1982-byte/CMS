@@ -23,6 +23,7 @@ import {
   CheckSquare, BarChart, Target, Building2, Layers, BookOpen,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
+import MasterPasswordInput from '../components/MasterPasswordInput'
 
 // ── Balance Bar (Cash | Bank | Total) ────────────────────────────
 
@@ -409,8 +410,7 @@ function EntrySystemSetupModal({ onLocked }) {
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 8 }}>
               Master Password
             </label>
-            <input
-              type="password"
+            <MasterPasswordInput
               value={password}
               onChange={e => { setPassword(e.target.value); setPwError('') }}
               onKeyDown={e => e.key === 'Enter' && handleConfirmLock()}
@@ -626,8 +626,7 @@ export default function AccountingPage() {
             </div>
             <div style={{ padding: '20px 26px' }}>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>Master Password</label>
-              <input
-                type="password"
+              <MasterPasswordInput
                 value={switchPwInput}
                 onChange={e => { setSwitchPwInput(e.target.value); setSwitchPwError('') }}
                 onKeyDown={e => {

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../../lib/toast'
 import { useAuth } from '../../lib/AuthContext'
+import MasterPasswordInput from '../MasterPasswordInput'
 import {
   FIXED_ASSETS_MASTER_PASSWORD, FIXED_ASSETS_IDLE_MS,
   isFixedAssetsUnlocked, unlockFixedAssets, lockFixedAssets,
@@ -116,9 +117,9 @@ function MasterPasswordModal({
             Master Password
           </label>
           <div style={{ position: 'relative', marginBottom: 10 }}>
-            <input
+            <MasterPasswordInput
               ref={inputRef}
-              type={showPw ? 'text' : 'password'}
+              showPlain={showPw}
               value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && attempt()}
@@ -198,9 +199,9 @@ function LockScreen({ onUnlock }) {
             Master Password
           </label>
           <div style={{ position: 'relative', marginBottom: 12 }}>
-            <input
+            <MasterPasswordInput
               ref={inputRef}
-              type={showPw ? 'text' : 'password'}
+              showPlain={showPw}
               value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && attempt()}

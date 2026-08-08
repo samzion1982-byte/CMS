@@ -22,6 +22,7 @@ import {
   parseAndValidateSimpleBackup,
   applySimpleBackupRestore,
 } from '../lib/simpleAccountsBackup'
+import MasterPasswordInput from '../components/MasterPasswordInput'
 
 const MASTER_PASSWORD = 'Master007))&'
 
@@ -361,8 +362,8 @@ export default function SimpleAccountsSettingsPage() {
               Enter the master password to access Simple Accounts settings.
             </p>
             <div style={{ position: 'relative', marginBottom: 10 }}>
-              <input
-                type={showPwd ? 'text' : 'password'}
+              <MasterPasswordInput
+                showPlain={showPwd}
                 value={unlockInput}
                 onChange={e => { setUnlockInput(e.target.value); setUnlockError('') }}
                 onKeyDown={e => e.key === 'Enter' && tryUnlock()}
@@ -370,7 +371,7 @@ export default function SimpleAccountsSettingsPage() {
                 autoFocus
                 style={{ ...inputStyle, paddingRight: 44, textAlign: 'center', letterSpacing: showPwd ? 0 : 3, height: 46, fontSize: 15 }}
               />
-              <button onClick={() => setShowPwd(v => !v)}
+              <button type="button" onClick={() => setShowPwd(v => !v)}
                 style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', padding: 4 }}>
                 {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -794,8 +795,7 @@ export default function SimpleAccountsSettingsPage() {
             <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 20px', lineHeight: 1.6 }}>
               This will <strong>permanently delete</strong> all transactions, accounts, and categories from Simple Accounts. This cannot be undone.
             </p>
-            <input
-              type="password"
+            <MasterPasswordInput
               value={flushPwd}
               onChange={e => { setFlushPwd(e.target.value); setFlushErr('') }}
               onKeyDown={e => e.key === 'Enter' && handleFlush()}
@@ -830,8 +830,7 @@ export default function SimpleAccountsSettingsPage() {
             <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 20px', lineHeight: 1.6 }}>
               This will <strong>permanently replace</strong> all current accounts, categories, and transactions with the backup file contents. This cannot be undone. Enter the master password to confirm.
             </p>
-            <input
-              type="password"
+            <MasterPasswordInput
               value={restPwd}
               onChange={e => { setRestPwd(e.target.value); setRestErr('') }}
               onKeyDown={e => e.key === 'Enter' && handleRestore()}

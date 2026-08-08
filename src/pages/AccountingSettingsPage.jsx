@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { displayAccountType } from '../lib/accountingLib'
 import { useEntity } from '../lib/EntityContext'
+import MasterPasswordInput from '../components/MasterPasswordInput'
 
 const MASTER_PASSWORD = 'Master007))&'
 
@@ -204,12 +205,12 @@ function MasterPasswordModal({ title, description, confirmLabel, confirmColor = 
         <div style={{ padding: '20px 24px' }}>
           <FL>Master Password</FL>
           <div style={{ position: 'relative' }}>
-            <input ref={inputRef} type={showPw ? 'text' : 'password'} value={password}
+            <MasterPasswordInput ref={inputRef} showPlain={showPw} value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && handleConfirm()}
               placeholder="Enter master password…"
               style={{ width: '100%', height: 42, padding: '0 40px 0 14px', border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}`, borderRadius: 9, fontSize: 14, background: 'var(--input-bg)', color: 'var(--text-1)', outline: 'none', boxSizing: 'border-box', letterSpacing: showPw ? 'normal' : '0.1em' }} />
-            <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+            <button type="button" onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
               {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
@@ -256,12 +257,12 @@ function SettingsLockScreen({ onUnlock }) {
         <div style={{ padding: '0 32px 28px' }}>
           <FL>Master Password</FL>
           <div style={{ position: 'relative', marginBottom: 14 }}>
-            <input ref={inputRef} type={showPw ? 'text' : 'password'} value={password}
+            <MasterPasswordInput ref={inputRef} showPlain={showPw} value={password}
               onChange={e => { setPassword(e.target.value); setError('') }}
               onKeyDown={e => e.key === 'Enter' && attempt()}
               placeholder="Enter master password…"
               style={{ ...INPUT_STYLE, letterSpacing: showPw ? 'normal' : '0.12em', border: `1.5px solid ${error ? '#b91c1c' : 'var(--card-border)'}` }} />
-            <button onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
+            <button type="button" onClick={() => setShowPw(v => !v)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}>
               {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
@@ -843,8 +844,7 @@ export default function AccountingSettingsPage() {
             </div>
             <div style={{ padding: '20px 26px' }}>
               <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>Master Password</label>
-              <input
-                type="password"
+              <MasterPasswordInput
                 value={switchPwInput}
                 onChange={e => { setSwitchPwInput(e.target.value); setSwitchPwError('') }}
                 onKeyDown={e => e.key === 'Enter' && handleSwitchConfirm()}
