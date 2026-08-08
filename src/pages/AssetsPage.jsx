@@ -468,10 +468,32 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </div>
           </div>
 
-          <div>
-            <FL>Description *</FL>
-            <input value={form.description} onChange={e => set('description', e.target.value)}
-              placeholder="e.g. Wooden Pulpit" style={INPUT} autoFocus />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 14, alignItems: 'start' }}>
+            <div>
+              <FL>Description *</FL>
+              <input value={form.description} onChange={e => set('description', e.target.value)}
+                placeholder="e.g. Wooden Pulpit" style={INPUT} autoFocus />
+            </div>
+            <div>
+              <FL>Quantity *</FL>
+              <input
+                type="number" min="1" step="1" value={form.quantity}
+                onChange={e => setQuantity(e.target.value)}
+                disabled={!!editing}
+                style={{
+                  ...INPUT,
+                  opacity: editing ? 0.7 : 1,
+                  cursor: editing ? 'not-allowed' : undefined,
+                  textAlign: 'center',
+                  fontWeight: 700,
+                }}
+              />
+              {editing && (
+                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+                  Via Stock Movement
+                </p>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -528,17 +550,14 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
               <div>
-              <FL>Quantity{editing ? '' : ''}</FL>
-              <input type="number" min="1" step="1" value={form.quantity}
-                onChange={e => setQuantity(e.target.value)}
-                disabled={!!editing}
-                style={{ ...INPUT, opacity: editing ? 0.7 : 1, cursor: editing ? 'not-allowed' : undefined }} />
-              {editing && (
+                <FL>Quantity</FL>
+                <input type="number" min="1" step="1" value={form.quantity}
+                  readOnly disabled
+                  style={{ ...INPUT, opacity: 0.7, cursor: 'not-allowed', fontWeight: 700 }} />
                 <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
-                  Use Stock Movement to change quantity
+                  {editing ? 'Use Stock Movement to change quantity' : 'Set quantity next to Description above'}
                 </p>
-              )}
-            </div>
+              </div>
               <div>
                 <FL optional>Unit Price (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.unit_price}
