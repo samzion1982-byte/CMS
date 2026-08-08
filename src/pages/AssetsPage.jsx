@@ -734,10 +734,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <input
                 type="date"
                 value={form.warranty_upto}
-                onChange={e => {
-                  set('warranty_upto', e.target.value)
-                  if (e.target.value) advanceAfterChange(e.target)
-                }}
+                onChange={e => set('warranty_upto', e.target.value)}
                 onKeyDown={onAdvanceKeyDown}
                 style={INPUT}
               />
@@ -749,10 +746,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <input
               type="date"
               value={form.stock_in_date}
-              onChange={e => {
-                set('stock_in_date', e.target.value)
-                if (e.target.value) advanceAfterChange(e.target)
-              }}
+              onChange={e => set('stock_in_date', e.target.value)}
               onKeyDown={onAdvanceKeyDown}
               style={INPUT}
             />
@@ -805,10 +799,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 <input
                   type="date"
                   value={form.invoice_date}
-                  onChange={e => {
-                    set('invoice_date', e.target.value)
-                    if (e.target.value) advanceAfterChange(e.target)
-                  }}
+                  onChange={e => set('invoice_date', e.target.value)}
                   onKeyDown={onAdvanceKeyDown}
                   style={INPUT}
                 />
