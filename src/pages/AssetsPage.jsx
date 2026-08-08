@@ -58,6 +58,12 @@ function focusNextFormField(fromEl) {
   }
 }
 
+/** After a discrete pick (select/date/tree), move focus to the next field. */
+function advanceAfterChange(el) {
+  if (!el) return
+  setTimeout(() => focusNextFormField(el), 0)
+}
+
 function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —' }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -108,8 +114,8 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
     onChange(id)
     setOpen(false)
     setQuery('')
-    // Advance to next field (e.g. Item Type → Location)
-    setTimeout(() => focusNextFormField(btnRef.current), 0)
+    // Advance to next field (e.g. Item Type → Location → Condition)
+    advanceAfterChange(btnRef.current)
   }
 
   function renderNode(node, depth) {
@@ -669,22 +675,43 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div>
               <FL>Condition</FL>
-              <select value={form.condition_id} onChange={e => set('condition_id', e.target.value)} style={INPUT}>
+              <select
+                value={form.condition_id}
+                onChange={e => {
+                  set('condition_id', e.target.value)
+                  advanceAfterChange(e.target)
+                }}
+                style={INPUT}
+              >
                 <option value="">— Select —</option>
                 {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <FL optional>Warranty Upto</FL>
-              <input type="date" value={form.warranty_upto}
-                onChange={e => set('warranty_upto', e.target.value)} style={INPUT} />
+              <input
+                type="date"
+                value={form.warranty_upto}
+                onChange={e => {
+                  set('warranty_upto', e.target.value)
+                  if (e.target.value) advanceAfterChange(e.target)
+                }}
+                style={INPUT}
+              />
             </div>
           </div>
 
           <div>
             <FL>Stock In Date *</FL>
-            <input type="date" value={form.stock_in_date}
-              onChange={e => set('stock_in_date', e.target.value)} style={INPUT} />
+            <input
+              type="date"
+              value={form.stock_in_date}
+              onChange={e => {
+                set('stock_in_date', e.target.value)
+                if (e.target.value) advanceAfterChange(e.target)
+              }}
+              style={INPUT}
+            />
             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
               When brought into account
             </p>
@@ -727,8 +754,15 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <FL optional>Invoice Date</FL>
-                <input type="date" value={form.invoice_date}
-                  onChange={e => set('invoice_date', e.target.value)} style={INPUT} />
+                <input
+                  type="date"
+                  value={form.invoice_date}
+                  onChange={e => {
+                    set('invoice_date', e.target.value)
+                    if (e.target.value) advanceAfterChange(e.target)
+                  }}
+                  style={INPUT}
+                />
               </div>
               <div>
                 <FL optional>Invoice No.</FL>
