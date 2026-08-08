@@ -610,14 +610,14 @@ function FL({ children, optional }) {
   )
 }
 
-function emptyForm(category, defaults = {}) {
+function emptyForm(category) {
   const today = new Date().toISOString().slice(0, 10)
   return {
     asset_category: category,
     description: '',
     location_id: '',
     item_type_id: '',
-    condition_id: defaults.workingId || '',
+    condition_id: '',
     quantity: 1,
     stock_in_date: today,
     warranty_upto: '',
@@ -638,7 +638,6 @@ function emptyForm(category, defaults = {}) {
 
 function AssetModal({ editing, category, locations, itemTypes, conditions, onSave, onClose }) {
   const toast = useToast()
-  const workingId = conditions.find(c => c.name === 'Working')?.id || ''
   const modalRef = useRef(null)
   const [form, setForm] = useState(() => editing
     ? {
@@ -646,7 +645,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         description: editing.description || '',
         location_id: editing.location_id || '',
         item_type_id: editing.item_type_id || '',
-        condition_id: editing.condition_id || workingId,
+        condition_id: editing.condition_id || '',
         quantity: editing.quantity ?? 1,
         stock_in_date: editing.stock_in_date || new Date().toISOString().slice(0, 10),
         warranty_upto: editing.warranty_upto || '',
@@ -661,7 +660,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
         photo_url: editing.photo_url || null,
         photo_path: editing.photo_path || null,
       }
-    : emptyForm(category, { workingId })
+    : emptyForm(category)
   )
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(editing?.photo_url || null)
