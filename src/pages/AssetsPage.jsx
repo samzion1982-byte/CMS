@@ -44,24 +44,45 @@ function getModalFocusables(root) {
   })
 }
 
-function focusNextFormField(fromEl) {
-  if (!fromEl) return
-  const root = fromEl.closest('[data-asset-modal]') || fromEl.closest('[data-asset-form]') || document
-  const list = getModalFocusables(root).filter(n => {
-    // Prefer main form fields over dropdown search boxes
-    if (n.dataset.treeSearch === '1') return false
-    return true
-  })
-  const idx = list.indexOf(fromEl)
-  if (idx !== -1 && idx < list.length - 1) {
-    list[idx + 1].focus()
-  }
+function getFormFocusables(fromEl) {
+  const root = fromEl?.closest?.('[data-asset-modal]')
+    || fromEl?.closest?.('[data-asset-form]')
+    || document
+  return getModalFocusables(root).filter(n => n.dataset.treeSearch !== '1')
 }
 
-/** After a discrete pick (select/date/tree), move focus to the next field. */
+function focusNextFormField(fromEl, { openPicker = false } = {}) {
+  if (!fromEl) return false
+  const list = getFormFocusables(fromEl)
+  const idx = list.indexOf(fromEl)
+  if (idx === -1 || idx >= list.length - 1) return false
+  const next = list[idx + 1]
+  next.focus()
+  if (openPicker && typeof next.showPicker === 'function') {
+    try { next.showPicker() } catch { /* needs user gesture; ignore */ }
+  }
+  return true
+}
+
+/**
+ * After a discrete pick (tree/select/date), move focus to the next field.
+ * Retries once after paint — Location used to steal focus back by reopening
+ * its dropdown on accidental re-focus after the menu unmounted.
+ */
 function advanceAfterChange(el) {
   if (!el) return
-  setTimeout(() => focusNextFormField(el), 0)
+  if (focusNextFormField(el)) return
+  requestAnimationFrame(() => {
+    setTimeout(() => focusNextFormField(el), 0)
+  })
+}
+
+/** Enter advances; Tab uses the modal trap. Textareas keep Enter for newlines. */
+function onAdvanceKeyDown(e) {
+  if (e.key !== 'Enter') return
+  if (e.target?.tagName === 'TEXTAREA') return
+  e.preventDefault()
+  advanceAfterChange(e.target)
 }
 
 function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —' }) {
@@ -111,11 +132,19 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
   }
 
   function pick(id) {
+    // Prevent this trigger's onFocus from reopening the menu when focus
+    // briefly returns here after the dropdown unmounts (was blocking
+    // Location → Condition advance).
+    suppressOpenRef.current = true
     onChange(id)
     setOpen(false)
     setQuery('')
-    // Advance to next field (e.g. Item Type → Location → Condition)
-    advanceAfterChange(btnRef.current)
+    const from = btnRef.current
+    // Advance now (still in the click gesture) so select/date can open
+    focusNextFormField(from, { openPicker: true })
+    requestAnimationFrame(() => {
+      setTimeout(() => focusNextFormField(from), 0)
+    })
   }
 
   function renderNode(node, depth) {
@@ -214,9 +243,14 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
             }
             if (e.key === 'Tab' && open) {
               e.preventDefault()
+              suppressOpenRef.current = true
               setOpen(false)
               setQuery('')
-              setTimeout(() => focusNextFormField(btnRef.current), 0)
+              const from = btnRef.current
+              focusNextFormField(from)
+              requestAnimationFrame(() => {
+                setTimeout(() => focusNextFormField(from), 0)
+              })
             }
           }}
           style={{
@@ -299,12 +333,17 @@ function MasterTreeSelect({ rows, value, onChange, placeholder = '— Select —
                   }
                   if (e.key === 'Tab') {
                     e.preventDefault()
+                    suppressOpenRef.current = true
                     setOpen(false)
                     setQuery('')
                     if (e.shiftKey) {
                       btnRef.current?.focus()
                     } else {
-                      setTimeout(() => focusNextFormField(btnRef.current), 0)
+                      const from = btnRef.current
+                      focusNextFormField(from)
+                      requestAnimationFrame(() => {
+                        setTimeout(() => focusNextFormField(from), 0)
+                      })
                     }
                   }
                 }}
@@ -627,6 +666,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
             <div>
               <FL>Description *</FL>
               <input value={form.description} onChange={e => set('description', e.target.value)}
+                onKeyDown={onAdvanceKeyDown}
                 placeholder="e.g. Wooden Pulpit" style={INPUT} autoFocus />
             </div>
             <div>
@@ -634,6 +674,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <input
                 type="number" min="1" step="1" value={form.quantity}
                 onChange={e => setQuantity(e.target.value)}
+                onKeyDown={onAdvanceKeyDown}
                 disabled={!!editing}
                 style={{
                   ...INPUT,
@@ -681,6 +722,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                   set('condition_id', e.target.value)
                   advanceAfterChange(e.target)
                 }}
+                onKeyDown={onAdvanceKeyDown}
                 style={INPUT}
               >
                 <option value="">— Select —</option>
@@ -696,6 +738,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                   set('warranty_upto', e.target.value)
                   if (e.target.value) advanceAfterChange(e.target)
                 }}
+                onKeyDown={onAdvanceKeyDown}
                 style={INPUT}
               />
             </div>
@@ -710,6 +753,7 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                 set('stock_in_date', e.target.value)
                 if (e.target.value) advanceAfterChange(e.target)
               }}
+              onKeyDown={onAdvanceKeyDown}
               style={INPUT}
             />
             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
@@ -738,12 +782,16 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
               <div>
                 <FL optional>Unit Price (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.unit_price}
-                  onChange={e => setUnitPrice(e.target.value)} placeholder="0.00" style={INPUT} />
+                  onChange={e => setUnitPrice(e.target.value)}
+                  onKeyDown={onAdvanceKeyDown}
+                  placeholder="0.00" style={INPUT} />
               </div>
               <div>
                 <FL optional>Cost (₹)</FL>
                 <input type="number" min="0" step="0.01" value={form.purchase_value}
-                  onChange={e => setPurchaseValue(e.target.value)} placeholder="0.00" style={INPUT} />
+                  onChange={e => setPurchaseValue(e.target.value)}
+                  onKeyDown={onAdvanceKeyDown}
+                  placeholder="0.00" style={INPUT} />
                 {!pvManual && form.unit_price !== '' && form.unit_price != null && (
                   <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
                     Auto: Unit Price × Quantity
@@ -761,29 +809,34 @@ function AssetModal({ editing, category, locations, itemTypes, conditions, onSav
                     set('invoice_date', e.target.value)
                     if (e.target.value) advanceAfterChange(e.target)
                   }}
+                  onKeyDown={onAdvanceKeyDown}
                   style={INPUT}
                 />
               </div>
               <div>
                 <FL optional>Invoice No.</FL>
                 <input value={form.invoice_no} onChange={e => set('invoice_no', e.target.value)}
+                  onKeyDown={onAdvanceKeyDown}
                   placeholder="Invoice reference" style={INPUT} />
               </div>
             </div>
             <div>
               <FL optional>Supplier Name</FL>
               <input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}
+                onKeyDown={onAdvanceKeyDown}
                 placeholder="Vendor name" style={INPUT} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 <FL optional>Supplier Address</FL>
                 <input value={form.supplier_address} onChange={e => set('supplier_address', e.target.value)}
+                  onKeyDown={onAdvanceKeyDown}
                   placeholder="Address" style={INPUT} />
               </div>
               <div>
                 <FL optional>Contact No.</FL>
                 <input value={form.supplier_contact} onChange={e => set('supplier_contact', e.target.value)}
+                  onKeyDown={onAdvanceKeyDown}
                   placeholder="Phone" style={INPUT} />
               </div>
             </div>
