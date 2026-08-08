@@ -169,7 +169,7 @@ export function canAccessPath(pathname, role, grants = null) {
   const page = findPageForPath(pathname)
   if (!page) {
     if (pathname.startsWith('/members')) {
-      return grants ? !!grants.members : ['admin1', 'admin', 'user', 'demo'].includes(role)
+      return grants ? !!grants.members : ['admin1', 'admin', 'user', 'demo', 'user4'].includes(role)
     }
     return false
   }

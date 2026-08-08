@@ -4,10 +4,11 @@
  */
 
 export const CMS_CONFIG_ROLES = [
-  { value: 'admin1', label: 'Admin1' },
-  { value: 'admin',  label: 'Admin'  },
-  { value: 'user',   label: 'User'   },
-  { value: 'demo',   label: 'Demo'   },
+  { value: 'admin1', label: 'Admin'  },
+  { value: 'admin',  label: 'User1'  },
+  { value: 'user',   label: 'User2'  },
+  { value: 'demo',   label: 'User3'  },
+  { value: 'user4',  label: 'User4'  },
 ]
 
 /**
@@ -147,7 +148,7 @@ export function defaultPageAllowed(role, page) {
   if (page.alwaysOn) return true
   if (page.admin1Default) return role === 'admin1'
   if (page.adminDefault) return role === 'admin1' || role === 'admin'
-  if (page.group === 'MAIN') return true
+  if (page.group === 'MAIN') return ['admin1', 'admin', 'user', 'demo', 'user4'].includes(role)
   return false
 }
 

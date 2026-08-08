@@ -117,7 +117,7 @@ function LiveClock({ g }) {
 }
 
 /* ── User badge + dropdown ───────────────────────────────────── */
-const DEVICE_EDIT_ROLES = ['super_admin', 'admin1', 'admin', 'user', 'demo']
+const DEVICE_EDIT_ROLES = ['super_admin', 'admin1', 'admin', 'user', 'demo', 'user4']
 
 function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, font, setFont, onSignOut, onEditDevice }) {
   const [open, setOpen] = useState(false)

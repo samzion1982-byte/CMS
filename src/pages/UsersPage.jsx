@@ -8,22 +8,25 @@ import {
   Eye, EyeOff, Loader2, Users, UserPlus,
   Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle
 } from 'lucide-react'
+import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 
 // ---------- Constants ----------
-const MAX_SLOTS = 4
+const MAX_SLOTS = 5
 
 const PERMS = {
   admin1: { 'Add member':true,  'Edit member':true,  'Delete member':true,  'Print / export':true,  'Import data':false, 'Manage users':false },
   admin:  { 'Add member':true,  'Edit member':true,  'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
   user:   { 'Add member':false, 'Edit member':false, 'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
   demo:   { 'Add member':true,  'Edit member':true,  'Delete member':true,  'Print / export':true,  'Import data':false, 'Manage users':false },
+  user4:  { 'Add member':false, 'Edit member':false, 'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
 }
 
 const ROLES = [
-  { value:'admin1', label:'Admin1',  desc:'Full access — except user management', emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
-  { value:'admin',  label:'Admin',   desc:'Add & edit members only',              emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
-  { value:'user',   label:'User',    desc:'View & print only',                    emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
-  { value:'demo',   label:'Demo',    desc:'Demo access',                          emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
+  { value:'admin1', label: ROLE_LABELS.admin1, desc:'Full access — except user management', emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
+  { value:'admin',  label: ROLE_LABELS.admin,  desc:'Add & edit members only',              emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
+  { value:'user',   label: ROLE_LABELS.user,   desc:'View & print only',                    emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
+  { value:'demo',   label: ROLE_LABELS.demo,   desc:'Full access (demo / training)',        emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
+  { value:'user4',  label: ROLE_LABELS.user4,  desc:'View & print only',                    emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
 ]
 
 function ini(name = '') {
@@ -66,7 +69,7 @@ export default function UsersPage() {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .in('role', ['admin1','admin','user','demo'])
+      .in('role', ASSIGNABLE_ROLES)
       .order('created_at', { ascending: true })
     if (error) {
       toast('Failed to load users: ' + error.message, 'error')

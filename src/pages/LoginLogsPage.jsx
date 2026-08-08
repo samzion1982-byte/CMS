@@ -16,10 +16,11 @@ const PAGE_SIZE   = 50
 
 const ROLE_STYLES = {
   super_admin: { label: 'Super Admin', color: '#92400e', bg: '#fef3c7' },
-  admin1:      { label: 'Admin1',      color: '#1e40af', bg: '#eff6ff' },
-  admin:       { label: 'Admin',       color: '#065f46', bg: '#ecfdf5' },
-  user:        { label: 'User',        color: '#374151', bg: '#f9fafb' },
-  demo:        { label: 'Demo',        color: '#6b21a8', bg: '#faf5ff' },
+  admin1:      { label: 'Admin',       color: '#1e40af', bg: '#eff6ff' },
+  admin:       { label: 'User1',       color: '#065f46', bg: '#ecfdf5' },
+  user:        { label: 'User2',       color: '#374151', bg: '#f9fafb' },
+  demo:        { label: 'User3',       color: '#6b21a8', bg: '#faf5ff' },
+  user4:       { label: 'User4',       color: '#0e7490', bg: '#ecfeff' },
 }
 
 function fmtDT(iso) {
@@ -202,10 +203,11 @@ export default function LoginLogsPage() {
           className="field-input" style={{ width: 160 }}>
           <option value="">All Roles</option>
           <option value="super_admin">Super Admin</option>
-          <option value="admin1">Admin1</option>
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-          <option value="demo">Demo</option>
+          <option value="admin1">Admin</option>
+          <option value="admin">User1</option>
+          <option value="user">User2</option>
+          <option value="demo">User3</option>
+          <option value="user4">User4</option>
         </select>
 
         <div className="ml-auto flex items-center gap-3">

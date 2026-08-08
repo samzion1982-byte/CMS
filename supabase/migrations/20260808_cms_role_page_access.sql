@@ -1,7 +1,7 @@
 -- CMS role → page access (configured by Super Admin)
 create table if not exists public.cms_role_page_access (
   role text not null
-    check (role in ('admin1', 'admin', 'user', 'demo')),
+    check (role in ('admin1', 'admin', 'user', 'demo', 'user4')),
   page_key text not null,
   allowed boolean not null default false,
   updated_at timestamptz not null default now(),

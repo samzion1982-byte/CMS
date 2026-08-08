@@ -3,22 +3,27 @@ import { formatDate } from './date'
 
 export const ROLE_PERMISSIONS = {
   super_admin: { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:true  },
-  admin1:      { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false },
-  admin:       { canAdd:true,  canEdit:true,  canDelete:false, canPrint:true,  canManageUsers:false },
-  user:        { canAdd:false, canEdit:false, canDelete:false, canPrint:true,  canManageUsers:false },
-  demo:        { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false },
+  admin1:      { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false }, // label: Admin
+  admin:       { canAdd:true,  canEdit:true,  canDelete:false, canPrint:true,  canManageUsers:false }, // label: User1
+  user:        { canAdd:false, canEdit:false, canDelete:false, canPrint:true,  canManageUsers:false }, // label: User2
+  demo:        { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false }, // label: User3
+  user4:       { canAdd:false, canEdit:false, canDelete:false, canPrint:true,  canManageUsers:false }, // label: User4
 }
 
-export const ROLE_LABELS = { 
-  super_admin: 'Super Admin', 
-  admin1: 'Admin1', 
-  admin: 'Admin', 
-  user: 'User', 
-  demo: 'Demo' 
+export const ROLE_LABELS = {
+  super_admin: 'Super Admin',
+  admin1: 'Admin',
+  admin: 'User1',
+  user: 'User2',
+  demo: 'User3',
+  user4: 'User4',
 }
 
-export function getPerms(role) { 
-  return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user 
+/** Non–super-admin slots Super Admin can assign in User Management. */
+export const ASSIGNABLE_ROLES = ['admin1', 'admin', 'user', 'demo', 'user4']
+
+export function getPerms(role) {
+  return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user
 }
 
 export function initials(name = '') { 
