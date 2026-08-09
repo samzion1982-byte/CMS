@@ -25,6 +25,17 @@ const secondaryBtn = {
   boxShadow: 'none',
 }
 
+/** Primary actions — action-btn defaults to white text with no fill (invisible on light UI). */
+const primaryBtn = {
+  gap: 6,
+  fontSize: 12,
+  padding: '8px 14px',
+  background: '#0f766e',
+  color: '#fff',
+  border: 'none',
+  boxShadow: 'none',
+}
+
 const thStyle = {
   padding: '8px 10px',
   textAlign: 'left',
@@ -337,7 +348,7 @@ export default function BackupPage() {
             />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button type="button" className="action-btn" style={{ gap: 6, fontSize: 12, padding: '8px 14px' }} disabled={savingDrive} onClick={handleSaveDrive}>
+            <button type="button" className="action-btn" style={primaryBtn} disabled={savingDrive} onClick={handleSaveDrive}>
               {savingDrive ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
               Save folder ID
             </button>
@@ -364,7 +375,7 @@ export default function BackupPage() {
           <button
             type="button"
             className="action-btn"
-            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            style={primaryBtn}
             disabled={runningFull || !driveOk}
             onClick={() => handleRun('full')}
           >
@@ -404,7 +415,7 @@ export default function BackupPage() {
           <button
             type="button"
             className="action-btn"
-            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            style={primaryBtn}
             disabled={runningSnap || !driveOk}
             onClick={() => handleRun('snapshot')}
           >
