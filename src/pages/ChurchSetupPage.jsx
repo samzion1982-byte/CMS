@@ -7,11 +7,23 @@ import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import { canAccessChurchSection } from '../lib/cmsPermissions'
+
+const IDENTITY_KEYS = [
+  'church_name', 'church_code', 'diocese', 'denomination', 'email',
+  'address', 'city', 'state', 'pincode',
+]
+const BEARER_KEYS = [
+  'presbyter_name', 'presbyter_whatsapp',
+  'secretary_name', 'secretary_whatsapp',
+  'treasurer_name', 'treasurer_whatsapp',
+  'admin1_name', 'admin1_whatsapp',
+]
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
 export default function ChurchSetupPage() {
-  const { profile } = useAuth()
+  const { profile, pageGrants } = useAuth()
   const toast = useToast()
   const logoRef = useRef(null)
   const dioceseLogoRef = useRef(null)
@@ -170,6 +182,63 @@ export default function ChurchSetupPage() {
     setVerifying(false)
   }
 
+  async function saveBasics() {
+    if (canIdentity && !form.church_name) {
+      toast('Church name is required.', 'error')
+      return
+    }
+    if (!church?.id) {
+      toast('No church record found.', 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = { updated_at: new Date().toISOString() }
+      if (canIdentity) {
+        for (const k of IDENTITY_KEYS) payload[k] = form[k]
+        let logo_url = church?.logo_url || null
+        let diocese_logo_url = church?.diocese_logo_url || null
+        let treasurer_seal_url = church?.treasurer_seal_url || null
+        if (logoFile) {
+          const ext = logoFile.name.split('.').pop()
+          const path = 'church-logo.' + ext.toLowerCase()
+          const { error: ue } = await supabase.storage.from('church-logos').upload(path, logoFile, { upsert: true })
+          if (ue) throw ue
+          logo_url = supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+        }
+        if (dioceseLogoFile) {
+          const ext = dioceseLogoFile.name.split('.').pop()
+          const path = 'diocese-logo.' + ext.toLowerCase()
+          const { error: ude } = await supabase.storage.from('church-logos').upload(path, dioceseLogoFile, { upsert: true })
+          if (ude) throw ude
+          diocese_logo_url = supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+        }
+        if (sealFile) {
+          const ext = sealFile.name.split('.').pop()
+          const path = 'treasurer-seal.' + ext.toLowerCase()
+          const { error: use } = await supabase.storage.from('church-logos').upload(path, sealFile, { upsert: true })
+          if (use) throw use
+          treasurer_seal_url = supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+        }
+        payload.logo_url = logo_url
+        payload.diocese_logo_url = diocese_logo_url
+        payload.treasurer_seal_url = treasurer_seal_url
+      }
+      if (canBearers) {
+        for (const k of BEARER_KEYS) payload[k] = form[k]
+      }
+      const { error } = await supabase.from('churches').update(payload).eq('id', church.id)
+      if (error) throw error
+      toast('Church details saved.', 'success')
+      window.dispatchEvent(new CustomEvent('church-settings-updated'))
+      loadChurch()
+    } catch (e) {
+      toast('Save failed: ' + (e.message || e), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function save() {
     if (!form.church_name) { toast('Church name is required.', 'error'); return }
     if (!form.auth_code && licenseStatus !== 'valid') { toast('Please verify the AUTH CODE first.', 'error'); return }
@@ -324,6 +393,10 @@ export default function ChurchSetupPage() {
   }
 
   const isSuperAdmin = profile?.role === 'super_admin'
+  const role = profile?.role
+  const canIdentity = canAccessChurchSection('identity', role, pageGrants)
+  const canBearers  = canAccessChurchSection('bearers', role, pageGrants)
+  const canEditBasics = !isSuperAdmin && (canIdentity || canBearers)
   // Non–super-admin roles that were granted this page get the zones/categories view.
   const isAdmin1     = profile?.role === 'admin1' || (!isSuperAdmin && !!profile?.role)
 
@@ -378,7 +451,11 @@ export default function ChurchSetupPage() {
               Church Setup
             </h1>
           <p className="page-subtitle">
-            {isSuperAdmin ? 'Configure church details, logo, zones and license' : 'Manage zonal areas'}
+            {isSuperAdmin
+              ? 'Configure church details, logo, zones and license'
+              : canEditBasics
+                ? 'Update church identity and office bearers'
+                : 'Manage zonal areas'}
           </p>
         </div>
         {isSuperAdmin && (
@@ -392,9 +469,14 @@ export default function ChurchSetupPage() {
             </button>
           </div>
         )}
+        {canEditBasics && (
+          <button onClick={saveBasics} disabled={saving || !church} className="btn btn-primary" style={{background:'#14532d',borderColor:'#14532d'}}>
+            {saving ? <><Loader2 size={14} className="animate-spin"/>Saving...</> : <><Save size={14}/>Save changes</>}
+          </button>
+        )}
       </div>
 
-      {/* Two-column layout for super_admin; single for admin1 */}
+      {/* Two-column layout for super_admin; section cards for Admin grants; zones for others */}
       {isSuperAdmin ? (
         <div style={{display:'flex', gap:24, alignItems:'flex-start'}}>
 
@@ -782,8 +864,114 @@ export default function ChurchSetupPage() {
           </div>
 
         </div>
+      ) : canEditBasics ? (
+        <div style={{ maxWidth: 820, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {canIdentity && (
+            <div className="card p-6">
+              <p className="form-section form-section-blue">Church identity</p>
+              <div className="flex gap-6">
+                <div className="flex-1 space-y-4">
+                  <div className="field-group">
+                    <label className="field-label">Church name *</label>
+                    <input className="field-input" value={form.church_name} onChange={e=>s('church_name',e.target.value)} placeholder="e.g. CSITA St. Paul's Pastorate"/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Church code</label>
+                    <input className="field-input" value={form.church_code} onChange={e=>s('church_code',e.target.value)} placeholder="e.g. TN-TRY-0001" style={{fontFamily:'monospace',letterSpacing:'0.05em'}}/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="field-group">
+                      <label className="field-label">Diocese</label>
+                      <input className="field-input" value={form.diocese} onChange={e=>s('diocese',e.target.value)} placeholder="e.g. CSI Tirunelveli Diocese"/>
+                    </div>
+                    <div className="field-group">
+                      <label className="field-label">Denomination</label>
+                      <select className="field-input" value={form.denomination} onChange={e=>s('denomination',e.target.value)}
+                        style={{appearance:'none',backgroundImage:"url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E\")",backgroundRepeat:'no-repeat',backgroundPosition:'right 10px center',paddingRight:28}}>
+                        {DENOMS.map(d=><option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Church Email ID</label>
+                    <input className="field-input" type="email" value={form.email} onChange={e=>s('email',e.target.value)} placeholder="e.g. stpauls@example.com"/>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                  <div onClick={()=>logoRef.current?.click()}
+                    className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-blue-400 transition-colors flex items-center justify-center bg-slate-50">
+                    {logoPreview
+                      ? <img src={logoPreview} className="w-full h-full object-contain p-2" alt="Logo"/>
+                      : <div className="text-center p-2">
+                          <p className="text-[10px] text-slate-400">Logo</p>
+                        </div>
+                    }
+                  </div>
+                  <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={onLogo}/>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>logoRef.current?.click()}>
+                    <Upload size={11}/>Upload
+                  </button>
+                </div>
+              </div>
+              <p className="form-section form-section-blue" style={{marginTop:20}}>Location</p>
+              <div className="space-y-3">
+                <div className="field-group">
+                  <label className="field-label">Street address</label>
+                  <input className="field-input" value={form.address} onChange={e=>s('address',e.target.value)} placeholder="Street address"/>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="field-group">
+                    <label className="field-label">City</label>
+                    <input className="field-input" value={form.city} onChange={e=>s('city',e.target.value)} placeholder="Trichy"/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">State</label>
+                    <input className="field-input" value={form.state} onChange={e=>s('state',e.target.value)} placeholder="Tamil Nadu"/>
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label">Pincode</label>
+                    <input className="field-input" value={form.pincode} onChange={e=>s('pincode',e.target.value)} placeholder="620003" maxLength={6}/>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {canBearers && (
+            <div className="card p-6">
+              <p className="form-section form-section-blue" style={{color:'var(--accent)',borderColor:'var(--accent-ring)'}}>Key Office Bearers</p>
+              <div className="space-y-4">
+                {[
+                  { role: 'Presbyter / Pastor', nameKey: 'presbyter_name', waKey: 'presbyter_whatsapp' },
+                  { role: 'Secretary',           nameKey: 'secretary_name', waKey: 'secretary_whatsapp' },
+                  { role: 'Treasurer',           nameKey: 'treasurer_name', waKey: 'treasurer_whatsapp' },
+                  { role: 'Admin 1',             nameKey: 'admin1_name',    waKey: 'admin1_whatsapp'    },
+                ].map(({ role: rLabel, nameKey, waKey }) => (
+                  <div key={nameKey}>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{rLabel}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="field-group">
+                        <label className="field-label">Name</label>
+                        <input className="field-input" value={form[nameKey]} onChange={e=>s(nameKey,e.target.value)} placeholder={`${rLabel} name`}/>
+                      </div>
+                      <div className="field-group">
+                        <label className="field-label">WhatsApp Number</label>
+                        <input className="field-input" value={form[waKey]} onChange={e=>s(waKey,e.target.value)} placeholder="+91XXXXXXXXXX"/>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <ZonesPanel profile={profile} toast={toast} />
+            <PaymentCategoriesPanel profile={profile} toast={toast} />
+          </div>
+        </div>
       ) : (
-        /* admin1: zones + categories */
+        /* other roles: zones + categories */
         <div style={{maxWidth:560, display:'flex', flexDirection:'column', gap:16}}>
           <ZonesPanel profile={profile} toast={toast} />
           <PaymentCategoriesPanel profile={profile} toast={toast} />
