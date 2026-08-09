@@ -63,19 +63,20 @@ export default function AnnouncementsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200 dark:border-gray-700">
+      {/* Tabs — active color follows theme dark (sidebar) */}
+      <div className="flex gap-1 mb-6 border-b" style={{ borderColor: 'var(--card-border)' }}>
         {TABS.map(t => {
           const Icon = t.icon
+          const on = tab === t.key
           return (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition rounded-t-lg"
               style={{
-                borderBottom: tab === t.key ? '2px solid #7f1d1d' : '2px solid transparent',
-                color: tab === t.key ? '#7f1d1d' : undefined,
-                background: tab === t.key ? 'rgba(127,29,29,0.06)' : 'transparent',
+                borderBottom: on ? '2px solid var(--sidebar-bg)' : '2px solid transparent',
+                color: on ? 'var(--sidebar-bg)' : 'var(--text-3)',
+                background: on ? 'color-mix(in srgb, var(--sidebar-bg) 10%, transparent)' : 'transparent',
               }}
             >
               <Icon size={15} />{t.label}

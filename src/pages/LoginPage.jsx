@@ -6,6 +6,11 @@ import { VENDOR, getChurch } from '../lib/supabase'
 import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, insertLoginLog } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 
+/** Prefer CSS disc mask so browsers do not treat the field as a saveable password. */
+const supportsDiscMask = typeof CSS !== 'undefined'
+  && typeof CSS.supports === 'function'
+  && CSS.supports('-webkit-text-security', 'disc')
+
 export default function LoginPage() {
   const { session, profile } = useAuth()
   const navigate    = useNavigate()
@@ -788,19 +793,36 @@ export default function LoginPage() {
               <p className="church-cms-label">CHURCH MANAGEMENT SYSTEM</p>
             </div>
 
-            {/* Login Form */}
-            <form onSubmit={handleSubmit} className={error ? 'form-shake' : ''} key={error}>
+            {/* Login Form — autocomplete off + non-password type so browsers do not offer to save */}
+            <form
+              onSubmit={handleSubmit}
+              className={error ? 'form-shake' : ''}
+              key={error}
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+            >
               <div className="f-group">
                 <label className="f-label">EMAIL</label>
                 <input
                   className={`f-input${inputErr ? ' f-input-error' : ''}`}
                   type="email"
+                  name="cms-login-email"
                   placeholder="you@church.org"
                   value={email}
                   onChange={e => { setEmail(e.target.value); setInputErr(false); setError(''); }}
                   required
                   autoFocus
-                  autoComplete="username"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                 />
               </div>
 
@@ -809,13 +831,23 @@ export default function LoginPage() {
                 <div className="pw-wrap">
                   <input
                     className={`f-input f-input-pw${inputErr ? ' f-input-error' : ''}`}
-                    type={showPw ? 'text' : 'password'}
+                    type={supportsDiscMask || showPw ? 'text' : 'password'}
+                    name="cms-login-gate"
                     placeholder="Enter your password"
                     value={password}
                     onChange={e => { setPassword(e.target.value); setInputErr(false); setError(''); }}
                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSubmit(e); } }}
                     required
-                    autoComplete="current-password"
+                    autoComplete={supportsDiscMask || showPw ? 'off' : 'new-password'}
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    data-form-type="other"
+                    data-np-ignore="true"
+                    style={{ WebkitTextSecurity: showPw || !supportsDiscMask ? 'none' : 'disc' }}
                   />
                   {password.length > 0 && (
                     <button

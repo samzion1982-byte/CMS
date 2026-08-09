@@ -7,6 +7,7 @@ import {
 const LEGACY_PAGE_KEYS = {
   events: ['events-planner', 'events-recorder', 'events-settings'],
   assets: ['assets-movable', 'assets-fixed', 'assets-documents'],
+  'church-setup': ['church-setup-identity', 'church-setup-bearers'],
 }
 
 const ASSET_TAB_KEYS = {
@@ -16,6 +17,13 @@ const ASSET_TAB_KEYS = {
 }
 
 const ASSET_PATH_KEYS = ['assets-movable', 'assets-fixed', 'assets-documents']
+
+const CHURCH_SECTION_KEYS = {
+  identity: 'church-setup-identity',
+  bearers:  'church-setup-bearers',
+}
+
+const CHURCH_SETUP_KEYS = ['church-setup-identity', 'church-setup-bearers']
 
 function applyGrantRows(target, rowsByKey) {
   for (const [key, allowed] of Object.entries(rowsByKey)) {
@@ -156,6 +164,19 @@ export function canAccessAnyAssetTab(role, grants = null) {
   return ASSET_PATH_KEYS.some(k => pageAllowedByKey(k, role, grants))
 }
 
+/** Church Setup sections: identity | bearers */
+export function canAccessChurchSection(section, role, grants = null) {
+  if (role === 'super_admin') return true
+  const key = CHURCH_SECTION_KEYS[section]
+  if (!key) return false
+  return pageAllowedByKey(key, role, grants)
+}
+
+export function canAccessAnyChurchSetup(role, grants = null) {
+  if (role === 'super_admin') return true
+  return CHURCH_SETUP_KEYS.some(k => pageAllowedByKey(k, role, grants))
+}
+
 export function canAccessPath(pathname, role, grants = null) {
   if (!pathname) return false
   if (role === 'super_admin') return true
@@ -164,6 +185,11 @@ export function canAccessPath(pathname, role, grants = null) {
   // Asset Management hub + settings — allowed if any asset tab is granted
   if (pathname === '/assets' || pathname.startsWith('/assets/')) {
     return canAccessAnyAssetTab(role, grants)
+  }
+
+  // Church Setup — allowed if any section is granted
+  if (pathname === '/church-setup' || pathname.startsWith('/church-setup/')) {
+    return canAccessAnyChurchSetup(role, grants)
   }
 
   const page = findPageForPath(pathname)
