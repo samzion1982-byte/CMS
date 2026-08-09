@@ -903,12 +903,51 @@ export default function ChurchSetupPage() {
                     {logoPreview
                       ? <img src={logoPreview} className="w-full h-full object-contain p-2" alt="Logo"/>
                       : <div className="text-center p-2">
+                          <div className="w-8 h-8 mx-auto mb-1 opacity-20">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                          </div>
                           <p className="text-[10px] text-slate-400">Logo</p>
                         </div>
                     }
                   </div>
                   <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={onLogo}/>
                   <button className="btn btn-ghost btn-sm" onClick={()=>logoRef.current?.click()}>
+                    <Upload size={11}/>Upload
+                  </button>
+                </div>
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <div onClick={()=>dioceseLogoRef.current?.click()}
+                    className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-blue-400 transition-colors flex items-center justify-center bg-slate-50">
+                    {dioceseLogoPreview
+                      ? <img src={dioceseLogoPreview} className="w-full h-full object-contain p-2" alt="Diocese Logo"/>
+                      : <div className="text-center p-2">
+                          <div className="w-8 h-8 mx-auto mb-1 opacity-20">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Diocese Logo</p>
+                        </div>
+                    }
+                  </div>
+                  <input ref={dioceseLogoRef} type="file" accept="image/*" className="hidden" onChange={onDioceseLogo}/>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>dioceseLogoRef.current?.click()}>
+                    <Upload size={11}/>Upload
+                  </button>
+                </div>
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <div onClick={()=>sealRef.current?.click()}
+                    className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-blue-400 transition-colors flex items-center justify-center bg-slate-50">
+                    {sealPreview
+                      ? <img src={sealPreview} className="w-full h-full object-contain p-2" alt="Treasurer Seal"/>
+                      : <div className="text-center p-2">
+                          <div className="w-8 h-8 mx-auto mb-1 opacity-20">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                          </div>
+                          <p className="text-[10px] text-slate-400">Treasurer<br/>Seal</p>
+                        </div>
+                    }
+                  </div>
+                  <input ref={sealRef} type="file" accept="image/*" className="hidden" onChange={onSeal}/>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>sealRef.current?.click()}>
                     <Upload size={11}/>Upload
                   </button>
                 </div>

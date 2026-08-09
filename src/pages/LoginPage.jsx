@@ -798,31 +798,20 @@ export default function LoginPage() {
               onSubmit={handleSubmit}
               className={error ? 'form-shake' : ''}
               key={error}
-              autoComplete="off"
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-bwignore="true"
-              data-form-type="other"
+              autoComplete="on"
             >
               <div className="f-group">
                 <label className="f-label">EMAIL</label>
                 <input
                   className={`f-input${inputErr ? ' f-input-error' : ''}`}
                   type="email"
-                  name="cms-login-email"
+                  name="username"
                   placeholder="you@church.org"
                   value={email}
                   onChange={e => { setEmail(e.target.value); setInputErr(false); setError(''); }}
                   required
                   autoFocus
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  data-form-type="other"
+                  autoComplete="username"
                 />
               </div>
 
