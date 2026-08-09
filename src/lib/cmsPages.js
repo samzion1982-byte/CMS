@@ -81,16 +81,7 @@ export const CMS_PERMISSION_TREE = [
     label: 'ADMIN',
     kind: 'category',
     children: [
-      {
-        key: 'folder-church-setup',
-        label: 'Church Setup',
-        kind: 'folder',
-        children: [
-          // Sections share /church-setup — access enforced by churchSection grants
-          { key: 'church-setup-identity', label: 'Church Identity',    kind: 'page', churchSection: 'identity' },
-          { key: 'church-setup-bearers',  label: 'Key Office Bearers', kind: 'page', churchSection: 'bearers' },
-        ],
-      },
+      { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup' },
     ],
   },
   {
@@ -159,13 +150,8 @@ export function findPageForPath(pathname) {
 export function defaultPageAllowed(role, page) {
   if (role === 'super_admin') return true
   if (page.alwaysOn) return true
-  // Admin may manage Church Identity + Key Office Bearers by default
-  if (
-    role === 'admin1' &&
-    (page.key === 'church-setup-identity' || page.key === 'church-setup-bearers')
-  ) {
-    return true
-  }
+  // Admin may open Church Setup (identity + office bearers) by default
+  if (role === 'admin1' && page.key === 'church-setup') return true
   // Baseline: MAIN only (Dashboard, Members, Announcements, Events, Movable Assets)
   if (page.group === 'MAIN' && !page.sensitive) return ASSIGNABLE_ROLE_SET.has(role)
   return false
