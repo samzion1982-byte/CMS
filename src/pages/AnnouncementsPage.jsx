@@ -63,8 +63,12 @@ export default function AnnouncementsPage() {
         </div>
       </div>
 
-      {/* Tabs — active color follows theme dark (sidebar) */}
-      <div className="flex gap-1 mb-6 border-b" style={{ borderColor: 'var(--card-border)' }}>
+      {/* Tabs — same style as Event Recorder */}
+      <div style={{
+        display: 'flex', gap: 4,
+        borderBottom: '2px solid var(--border, #e2e8f0)',
+        marginBottom: 24,
+      }}>
         {TABS.map(t => {
           const Icon = t.icon
           const on = tab === t.key
@@ -72,11 +76,17 @@ export default function AnnouncementsPage() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition rounded-t-lg"
               style={{
-                borderBottom: on ? '2px solid var(--sidebar-bg)' : '2px solid transparent',
-                color: on ? 'var(--sidebar-bg)' : 'var(--text-3)',
-                background: on ? 'color-mix(in srgb, var(--sidebar-bg) 10%, transparent)' : 'transparent',
+                padding: '9px 22px', fontSize: 14,
+                fontWeight: on ? 700 : 500,
+                border: 'none',
+                borderBottom: on
+                  ? '2px solid var(--sidebar-bg, #1e293b)' : '2px solid transparent',
+                marginBottom: -2,
+                background: on ? 'var(--sidebar-bg, #1e293b)' : 'transparent',
+                color: on ? '#ffffff' : 'var(--text-muted, #64748b)',
+                cursor: 'pointer', borderRadius: '6px 6px 0 0', transition: 'all 0.15s',
+                display: 'inline-flex', alignItems: 'center', gap: 8,
               }}
             >
               <Icon size={15} />{t.label}
