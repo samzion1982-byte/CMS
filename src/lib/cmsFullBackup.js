@@ -137,6 +137,21 @@ export async function listBackupLogs({ kind = null, page = 0, pageSize = 30 } = 
   return { rows, total: count || rows.length }
 }
 
+/** Clear backup history rows. kind: 'full' | 'snapshot' | null (all). */
+export async function clearBackupLogs({ kind = null } = {}) {
+  // Fetch matching ids then delete (filters match listBackupLogs)
+  const { rows } = await listBackupLogs({ kind, page: 0, pageSize: 1000 })
+  if (!rows.length) return { deleted: 0 }
+
+  const ids = rows.map((r) => r.id)
+  const { error, count } = await supabase
+    .from('cms_backup_log')
+    .delete({ count: 'exact' })
+    .in('id', ids)
+  if (error) throw error
+  return { deleted: count ?? ids.length }
+}
+
 async function fetchAllRows(table) {
   const rows = []
   let from = 0

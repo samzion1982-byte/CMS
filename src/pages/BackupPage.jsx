@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Cloud, Database, HardDrive, History, Loader2, RefreshCw,
-  RotateCcw, Save, Settings2, Shield, Link2, Unlink,
+  RotateCcw, Save, Settings2, Shield, Link2, Unlink, Trash2,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -10,6 +10,7 @@ import {
   formatWhen,
   getBackupSettings,
   listBackupLogs,
+  clearBackupLogs,
   runDriveBackup,
   runProvision,
   saveBackupSettings,
@@ -198,6 +199,7 @@ export default function BackupPage() {
   const [debugInfo, setDebugInfo] = useState(null)
   const [debugging, setDebugging] = useState(false)
   const [lastActionError, setLastActionError] = useState(null)
+  const [clearingKind, setClearingKind] = useState(null)
   const [savingAuto, setSavingAuto] = useState(false)
 
   const [fullLogs, setFullLogs] = useState([])
@@ -368,6 +370,26 @@ export default function BackupPage() {
     }
   }
 
+  async function handleClearHistory(kind) {
+    const label = kind === 'full' ? 'Full Backup' : kind === 'snapshot' ? 'Snapshot' : 'all backup'
+    if (!window.confirm(`Clear ${label} history from this list? This does not delete files already in Google Drive.`)) {
+      return
+    }
+    setClearingKind(kind || 'all')
+    setLastActionError(null)
+    try {
+      const r = await clearBackupLogs({ kind })
+      toast(`Cleared ${r.deleted} history row(s)`, 'success')
+      await loadLogs()
+    } catch (e) {
+      const msg = e.message || 'Clear history failed (run SQL cms_backup_log_delete if missing)'
+      setLastActionError(msg)
+      toast(msg, 'error')
+    } finally {
+      setClearingKind(null)
+    }
+  }
+
   async function handleProvision() {
     if (!window.confirm(
       prov.mode === 'initialize'
@@ -533,9 +555,21 @@ export default function BackupPage() {
             <RefreshCw size={13} /> Refresh
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <History size={14} color="var(--text-3)" />
-          <strong style={{ fontSize: 12 }}>Full Backup history</strong>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <History size={14} color="var(--text-3)" />
+            <strong style={{ fontSize: 12 }}>Full Backup history</strong>
+          </div>
+          <button
+            type="button"
+            className="no-lift"
+            style={{ ...secondaryBtn, color: '#b91c1c', borderColor: '#fecaca' }}
+            disabled={clearingKind === 'full' || !fullLogs.length}
+            onClick={() => handleClearHistory('full')}
+          >
+            {clearingKind === 'full' ? <Loader2 size={13} className="spin" /> : <Trash2 size={13} />}
+            Clear history
+          </button>
         </div>
         <LogTable rows={fullLogs} loading={loadingLogs} empty="No full backups yet" />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
@@ -570,9 +604,21 @@ export default function BackupPage() {
             Automatic nightly (default 1:00 AM IST)
           </label>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <History size={14} color="var(--text-3)" />
-          <strong style={{ fontSize: 12 }}>Snapshot restore points</strong>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <History size={14} color="var(--text-3)" />
+            <strong style={{ fontSize: 12 }}>Snapshot restore points</strong>
+          </div>
+          <button
+            type="button"
+            className="no-lift"
+            style={{ ...secondaryBtn, color: '#b91c1c', borderColor: '#fecaca' }}
+            disabled={clearingKind === 'snapshot' || !snapLogs.length}
+            onClick={() => handleClearHistory('snapshot')}
+          >
+            {clearingKind === 'snapshot' ? <Loader2 size={13} className="spin" /> : <Trash2 size={13} />}
+            Clear history
+          </button>
         </div>
         <LogTable rows={snapLogs} loading={loadingLogs} empty="No snapshots yet" />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
