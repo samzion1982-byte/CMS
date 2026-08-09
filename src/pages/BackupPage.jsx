@@ -253,7 +253,7 @@ function BackupChooserModal({
       role="dialog"
       aria-modal="true"
       style={{
-        position: 'fixed', inset: 0, zIndex: 80,
+        position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(15, 23, 42, 0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
@@ -417,7 +417,7 @@ function RestoreChooserModal({
       role="dialog"
       aria-modal="true"
       style={{
-        position: 'fixed', inset: 0, zIndex: 80,
+        position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(15, 23, 42, 0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
