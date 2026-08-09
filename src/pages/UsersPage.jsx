@@ -413,7 +413,7 @@ export default function UsersPage() {
                   }}>
                     <input type="radio" name="role" value={r.value} checked={form.role === r.value} onChange={() => sf('role', r.value)} style={{ accentColor: r.color, width: 14, height: 14 }} />
                     <span style={{ fontSize: 15 }}>{r.emoji}</span>
-                    <div style={{ flex: 1 }}><span style={{ fontSize: 12, fontWeight: 700, color: form.role === r.value ? r.color : '#0f172a' }}>{r.label}</span><span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.desc}</span></div>
+                    <div style={{ flex: 1 }}><span style={{ fontSize: 12, fontWeight: 700, color: form.role === r.value ? r.color : '#0f172a' }}>{r.label}</span></div>
                   </label>
                 ))}
               </div>
