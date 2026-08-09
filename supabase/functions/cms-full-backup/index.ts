@@ -1,15 +1,12 @@
-// @ts-nocheck — Deno
-/* ═══════════════════════════════════════════════════════════════
-   cms-full-backup — Full Backup or Snapshot → Google Drive only
-   Secrets: GOOGLE_SERVICE_ACCOUNT_JSON
-   Body: { kind: 'full'|'snapshot', trigger_mode, drive_folder_id }
-   ═══════════════════════════════════════════════════════════════ */
+// cms-full-backup — Full Backup or Snapshot to Google Drive only
+// Secret required: GOOGLE_SERVICE_ACCOUNT_JSON
+// Body: { kind, trigger_mode, drive_folder_id, actor_email, actor_name }
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
 const CORS = {
@@ -36,23 +33,23 @@ const TABLES = [
 
 const PAGE = 1000
 
-function json(body: unknown, status = 200) {
+function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 }
 
-function filename(kind: string, date = new Date()) {
-  const p = (n: number) => String(n).padStart(2, '0')
+function filename(kind, date = new Date()) {
+  const p = (n) => String(n).padStart(2, '0')
   const stamp = `${date.getUTCFullYear()}${p(date.getUTCMonth() + 1)}${p(date.getUTCDate())}-${p(date.getUTCHours())}${p(date.getUTCMinutes())}Z`
   return kind === 'snapshot'
     ? `cms-snapshot-${stamp}.json`
     : `cms-full-backup-${stamp}.json`
 }
 
-async function fetchAll(table: string) {
-  const rows: unknown[] = []
+async function fetchAll(table) {
+  const rows = []
   let from = 0
   for (;;) {
     const { data, error } = await supabase.from(table).select('*').range(from, from + PAGE - 1)
@@ -70,9 +67,9 @@ async function fetchAll(table: string) {
   return { rows, skipped: false, error: null }
 }
 
-async function buildPayload(kind: string, triggerMode: string, actorEmail: string | null) {
-  const tables: Record<string, unknown[]> = {}
-  const summary: { table: string; status: string; rows: number; error?: string }[] = []
+async function buildPayload(kind, triggerMode, actorEmail) {
+  const tables = {}
+  const summary = []
   let totalRows = 0
   let okCount = 0
   for (const table of TABLES) {
@@ -107,7 +104,7 @@ async function buildPayload(kind: string, triggerMode: string, actorEmail: strin
   }
 }
 
-async function googleAccessToken(sa: { client_email: string; private_key: string }) {
+async function googleAccessToken(sa) {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'RS256', typ: 'JWT' }
   const claim = {
@@ -117,7 +114,7 @@ async function googleAccessToken(sa: { client_email: string; private_key: string
     iat: now,
     exp: now + 3600,
   }
-  const enc = (obj: unknown) =>
+  const enc = (obj) =>
     btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const unsigned = `${enc(header)}.${enc(claim)}`
   const pem = sa.private_key.replace(/\\n/g, '\n')
@@ -126,11 +123,17 @@ async function googleAccessToken(sa: { client_email: string; private_key: string
     .replace(/\s+/g, '')
   const binary = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0))
   const key = await crypto.subtle.importKey(
-    'pkcs8', binary.buffer,
+    'pkcs8',
+    binary.buffer,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['sign'],
+    false,
+    ['sign'],
   )
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned))
+  const sig = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    new TextEncoder().encode(unsigned),
+  )
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const jwt = `${unsigned}.${sigB64}`
@@ -146,10 +149,10 @@ async function googleAccessToken(sa: { client_email: string; private_key: string
   if (!tokenJson.access_token) {
     throw new Error(tokenJson.error_description || tokenJson.error || 'Google token failed')
   }
-  return tokenJson.access_token as string
+  return tokenJson.access_token
 }
 
-async function uploadToDrive(folderId: string, name: string, content: string) {
+async function uploadToDrive(folderId, name, content) {
   const raw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
   if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON secret is not set on the Edge Function')
   if (!folderId) throw new Error('Google Drive folder ID is required')
@@ -175,11 +178,11 @@ async function uploadToDrive(folderId: string, name: string, content: string) {
   )
   const data = await res.json()
   if (!res.ok) throw new Error(data?.error?.message || `Drive upload failed (${res.status})`)
-  return { fileId: data.id as string, webLink: (data.webViewLink as string) || null }
+  return { fileId: data.id, webLink: data.webViewLink || null }
 }
 
-async function resolveFolderId(bodyFolder: string | null) {
-  if (bodyFolder?.trim()) return bodyFolder.trim()
+async function resolveFolderId(bodyFolder) {
+  if (bodyFolder && String(bodyFolder).trim()) return String(bodyFolder).trim()
   const { data } = await supabase.from('cms_backup_settings').select('drive_folder_id').eq('id', 1).maybeSingle()
   return data?.drive_folder_id?.trim() || null
 }
@@ -190,7 +193,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     if (body.action === 'restore') {
       return json({
-        error: 'Restore from Drive must be confirmed carefully. Use a dedicated restore run after downloading the JSON, or deploy cms-restore. For safety, v1 lists Drive links — Super Admin restores via provisioned tooling.',
+        error: 'One-click restore not enabled in v1. Download the Drive JSON and restore with care.',
       }, 501)
     }
 
@@ -202,7 +205,6 @@ serve(async (req) => {
       return json({ error: 'Google Drive folder ID not configured' }, 400)
     }
 
-    // Respect auto toggles for cron
     if (triggerMode === 'automatic') {
       const { data: settings } = await supabase.from('cms_backup_settings').select('*').eq('id', 1).maybeSingle()
       if (kind === 'full' && settings && settings.full_auto_enabled === false) {
@@ -213,15 +215,15 @@ serve(async (req) => {
       }
     }
 
-    const { payload, tablesCount, rowsCount, summary } = await buildPayload(kind, triggerMode, actorEmail)
+    const built = await buildPayload(kind, triggerMode, actorEmail)
     const name = filename(kind)
-    const content = JSON.stringify(payload)
+    const content = JSON.stringify(built.payload)
     const bytes = new TextEncoder().encode(content).byteLength
 
-    let driveFileId: string | null = null
-    let driveWebLink: string | null = null
+    let driveFileId = null
+    let driveWebLink = null
     let status = 'success'
-    let errorMessage: string | null = null
+    let errorMessage = null
     try {
       const drive = await uploadToDrive(folderId, name, content)
       driveFileId = drive.fileId
@@ -236,14 +238,14 @@ serve(async (req) => {
       kind,
       trigger_mode: triggerMode,
       status,
-      tables_count: tablesCount,
-      rows_count: rowsCount,
+      tables_count: built.tablesCount,
+      rows_count: built.rowsCount,
       file_size_bytes: bytes,
       drive_file_id: driveFileId,
       drive_web_link: driveWebLink,
       download_filename: name,
       error_message: errorMessage,
-      meta: { summary, drive_folder_id: folderId },
+      meta: { summary: built.summary, drive_folder_id: folderId },
       created_by_email: actorEmail,
       created_by_name: body.actor_name || null,
     })
@@ -254,8 +256,8 @@ serve(async (req) => {
       status,
       kind,
       filename: name,
-      tables_count: tablesCount,
-      rows_count: rowsCount,
+      tables_count: built.tablesCount,
+      rows_count: built.rowsCount,
       file_size_bytes: bytes,
       drive_file_id: driveFileId,
       drive_web_link: driveWebLink,
@@ -271,7 +273,9 @@ serve(async (req) => {
         error_message: e.message || String(e),
         created_by_email: 'cron',
       })
-    } catch (_) { /* ignore */ }
+    } catch (_err) {
+      // ignore log failure
+    }
     return json({ error: e.message || String(e) }, 500)
   }
 })
