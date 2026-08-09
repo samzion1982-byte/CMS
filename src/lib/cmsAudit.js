@@ -94,6 +94,8 @@ export async function getCmsAuditLogs({
   actor = '',
   action = '',
   q = '',
+  from = '',
+  to = '',
 } = {}) {
   let query = supabase
     .from('cms_audit_log')
@@ -113,10 +115,31 @@ export async function getCmsAuditLogs({
       `summary.ilike.%${term}%,entity_label.ilike.%${term}%,entity_id.ilike.%${term}%,actor_name.ilike.%${term}%,actor_email.ilike.%${term}%,module.ilike.%${term}%`
     )
   }
+  if (from) query = query.gte('created_at', `${from}T00:00:00`)
+  if (to) query = query.lte('created_at', `${to}T23:59:59.999`)
 
   const { data, error, count } = await query
   if (error) throw error
   return { data: data || [], count: count || 0 }
+}
+
+/** Delete audit rows in a date range (inclusive). Returns deleted count. */
+export async function flushCmsAuditLogs({ from, to } = {}) {
+  if (!from || !to) throw new Error('From and To dates are required.')
+  if (from > to) throw new Error('From date must be on or before To date.')
+
+  let query = supabase
+    .from('cms_audit_log')
+    .delete({ count: 'exact' })
+    .gte('created_at', `${from}T00:00:00`)
+    .lte('created_at', `${to}T23:59:59.999`)
+
+  // Never flush excluded modules either way — keep filter consistent
+  query = query.not('module', 'in', `(${AUDIT_EXCLUDED_MODULES.join(',')})`)
+
+  const { error, count } = await query
+  if (error) throw error
+  return count || 0
 }
 
 export const AUDIT_MODULES = [
