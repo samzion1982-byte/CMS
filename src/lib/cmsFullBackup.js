@@ -381,8 +381,14 @@ export async function diagnoseBackupSetup() {
     out.hints.push(
       `cms-full-backup version ${out.backupFn.data?.version || '?'} is complete but NOT chunked — redeploy latest to avoid timeout after a few photos.`,
     )
+  } else if (!(out.backupFn.data?.supports || []).includes('storage_sync') || Number(out.backupFn.data?.version) < 4) {
+    out.hints.push(
+      `cms-full-backup version ${out.backupFn.data?.version || '?'} lacks incremental storage sync — redeploy latest (version 4+) for member-photos / receipt-pdfs sync.`,
+    )
   } else {
-    out.hints.push(`cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked)`)
+    out.hints.push(
+      `cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked, storage sync: ${(out.backupFn.data?.sync_buckets || []).join(', ') || 'on'})`,
+    )
   }
   out.hints.push('For restore truncate: run SQL 20260809_cms_complete_backup.sql')
   out.hints.push('For progress %: run SQL 20260809_cms_backup_progress.sql')
@@ -538,8 +544,8 @@ export async function runDriveBackup({
               Math.max((invoked.data.storage_file_count || 0) + (remaining || 1), 1)) * 42)))
             : 60,
           remaining != null
-            ? `Continuing storage upload (chunk ${guard + 1}) — ${remaining} file(s) left…`
-            : `Continuing storage upload (chunk ${guard + 1})…`,
+            ? `Continuing storage sync/upload (chunk ${guard + 1}) — ${remaining} file(s) left…`
+            : `Continuing storage sync/upload (chunk ${guard + 1})…`,
         )
         invoked = await invokeEdgeFunction('cms-full-backup', {
           action: 'backup_continue',
@@ -685,12 +691,14 @@ export async function listBackupSources() {
   const invoked = await invokeEdgeFunction('cms-full-backup', { action: 'list_sources' })
   if (invoked.missing) {
     // Local fallback list
+    const syncSet = new Set(['member-photos', 'receipt-pdfs'])
     return {
       tables: FULL_BACKUP_TABLES.map((name) => ({ name })),
       storage_buckets: [
         'member-photos', 'receipt-pdfs', 'church-logos', 'event-media', 'asset-photos',
         'announcement-cards', 'announcement-reports', 'member-reports', 'payment-pages',
-      ].map((name) => ({ name, files: null })),
+      ].map((name) => ({ name, files: null, sync: syncSet.has(name) })),
+      sync_buckets: ['member-photos', 'receipt-pdfs'],
       selection: { tables: null, storage_buckets: null },
       via: 'local_fallback',
     }
@@ -745,9 +753,15 @@ export function restoreChoicesFromLog(row) {
     .sort((a, b) => a.name.localeCompare(b.name))
 
   const bucketNames = Array.isArray(row?.meta?.storage_buckets) ? row.meta.storage_buckets : []
+  const syncBuckets = new Set(['member-photos', 'receipt-pdfs'])
   const storage_buckets = bucketNames
     .filter(Boolean)
-    .map((name) => ({ name, files: null, bytes: 0 }))
+    .map((name) => ({
+      name,
+      files: null,
+      bytes: 0,
+      sync: syncBuckets.has(name),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return {

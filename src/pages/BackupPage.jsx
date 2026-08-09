@@ -276,8 +276,8 @@ function BackupChooserModal({
               {title}
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
-              Uncheck storage buckets (e.g. member photos) for a fast database-only backup.
-              Saved selection is also used for automatic daily/nightly runs.
+              <code>member-photos</code> and <code>receipt-pdfs</code> use incremental sync (parent Drive folder — only new/changed files).
+              Other buckets are copied into each dated backup folder.
             </p>
           </div>
           <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
@@ -331,10 +331,14 @@ function BackupChooserModal({
                   selected={selectedBuckets}
                   onToggle={onToggleBucket}
                   empty="No storage buckets found."
-                  renderMeta={(item) => (item.files != null ? `${item.files} file${item.files === 1 ? '' : 's'}` : '')}
+                  renderMeta={(item) => {
+                    const count = item.files != null ? `${item.files} file${item.files === 1 ? '' : 's'}` : ''
+                    const mode = item.sync ? 'sync' : ''
+                    return [mode, count].filter(Boolean).join(' · ')
+                  }}
                 />
                 <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9a3412', lineHeight: 1.45 }}>
-                  Tip: leave storage unchecked for a quick daily DB backup; include <code>member-photos</code> / <code>receipt-pdfs</code> only when you need a full disaster-recovery copy.
+                  Tip: include <code>member-photos</code> / <code>receipt-pdfs</code> safely — after the first sync, later backups only upload newly added or changed files into <code>cms-storage-sync/</code> on Drive.
                 </p>
               </div>
             </>
@@ -502,18 +506,20 @@ function RestoreChooserModal({
                   selected={selectedBuckets}
                   onToggle={onToggleBucket}
                   empty="No storage files in this backup (DB-only or older backup)."
-                  renderMeta={(item) => (
-                    item.files != null
+                  renderMeta={(item) => {
+                    const count = item.files != null
                       ? `${item.files} file${item.files === 1 ? '' : 's'}${item.bytes ? ` · ${formatBytes(item.bytes)}` : ''}`
                       : ''
-                  )}
+                    const mode = item.sync ? 'sync' : ''
+                    return [mode, count].filter(Boolean).join(' · ')
+                  }}
                 />
               </div>
             </>
           )}
 
           <p style={{ margin: 0, fontSize: 11, color: '#9a3412', lineHeight: 1.45, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '8px 10px' }}>
-            Selected tables are truncated then reloaded from the backup. Related tables may fail if you omit dependencies (e.g. members without families). Storage files in selected buckets are overwritten.
+            Selected tables are truncated then reloaded from the backup. Sync buckets (<code>member-photos</code>, <code>receipt-pdfs</code>) only download missing or changed files from the parent <code>cms-storage-sync/</code> folder.
           </p>
         </div>
 
@@ -1113,8 +1119,9 @@ export default function BackupPage() {
           <strong>Connect Google</strong> below. Personal Drive needs OAuth (service accounts have no storage quota).
           <br />
           <strong>Complete backup check:</strong> After redeploying <code>cms-full-backup</code>, use Debug → Run diagnostics.
-          It must say <code>complete_backup: true</code>. A good run creates a Drive <em>folder</em> (not a single .json file)
-          named like <code>cms-full-backup-YYYYMMDD-HHMMSSZ</code> containing <code>database.json</code>, <code>storage/</code>, <code>manifest.json</code>.
+          It must say <code>complete_backup: true</code>, version ≥ 4, and list <code>storage_sync</code>.
+          Each run creates a dated Drive folder with <code>database.json</code> + <code>manifest.json</code>.
+          Photos/PDFs live under the parent <code>cms-storage-sync/</code> folder and sync incrementally.
         </div>
       </div>
 

@@ -8,7 +8,9 @@
 //   { action: 'restore', drive_backup_folder_id | log_id, tables?, storage_buckets? }
 //
 // Each backup creates a Drive FOLDER with:
-//   database.json , storage/<bucket>/... , manifest.json
+//   database.json , storage/<bucket>/... (dump buckets) , manifest.json
+// Large media buckets (member-photos, receipt-pdfs) use incremental SYNC under the
+// parent Drive folder: cms-storage-sync/<bucket>/... + sync-index.json
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -24,11 +26,23 @@ const CORS = {
 }
 
 const PAGE = 1000
-const COMPLETE_VERSION = 3
+const COMPLETE_VERSION = 4
 /** Soft time budget per Edge invoke so we return before platform kill (~60–150s). */
 const CHUNK_BUDGET_MS = 40_000
 const MAX_FILES_PER_CHUNK = 6
 const DEBUG_MAX = 100
+/** Parent-folder incremental sync (not copied into each dated run folder). */
+const SYNC_ROOT_NAME = 'cms-storage-sync'
+const SYNC_INDEX_NAME = 'sync-index.json'
+const SYNC_BUCKETS = ['member-photos', 'receipt-pdfs']
+
+function isSyncBucket(name) {
+  return SYNC_BUCKETS.includes(String(name || ''))
+}
+
+function syncFileKey(bucket, path) {
+  return `${bucket}/${path}`
+}
 
 const FALLBACK_TABLES = [
   'churches', 'church_zones', 'profiles', 'cms_role_page_access', 'cms_user_passwords',
@@ -375,6 +389,104 @@ async function driveDownloadBytes(accessToken, fileId) {
   return new Uint8Array(await res.arrayBuffer())
 }
 
+async function driveUpdateBytes(accessToken, fileId, bytes, mimeType) {
+  const res = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,name,size`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': mimeType || 'application/octet-stream',
+      },
+      body: bytes,
+    },
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `Drive update failed (${res.status})`)
+  }
+  return data
+}
+
+async function driveFindChildFile(accessToken, parentId, name) {
+  const children = await driveListChildren(accessToken, parentId)
+  return children.find((f) => f.name === name && f.mimeType !== 'application/vnd.google-apps.folder') || null
+}
+
+async function ensureSyncRoot(accessToken, parentDriveFolderId) {
+  const root = await findOrCreateNamedFolder(accessToken, parentDriveFolderId, SYNC_ROOT_NAME)
+  return root
+}
+
+async function loadSyncIndex(accessToken, syncRootId) {
+  const empty = {
+    format: 'cms-storage-sync-index',
+    version: 1,
+    updated_at: null,
+    files: {},
+    drive_file_id: null,
+  }
+  try {
+    const existing = await driveFindChildFile(accessToken, syncRootId, SYNC_INDEX_NAME)
+    if (!existing) return empty
+    const bytes = await driveDownloadBytes(accessToken, existing.id)
+    const parsed = JSON.parse(new TextDecoder().decode(bytes))
+    return {
+      format: 'cms-storage-sync-index',
+      version: Number(parsed.version) || 1,
+      updated_at: parsed.updated_at || null,
+      files: parsed.files && typeof parsed.files === 'object' ? parsed.files : {},
+      drive_file_id: existing.id,
+    }
+  } catch (_) {
+    return empty
+  }
+}
+
+async function saveSyncIndex(accessToken, syncRootId, index) {
+  const payload = {
+    format: 'cms-storage-sync-index',
+    version: 1,
+    updated_at: new Date().toISOString(),
+    files: index.files || {},
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(payload, null, 2))
+  if (index.drive_file_id) {
+    const updated = await driveUpdateBytes(accessToken, index.drive_file_id, bytes, 'application/json')
+    return { ...payload, drive_file_id: updated.id || index.drive_file_id }
+  }
+  const created = await driveUploadBytes(accessToken, syncRootId, SYNC_INDEX_NAME, bytes, 'application/json')
+  return { ...payload, drive_file_id: created.id }
+}
+
+/**
+ * Compare Supabase storage listing vs sync-index; return only new/changed files.
+ */
+function buildSyncPending(bucket, localFiles, syncIndex) {
+  const pending = []
+  let unchanged = 0
+  for (const f of localFiles) {
+    const key = syncFileKey(bucket, f.path)
+    const prev = syncIndex.files?.[key]
+    const size = Number(f.size)
+    const prevSize = prev != null ? Number(prev.size) : NaN
+    if (prev && Number.isFinite(size) && Number.isFinite(prevSize) && size === prevSize && prev.drive_file_id) {
+      unchanged += 1
+      continue
+    }
+    pending.push({
+      mode: 'sync',
+      bucket,
+      path: f.path,
+      mime: f.mime,
+      size: f.size,
+      drive_file_id: prev?.drive_file_id || null,
+      action: prev?.drive_file_id ? 'update' : 'create',
+    })
+  }
+  return { pending, unchanged }
+}
+
 async function listAllStorageFiles(bucket, prefix = '') {
   const out = []
   let offset = 0
@@ -600,7 +712,7 @@ async function loadProgressLog(logId) {
   return data
 }
 
-async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startIndex, onProgress, logId) {
+async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startIndex, onProgress, logId, options = {}) {
   const started = Date.now()
   const storageMeta = []
   const skipped = []
@@ -608,9 +720,11 @@ async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startI
   let fileCount = 0
   let i = startIndex
   const total = pendingFiles.length || 1
+  const syncRootId = options.syncRootId || null
 
-  const storageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
-  const bucketFolderCache = {}
+  let dumpStorageRoot = null
+  const dumpBucketFolderCache = {}
+  const syncBucketFolderCache = {}
 
   while (i < pendingFiles.length) {
     if (fileCount >= MAX_FILES_PER_CHUNK || (Date.now() - started) > CHUNK_BUDGET_MS) {
@@ -624,12 +738,24 @@ async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startI
     }
 
     const file = pendingFiles[i]
-    const label = `${file.bucket}/${file.path}`
+    const isSync = file.mode === 'sync'
+    const label = `${isSync ? 'sync:' : ''}${file.bucket}/${file.path}`
     try {
-      await appendDebug(logId, 'storage_upload_start', { index: i + 1, total: pendingFiles.length, file: label })
+      await appendDebug(logId, 'storage_upload_start', {
+        index: i + 1,
+        total: pendingFiles.length,
+        file: label,
+        mode: isSync ? 'sync' : 'dump',
+        action: file.action || 'create',
+      })
       if (onProgress) {
         const pct = 48 + Math.round(((i + 1) / total) * 42)
-        await onProgress(pct, `Uploading storage ${i + 1}/${pendingFiles.length}: ${label}`)
+        await onProgress(
+          pct,
+          isSync
+            ? `Syncing storage ${i + 1}/${pendingFiles.length}: ${label}`
+            : `Uploading storage ${i + 1}/${pendingFiles.length}: ${label}`,
+        )
       }
 
       const { data: blob, error: dlErr } = await supabase.storage.from(file.bucket).download(file.path)
@@ -642,24 +768,56 @@ async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startI
 
       const bytes = new Uint8Array(await blob.arrayBuffer())
       const mime = file.mime || blob.type || 'application/octet-stream'
-      if (!bucketFolderCache[file.bucket]) {
-        bucketFolderCache[file.bucket] = await findOrCreateNamedFolder(accessToken, storageRoot.id, file.bucket)
-      }
-      const bucketFolder = bucketFolderCache[file.bucket]
-      const parts = file.path.split('/')
-      const fileName = parts.pop()
-      const parentPath = parts.join('/')
-      const parentId = parentPath
-        ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
-        : bucketFolder.id
+      let uploaded
 
-      const uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
+      if (isSync) {
+        if (!syncRootId) throw new Error('sync root folder missing for sync upload')
+        if (!syncBucketFolderCache[file.bucket]) {
+          syncBucketFolderCache[file.bucket] = await findOrCreateNamedFolder(accessToken, syncRootId, file.bucket)
+        }
+        const bucketFolder = syncBucketFolderCache[file.bucket]
+        const parts = file.path.split('/')
+        const fileName = parts.pop()
+        const parentPath = parts.join('/')
+        const parentId = parentPath
+          ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
+          : bucketFolder.id
+
+        if (file.drive_file_id) {
+          uploaded = await driveUpdateBytes(accessToken, file.drive_file_id, bytes, mime)
+        } else {
+          const existing = await driveFindChildFile(accessToken, parentId, fileName)
+          if (existing) {
+            uploaded = await driveUpdateBytes(accessToken, existing.id, bytes, mime)
+          } else {
+            uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
+          }
+        }
+      } else {
+        if (!dumpStorageRoot) {
+          dumpStorageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
+        }
+        if (!dumpBucketFolderCache[file.bucket]) {
+          dumpBucketFolderCache[file.bucket] = await findOrCreateNamedFolder(accessToken, dumpStorageRoot.id, file.bucket)
+        }
+        const bucketFolder = dumpBucketFolderCache[file.bucket]
+        const parts = file.path.split('/')
+        const fileName = parts.pop()
+        const parentPath = parts.join('/')
+        const parentId = parentPath
+          ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
+          : bucketFolder.id
+        uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
+      }
+
       storageMeta.push({
         bucket: file.bucket,
         path: file.path,
         size: bytes.length,
         mime,
         drive_file_id: uploaded.id,
+        mode: isSync ? 'sync' : 'dump',
+        action: file.action || (isSync && file.drive_file_id ? 'update' : 'create'),
       })
       totalBytes += bytes.length
       fileCount += 1
@@ -668,6 +826,7 @@ async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startI
         file: label,
         bytes: bytes.length,
         drive_file_id: uploaded.id,
+        mode: isSync ? 'sync' : 'dump',
       })
     } catch (e) {
       skipped.push(`${label}: ${e.message || e}`)
@@ -702,10 +861,52 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     triggerMode,
     actorEmail,
     actorName,
+    syncRootId = null,
+    syncIndex = null,
+    syncUnchanged = 0,
+    parentDriveFolderId = null,
   } = state
+
+  // Persist updated sync index after uploads
+  let savedSyncIndex = syncIndex
+  const syncFilesMeta = (storageMeta || []).filter((f) => f.mode === 'sync')
+  if (syncRootId && syncIndex) {
+    await onProgress(92, 'Updating storage sync index…')
+    const nextFiles = { ...(syncIndex.files || {}) }
+    for (const f of syncFilesMeta) {
+      nextFiles[syncFileKey(f.bucket, f.path)] = {
+        bucket: f.bucket,
+        path: f.path,
+        size: f.size,
+        mime: f.mime,
+        drive_file_id: f.drive_file_id,
+        updated_at: new Date().toISOString(),
+      }
+    }
+    try {
+      savedSyncIndex = await saveSyncIndex(accessToken, syncRootId, {
+        ...syncIndex,
+        files: nextFiles,
+      })
+      await appendDebug(progressLogId, 'sync_index_saved', {
+        files_tracked: Object.keys(nextFiles).length,
+        uploaded_this_run: syncFilesMeta.length,
+        unchanged: syncUnchanged,
+      })
+    } catch (e) {
+      skipped.push(`sync-index: ${e.message || e}`)
+      await appendDebug(progressLogId, 'sync_index_save_fail', { error: e.message || String(e) })
+    }
+  }
 
   await onProgress(93, 'Writing manifest.json…')
   await appendDebug(progressLogId, 'manifest_start', { files: storageMeta.length })
+
+  const dumpFiles = (storageMeta || []).filter((f) => f.mode !== 'sync')
+  const syncBucketsUsed = [...new Set([
+    ...SYNC_BUCKETS.filter((b) => (storageBuckets || []).includes(b)),
+    ...syncFilesMeta.map((f) => f.bucket),
+  ])]
 
   const manifest = {
     format: 'cms-complete-backup',
@@ -724,11 +925,21 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
       summary: built.summary,
     },
     storage: {
-      file_count: storageMeta.length,
-      bytes: storageBytes,
-      buckets: storageBuckets,
-      files: storageMeta,
+      file_count: dumpFiles.length,
+      bytes: dumpFiles.reduce((n, f) => n + Number(f.size || 0), 0),
+      buckets: (storageBuckets || []).filter((b) => !isSyncBucket(b)),
+      files: dumpFiles,
       skipped,
+    },
+    sync: {
+      root_folder_id: syncRootId,
+      root_folder_name: SYNC_ROOT_NAME,
+      parent_drive_folder_id: parentDriveFolderId,
+      buckets: syncBucketsUsed,
+      uploaded: syncFilesMeta.length,
+      unchanged: syncUnchanged,
+      index_file_id: savedSyncIndex?.drive_file_id || null,
+      files: syncFilesMeta,
     },
     total_bytes: dbBytesLen + storageBytes,
   }
@@ -742,12 +953,12 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
   )
 
   const totalBytes = dbBytesLen + storageBytes
-  const status = skipped.length && !storageMeta.length && built.tablesCount === 0
+  const status = skipped.length && !storageMeta.length && built.tablesCount === 0 && syncUnchanged === 0
     ? 'failed'
     : (skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
 
   const finalMessage = status === 'success'
-    ? `Complete: ${built.tablesCount} tables, ${storageMeta.length} files`
+    ? `Complete: ${built.tablesCount} tables, ${dumpFiles.length} dump file(s), sync ${syncFilesMeta.length} new/changed (${syncUnchanged} unchanged)`
     : status === 'partial'
       ? `Partial: ${built.tablesCount} tables, ${storageMeta.length} files (${skipped.length} storage issues)`
       : 'Backup failed'
@@ -777,6 +988,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
       complete: true,
       version: COMPLETE_VERSION,
       chunked: true,
+      sync: true,
       pending_files: [],
       file_index: storageMeta.length,
       drive_backup_folder_id: runFolder.id,
@@ -788,6 +1000,10 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
       storage_file_count: storageMeta.length,
       storage_buckets: storageBuckets,
       storage_files: storageMeta,
+      sync_root_folder_id: syncRootId,
+      sync_unchanged: syncUnchanged,
+      sync_uploaded: syncFilesMeta.length,
+      sync_index_file_id: savedSyncIndex?.drive_file_id || null,
       summary: built.summary,
       skipped_storage: skipped,
       auth_via: authVia,
@@ -802,7 +1018,13 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     await supabase.from('cms_backup_log').insert(finalRow)
   }
 
-  await appendDebug(progressLogId, 'backup_finalized', { status, files: storageMeta.length, bytes: totalBytes })
+  await appendDebug(progressLogId, 'backup_finalized', {
+    status,
+    files: storageMeta.length,
+    sync_uploaded: syncFilesMeta.length,
+    sync_unchanged: syncUnchanged,
+    bytes: totalBytes,
+  })
 
   return {
     ok: true,
@@ -823,6 +1045,8 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     database_bytes: dbBytesLen,
     storage_bytes: storageBytes,
     storage_file_count: storageMeta.length,
+    sync_uploaded: syncFilesMeta.length,
+    sync_unchanged: syncUnchanged,
     skipped_storage: skipped,
   }
 }
@@ -856,6 +1080,7 @@ async function continueCompleteBackup(body) {
     startIndex,
     onProgress,
     progressLogId,
+    { syncRootId: meta.sync_root_folder_id || null },
   )
 
   const storageMeta = [...prevMetaFiles, ...batch.storageMeta]
@@ -920,6 +1145,11 @@ async function continueCompleteBackup(body) {
   const kind = log.kind === 'snapshot' ? 'snapshot' : 'full'
   const triggerMode = log.trigger_mode === 'automatic' ? 'automatic' : 'manual'
 
+  let syncIndex = null
+  if (meta.sync_root_folder_id) {
+    syncIndex = await loadSyncIndex(accessToken, meta.sync_root_folder_id)
+  }
+
   return finalizeBackup(progressLogId, {
     accessToken,
     runFolder,
@@ -934,6 +1164,10 @@ async function continueCompleteBackup(body) {
     triggerMode,
     actorEmail: log.created_by_email,
     actorName: log.created_by_name,
+    syncRootId: meta.sync_root_folder_id || null,
+    syncIndex,
+    syncUnchanged: Number(meta.sync_unchanged) || 0,
+    parentDriveFolderId: meta.parent_drive_folder_id || null,
   }, authVia, onProgress)
 }
 
@@ -987,7 +1221,7 @@ async function listBackupSources() {
     } catch (_) {
       files = 0
     }
-    storage_buckets.push({ name, files })
+    storage_buckets.push({ name, files, sync: isSyncBucket(name) })
   }
 
   const { data: settings } = await supabase
@@ -1001,6 +1235,7 @@ async function listBackupSources() {
     action: 'list_sources',
     tables,
     storage_buckets,
+    sync_buckets: SYNC_BUCKETS,
     selection: settings?.backup_selection || { tables: null, storage_buckets: null },
   }
 }
@@ -1087,23 +1322,72 @@ async function runCompleteBackup(body) {
       })
     }
 
+    const dumpBuckets = bucketNames.filter((b) => !isSyncBucket(b))
+    const syncBuckets = bucketNames.filter((b) => isSyncBucket(b))
+
+    let syncRootId = null
+    let syncIndex = null
+    let syncUnchanged = 0
     const pendingFiles = []
     const listSkipped = []
+
     if (!bucketNames.length) {
       await appendDebug(progressLogId, 'storage_skipped', { reason: 'no buckets selected' })
       if (onProgress) await onProgress(90, 'Skipping storage (none selected)')
     }
-    for (const bucket of bucketNames) {
+
+    // Dump buckets → full copy into dated run folder
+    for (const bucket of dumpBuckets) {
       try {
         const files = await listAllStorageFiles(bucket)
-        await appendDebug(progressLogId, 'bucket_listed', { bucket, files: files.length })
-        for (const f of files) pendingFiles.push({ bucket, path: f.path, mime: f.mime, size: f.size })
+        await appendDebug(progressLogId, 'bucket_listed', { bucket, files: files.length, mode: 'dump' })
+        for (const f of files) {
+          pendingFiles.push({ mode: 'dump', bucket, path: f.path, mime: f.mime, size: f.size })
+        }
       } catch (e) {
         listSkipped.push(`bucket ${bucket}: ${e.message || e}`)
         await appendDebug(progressLogId, 'bucket_list_fail', { bucket, error: e.message || String(e) })
       }
     }
-    await appendDebug(progressLogId, 'storage_list_done', { total_files: pendingFiles.length, buckets: bucketNames.length })
+
+    // Sync buckets → parent cms-storage-sync; only new/changed files
+    if (syncBuckets.length) {
+      await onProgress(46, 'Checking storage sync (new/changed only)…')
+      const syncRoot = await ensureSyncRoot(accessToken, folderId)
+      syncRootId = syncRoot.id
+      syncIndex = await loadSyncIndex(accessToken, syncRootId)
+      await appendDebug(progressLogId, 'sync_root_ready', {
+        id: syncRootId,
+        tracked: Object.keys(syncIndex.files || {}).length,
+        buckets: syncBuckets,
+      })
+
+      for (const bucket of syncBuckets) {
+        try {
+          const files = await listAllStorageFiles(bucket)
+          const diff = buildSyncPending(bucket, files, syncIndex)
+          syncUnchanged += diff.unchanged
+          pendingFiles.push(...diff.pending)
+          await appendDebug(progressLogId, 'bucket_listed', {
+            bucket,
+            files: files.length,
+            mode: 'sync',
+            pending: diff.pending.length,
+            unchanged: diff.unchanged,
+          })
+        } catch (e) {
+          listSkipped.push(`bucket ${bucket}: ${e.message || e}`)
+          await appendDebug(progressLogId, 'bucket_list_fail', { bucket, error: e.message || String(e) })
+        }
+      }
+    }
+
+    await appendDebug(progressLogId, 'storage_list_done', {
+      total_pending: pendingFiles.length,
+      dump_buckets: dumpBuckets,
+      sync_buckets: syncBuckets,
+      sync_unchanged: syncUnchanged,
+    })
 
     // Persist job state before first storage chunk (survives timeout)
     await supabase.from('cms_backup_log').update({
@@ -1115,12 +1399,15 @@ async function runCompleteBackup(body) {
       download_filename: runFolder.name,
       progress_pct: 47,
       progress_message: pendingFiles.length
-        ? `Uploading storage 0/${pendingFiles.length}…`
-        : 'No storage files — finalizing…',
+        ? `Uploading/syncing storage 0/${pendingFiles.length}… (${syncUnchanged} unchanged skipped)`
+        : (syncUnchanged
+          ? `Storage sync up to date (${syncUnchanged} unchanged) — finalizing…`
+          : 'No storage files — finalizing…'),
       meta: {
         complete: true,
         version: COMPLETE_VERSION,
         chunked: true,
+        sync: true,
         selection: {
           tables: selection.tables === null ? 'all' : selection.tables,
           storage_buckets: selection.storageBuckets === null ? 'all' : selection.storageBuckets,
@@ -1137,6 +1424,10 @@ async function runCompleteBackup(body) {
         skipped_storage: listSkipped,
         storage_bytes: 0,
         auth_via: authVia,
+        sync_root_folder_id: syncRootId,
+        sync_index_file_id: syncIndex?.drive_file_id || null,
+        sync_unchanged: syncUnchanged,
+        parent_drive_folder_id: folderId,
       },
     }).eq('id', progressLogId)
 
@@ -1155,6 +1446,10 @@ async function runCompleteBackup(body) {
         triggerMode,
         actorEmail,
         actorName: body.actor_name || null,
+        syncRootId,
+        syncIndex,
+        syncUnchanged,
+        parentDriveFolderId: folderId,
       }, authVia, onProgress)
     }
 
@@ -1165,6 +1460,7 @@ async function runCompleteBackup(body) {
       0,
       onProgress,
       progressLogId,
+      { syncRootId },
     )
 
     const storageMeta = batch.storageMeta
@@ -1180,6 +1476,7 @@ async function runCompleteBackup(body) {
         complete: true,
         version: COMPLETE_VERSION,
         chunked: true,
+        sync: true,
         selection: {
           tables: selection.tables === null ? 'all' : selection.tables,
           storage_buckets: selection.storageBuckets === null ? 'all' : selection.storageBuckets,
@@ -1197,6 +1494,10 @@ async function runCompleteBackup(body) {
         storage_bytes: batch.totalBytes,
         storage_file_count: storageMeta.length,
         auth_via: authVia,
+        sync_root_folder_id: syncRootId,
+        sync_index_file_id: syncIndex?.drive_file_id || null,
+        sync_unchanged: syncUnchanged,
+        parent_drive_folder_id: folderId,
         last_chunk: {
           uploaded: batch.fileCount,
           next_index: batch.nextIndex,
@@ -1246,6 +1547,10 @@ async function runCompleteBackup(body) {
       triggerMode,
       actorEmail,
       actorName: body.actor_name || null,
+      syncRootId,
+      syncIndex,
+      syncUnchanged,
+      parentDriveFolderId: folderId,
     }, authVia, onProgress)
   } catch (e) {
     const message = (e && e.message) || String(e)
@@ -1299,6 +1604,7 @@ async function inspectBackup(body, req) {
   const manifestEntry = rootFiles.find((f) => f.name === 'manifest.json')
   const tables = []
   const buckets = []
+  let syncInfo = null
 
   if (!dbEntry && !manifestEntry && !rootFiles.length) {
     // Legacy single JSON file id
@@ -1324,14 +1630,56 @@ async function inspectBackup(body, req) {
         }
         const fileCounts = new Map()
         for (const f of manifest.storage?.files || []) {
-          const cur = fileCounts.get(f.bucket) || { files: 0, bytes: 0 }
+          const cur = fileCounts.get(f.bucket) || { files: 0, bytes: 0, sync: false }
           cur.files += 1
           cur.bytes += Number(f.size || 0)
           fileCounts.set(f.bucket, cur)
         }
-        for (const [name, stats] of fileCounts) buckets.push({ name, files: stats.files, bytes: stats.bytes })
+        for (const [name, stats] of fileCounts) {
+          buckets.push({ name, files: stats.files, bytes: stats.bytes, sync: false })
+        }
         for (const name of manifest.storage?.buckets || []) {
-          if (!fileCounts.has(name)) buckets.push({ name, files: 0, bytes: 0 })
+          if (!fileCounts.has(name)) buckets.push({ name, files: 0, bytes: 0, sync: false })
+        }
+        // Parent-folder sync buckets
+        if (manifest.sync?.root_folder_id || (manifest.sync?.buckets || []).length) {
+          syncInfo = manifest.sync
+          const syncCounts = new Map()
+          if (manifest.sync.root_folder_id) {
+            try {
+              const idx = await loadSyncIndex(accessToken, manifest.sync.root_folder_id)
+              for (const entry of Object.values(idx.files || {})) {
+                if (!entry?.bucket) continue
+                const cur = syncCounts.get(entry.bucket) || { files: 0, bytes: 0 }
+                cur.files += 1
+                cur.bytes += Number(entry.size || 0)
+                syncCounts.set(entry.bucket, cur)
+              }
+            } catch (_) {
+              // fall back to per-run sync file list
+            }
+          }
+          if (!syncCounts.size) {
+            for (const f of manifest.sync?.files || []) {
+              const cur = syncCounts.get(f.bucket) || { files: 0, bytes: 0 }
+              cur.files += 1
+              cur.bytes += Number(f.size || 0)
+              syncCounts.set(f.bucket, cur)
+            }
+          }
+          for (const name of (manifest.sync.buckets || SYNC_BUCKETS)) {
+            const stats = syncCounts.get(name) || { files: 0, bytes: 0 }
+            if (!buckets.some((b) => b.name === name)) {
+              buckets.push({ name, files: stats.files, bytes: stats.bytes, sync: true })
+            } else {
+              const existing = buckets.find((b) => b.name === name)
+              existing.sync = true
+              if (!existing.files && stats.files) {
+                existing.files = stats.files
+                existing.bytes = stats.bytes
+              }
+            }
+          }
         }
       } catch (_) {
         // fall through
@@ -1361,9 +1709,41 @@ async function inspectBackup(body, req) {
         for (const child of children) {
           if (child.mimeType === 'application/vnd.google-apps.folder') {
             const files = await collectDriveFilesRecursive(accessToken, child.id)
-            buckets.push({ name: child.name, files: files.length, bytes: 0 })
+            buckets.push({ name: child.name, files: files.length, bytes: 0, sync: isSyncBucket(child.name) })
           }
         }
+      }
+    }
+
+    // Fallback: look for cms-storage-sync under configured parent Drive folder
+    if (!buckets.some((b) => b.sync)) {
+      try {
+        const parentId = await resolveFolderId(null)
+        if (parentId) {
+          const parentChildren = await driveListChildren(accessToken, parentId)
+          const syncRoot = parentChildren.find(
+            (f) => f.name === SYNC_ROOT_NAME && f.mimeType === 'application/vnd.google-apps.folder',
+          )
+          if (syncRoot) {
+            const idx = await loadSyncIndex(accessToken, syncRoot.id)
+            const byBucket = new Map()
+            for (const entry of Object.values(idx.files || {})) {
+              if (!entry?.bucket) continue
+              const cur = byBucket.get(entry.bucket) || { files: 0, bytes: 0 }
+              cur.files += 1
+              cur.bytes += Number(entry.size || 0)
+              byBucket.set(entry.bucket, cur)
+            }
+            for (const [name, stats] of byBucket) {
+              if (!buckets.some((b) => b.name === name)) {
+                buckets.push({ name, files: stats.files, bytes: stats.bytes, sync: true })
+              }
+            }
+            syncInfo = { root_folder_id: syncRoot.id, buckets: [...byBucket.keys()] }
+          }
+        }
+      } catch (_) {
+        // ignore
       }
     }
   }
@@ -1379,6 +1759,8 @@ async function inspectBackup(body, req) {
     drive_backup_folder_id: folderId,
     tables,
     storage_buckets: buckets,
+    sync: syncInfo,
+    sync_buckets: SYNC_BUCKETS,
     table_count: tables.length,
     storage_bucket_count: buckets.length,
   }
@@ -1468,22 +1850,29 @@ async function runCompleteRestore(body, req) {
   }
 
   let restoredFiles = 0
+  let syncRestored = 0
+  let syncSkipped = 0
   const storageErrors = []
   const storageFolder = rootFiles.find(
     (f) => f.name === 'storage' && f.mimeType === 'application/vnd.google-apps.folder',
   )
   const wantStorage = !filterBuckets || (selectedBuckets && selectedBuckets.length > 0)
 
+  let manifest = null
+  if (manifestEntry) {
+    try {
+      const mBytes = await driveDownloadBytes(accessToken, manifestEntry.id)
+      manifest = JSON.parse(new TextDecoder().decode(mBytes))
+    } catch (_) {
+      manifest = null
+    }
+  }
+
+  // --- Dump storage inside dated backup folder (non-sync buckets) ---
   if (storageFolder && wantStorage) {
     let fileList = []
-    if (manifestEntry) {
-      try {
-        const mBytes = await driveDownloadBytes(accessToken, manifestEntry.id)
-        const manifest = JSON.parse(new TextDecoder().decode(mBytes))
-        fileList = manifest.storage?.files || []
-      } catch (_) {
-        fileList = []
-      }
+    if (manifest) {
+      fileList = (manifest.storage?.files || []).filter((f) => f.mode !== 'sync')
     }
     if (!fileList.length) {
       const all = await collectDriveFilesRecursive(accessToken, storageFolder.id)
@@ -1491,7 +1880,9 @@ async function runCompleteRestore(body, req) {
         const parts = f.path.split('/')
         const bucket = parts.shift()
         const path = parts.join('/')
-        if (bucket && path) fileList.push({ bucket, path, drive_file_id: f.id })
+        if (bucket && path && !isSyncBucket(bucket)) {
+          fileList.push({ bucket, path, drive_file_id: f.id })
+        }
       }
     }
 
@@ -1524,6 +1915,82 @@ async function runCompleteRestore(body, req) {
     }
   }
 
+  // --- Incremental sync restore from parent cms-storage-sync ---
+  if (wantStorage) {
+    let syncRootId = manifest?.sync?.root_folder_id || null
+    if (!syncRootId) {
+      try {
+        const parentId = await resolveFolderId(null)
+        if (parentId) {
+          const parentChildren = await driveListChildren(accessToken, parentId)
+          const syncRoot = parentChildren.find(
+            (f) => f.name === SYNC_ROOT_NAME && f.mimeType === 'application/vnd.google-apps.folder',
+          )
+          if (syncRoot) syncRootId = syncRoot.id
+        }
+      } catch (_) {
+        syncRootId = null
+      }
+    }
+
+    const wantSyncBuckets = (selectedBuckets === null
+      ? SYNC_BUCKETS
+      : selectedBuckets.filter((b) => isSyncBucket(b)))
+
+    if (syncRootId && wantSyncBuckets.length) {
+      const idx = await loadSyncIndex(accessToken, syncRootId)
+      const entries = Object.values(idx.files || {}).filter((e) => wantSyncBuckets.includes(e.bucket))
+
+      const { data: existingBuckets } = await supabase.storage.listBuckets()
+      const existingNames = new Set((existingBuckets || []).map((b) => b.name))
+      for (const bucket of wantSyncBuckets) {
+        if (!existingNames.has(bucket)) {
+          await supabase.storage.createBucket(bucket, { public: true }).catch(() => null)
+        }
+      }
+
+      // Local size map per bucket for incremental skip
+      const localByBucket = {}
+      for (const bucket of wantSyncBuckets) {
+        try {
+          const local = await listAllStorageFiles(bucket)
+          localByBucket[bucket] = new Map(local.map((f) => [f.path, Number(f.size)]))
+        } catch (_) {
+          localByBucket[bucket] = new Map()
+        }
+      }
+
+      for (const entry of entries) {
+        try {
+          if (!entry.drive_file_id) continue
+          const localSize = localByBucket[entry.bucket]?.get(entry.path)
+          const remoteSize = Number(entry.size)
+          if (
+            localSize != null
+            && Number.isFinite(localSize)
+            && Number.isFinite(remoteSize)
+            && localSize === remoteSize
+          ) {
+            syncSkipped += 1
+            continue
+          }
+          const bytes = await driveDownloadBytes(accessToken, entry.drive_file_id)
+          const { error: upErr } = await supabase.storage.from(entry.bucket).upload(entry.path, bytes, {
+            contentType: entry.mime || 'application/octet-stream',
+            upsert: true,
+          })
+          if (upErr) storageErrors.push(`sync:${entry.bucket}/${entry.path}: ${upErr.message}`)
+          else {
+            restoredFiles += 1
+            syncRestored += 1
+          }
+        } catch (e) {
+          storageErrors.push(`sync:${entry.bucket}/${entry.path}: ${e.message || e}`)
+        }
+      }
+    }
+  }
+
   const status = insertErrors.length && !restoredRows && !restoredFiles
     ? 'failed'
     : (insertErrors.length || storageErrors.length ? 'partial' : 'success')
@@ -1548,6 +2015,8 @@ async function runCompleteRestore(body, req) {
       drive_backup_folder_id: folderId,
       restored_rows: restoredRows,
       restored_files: restoredFiles,
+      sync_restored: syncRestored,
+      sync_skipped_unchanged: syncSkipped,
       insert_errors: insertErrors,
       storage_errors: storageErrors,
     },
@@ -1562,6 +2031,8 @@ async function runCompleteRestore(body, req) {
     tables: tables.length,
     restored_rows: restoredRows,
     restored_files: restoredFiles,
+    sync_restored: syncRestored,
+    sync_skipped_unchanged: syncSkipped,
     selected_tables: filterTables ? selectedTables : tables,
     selected_storage_buckets: filterBuckets ? selectedBuckets : null,
     insert_errors: insertErrors,
@@ -1581,7 +2052,9 @@ serve(async (req) => {
         complete_backup: true,
         version: COMPLETE_VERSION,
         chunked: true,
-        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug', 'list_sources'],
+        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug', 'list_sources', 'storage_sync'],
+        sync_buckets: SYNC_BUCKETS,
+        sync_root: SYNC_ROOT_NAME,
       })
     }
 
