@@ -108,6 +108,17 @@ const tdStyle = {
   fontFamily: 'var(--font-ui)',
 }
 
+/** Secondary action-btn: visible on light surfaces (default action-btn text is white). */
+const secondaryBtn = {
+  gap: 5,
+  fontSize: 12,
+  padding: '7px 12px',
+  background: 'var(--card-bg)',
+  color: 'var(--text-1)',
+  border: '1.5px solid var(--card-border)',
+  boxShadow: 'none',
+}
+
 function fmtDispDate(iso) {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
@@ -298,7 +309,7 @@ export default function AuditTrailPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button type="button" className="action-btn" onClick={() => load(page)} disabled={loading} style={{ gap: 5, fontSize: 12, padding: '7px 12px' }}>
+          <button type="button" className="action-btn" onClick={() => load(page)} disabled={loading} style={secondaryBtn}>
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             Refresh
           </button>
@@ -377,7 +388,7 @@ export default function AuditTrailPage() {
               />
             </div>
           </div>
-          <button type="submit" className="action-btn" style={{ fontSize: 12, padding: '7px 12px', height: 32 }}>Search</button>
+          <button type="submit" className="action-btn" style={{ ...secondaryBtn, height: 32 }}>Search</button>
         </form>
         <div style={{ fontSize: 12, color: 'var(--text-3)', paddingBottom: 6, whiteSpace: 'nowrap', fontFamily: 'var(--font-ui)' }}>
           {loading ? 'Loading…' : `${total} entr${total === 1 ? 'y' : 'ies'}`}
@@ -477,10 +488,10 @@ export default function AuditTrailPage() {
 
         {totalPages > 1 && (
           <div style={{ padding: '8px 10px', borderTop: '1px solid var(--card-border)', display: 'flex', justifyContent: 'center', gap: 8 }}>
-            <button type="button" className="action-btn" disabled={loading || page <= 0} onClick={() => load(page - 1)} style={{ fontSize: 12, padding: '6px 10px' }}>
+            <button type="button" className="action-btn" disabled={loading || page <= 0} onClick={() => load(page - 1)} style={{ ...secondaryBtn, padding: '6px 10px' }}>
               Previous
             </button>
-            <button type="button" className="action-btn" disabled={loading || page + 1 >= totalPages} onClick={() => load(page + 1)} style={{ fontSize: 12, padding: '6px 10px' }}>
+            <button type="button" className="action-btn" disabled={loading || page + 1 >= totalPages} onClick={() => load(page + 1)} style={{ ...secondaryBtn, padding: '6px 10px' }}>
               Next
             </button>
           </div>
@@ -532,7 +543,7 @@ export default function AuditTrailPage() {
                 {flushPwErr && <span style={{ fontSize: 11, color: '#dc2626' }}>Incorrect password</span>}
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-                <button type="button" className="action-btn" disabled={flushing} onClick={() => setShowFlush(false)} style={{ fontSize: 12, padding: '7px 12px' }}>
+                <button type="button" className="action-btn" disabled={flushing} onClick={() => setShowFlush(false)} style={secondaryBtn}>
                   Cancel
                 </button>
                 <button
