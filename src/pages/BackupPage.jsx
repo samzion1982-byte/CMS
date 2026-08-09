@@ -24,7 +24,6 @@ import {
   saveBackupSettings,
   startGoogleOAuthConnect,
   disconnectGoogleOAuth,
-  diagnoseBackupSetup,
 } from '../lib/cmsFullBackup'
 
 const secondaryBtn = {
@@ -655,9 +654,6 @@ export default function BackupPage() {
   const [savingDrive, setSavingDrive] = useState(false)
   const [connectingGoogle, setConnectingGoogle] = useState(false)
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false)
-  const [debugInfo, setDebugInfo] = useState(null)
-  const [debugging, setDebugging] = useState(false)
-  const [lastActionError, setLastActionError] = useState(null)
   const [clearingKind, setClearingKind] = useState(null)
   const [savingAuto, setSavingAuto] = useState(false)
 
@@ -763,12 +759,10 @@ export default function BackupPage() {
 
   async function handleConnectGoogle() {
     setConnectingGoogle(true)
-    setLastActionError(null)
     try {
       await startGoogleOAuthConnect()
     } catch (e) {
       const msg = e.message || 'Could not start Google login (deploy cms-google-oauth + set OAuth secrets)'
-      setLastActionError(msg)
       console.error('[backup-ui] Connect Google failed', e)
       toast(msg, 'error')
       setConnectingGoogle(false)
@@ -810,7 +804,6 @@ export default function BackupPage() {
     setBackupModal({ kind })
     setBackupSaveAsDefault(true)
     setBackupSourcesLoading(true)
-    setLastActionError(null)
     try {
       const sources = await listBackupSources()
       const tables = sources.tables || []
@@ -829,7 +822,6 @@ export default function BackupPage() {
       setBackupSelectedBuckets(new Set(selBuckets))
     } catch (e) {
       const msg = e.message || 'Could not load backup items'
-      setLastActionError(msg)
       toast(msg, 'error')
       setBackupModal(null)
     } finally {
@@ -860,7 +852,6 @@ export default function BackupPage() {
     setBackupModal(null)
     const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
     setBusy(true)
-    setLastActionError(null)
     setBackupProgress({ kind, pct: 0, message: 'Starting…' })
     try {
       const r = await runDriveBackup({
@@ -875,7 +866,6 @@ export default function BackupPage() {
       })
       if (r.via === 'local_download') {
         toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
-        if (r.message) setLastActionError(r.message)
       } else {
         const files = r.storage_file_count != null ? `, ${r.storage_file_count} storage files` : ''
         const label = r.status === 'partial' ? 'Partial' : 'Complete'
@@ -883,15 +873,11 @@ export default function BackupPage() {
           `${label} ${kind === 'full' ? 'Full Backup' : 'Snapshot'} — ${r.tables_count} tables, ${r.rows_count} rows${files} (${formatBytes(r.file_size_bytes)}).`,
           r.status === 'partial' ? 'error' : 'success',
         )
-        if (r.status === 'partial' && r.skipped_storage?.length) {
-          setLastActionError(r.skipped_storage.slice(0, 12).join('\n'))
-        }
       }
       await loadLogs()
       await loadSettings()
     } catch (e) {
       const msg = e.message || 'Backup failed'
-      setLastActionError(msg)
       console.error('[backup-ui] run failed', e)
       toast(msg, 'error')
     } finally {
@@ -908,7 +894,6 @@ export default function BackupPage() {
     }
 
     setRestoreModal({ row, folderId })
-    setLastActionError(null)
 
     const fromLog = restoreChoicesFromLog(row)
     const needsDriveList = fromLog.incomplete
@@ -938,7 +923,6 @@ export default function BackupPage() {
       setSelectedBuckets(new Set(buckets.map((b) => b.name)))
     } catch (e) {
       const msg = e.message || 'Could not load backup contents'
-      setLastActionError(msg)
       toast(msg, 'error')
     } finally {
       setRestoreLoading(false)
@@ -962,7 +946,6 @@ export default function BackupPage() {
       toast('Backup contents refreshed from Drive', 'success')
     } catch (e) {
       const msg = e.message || 'Refresh failed'
-      setLastActionError(msg)
       toast(msg, 'error')
     } finally {
       setRestoreLoading(false)
@@ -998,7 +981,6 @@ export default function BackupPage() {
     )) return
 
     setRestoringId(restoreModal.row.id)
-    setLastActionError(null)
     try {
       const r = await restoreFromDriveBackup({
         logId: restoreModal.row.id,
@@ -1011,35 +993,13 @@ export default function BackupPage() {
         `Restore ${r.status || 'done'}: ${r.restored_rows ?? 0} rows, ${r.restored_files ?? 0} files.`,
         r.status === 'failed' ? 'error' : 'success',
       )
-      if (r.insert_errors?.length || r.storage_errors?.length) {
-        setLastActionError(
-          [...(r.insert_errors || []), ...(r.storage_errors || [])].slice(0, 12).join('\n'),
-        )
-      }
       setRestoreModal(null)
       await loadLogs()
     } catch (e) {
       const msg = e.message || 'Restore failed'
-      setLastActionError(msg)
       toast(msg, 'error')
     } finally {
       setRestoringId(null)
-    }
-  }
-
-  async function handleDiagnose() {
-    setDebugging(true)
-    try {
-      const info = await diagnoseBackupSetup()
-      setDebugInfo(info)
-      console.log('[backup-ui] diagnose', info)
-      toast('Debug info updated (see Debug panel below)', 'success')
-    } catch (e) {
-      const msg = e.message || 'Diagnose failed'
-      setLastActionError(msg)
-      toast(msg, 'error')
-    } finally {
-      setDebugging(false)
     }
   }
 
@@ -1049,14 +1009,12 @@ export default function BackupPage() {
       return
     }
     setClearingKind(kind || 'all')
-    setLastActionError(null)
     try {
       const r = await clearBackupLogs({ kind })
       toast(`Cleared ${r.deleted} history row(s)`, 'success')
       await loadLogs()
     } catch (e) {
       const msg = e.message || 'Clear history failed (run SQL cms_backup_log_delete if missing)'
-      setLastActionError(msg)
       toast(msg, 'error')
     } finally {
       setClearingKind(null)
@@ -1087,7 +1045,6 @@ export default function BackupPage() {
       toast(prov.mode === 'initialize' ? 'New Setup completed' : 'Upgrade completed', 'success')
     } catch (e) {
       const msg = e.message || 'Provision failed (deploy cms-provision function)'
-      setLastActionError(msg)
       toast(msg, 'error')
     } finally {
       setProvRunning(false)
@@ -1430,43 +1387,6 @@ export default function BackupPage() {
           Initialize creates bootstrap tables, storage buckets, and your Super Admin on the <em>target</em> project.
           Run the full <code>supabase/migrations</code> SQL on that project (or Upgrade with extra SQL) so it matches this CMS version, then point the website at the new URL + anon key.
         </p>
-      </Section>
-
-      {/* Debug */}
-      <Section
-        title="Debug"
-        icon={Shield}
-        subtitle="Shows the real Edge Function error (instead of only “non-2xx”) and connection status."
-      >
-        {lastActionError && (
-          <div style={{
-            marginBottom: 12, padding: 10, borderRadius: 8,
-            background: '#fef2f2', border: '1px solid #fecaca',
-            color: '#991b1b', fontSize: 12, lineHeight: 1.45, whiteSpace: 'pre-wrap',
-          }}>
-            <strong>Last action error</strong>
-            <div style={{ marginTop: 4 }}>{lastActionError}</div>
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          <button type="button" className="no-lift" style={secondaryBtn} disabled={debugging} onClick={handleDiagnose}>
-            {debugging ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
-            Run diagnostics
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 8 }}>
-          Google connected: <strong>{settings?.google_connected_email || 'no'}</strong>
-          {' · '}
-          Folder ID: <strong>{settings?.drive_folder_id || '—'}</strong>
-        </div>
-        {debugInfo && (
-          <pre style={{
-            margin: 0, padding: 12, borderRadius: 8, overflow: 'auto', maxHeight: 320,
-            background: '#0f172a', color: '#e2e8f0', fontSize: 11, lineHeight: 1.4,
-          }}>
-            {JSON.stringify(debugInfo, null, 2)}
-          </pre>
-        )}
       </Section>
 
       <RestoreChooserModal

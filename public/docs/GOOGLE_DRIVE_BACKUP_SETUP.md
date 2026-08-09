@@ -23,7 +23,7 @@ Use this checklist every time you set up Backup & Restore for a new church CMS p
 6. Run backup SQL migrations  
 7. Connect Google from CMS Backup page  
 8. Create / pick a Drive folder and save Folder ID  
-9. Run diagnostics + first backup  
+9. First backup smoke test  
 
 ---
 
@@ -93,9 +93,11 @@ Use this checklist every time you set up Backup & Restore for a new church CMS p
    - `http://localhost:5173/backup/google-callback` (local only)
 
 6. Click **Create**.
-7. Copy and store securely:
-   - **Client ID**
-   - **Client secret**
+7. Copy and store securely (paste these into Supabase Edge Function secrets):
+   - **Client ID** → secret name `GOOGLE_OAUTH_CLIENT_ID`  
+     Sample look: `123456789012-abcdefghijklmnop.apps.googleusercontent.com`
+   - **Client secret** → secret name `GOOGLE_OAUTH_CLIENT_SECRET`  
+     Sample look: `GOCSPX-abcdefghijklmnopqrstuvwx`
 
 > The CMS builds the redirect as: `{window.location.origin}/backup/google-callback`  
 > You can also copy the exact URI from Backup page (Google Drive section).
@@ -140,10 +142,24 @@ In the **church’s** Supabase project (Dashboard → Edge Functions):
 
 In Supabase → **Project Settings** → **Edge Functions** → **Secrets** (or CLI `supabase secrets set`), set:
 
-| Secret | Value |
-|--------|--------|
-| `GOOGLE_OAUTH_CLIENT_ID` | OAuth Client ID from Step 4 |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth Client secret from Step 4 |
+| Secret name (exact) | What to paste | Sample / how it looks |
+|---------------------|---------------|------------------------|
+| `GOOGLE_OAUTH_CLIENT_ID` | OAuth **Client ID** from Step 4 | `123456789012-abcdefghijklmnop.apps.googleusercontent.com` |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth **Client secret** from Step 4 | `GOCSPX-abcdefghijklmnopqrstuvwx` |
+
+**Easy identification**
+- **Client ID** is long, ends with `.apps.googleusercontent.com`
+- **Client secret** is shorter and usually starts with `GOCSPX-`
+
+Example when setting via CLI:
+
+```bash
+supabase secrets set \
+  GOOGLE_OAUTH_CLIENT_ID="123456789012-abcdefghijklmnop.apps.googleusercontent.com" \
+  GOOGLE_OAUTH_CLIENT_SECRET="GOCSPX-abcdefghijklmnopqrstuvwx"
+```
+
+(Replace with your real values from Google Cloud → Credentials → your OAuth client.)
 
 Also ensure the functions have normal Supabase runtime env (usually automatic):
 - `SUPABASE_URL`
@@ -230,19 +246,11 @@ Storage sync uploads **only new/changed** files after the first full sync. Delet
 
 ---
 
-## Step 11 — Verify with Debug
+## Step 11 — Verify connection
 
-1. Backup page → **Debug** → **Run diagnostics**.
-2. Confirm hints include roughly:
-   - `cms-full-backup OK (version 5+, chunked, all storage sync)`
-   - Google connected
-   - Folder ID saved
-3. Version probe should report:
-   - `complete_backup: true`
-   - `chunked: true`
-   - `version: 5` (or higher)
-   - `supports` includes `storage_sync`
-   - `sync_buckets: "all"`
+1. Backup page → **Google Drive** shows **Google connected** with your email.
+2. Folder ID is saved and status says **Ready for Drive backups**.
+3. Optional: open Supabase Edge Function logs after clicking Connect / Run Backup if something fails.
 
 ---
 
@@ -288,7 +296,6 @@ Automatic runs use the **saved backup selection** (tables + buckets). Cron must 
 - [ ] Backup SQL migrations run  
 - [ ] Connect Google succeeds on `/backup`  
 - [ ] Drive folder created + Folder ID saved  
-- [ ] Debug OK  
 - [ ] First Full Backup completed  
 
 ---
