@@ -40,7 +40,7 @@ const NAV = [
   { group: 'ADMIN', adminOnly: true, items: [
     { label: 'Church Setup',      path: '/church-setup',     icon: Church },
     { label: 'Audit Trail',       path: '/audit-trail',      icon: History },
-    { label: 'Backup & Restore',  path: '/backup',           icon: Database },
+    { label: 'Backup & Restore',  path: '/backup',           icon: Database,       superOnly: true },
     { label: 'Users',             path: '/users',            icon: UserCog,        superOnly: true },
     { label: 'CMS Permissions',   path: '/cms-permissions',  icon: Shield,         superOnly: true },
     { label: 'Import Data',       path: '/import',           icon: Upload,         superOnly: true },

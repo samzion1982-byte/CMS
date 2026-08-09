@@ -1,306 +1,147 @@
 /**
- * Full CMS database backup — export core tables as JSON.
- * Manual download always works; Edge Function handles scheduled + Google Drive.
+ * Full Backup + Snapshot helpers (Google Drive only).
  */
 
 import { supabase } from './supabase'
 
-/** Core tables included in a full backup (order is cosmetic). */
+/** Core tables included in a full/snapshot dump. */
 export const FULL_BACKUP_TABLES = [
-  // Church & users
-  'churches',
-  'church_zones',
-  'profiles',
-  'cms_role_page_access',
-  'cms_user_passwords',
-  // Members
-  'members',
-  'deleted_members',
-  // Events
-  'baptism_records',
-  'confirmation_records',
-  'wedding_records',
-  'burial_records',
-  'event_task_buckets',
-  'event_tasks',
-  'event_volunteers',
-  'task_library',
-  // Assets
-  'assets',
-  'asset_locations',
-  'asset_item_types',
-  'asset_conditions',
-  'fixed_assets',
-  'fixed_asset_documents',
-  // Finance — receipts / declaration
-  'receipts',
-  'receipt_items',
-  'receipt_financial_years',
-  'payment_categories',
-  'declarations',
-  'declaration_items',
-  'decl_financial_years',
-  'funds',
-  // Accounting
-  'chart_of_accounts',
-  'journal_entries',
-  'journal_entry_lines',
-  'accounting_settings',
-  'accounting_entities',
-  'bank_accounts',
-  'funds_ledger',
-  // Simple accounts
-  'simple_accounts',
-  'simple_categories',
-  'simple_transactions',
-  // Announcements
-  'announcements',
-  'announcement_settings',
-  'announcement_exclusions',
-  'bible_verses',
+  'churches', 'church_zones', 'profiles', 'cms_role_page_access', 'cms_user_passwords',
+  'cms_backup_settings', 'cms_backup_log',
+  'members', 'deleted_members',
+  'baptism_records', 'confirmation_records', 'wedding_records', 'burial_records',
+  'event_task_buckets', 'event_tasks', 'event_volunteers', 'task_library', 'event_plans',
+  'assets', 'asset_locations', 'asset_item_types', 'asset_conditions',
+  'fixed_assets', 'fixed_asset_documents',
+  'receipts', 'receipt_items', 'receipt_financial_years', 'payment_categories',
+  'declarations', 'declaration_items', 'decl_financial_years', 'funds',
+  'chart_of_accounts', 'journal_entries', 'journal_entry_lines',
+  'accounting_settings', 'accounting_entities', 'bank_accounts',
+  'simple_accounts', 'simple_categories', 'simple_transactions',
+  'announcements', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
+  'cms_audit_log', 'login_logs',
 ]
 
-const PAGE = 1000
-
-async function fetchAllRows(table) {
-  const rows = []
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .range(from, from + PAGE - 1)
-    if (error) {
-      // Table may not exist in this project — skip quietly
-      if (/does not exist|schema cache|Could not find/i.test(error.message || '')) {
-        return { rows: [], skipped: true, error: error.message }
-      }
-      return { rows: [], skipped: false, error: error.message }
-    }
-    const batch = data || []
-    rows.push(...batch)
-    if (batch.length < PAGE) break
-    from += PAGE
-  }
-  return { rows, skipped: false, error: null }
-}
-
-/**
- * Build a full backup object from live DB.
- */
-export async function buildFullBackupPayload({ triggerMode = 'manual', actor = null } = {}) {
-  const tables = {}
-  const summary = []
-  let totalRows = 0
-  let okCount = 0
-
-  for (const table of FULL_BACKUP_TABLES) {
-    const result = await fetchAllRows(table)
-    if (result.skipped) {
-      summary.push({ table, status: 'skipped', rows: 0, error: result.error })
-      continue
-    }
-    if (result.error) {
-      summary.push({ table, status: 'error', rows: 0, error: result.error })
-      continue
-    }
-    tables[table] = result.rows
-    totalRows += result.rows.length
-    okCount += 1
-    summary.push({ table, status: 'ok', rows: result.rows.length })
-  }
-
-  const payload = {
-    format: 'cms-full-backup',
-    version: 1,
-    created_at: new Date().toISOString(),
-    trigger_mode: triggerMode,
-    created_by: actor?.email || null,
-    tables,
-    summary,
-  }
-
-  return { payload, tablesCount: okCount, rowsCount: totalRows, summary }
-}
-
-export function backupFilename(date = new Date()) {
-  const p = (n) => String(n).padStart(2, '0')
-  const stamp = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}`
-  return `cms-full-backup-${stamp}.json`
-}
-
-export function downloadJsonBackup(payload, filename) {
-  const text = JSON.stringify(payload, null, 2)
-  const blob = new Blob([text], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename || backupFilename()
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-  return { bytes: blob.size, filename: a.download }
-}
-
-/**
- * Upload backup JSON to private cms-backups storage bucket.
- */
-export async function uploadBackupToStorage(payload, filename) {
-  const text = JSON.stringify(payload)
-  const blob = new Blob([text], { type: 'application/json' })
-  const path = `full/${filename}`
-  const { error } = await supabase.storage
-    .from('cms-backups')
-    .upload(path, blob, { contentType: 'application/json', upsert: true })
-  if (error) throw error
-  return { path, bytes: blob.size }
-}
-
-export async function logBackupRun({
-  triggerMode = 'manual',
-  status = 'success',
-  tablesCount = 0,
-  rowsCount = 0,
-  fileSizeBytes = null,
-  storagePath = null,
-  driveFileId = null,
-  driveWebLink = null,
-  downloadFilename = null,
-  errorMessage = null,
-  meta = null,
-  actor = null,
-}) {
+export async function getBackupSettings() {
   const { data, error } = await supabase
-    .from('cms_backup_log')
-    .insert({
-      backup_type: triggerMode === 'automatic' ? 'scheduled' : 'manual',
-      trigger_mode: triggerMode,
-      status,
-      tables_count: tablesCount,
-      rows_count: rowsCount,
-      file_size_bytes: fileSizeBytes,
-      storage_path: storagePath,
-      drive_file_id: driveFileId,
-      drive_web_link: driveWebLink,
-      download_filename: downloadFilename,
-      error_message: errorMessage,
-      meta,
-      created_by_email: actor?.email || null,
-      created_by_name: actor?.full_name || actor?.name || null,
-    })
+    .from('cms_backup_settings')
+    .select('*')
+    .eq('id', 1)
+    .maybeSingle()
+  if (error) throw error
+  return data || {
+    id: 1,
+    drive_folder_id: '',
+    drive_enabled: false,
+    full_auto_enabled: true,
+    full_auto_hour_ist: 2,
+    snapshot_auto_enabled: true,
+    snapshot_auto_hour_ist: 1,
+    snapshot_retain_days: 14,
+  }
+}
+
+export async function saveBackupSettings(patch, actor = null) {
+  const payload = {
+    id: 1,
+    ...patch,
+    updated_at: new Date().toISOString(),
+    updated_by_email: actor?.email || null,
+  }
+  const { data, error } = await supabase
+    .from('cms_backup_settings')
+    .upsert(payload, { onConflict: 'id' })
     .select('*')
     .single()
-  if (error) {
-    console.error('cms_backup_log insert failed:', error)
-    return null
-  }
+  if (error) throw error
   return data
 }
 
-export async function listBackupLogs({ page = 0, pageSize = 30 } = {}) {
-  const { data, error, count } = await supabase
+export async function listBackupLogs({ kind = null, page = 0, pageSize = 30 } = {}) {
+  let q = supabase
     .from('cms_backup_log')
     .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(page * pageSize, page * pageSize + pageSize - 1)
+  if (kind === 'full') {
+    q = q.or('kind.eq.full,kind.is.null,backup_type.in.(full,manual,scheduled)')
+  } else if (kind === 'snapshot') {
+    q = q.or('kind.eq.snapshot,backup_type.eq.snapshot')
+  }
+  const { data, error, count } = await q
   if (error) throw error
-  return { rows: data || [], total: count || 0 }
+  let rows = data || []
+  if (kind === 'full') {
+    rows = rows.filter((r) => (r.kind || 'full') !== 'snapshot' && r.backup_type !== 'snapshot')
+  } else if (kind === 'snapshot') {
+    rows = rows.filter((r) => r.kind === 'snapshot' || r.backup_type === 'snapshot')
+  }
+  return { rows, total: count || rows.length }
 }
 
 /**
- * Run a manual full backup: build → download → storage upload → log.
- * Drive upload is handled by Edge Function when secrets are configured.
+ * Run Full Backup or Snapshot via Edge Function → Google Drive only.
+ * @param {'full'|'snapshot'} kind
+ * @param {'manual'|'automatic'} triggerMode
  */
-export async function runManualFullBackup(actor = null) {
-  const { payload, tablesCount, rowsCount, summary } = await buildFullBackupPayload({
-    triggerMode: 'manual',
-    actor,
-  })
-  const filename = backupFilename()
-  const { bytes } = downloadJsonBackup(payload, filename)
-
-  let storagePath = null
-  let status = 'success'
-  let errorMessage = null
-  try {
-    const up = await uploadBackupToStorage(payload, filename)
-    storagePath = up.path
-  } catch (e) {
-    status = 'partial'
-    errorMessage = `Downloaded locally; storage upload failed: ${e.message}`
+export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', actor = null } = {}) {
+  const settings = await getBackupSettings()
+  if (!settings.drive_folder_id?.trim()) {
+    throw new Error('Save a Google Drive folder ID first (Google Drive section).')
   }
 
-  // Ask Edge Function to push the same payload to Google Drive (if configured)
-  let driveFileId = null
-  let driveWebLink = null
-  try {
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess?.session?.access_token
-    if (token) {
-      const res = await supabase.functions.invoke('cms-full-backup', {
-        body: {
-          trigger_mode: 'manual',
-          upload_only: true,
-          filename,
-          payload,
-          actor_email: actor?.email || null,
-        },
-      })
-      if (!res.error && res.data?.drive_file_id) {
-        driveFileId = res.data.drive_file_id
-        driveWebLink = res.data.drive_web_link || null
-        status = 'success'
-        if (errorMessage?.startsWith('Downloaded')) errorMessage = null
-      } else if (res.data?.drive_skipped) {
-        // Drive not configured — fine
-      } else if (res.error) {
-        status = status === 'success' ? 'partial' : status
-        errorMessage = [errorMessage, `Drive: ${res.error.message || res.data?.error || 'upload failed'}`]
-          .filter(Boolean).join(' | ')
-      }
-    }
-  } catch (e) {
-    // Edge function may not be deployed yet
-    console.warn('Drive upload invoke skipped:', e.message)
-  }
-
-  const log = await logBackupRun({
-    triggerMode: 'manual',
-    status,
-    tablesCount,
-    rowsCount,
-    fileSizeBytes: bytes,
-    storagePath,
-    driveFileId,
-    driveWebLink,
-    downloadFilename: filename,
-    errorMessage,
-    meta: { summary },
-    actor,
-  })
-
-  return {
-    filename,
-    bytes,
-    tablesCount,
-    rowsCount,
-    storagePath,
-    driveFileId,
-    driveWebLink,
-    status,
-    errorMessage,
-    log,
-  }
-}
-
-/**
- * Trigger scheduled-style backup via Edge Function (server-side dump + Drive).
- */
-export async function triggerServerFullBackup(actor = null) {
   const { data, error } = await supabase.functions.invoke('cms-full-backup', {
     body: {
-      trigger_mode: 'manual',
+      kind,
+      trigger_mode: triggerMode,
+      drive_folder_id: settings.drive_folder_id.trim(),
+      actor_email: actor?.email || null,
+      actor_name: actor?.full_name || actor?.name || null,
+    },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+export async function restoreFromDriveBackup({ logId, kind = 'full', actor = null } = {}) {
+  const { data, error } = await supabase.functions.invoke('cms-full-backup', {
+    body: {
+      action: 'restore',
+      log_id: logId,
+      kind,
+      actor_email: actor?.email || null,
+    },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+/**
+ * New Setup / Upgrade — provision a target Supabase project.
+ */
+export async function runProvision({
+  mode = 'initialize', // initialize | upgrade
+  supabaseUrl,
+  anonKey,
+  serviceRoleKey,
+  dbPassword,
+  superAdminEmail,
+  superAdminPassword,
+  driveFolderId = null,
+  actor = null,
+} = {}) {
+  const { data, error } = await supabase.functions.invoke('cms-provision', {
+    body: {
+      mode,
+      supabase_url: supabaseUrl,
+      anon_key: anonKey,
+      service_role_key: serviceRoleKey,
+      db_password: dbPassword,
+      super_admin_email: superAdminEmail,
+      super_admin_password: superAdminPassword,
+      drive_folder_id: driveFolderId,
       actor_email: actor?.email || null,
     },
   })
@@ -314,4 +155,12 @@ export function formatBytes(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(2)} MB`
+}
+
+export function formatWhen(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
 }

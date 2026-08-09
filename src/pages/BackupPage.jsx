@@ -1,26 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Archive, Cloud, Database, Download, HardDrive, History, Loader2,
-  RefreshCw, Search, Trash2, Undo2,
+  Cloud, Database, HardDrive, History, Loader2, RefreshCw,
+  RotateCcw, Save, Settings2, Shield,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
   formatBytes,
+  formatWhen,
+  getBackupSettings,
   listBackupLogs,
-  runManualFullBackup,
-  triggerServerFullBackup,
+  runDriveBackup,
+  runProvision,
+  saveBackupSettings,
 } from '../lib/cmsFullBackup'
-import {
-  listRecycleBin,
-  purgeAllRecycleBin,
-  purgeRecycleBinItem,
-  RECYCLE_MODULES,
-  restoreRecycleBinItem,
-} from '../lib/cmsRecycleBin'
-import { useNavigate } from 'react-router-dom'
-
-const ADMIN_ROLES = ['super_admin', 'admin1', 'admin']
 
 const secondaryBtn = {
   gap: 5,
@@ -55,16 +48,54 @@ const tdStyle = {
   fontFamily: 'var(--font-ui)',
 }
 
-function formatWhen(iso) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return String(iso)
-  const p = (n) => String(n).padStart(2, '0')
-  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+const inputStyle = {
+  width: '100%',
+  padding: '8px 10px',
+  fontSize: 13,
+  borderRadius: 8,
+  border: '1px solid var(--card-border)',
+  background: 'var(--card-bg)',
+  color: 'var(--text-1)',
+  fontFamily: 'var(--font-ui)',
+  boxSizing: 'border-box',
 }
 
-function labelize(s) {
-  return String(s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+const labelStyle = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 700,
+  color: 'var(--text-3)',
+  marginBottom: 4,
+  fontFamily: 'var(--font-ui)',
+}
+
+function Section({ title, icon: Icon, subtitle, children }) {
+  return (
+    <section style={{
+      marginBottom: 22,
+      border: '1px solid var(--card-border)',
+      borderRadius: 12,
+      background: 'var(--card-bg)',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '14px 16px',
+        borderBottom: '1px solid var(--card-border)',
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+      }}>
+        <Icon size={18} style={{ marginTop: 2, color: '#0f766e', flexShrink: 0 }} />
+        <div>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-1)' }}>{title}</h2>
+          {subtitle && (
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>{subtitle}</p>
+          )}
+        </div>
+      </div>
+      <div style={{ padding: 16 }}>{children}</div>
+    </section>
+  )
 }
 
 function StatusPill({ status }) {
@@ -73,94 +104,111 @@ function StatusPill({ status }) {
     partial: { bg: '#fff7ed', color: '#c2410c' },
     failed: { bg: '#fef2f2', color: '#b91c1c' },
     pending: { bg: '#f1f5f9', color: '#475569' },
-    deleted: { bg: '#fef2f2', color: '#b91c1c' },
-    restored: { bg: '#ecfdf5', color: '#047857' },
   }
-  const style = map[status] || map.pending
+  const s = map[status] || map.pending
   return (
     <span style={{
       display: 'inline-block', padding: '2px 7px', borderRadius: 999,
-      fontSize: 10, fontWeight: 700, background: style.bg, color: style.color,
-      fontFamily: 'var(--font-ui)',
+      fontSize: 10, fontWeight: 700, background: s.bg, color: s.color,
     }}>
-      {labelize(status)}
+      {String(status || '—')}
     </span>
+  )
+}
+
+function LogTable({ rows, loading, empty }) {
+  return (
+    <div style={{ overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: 8 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={thStyle}>When</th>
+            <th style={thStyle}>Mode</th>
+            <th style={thStyle}>Status</th>
+            <th style={thStyle}>Tables</th>
+            <th style={thStyle}>Rows</th>
+            <th style={thStyle}>Size</th>
+            <th style={thStyle}>Drive</th>
+            <th style={thStyle}>File</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>Loading…</td></tr>
+          ) : !rows.length ? (
+            <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>{empty}</td></tr>
+          ) : rows.map((row) => (
+            <tr key={row.id}>
+              <td style={tdStyle}>{formatWhen(row.created_at)}</td>
+              <td style={tdStyle}>{row.trigger_mode || '—'}</td>
+              <td style={tdStyle}><StatusPill status={row.status} /></td>
+              <td style={tdStyle}>{row.tables_count ?? '—'}</td>
+              <td style={tdStyle}>{row.rows_count ?? '—'}</td>
+              <td style={tdStyle}>{formatBytes(row.file_size_bytes)}</td>
+              <td style={tdStyle}>
+                {row.drive_web_link ? (
+                  <a href={row.drive_web_link} target="_blank" rel="noreferrer" style={{ color: '#0369a1', fontWeight: 600 }}>
+                    Open
+                  </a>
+                ) : row.drive_file_id ? 'Yes' : '—'}
+              </td>
+              <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>{row.download_filename || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
 export default function BackupPage() {
   const { profile } = useAuth()
   const toast = useToast()
-  const navigate = useNavigate()
-  const [tab, setTab] = useState('full') // full | snapshot
+  const isSuper = profile?.role === 'super_admin'
 
-  if (!ADMIN_ROLES.includes(profile?.role)) {
-    return (
-      <div style={{ padding: 32, fontFamily: 'var(--font-ui)', color: 'var(--text-2)' }}>
-        You do not have access to Backup &amp; Restore.
-      </div>
-    )
-  }
+  const [settings, setSettings] = useState(null)
+  const [driveFolderId, setDriveFolderId] = useState('')
+  const [savingDrive, setSavingDrive] = useState(false)
+  const [savingAuto, setSavingAuto] = useState(false)
 
-  return (
-    <div style={{ padding: '20px 24px 40px', maxWidth: 1100, margin: '0 auto', fontFamily: 'var(--font-ui)' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>
-          Backup &amp; Restore
-        </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
-          Full Backup copies the whole database. Snapshot lets you restore a single record after accidental deletion.
-        </p>
-      </div>
-
-      <div style={{
-        display: 'flex', gap: 6, marginBottom: 20,
-        borderBottom: '1px solid var(--card-border)', paddingBottom: 0,
-      }}>
-        {[
-          { id: 'full', label: 'Full Backup', icon: Database },
-          { id: 'snapshot', label: 'Snapshot', icon: Archive },
-        ].map(({ id, label, icon: Icon }) => {
-          const active = tab === id
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '10px 16px', border: 'none', cursor: 'pointer',
-                background: 'transparent',
-                color: active ? 'var(--text-1)' : 'var(--text-3)',
-                fontWeight: active ? 700 : 500, fontSize: 13,
-                borderBottom: active ? '2px solid var(--accent, #0f766e)' : '2px solid transparent',
-                marginBottom: -1, fontFamily: 'var(--font-ui)',
-              }}
-            >
-              <Icon size={15} /> {label}
-            </button>
-          )
-        })}
-      </div>
-
-      {tab === 'full' ? <FullBackupTab profile={profile} toast={toast} /> : (
-        <SnapshotTab profile={profile} toast={toast} navigate={navigate} />
-      )}
-    </div>
-  )
-}
-
-function FullBackupTab({ profile, toast }) {
-  const [running, setRunning] = useState(false)
-  const [serverRunning, setServerRunning] = useState(false)
-  const [logs, setLogs] = useState([])
+  const [fullLogs, setFullLogs] = useState([])
+  const [snapLogs, setSnapLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(true)
+  const [runningFull, setRunningFull] = useState(false)
+  const [runningSnap, setRunningSnap] = useState(false)
+
+  const [prov, setProv] = useState({
+    mode: 'initialize',
+    supabaseUrl: '',
+    anonKey: '',
+    serviceRoleKey: '',
+    dbPassword: '',
+    superAdminEmail: '',
+    superAdminPassword: '',
+    driveFolderId: '',
+  })
+  const [provRunning, setProvRunning] = useState(false)
+  const [provResult, setProvResult] = useState(null)
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const s = await getBackupSettings()
+      setSettings(s)
+      setDriveFolderId(s.drive_folder_id || '')
+    } catch (e) {
+      toast(e.message || 'Failed to load backup settings', 'error')
+    }
+  }, [toast])
 
   const loadLogs = useCallback(async () => {
     setLoadingLogs(true)
     try {
-      const { rows } = await listBackupLogs({ pageSize: 40 })
-      setLogs(rows)
+      const [f, s] = await Promise.all([
+        listBackupLogs({ kind: 'full', pageSize: 25 }),
+        listBackupLogs({ kind: 'snapshot', pageSize: 25 }),
+      ])
+      setFullLogs(f.rows)
+      setSnapLogs(s.rows)
     } catch (e) {
       toast(e.message || 'Failed to load backup history', 'error')
     } finally {
@@ -168,360 +216,316 @@ function FullBackupTab({ profile, toast }) {
     }
   }, [toast])
 
-  useEffect(() => { loadLogs() }, [loadLogs])
+  useEffect(() => {
+    if (!isSuper) return
+    loadSettings()
+    loadLogs()
+  }, [isSuper, loadSettings, loadLogs])
 
-  async function handleManual() {
-    setRunning(true)
+  if (!isSuper) {
+    return (
+      <div style={{ padding: 32, fontFamily: 'var(--font-ui)', color: 'var(--text-2)' }}>
+        <Shield size={18} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+        Backup &amp; Restore is available to Super Admin only.
+      </div>
+    )
+  }
+
+  async function handleSaveDrive() {
+    setSavingDrive(true)
     try {
-      const r = await runManualFullBackup(profile)
-      if (r.driveFileId) {
-        toast(`Full backup saved — ${r.tablesCount} tables, ${r.rowsCount} rows. Copied to Google Drive.`, 'success')
-      } else if (r.storagePath) {
-        toast(`Full backup downloaded & stored (${formatBytes(r.bytes)}). Add Google Drive secrets to auto-copy to Drive.`, 'success')
-      } else {
-        toast(`Full backup downloaded (${formatBytes(r.bytes)}). ${r.errorMessage || ''}`, r.status === 'failed' ? 'error' : 'success')
-      }
-      await loadLogs()
+      const s = await saveBackupSettings({
+        drive_folder_id: driveFolderId.trim() || null,
+        drive_enabled: !!driveFolderId.trim(),
+      }, profile)
+      setSettings(s)
+      toast('Google Drive folder saved', 'success')
     } catch (e) {
-      toast(e.message || 'Backup failed', 'error')
+      toast(e.message || 'Save failed', 'error')
     } finally {
-      setRunning(false)
+      setSavingDrive(false)
     }
   }
 
-  async function handleServer() {
-    setServerRunning(true)
+  async function handleSaveAuto(patch) {
+    setSavingAuto(true)
     try {
-      const r = await triggerServerFullBackup(profile)
-      if (r.drive_file_id) {
-        toast(`Server backup complete — Drive file created.`, 'success')
-      } else if (r.drive_skipped) {
-        toast(`Server backup stored in cms-backups. Configure Google Drive secrets for Drive copies.`, 'success')
-      } else {
-        toast(`Server backup: ${r.status || 'done'}`, 'success')
-      }
-      await loadLogs()
+      const s = await saveBackupSettings(patch, profile)
+      setSettings(s)
+      toast('Schedule settings saved', 'success')
     } catch (e) {
-      toast(e.message || 'Server backup failed (deploy cms-full-backup function if missing)', 'error')
+      toast(e.message || 'Save failed', 'error')
     } finally {
-      setServerRunning(false)
+      setSavingAuto(false)
     }
   }
 
-  return (
-    <div>
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-        gap: 14, marginBottom: 22,
-      }}>
-        <div style={{
-          padding: 18, borderRadius: 12, border: '1px solid var(--card-border)',
-          background: 'var(--card-bg)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <Download size={16} color="#0f766e" />
-            <strong style={{ fontSize: 14 }}>Manual Full Backup</strong>
-          </div>
-          <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
-            Export the whole database as JSON now. File downloads to your device and is also saved to secure storage.
-          </p>
-          <button
-            type="button"
-            className="action-btn"
-            disabled={running}
-            onClick={handleManual}
-            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
-          >
-            {running ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
-            {running ? 'Backing up…' : 'Run Full Backup'}
-          </button>
-        </div>
-
-        <div style={{
-          padding: 18, borderRadius: 12, border: '1px solid var(--card-border)',
-          background: 'var(--card-bg)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <Cloud size={16} color="#0369a1" />
-            <strong style={{ fontSize: 14 }}>Automatic + Google Drive</strong>
-          </div>
-          <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
-            Daily automatic backup runs at 2:00 AM IST via Edge Function. When Drive secrets are set, a copy is uploaded to your Google Drive folder.
-          </p>
-          <ul style={{ margin: '0 0 14px', paddingLeft: 18, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.55 }}>
-            <li><code>GOOGLE_SERVICE_ACCOUNT_JSON</code></li>
-            <li><code>GOOGLE_DRIVE_FOLDER_ID</code></li>
-          </ul>
-          <button
-            type="button"
-            disabled={serverRunning}
-            onClick={handleServer}
-            style={secondaryBtn}
-            className="action-btn"
-          >
-            {serverRunning ? <Loader2 size={14} className="spin" /> : <Cloud size={14} />}
-            {serverRunning ? 'Running…' : 'Run Server Backup Now'}
-          </button>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <History size={15} color="var(--text-3)" />
-          <strong style={{ fontSize: 13 }}>Backup history</strong>
-        </div>
-        <button type="button" className="action-btn" style={secondaryBtn} onClick={loadLogs} disabled={loadingLogs}>
-          <RefreshCw size={13} /> Refresh
-        </button>
-      </div>
-
-      <div style={{ overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: 10, background: 'var(--card-bg)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={thStyle}>When</th>
-              <th style={thStyle}>Mode</th>
-              <th style={thStyle}>Status</th>
-              <th style={thStyle}>Tables</th>
-              <th style={thStyle}>Rows</th>
-              <th style={thStyle}>Size</th>
-              <th style={thStyle}>Drive</th>
-              <th style={thStyle}>File</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loadingLogs ? (
-              <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>Loading…</td></tr>
-            ) : !logs.length ? (
-              <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>No backups yet</td></tr>
-            ) : logs.map((row) => (
-              <tr key={row.id}>
-                <td style={tdStyle}>{formatWhen(row.created_at)}</td>
-                <td style={tdStyle}>{labelize(row.trigger_mode)}</td>
-                <td style={tdStyle}><StatusPill status={row.status} /></td>
-                <td style={tdStyle}>{row.tables_count ?? '—'}</td>
-                <td style={tdStyle}>{row.rows_count ?? '—'}</td>
-                <td style={tdStyle}>{formatBytes(row.file_size_bytes)}</td>
-                <td style={tdStyle}>
-                  {row.drive_web_link ? (
-                    <a href={row.drive_web_link} target="_blank" rel="noreferrer" style={{ color: '#0369a1', fontWeight: 600 }}>
-                      Open
-                    </a>
-                  ) : row.drive_file_id ? 'Yes' : '—'}
-                </td>
-                <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>{row.download_filename || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function SnapshotTab({ profile, toast, navigate }) {
-  const [rows, setRows] = useState([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [module, setModule] = useState('')
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState(null)
-  const PAGE_SIZE = 40
-
-  const load = useCallback(async (pageNum = page, mod = module, q = search) => {
-    setLoading(true)
+  async function handleRun(kind) {
+    const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
+    setBusy(true)
     try {
-      const { rows: data, total: t } = await listRecycleBin({
-        module: mod || null,
-        search: q,
-        page: pageNum,
-        pageSize: PAGE_SIZE,
+      const r = await runDriveBackup({ kind, triggerMode: 'manual', actor: profile })
+      toast(
+        `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,
+        'success',
+      )
+      await loadLogs()
+    } catch (e) {
+      toast(e.message || 'Backup failed (deploy cms-full-backup + set GOOGLE_SERVICE_ACCOUNT_JSON)', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleProvision() {
+    if (!window.confirm(
+      prov.mode === 'initialize'
+        ? 'Initialize the TARGET Supabase project? This creates schema bootstrap, buckets, and Super Admin on that project.'
+        : 'Upgrade the TARGET Supabase project bootstrap / buckets / Super Admin?',
+    )) return
+    setProvRunning(true)
+    setProvResult(null)
+    try {
+      const r = await runProvision({
+        mode: prov.mode,
+        supabaseUrl: prov.supabaseUrl,
+        anonKey: prov.anonKey,
+        serviceRoleKey: prov.serviceRoleKey,
+        dbPassword: prov.dbPassword,
+        superAdminEmail: prov.superAdminEmail,
+        superAdminPassword: prov.superAdminPassword,
+        driveFolderId: prov.driveFolderId || null,
+        actor: profile,
       })
-      setRows(data)
-      setTotal(t)
-      setPage(pageNum)
+      setProvResult(r)
+      toast(prov.mode === 'initialize' ? 'New Setup completed' : 'Upgrade completed', 'success')
     } catch (e) {
-      toast(e.message || 'Failed to load snapshots', 'error')
+      toast(e.message || 'Provision failed (deploy cms-provision function)', 'error')
     } finally {
-      setLoading(false)
-    }
-  }, [module, page, search, toast])
-
-  useEffect(() => { load(0, module, search) }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleRestore(id) {
-    if (!window.confirm('Restore this record to the live database?')) return
-    setBusyId(id)
-    try {
-      await restoreRecycleBinItem(id, profile)
-      toast('Record restored from snapshot', 'success')
-      await load(page, module, search)
-    } catch (e) {
-      toast(e.message || 'Restore failed', 'error')
-    } finally {
-      setBusyId(null)
+      setProvRunning(false)
     }
   }
 
-  async function handlePurge(id) {
-    if (!window.confirm('Permanently discard this snapshot? It cannot be restored later.')) return
-    setBusyId(id)
-    try {
-      await purgeRecycleBinItem(id, profile)
-      toast('Snapshot purged', 'success')
-      await load(page, module, search)
-    } catch (e) {
-      toast(e.message || 'Purge failed', 'error')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function handlePurgeAll() {
-    if (!window.confirm('Permanently discard ALL snapshots in the recycle bin?')) return
-    setBusyId('all')
-    try {
-      const n = await purgeAllRecycleBin(profile)
-      toast(`Purged ${n} snapshot(s)`, 'success')
-      await load(0, module, search)
-    } catch (e) {
-      toast(e.message || 'Purge failed', 'error')
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const driveOk = !!(settings?.drive_folder_id || driveFolderId.trim())
 
   return (
-    <div>
-      <div style={{
-        padding: 14, borderRadius: 10, marginBottom: 16,
-        background: '#f0fdfa', border: '1px solid #99f6e4',
-        fontSize: 12, color: '#115e59', lineHeight: 1.5,
-      }}>
-        When a record is deleted (events, receipts, assets, etc.), a snapshot is kept here so you can restore it.
-        Members already use the dedicated{' '}
-        <button
-          type="button"
-          onClick={() => navigate('/deleted-members')}
-          style={{ background: 'none', border: 'none', color: '#0f766e', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}
-        >
-          Deleted Members
-        </button>{' '}
-        page.
+    <div style={{ padding: '20px 24px 48px', maxWidth: 960, margin: '0 auto', fontFamily: 'var(--font-ui)' }}>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>
+          Backup &amp; Restore
+        </h1>
+        <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
+          Super Admin only. Backups and snapshots are stored in Google Drive. Use New Setup when deploying a church to a new Supabase project.
+        </p>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          border: '1px solid var(--card-border)', borderRadius: 8,
-          padding: '6px 10px', background: 'var(--card-bg)', flex: '1 1 200px',
-        }}>
-          <Search size={14} color="var(--text-3)" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') load(0, module, search) }}
-            placeholder="Search label, id, table…"
-            style={{ border: 'none', outline: 'none', flex: 1, fontSize: 12, background: 'transparent', color: 'var(--text-1)', fontFamily: 'var(--font-ui)' }}
-          />
+      {/* 1. Google Drive */}
+      <Section
+        title="Google Drive"
+        icon={Cloud}
+        subtitle="Save this church’s Drive folder ID. All Full Backups and Snapshots are stored only here."
+      >
+        <div style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
+          <div>
+            <label style={labelStyle}>Google Drive folder ID</label>
+            <input
+              style={inputStyle}
+              value={driveFolderId}
+              onChange={(e) => setDriveFolderId(e.target.value)}
+              placeholder="e.g. 1aBcD... from the folder URL"
+              autoComplete="off"
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" className="action-btn" style={{ gap: 6, fontSize: 12, padding: '8px 14px' }} disabled={savingDrive} onClick={handleSaveDrive}>
+              {savingDrive ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+              Save folder ID
+            </button>
+            <span style={{
+              fontSize: 12, fontWeight: 600,
+              color: driveOk ? '#047857' : '#b45309',
+            }}>
+              {driveOk ? 'Drive folder configured' : 'Not configured yet'}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            Share the folder with your Google service-account email. Set Edge Function secret <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>.
+          </p>
         </div>
-        <select
-          value={module}
-          onChange={(e) => { setModule(e.target.value); load(0, e.target.value, search) }}
-          style={{
-            fontSize: 12, padding: '7px 10px', borderRadius: 8,
-            border: '1px solid var(--card-border)', background: 'var(--card-bg)',
-            color: 'var(--text-1)', fontFamily: 'var(--font-ui)',
-          }}
-        >
-          {RECYCLE_MODULES.map((m) => (
-            <option key={m.value || 'all'} value={m.value}>{m.label}</option>
+      </Section>
+
+      {/* 2. Full Backup */}
+      <Section
+        title="Full Backup"
+        icon={Database}
+        subtitle="Complete safety copy for crash recovery or moving to a new Supabase project. Automatic daily + manual."
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="action-btn"
+            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            disabled={runningFull || !driveOk}
+            onClick={() => handleRun('full')}
+          >
+            {runningFull ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
+            {runningFull ? 'Backing up…' : 'Run Full Backup now'}
+          </button>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
+            <input
+              type="checkbox"
+              checked={!!settings?.full_auto_enabled}
+              disabled={savingAuto || !settings}
+              onChange={(e) => handleSaveAuto({ full_auto_enabled: e.target.checked })}
+            />
+            Automatic daily (default 2:00 AM IST)
+          </label>
+          <button type="button" className="action-btn" style={secondaryBtn} onClick={loadLogs}>
+            <RefreshCw size={13} /> Refresh
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <History size={14} color="var(--text-3)" />
+          <strong style={{ fontSize: 12 }}>Full Backup history</strong>
+        </div>
+        <LogTable rows={fullLogs} loading={loadingLogs} empty="No full backups yet" />
+        <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+          Restore: open the Drive file, then use New Setup / restore tooling on the target project. A one-click restore will replace live data — use Snapshots for “back to yesterday”.
+        </p>
+      </Section>
+
+      {/* 3. Snapshot */}
+      <Section
+        title="Snapshot"
+        icon={RotateCcw}
+        subtitle="Dated restore points so you can roll the church back (e.g. to yesterday) if wrong entries were made."
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="action-btn"
+            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            disabled={runningSnap || !driveOk}
+            onClick={() => handleRun('snapshot')}
+          >
+            {runningSnap ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
+            {runningSnap ? 'Taking snapshot…' : 'Take Snapshot now'}
+          </button>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
+            <input
+              type="checkbox"
+              checked={!!settings?.snapshot_auto_enabled}
+              disabled={savingAuto || !settings}
+              onChange={(e) => handleSaveAuto({ snapshot_auto_enabled: e.target.checked })}
+            />
+            Automatic nightly (default 1:00 AM IST)
+          </label>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <History size={14} color="var(--text-3)" />
+          <strong style={{ fontSize: 12 }}>Snapshot restore points</strong>
+        </div>
+        <LogTable rows={snapLogs} loading={loadingLogs} empty="No snapshots yet" />
+        <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+          Restoring a snapshot replaces current data with that day’s copy. Keep automatic snapshots on for treasurer “back to yesterday” recovery.
+        </p>
+      </Section>
+
+      {/* 4. New Setup / Upgrade */}
+      <Section
+        title="New Setup / Upgrade"
+        icon={Settings2}
+        subtitle="Prepare a NEW Supabase project for a church, or upgrade bootstrap on an existing one. Credentials are used once and not stored."
+      >
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          {['initialize', 'upgrade'].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setProv((p) => ({ ...p, mode: m }))}
+              style={{
+                ...secondaryBtn,
+                fontWeight: prov.mode === m ? 800 : 500,
+                borderColor: prov.mode === m ? '#0f766e' : 'var(--card-border)',
+                background: prov.mode === m ? '#f0fdfa' : 'var(--card-bg)',
+              }}
+              className="action-btn"
+            >
+              {m === 'initialize' ? 'Initialize (new church)' : 'Upgrade'}
+            </button>
           ))}
-        </select>
-        <button type="button" className="action-btn" style={secondaryBtn} onClick={() => load(0, module, search)}>
-          <RefreshCw size={13} /> Search
-        </button>
-        <button
-          type="button"
-          className="action-btn"
-          style={{ ...secondaryBtn, color: '#b91c1c', borderColor: '#fecaca' }}
-          disabled={busyId === 'all' || !rows.length}
-          onClick={handlePurgeAll}
-        >
-          <Trash2 size={13} /> Purge all
-        </button>
-      </div>
+        </div>
 
-      <div style={{ overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: 10, background: 'var(--card-bg)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={thStyle}>Deleted</th>
-              <th style={thStyle}>Module</th>
-              <th style={thStyle}>Type</th>
-              <th style={thStyle}>Record</th>
-              <th style={thStyle}>Deleted by</th>
-              <th style={thStyle}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>Loading…</td></tr>
-            ) : !rows.length ? (
-              <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>No snapshots — deleted records will appear here</td></tr>
-            ) : rows.map((row) => (
-              <tr key={row.id}>
-                <td style={tdStyle}>{formatWhen(row.deleted_at)}</td>
-                <td style={tdStyle}>{labelize(row.module)}</td>
-                <td style={tdStyle}>{labelize(row.table_name)}</td>
-                <td style={tdStyle}>
-                  <div style={{ fontWeight: 600 }}>{row.record_label || row.record_id}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{row.record_id}</div>
-                </td>
-                <td style={tdStyle}>{row.deleted_by_email || '—'}</td>
-                <td style={tdStyle}>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      type="button"
-                      className="action-btn"
-                      style={{ ...secondaryBtn, color: '#047857', borderColor: '#a7f3d0' }}
-                      disabled={busyId === row.id}
-                      onClick={() => handleRestore(row.id)}
-                      title="Restore"
-                    >
-                      {busyId === row.id ? <Loader2 size={13} className="spin" /> : <Undo2 size={13} />}
-                      Restore
-                    </button>
-                    <button
-                      type="button"
-                      className="action-btn"
-                      style={{ ...secondaryBtn, color: '#b91c1c', borderColor: '#fecaca' }}
-                      disabled={busyId === row.id}
-                      onClick={() => handlePurge(row.id)}
-                      title="Purge forever"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {total > PAGE_SIZE && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, fontSize: 12, color: 'var(--text-3)' }}>
-          <span>{total} snapshot(s) · page {page + 1} / {pages}</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="action-btn" style={secondaryBtn} disabled={page <= 0} onClick={() => load(page - 1, module, search)}>Prev</button>
-            <button type="button" className="action-btn" style={secondaryBtn} disabled={page + 1 >= pages} onClick={() => load(page + 1, module, search)}>Next</button>
+        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Target SUPABASE_URL</label>
+            <input style={inputStyle} value={prov.supabaseUrl} onChange={(e) => setProv({ ...prov, supabaseUrl: e.target.value })} placeholder="https://xxxx.supabase.co" autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>ANON_KEY</label>
+            <input style={inputStyle} value={prov.anonKey} onChange={(e) => setProv({ ...prov, anonKey: e.target.value })} autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>SERVICE_ROLE_KEY</label>
+            <input style={inputStyle} value={prov.serviceRoleKey} onChange={(e) => setProv({ ...prov, serviceRoleKey: e.target.value })} autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>Database password</label>
+            <input style={{ ...inputStyle }} type="password" value={prov.dbPassword} onChange={(e) => setProv({ ...prov, dbPassword: e.target.value })} autoComplete="new-password" />
+          </div>
+          <div>
+            <label style={labelStyle}>Google Drive folder ID (optional)</label>
+            <input style={inputStyle} value={prov.driveFolderId} onChange={(e) => setProv({ ...prov, driveFolderId: e.target.value })} autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>Super Admin email {prov.mode === 'upgrade' ? '(optional)' : ''}</label>
+            <input style={inputStyle} value={prov.superAdminEmail} onChange={(e) => setProv({ ...prov, superAdminEmail: e.target.value })} autoComplete="off" />
+          </div>
+          <div>
+            <label style={labelStyle}>Super Admin password {prov.mode === 'upgrade' ? '(optional)' : ''}</label>
+            <input style={inputStyle} type="password" value={prov.superAdminPassword} onChange={(e) => setProv({ ...prov, superAdminPassword: e.target.value })} autoComplete="new-password" />
           </div>
         </div>
-      )}
+
+        <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="action-btn"
+            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            disabled={provRunning}
+            onClick={handleProvision}
+          >
+            {provRunning ? <Loader2 size={14} className="spin" /> : <Settings2 size={14} />}
+            {provRunning ? 'Working…' : (prov.mode === 'initialize' ? 'Initialize church project' : 'Run Upgrade')}
+          </button>
+        </div>
+
+        {provResult && (
+          <div style={{
+            marginTop: 14, padding: 12, borderRadius: 8,
+            background: '#f0fdfa', border: '1px solid #99f6e4',
+            fontSize: 12, color: '#115e59', lineHeight: 1.5,
+          }}>
+            <strong>Done ({provResult.mode})</strong>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {(provResult.steps || []).map((s, i) => <li key={i}>{s}</li>)}
+            </ul>
+            {provResult.next?.length > 0 && (
+              <>
+                <strong style={{ display: 'block', marginTop: 8 }}>Next</strong>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {provResult.next.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+
+        <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+          Initialize creates bootstrap tables, storage buckets, and your Super Admin on the <em>target</em> project.
+          Run the full <code>supabase/migrations</code> SQL on that project (or Upgrade with extra SQL) so it matches this CMS version, then point the website at the new URL + anon key.
+        </p>
+      </Section>
     </div>
   )
 }
