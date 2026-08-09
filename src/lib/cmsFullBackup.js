@@ -345,10 +345,25 @@ export async function diagnoseBackupSetup() {
     out.hints.push(
       'cms-full-backup is OLD (no complete_backup). Paste the latest index.ts from the repo and redeploy.',
     )
+  } else if (!out.backupFn.data?.chunked && !(out.backupFn.data?.supports || []).includes('backup_continue')) {
+    out.hints.push(
+      `cms-full-backup version ${out.backupFn.data?.version || '?'} is complete but NOT chunked — redeploy latest to avoid timeout after a few photos.`,
+    )
   } else {
-    out.hints.push(`cms-full-backup OK (version ${out.backupFn.data?.version || '?'})`)
+    out.hints.push(`cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked)`)
   }
   out.hints.push('For restore truncate: run SQL 20260809_cms_complete_backup.sql')
+  out.hints.push('For progress %: run SQL 20260809_cms_backup_progress.sql')
+
+  // Include last backup debug trail if present
+  try {
+    const { rows } = await listBackupLogs({ kind: 'full', pageSize: 1 })
+    const last = rows[0]
+    if (last?.meta?.debug) {
+      out.lastBackupDebug = last.meta.debug.slice(-30)
+      out.lastBackupDebugHint = last.meta.last_debug || null
+    }
+  } catch (_) {}
   return out
 }
 
@@ -456,10 +471,10 @@ export async function runDriveBackup({
     console.warn('[cms-backup] could not create progress log (run SQL cms_backup_progress?)', e)
   }
 
-  // Complete backup (all tables + all storage files) via Edge Function → Google Drive folder
+  // Complete backup via Edge Function (chunked storage uploads to avoid timeouts)
   try {
-    report(1, 'Calling Edge Function…')
-    const invoked = await invokeEdgeFunction('cms-full-backup', {
+    report(1, 'Calling Edge Function (chunk 1)…')
+    let invoked = await invokeEdgeFunction('cms-full-backup', {
       kind,
       trigger_mode: triggerMode,
       drive_folder_id: settings.drive_folder_id.trim(),
@@ -467,25 +482,87 @@ export async function runDriveBackup({
       actor_name: actor?.full_name || actor?.name || null,
       progress_log_id: progressLogId,
     })
-    if (pollTimer) clearInterval(pollTimer)
-    pollTimer = null
 
     if (invoked.ok && invoked.data && !invoked.data.error) {
       if (!invoked.data.complete) {
         throw new Error(
           'Edge Function cms-full-backup is still the OLD version (DB JSON only). ' +
-          'Redeploy the COMPLETE function from the repo (creates a Drive folder with database.json + storage/ + manifest.json). ' +
-          'After redeploy, Run Complete Full Backup again.',
+          'Redeploy the COMPLETE chunked function from the repo, then try again.',
         )
       }
-      report(100, invoked.data.status === 'partial' ? 'Finished with partial status' : 'Complete', invoked.data.status || 'success')
-      return { ...invoked.data, via: 'drive', progress_log_id: progressLogId }
-    }
-    if (invoked.missing) {
+
+      // Continue chunks until storage uploads finish
+      let guard = 0
+      while (invoked.data.continue && guard < 500) {
+        guard += 1
+        const remaining = invoked.data.pending_remaining
+        report(
+          invoked.data.chunk
+            ? (48 + Math.min(42, Math.round(((invoked.data.storage_file_count || 0) /
+              Math.max((invoked.data.storage_file_count || 0) + (remaining || 1), 1)) * 42)))
+            : 60,
+          remaining != null
+            ? `Continuing storage upload (chunk ${guard + 1}) — ${remaining} file(s) left…`
+            : `Continuing storage upload (chunk ${guard + 1})…`,
+        )
+        invoked = await invokeEdgeFunction('cms-full-backup', {
+          action: 'backup_continue',
+          phase: 'continue',
+          progress_log_id: progressLogId || invoked.data.progress_log_id,
+          actor_email: actor?.email || null,
+        })
+        if (!invoked.ok || invoked.data?.error) {
+          driveErrorMsg = friendlyDriveError(invoked.errorMessage || invoked.data?.error || 'Continue chunk failed')
+          break
+        }
+      }
+
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = null
+
+      if (invoked.ok && invoked.data && !invoked.data.error && invoked.data.done !== false && !invoked.data.continue) {
+        report(100, invoked.data.status === 'partial' ? 'Finished with partial status' : 'Complete', invoked.data.status || 'success')
+        return { ...invoked.data, via: 'drive', progress_log_id: progressLogId, chunks: guard + 1 }
+      }
+
+      if (invoked.ok && invoked.data?.continue) {
+        driveErrorMsg = 'Backup stopped while more storage files remained (chunk limit). Click Run again to resume, or check Debug trail on the history row.'
+      } else if (!driveErrorMsg) {
+        driveErrorMsg = friendlyDriveError(invoked.errorMessage || invoked.data?.error || 'Backup did not finish')
+      }
+    } else if (invoked.missing) {
       driveErrorMsg = null
     } else {
       driveErrorMsg = friendlyDriveError(invoked.errorMessage || invoked.data?.error || 'Backup failed')
-      if (progressLogId) {
+    }
+
+    // If a Drive folder was already created, do NOT overwrite with local JSON
+    if (progressLogId) {
+      const { data: row } = await supabase
+        .from('cms_backup_log')
+        .select('meta, drive_file_id, download_filename, progress_message, progress_pct, status')
+        .eq('id', progressLogId)
+        .maybeSingle()
+      if (row?.meta?.drive_backup_folder_id || row?.meta?.chunked) {
+        const msg = driveErrorMsg || 'Backup interrupted after Drive folder was created'
+        await supabase.from('cms_backup_log').update({
+          status: 'partial',
+          progress_pct: row.progress_pct ?? 90,
+          progress_message: msg,
+          error_message: msg,
+          meta: {
+            ...(row.meta || {}),
+            interrupted: true,
+            interrupt_error: msg,
+          },
+        }).eq('id', progressLogId)
+        if (pollTimer) clearInterval(pollTimer)
+        throw new Error(
+          `${msg}. Open Debug on Backup page / history meta.debug to see the last file. ` +
+          'Redeploy chunked cms-full-backup if needed, then Run again (it can continue from the same progress log if still running).',
+        )
+      }
+      if (driveErrorMsg) {
         await supabase.from('cms_backup_log').update({
           status: 'failed',
           progress_pct: 100,
@@ -498,19 +575,13 @@ export async function runDriveBackup({
     if (pollTimer) clearInterval(pollTimer)
     pollTimer = null
     console.error('[cms-backup] runDriveBackup exception', e)
+    if (/interrupted|Drive folder|OLD version|Connect Google|folder ID|chunk/i.test(e.message || '')) {
+      throw e
+    }
     if (isFunctionMissingError(e, null) || /failed to send/i.test(e.message || '')) {
       driveErrorMsg = null
     } else {
       driveErrorMsg = friendlyDriveError(e.message || String(e))
-      if (progressLogId) {
-        await supabase.from('cms_backup_log').update({
-          status: 'failed',
-          progress_pct: 100,
-          progress_message: driveErrorMsg,
-          error_message: driveErrorMsg,
-        }).eq('id', progressLogId)
-      }
-      // Re-throw clear "old version" / config errors instead of silent local fallback
       if (/OLD version|Connect Google|folder ID/i.test(driveErrorMsg || '')) {
         throw new Error(driveErrorMsg)
       }

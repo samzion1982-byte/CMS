@@ -411,6 +411,7 @@ function LogTable({ rows, loading, empty, restoringId, onRestore }) {
             const isComplete = isCompleteBackupLog(row)
             const canRestore = !!folderId && (row.status === 'success' || row.status === 'partial')
             const busy = restoringId === row.id
+            const debugTail = Array.isArray(row?.meta?.debug) ? row.meta.debug.slice(-3) : []
             return (
               <tr key={row.id}>
                 <td style={tdStyle}>{formatWhen(row.created_at)}</td>
@@ -431,7 +432,16 @@ function LogTable({ rows, loading, empty, restoringId, onRestore }) {
                     </a>
                   ) : row.drive_file_id ? 'Yes' : '—'}
                 </td>
-                <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>{row.download_filename || '—'}</td>
+                <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>
+                  <div>{row.download_filename || '—'}</div>
+                  {debugTail.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 10, color: '#0e7490', lineHeight: 1.35 }}>
+                      last: {debugTail[debugTail.length - 1]?.step}
+                      {debugTail[debugTail.length - 1]?.file ? ` · ${debugTail[debugTail.length - 1].file}` : ''}
+                      {debugTail[debugTail.length - 1]?.error ? ` · ${debugTail[debugTail.length - 1].error}` : ''}
+                    </div>
+                  )}
+                </td>
                 <td style={tdStyle}>
                   <button
                     type="button"

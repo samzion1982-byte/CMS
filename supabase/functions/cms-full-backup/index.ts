@@ -24,7 +24,11 @@ const CORS = {
 }
 
 const PAGE = 1000
-const COMPLETE_VERSION = 2
+const COMPLETE_VERSION = 3
+/** Soft time budget per Edge invoke so we return before platform kill (~60–150s). */
+const CHUNK_BUDGET_MS = 40_000
+const MAX_FILES_PER_CHUNK = 6
+const DEBUG_MAX = 100
 
 const FALLBACK_TABLES = [
   'churches', 'church_zones', 'profiles', 'cms_role_page_access', 'cms_user_passwords',
@@ -544,7 +548,377 @@ async function setProgress(logId, pct, message, extra = {}) {
   if (error) console.warn('progress update failed', error.message)
 }
 
+async function appendDebug(logId, step, detail = {}) {
+  const line = {
+    t: new Date().toISOString(),
+    step,
+    ...detail,
+  }
+  console.log('[cms-full-backup]', step, detail)
+  if (!logId) return
+  try {
+    const { data } = await supabase.from('cms_backup_log').select('meta').eq('id', logId).maybeSingle()
+    const meta = data?.meta && typeof data.meta === 'object' ? { ...data.meta } : {}
+    const debug = Array.isArray(meta.debug) ? meta.debug.slice(-(DEBUG_MAX - 1)) : []
+    debug.push(line)
+    meta.debug = debug
+    meta.last_debug = line
+    await supabase.from('cms_backup_log').update({ meta }).eq('id', logId)
+  } catch (e) {
+    console.warn('appendDebug failed', e?.message || e)
+  }
+}
+
+async function loadProgressLog(logId) {
+  const { data, error } = await supabase.from('cms_backup_log').select('*').eq('id', logId).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error(`progress log not found: ${logId}`)
+  return data
+}
+
+async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startIndex, onProgress, logId) {
+  const started = Date.now()
+  const storageMeta = []
+  const skipped = []
+  let totalBytes = 0
+  let fileCount = 0
+  let i = startIndex
+  const total = pendingFiles.length || 1
+
+  const storageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
+  const bucketFolderCache = {}
+
+  while (i < pendingFiles.length) {
+    if (fileCount >= MAX_FILES_PER_CHUNK || (Date.now() - started) > CHUNK_BUDGET_MS) {
+      await appendDebug(logId, 'chunk_budget_hit', {
+        uploaded_this_chunk: fileCount,
+        next_index: i,
+        remaining: pendingFiles.length - i,
+        elapsed_ms: Date.now() - started,
+      })
+      break
+    }
+
+    const file = pendingFiles[i]
+    const label = `${file.bucket}/${file.path}`
+    try {
+      await appendDebug(logId, 'storage_upload_start', { index: i + 1, total: pendingFiles.length, file: label })
+      if (onProgress) {
+        const pct = 48 + Math.round(((i + 1) / total) * 42)
+        await onProgress(pct, `Uploading storage ${i + 1}/${pendingFiles.length}: ${label}`)
+      }
+
+      const { data: blob, error: dlErr } = await supabase.storage.from(file.bucket).download(file.path)
+      if (dlErr || !blob) {
+        skipped.push(`${label}: ${dlErr?.message || 'empty'}`)
+        await appendDebug(logId, 'storage_download_fail', { file: label, error: dlErr?.message || 'empty' })
+        i += 1
+        continue
+      }
+
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      const mime = file.mime || blob.type || 'application/octet-stream'
+      if (!bucketFolderCache[file.bucket]) {
+        bucketFolderCache[file.bucket] = await findOrCreateNamedFolder(accessToken, storageRoot.id, file.bucket)
+      }
+      const bucketFolder = bucketFolderCache[file.bucket]
+      const parts = file.path.split('/')
+      const fileName = parts.pop()
+      const parentPath = parts.join('/')
+      const parentId = parentPath
+        ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
+        : bucketFolder.id
+
+      const uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
+      storageMeta.push({
+        bucket: file.bucket,
+        path: file.path,
+        size: bytes.length,
+        mime,
+        drive_file_id: uploaded.id,
+      })
+      totalBytes += bytes.length
+      fileCount += 1
+      await appendDebug(logId, 'storage_upload_ok', {
+        index: i + 1,
+        file: label,
+        bytes: bytes.length,
+        drive_file_id: uploaded.id,
+      })
+    } catch (e) {
+      skipped.push(`${label}: ${e.message || e}`)
+      await appendDebug(logId, 'storage_upload_error', { file: label, error: e.message || String(e) })
+    }
+    i += 1
+  }
+
+  return {
+    nextIndex: i,
+    storageMeta,
+    skipped,
+    totalBytes,
+    fileCount,
+    done: i >= pendingFiles.length,
+    elapsed_ms: Date.now() - started,
+  }
+}
+
+async function finalizeBackup(progressLogId, state, authVia, onProgress) {
+  const {
+    accessToken,
+    runFolder,
+    built,
+    dbFile,
+    dbBytesLen,
+    storageMeta,
+    skipped,
+    storageBytes,
+    storageBuckets,
+    kind,
+    triggerMode,
+    actorEmail,
+    actorName,
+  } = state
+
+  await onProgress(93, 'Writing manifest.json…')
+  await appendDebug(progressLogId, 'manifest_start', { files: storageMeta.length })
+
+  const manifest = {
+    format: 'cms-complete-backup',
+    version: COMPLETE_VERSION,
+    kind,
+    created_at: new Date().toISOString(),
+    drive_folder_id: runFolder.id,
+    drive_folder_name: runFolder.name,
+    auth_via: authVia,
+    database: {
+      file_id: dbFile.id,
+      file_name: 'database.json',
+      bytes: dbBytesLen,
+      tables: built.tablesCount,
+      rows: built.rowsCount,
+      summary: built.summary,
+    },
+    storage: {
+      file_count: storageMeta.length,
+      bytes: storageBytes,
+      buckets: storageBuckets,
+      files: storageMeta,
+      skipped,
+    },
+    total_bytes: dbBytesLen + storageBytes,
+  }
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2))
+  const manifestFile = await driveUploadBytes(
+    accessToken,
+    runFolder.id,
+    'manifest.json',
+    manifestBytes,
+    'application/json',
+  )
+
+  const totalBytes = dbBytesLen + storageBytes
+  const status = skipped.length && !storageMeta.length && built.tablesCount === 0
+    ? 'failed'
+    : (skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
+
+  const finalMessage = status === 'success'
+    ? `Complete: ${built.tablesCount} tables, ${storageMeta.length} files`
+    : status === 'partial'
+      ? `Partial: ${built.tablesCount} tables, ${storageMeta.length} files (${skipped.length} storage issues)`
+      : 'Backup failed'
+
+  const { data: existing } = await supabase.from('cms_backup_log').select('meta').eq('id', progressLogId).maybeSingle()
+  const prevMeta = existing?.meta && typeof existing.meta === 'object' ? existing.meta : {}
+
+  const finalRow = {
+    backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
+    kind,
+    trigger_mode: triggerMode,
+    status,
+    progress_pct: 100,
+    progress_message: finalMessage,
+    tables_count: built.tablesCount,
+    rows_count: built.rowsCount,
+    file_size_bytes: totalBytes,
+    drive_file_id: runFolder.id,
+    drive_web_link: runFolder.webViewLink || null,
+    download_filename: runFolder.name,
+    error_message: [
+      ...built.summary.filter((s) => s.status === 'error' || s.status === 'skipped').map((s) => `${s.table}: ${s.error || s.status}`),
+      ...skipped.slice(0, 15),
+    ].slice(0, 20).join(' | ') || null,
+    meta: {
+      ...prevMeta,
+      complete: true,
+      version: COMPLETE_VERSION,
+      chunked: true,
+      pending_files: [],
+      file_index: storageMeta.length,
+      drive_backup_folder_id: runFolder.id,
+      drive_backup_folder_name: runFolder.name,
+      drive_manifest_file_id: manifestFile.id,
+      drive_database_file_id: dbFile.id,
+      database_bytes: dbBytesLen,
+      storage_bytes: storageBytes,
+      storage_file_count: storageMeta.length,
+      storage_buckets: storageBuckets,
+      storage_files: storageMeta,
+      summary: built.summary,
+      skipped_storage: skipped,
+      auth_via: authVia,
+    },
+    created_by_email: actorEmail,
+    created_by_name: actorName || null,
+  }
+
+  if (progressLogId) {
+    await supabase.from('cms_backup_log').update(finalRow).eq('id', progressLogId)
+  } else {
+    await supabase.from('cms_backup_log').insert(finalRow)
+  }
+
+  await appendDebug(progressLogId, 'backup_finalized', { status, files: storageMeta.length, bytes: totalBytes })
+
+  return {
+    ok: true,
+    status,
+    kind,
+    complete: true,
+    done: true,
+    continue: false,
+    version: COMPLETE_VERSION,
+    progress_log_id: progressLogId,
+    filename: runFolder.name,
+    folder_id: runFolder.id,
+    drive_file_id: runFolder.id,
+    drive_web_link: runFolder.webViewLink || null,
+    tables_count: built.tablesCount,
+    rows_count: built.rowsCount,
+    file_size_bytes: totalBytes,
+    database_bytes: dbBytesLen,
+    storage_bytes: storageBytes,
+    storage_file_count: storageMeta.length,
+    skipped_storage: skipped,
+  }
+}
+
+async function continueCompleteBackup(body) {
+  const progressLogId = body.progress_log_id || body.log_id
+  if (!progressLogId) throw new Error('progress_log_id required to continue backup')
+
+  const log = await loadProgressLog(progressLogId)
+  const meta = log.meta && typeof log.meta === 'object' ? log.meta : {}
+  if (!meta.drive_backup_folder_id) {
+    throw new Error('Cannot continue: no Drive folder on this backup log. Start a new Complete Backup.')
+  }
+
+  const onProgress = async (pct, message) => setProgress(progressLogId, pct, message, { status: 'running' })
+  await appendDebug(progressLogId, 'continue_start', {
+    file_index: meta.file_index || 0,
+    pending: (meta.pending_files || []).length,
+  })
+
+  const { accessToken, via: authVia } = await resolveAccessToken()
+  const pendingFiles = Array.isArray(meta.pending_files) ? meta.pending_files : []
+  const startIndex = Number(meta.file_index || 0)
+  const prevMetaFiles = Array.isArray(meta.storage_files) ? meta.storage_files : []
+  const prevSkipped = Array.isArray(meta.skipped_storage) ? meta.skipped_storage : []
+
+  const batch = await uploadStorageBatch(
+    accessToken,
+    meta.drive_backup_folder_id,
+    pendingFiles,
+    startIndex,
+    onProgress,
+    progressLogId,
+  )
+
+  const storageMeta = [...prevMetaFiles, ...batch.storageMeta]
+  const skipped = [...prevSkipped, ...batch.skipped]
+  const storageBytes = (Number(meta.storage_bytes) || 0) + batch.totalBytes
+
+  const nextMeta = {
+    ...meta,
+    file_index: batch.nextIndex,
+    storage_files: storageMeta,
+    skipped_storage: skipped,
+    storage_bytes: storageBytes,
+    storage_file_count: storageMeta.length,
+    last_chunk: {
+      uploaded: batch.fileCount,
+      next_index: batch.nextIndex,
+      done: batch.done,
+      elapsed_ms: batch.elapsed_ms,
+    },
+  }
+
+  await supabase.from('cms_backup_log').update({
+    status: 'running',
+    meta: nextMeta,
+    progress_message: batch.done
+      ? 'Storage done — finalizing…'
+      : `Storage ${batch.nextIndex}/${pendingFiles.length} uploaded (chunked)…`,
+    progress_pct: batch.done ? 92 : (48 + Math.round((batch.nextIndex / Math.max(pendingFiles.length, 1)) * 42)),
+  }).eq('id', progressLogId)
+
+  if (!batch.done) {
+    await appendDebug(progressLogId, 'continue_more', {
+      next_index: batch.nextIndex,
+      remaining: pendingFiles.length - batch.nextIndex,
+    })
+    return {
+      ok: true,
+      complete: true,
+      done: false,
+      continue: true,
+      version: COMPLETE_VERSION,
+      progress_log_id: progressLogId,
+      status: 'running',
+      storage_file_count: storageMeta.length,
+      pending_remaining: pendingFiles.length - batch.nextIndex,
+      chunk: batch,
+    }
+  }
+
+  // Rebuild state for finalize from meta + Drive
+  const runFolder = {
+    id: meta.drive_backup_folder_id,
+    name: meta.drive_backup_folder_name || log.download_filename,
+    webViewLink: log.drive_web_link,
+  }
+  const built = {
+    tablesCount: log.tables_count || meta.summary?.filter?.((s) => s.status === 'ok')?.length || 0,
+    rowsCount: log.rows_count || 0,
+    summary: meta.summary || [],
+  }
+  const dbFile = { id: meta.drive_database_file_id }
+  const kind = log.kind === 'snapshot' ? 'snapshot' : 'full'
+  const triggerMode = log.trigger_mode === 'automatic' ? 'automatic' : 'manual'
+
+  return finalizeBackup(progressLogId, {
+    accessToken,
+    runFolder,
+    built,
+    dbFile,
+    dbBytesLen: Number(meta.database_bytes) || 0,
+    storageMeta,
+    skipped,
+    storageBytes,
+    storageBuckets: meta.storage_buckets || [],
+    kind,
+    triggerMode,
+    actorEmail: log.created_by_email,
+    actorName: log.created_by_name,
+  }, authVia, onProgress)
+}
+
 async function runCompleteBackup(body) {
+  // Resume path
+  if (body.action === 'backup_continue' || body.phase === 'continue') {
+    return continueCompleteBackup(body)
+  }
+
   const kind = body.kind === 'snapshot' ? 'snapshot' : 'full'
   const triggerMode = body.trigger_mode === 'automatic' ? 'automatic' : 'manual'
   const actorEmail = body.actor_email || (triggerMode === 'automatic' ? 'cron' : null)
@@ -565,132 +939,182 @@ async function runCompleteBackup(body) {
   const onProgress = async (pct, message) => setProgress(progressLogId, pct, message)
 
   try {
+    await appendDebug(progressLogId, 'backup_start', { kind, triggerMode, version: COMPLETE_VERSION })
     await onProgress(2, 'Connecting to Google Drive…')
     const { accessToken, via: authVia } = await resolveAccessToken()
+    await appendDebug(progressLogId, 'google_auth_ok', { via: authVia })
 
     await onProgress(4, 'Creating Drive backup folder…')
     const runName = runFolderName(kind)
     const runFolder = await driveCreateFolder(accessToken, runName, folderId)
+    await appendDebug(progressLogId, 'drive_folder_created', { id: runFolder.id, name: runFolder.name })
 
     const built = await buildDatabaseDump(kind, triggerMode, actorEmail, onProgress)
+    await appendDebug(progressLogId, 'db_dump_done', { tables: built.tablesCount, rows: built.rowsCount })
 
     await onProgress(42, `Uploading database.json (${built.tablesCount} tables, ${built.rowsCount} rows)…`)
     const dbJson = JSON.stringify(built.payload)
     const dbBytes = new TextEncoder().encode(dbJson)
     const dbFile = await driveUploadBytes(accessToken, runFolder.id, 'database.json', dbBytes, 'application/json')
+    await appendDebug(progressLogId, 'database_json_uploaded', { bytes: dbBytes.length, file_id: dbFile.id })
 
-    await onProgress(45, 'Starting storage file upload…')
-    const storage = await backupStorageToDrive(accessToken, runFolder.id, onProgress)
-
-    await onProgress(93, 'Writing manifest.json…')
-    const manifest = {
-      format: 'cms-complete-backup',
-      version: COMPLETE_VERSION,
-      kind,
-      created_at: new Date().toISOString(),
-      drive_folder_id: runFolder.id,
-      drive_folder_name: runFolder.name,
-      auth_via: authVia,
-      database: {
-        file_id: dbFile.id,
-        file_name: 'database.json',
-        bytes: dbBytes.length,
-        tables: built.tablesCount,
-        rows: built.rowsCount,
-        summary: built.summary,
-      },
-      storage: {
-        file_count: storage.fileCount,
-        bytes: storage.totalBytes,
-        buckets: storage.buckets,
-        files: storage.storageMeta,
-        skipped: storage.skipped,
-      },
-      total_bytes: dbBytes.length + storage.totalBytes,
+    await onProgress(45, 'Listing storage files…')
+    const { data: buckets, error: bucketErr } = await supabase.storage.listBuckets()
+    if (bucketErr) throw new Error(`listBuckets: ${bucketErr.message}`)
+    const bucketNames = (buckets || []).map((b) => b.name).filter((n) => n !== 'cms-backups')
+    for (const known of KNOWN_BUCKETS) {
+      if (!bucketNames.includes(known)) bucketNames.push(known)
     }
-    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2))
-    const manifestFile = await driveUploadBytes(
-      accessToken,
-      runFolder.id,
-      'manifest.json',
-      manifestBytes,
-      'application/json',
-    )
 
-    const totalBytes = dbBytes.length + storage.totalBytes
-    const status = storage.skipped.length && !storage.fileCount && built.tablesCount === 0
-      ? 'failed'
-      : (storage.skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
+    const pendingFiles = []
+    const listSkipped = []
+    for (const bucket of bucketNames) {
+      try {
+        const files = await listAllStorageFiles(bucket)
+        await appendDebug(progressLogId, 'bucket_listed', { bucket, files: files.length })
+        for (const f of files) pendingFiles.push({ bucket, path: f.path, mime: f.mime, size: f.size })
+      } catch (e) {
+        listSkipped.push(`bucket ${bucket}: ${e.message || e}`)
+        await appendDebug(progressLogId, 'bucket_list_fail', { bucket, error: e.message || String(e) })
+      }
+    }
+    await appendDebug(progressLogId, 'storage_list_done', { total_files: pendingFiles.length, buckets: bucketNames.length })
 
-    const finalMessage = status === 'success'
-      ? `Complete: ${built.tablesCount} tables, ${storage.fileCount} files`
-      : status === 'partial'
-        ? `Partial: ${built.tablesCount} tables, ${storage.fileCount} files (${storage.skipped.length} storage issues)`
-        : 'Backup failed'
-
-    const finalRow = {
-      backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
-      kind,
-      trigger_mode: triggerMode,
-      status,
-      progress_pct: 100,
-      progress_message: finalMessage,
+    // Persist job state before first storage chunk (survives timeout)
+    await supabase.from('cms_backup_log').update({
+      status: 'running',
       tables_count: built.tablesCount,
       rows_count: built.rowsCount,
-      file_size_bytes: totalBytes,
       drive_file_id: runFolder.id,
       drive_web_link: runFolder.webViewLink || null,
       download_filename: runFolder.name,
-      error_message: [
-        ...built.summary.filter((s) => s.status === 'error' || s.status === 'skipped').map((s) => `${s.table}: ${s.error || s.status}`),
-        ...storage.skipped.slice(0, 15),
-      ].slice(0, 20).join(' | ') || null,
+      progress_pct: 47,
+      progress_message: `Uploading storage 0/${pendingFiles.length}…`,
       meta: {
         complete: true,
         version: COMPLETE_VERSION,
+        chunked: true,
         drive_backup_folder_id: runFolder.id,
         drive_backup_folder_name: runFolder.name,
-        drive_manifest_file_id: manifestFile.id,
         drive_database_file_id: dbFile.id,
         database_bytes: dbBytes.length,
-        storage_bytes: storage.totalBytes,
-        storage_file_count: storage.fileCount,
-        storage_buckets: storage.buckets,
         summary: built.summary,
-        skipped_storage: storage.skipped,
+        storage_buckets: bucketNames,
+        pending_files: pendingFiles,
+        file_index: 0,
+        storage_files: [],
+        skipped_storage: listSkipped,
+        storage_bytes: 0,
         auth_via: authVia,
       },
-      created_by_email: actorEmail,
-      created_by_name: body.actor_name || null,
+    }).eq('id', progressLogId)
+
+    if (!pendingFiles.length) {
+      return finalizeBackup(progressLogId, {
+        accessToken,
+        runFolder,
+        built,
+        dbFile,
+        dbBytesLen: dbBytes.length,
+        storageMeta: [],
+        skipped: listSkipped,
+        storageBytes: 0,
+        storageBuckets: bucketNames,
+        kind,
+        triggerMode,
+        actorEmail,
+        actorName: body.actor_name || null,
+      }, authVia, onProgress)
     }
 
-    if (progressLogId) {
-      await supabase.from('cms_backup_log').update(finalRow).eq('id', progressLogId)
-    } else {
-      await supabase.from('cms_backup_log').insert(finalRow)
+    const batch = await uploadStorageBatch(
+      accessToken,
+      runFolder.id,
+      pendingFiles,
+      0,
+      onProgress,
+      progressLogId,
+    )
+
+    const storageMeta = batch.storageMeta
+    const skipped = [...listSkipped, ...batch.skipped]
+
+    await supabase.from('cms_backup_log').update({
+      status: 'running',
+      progress_pct: batch.done ? 92 : (48 + Math.round((batch.nextIndex / pendingFiles.length) * 42)),
+      progress_message: batch.done
+        ? 'Storage done — finalizing…'
+        : `Storage ${batch.nextIndex}/${pendingFiles.length} (will continue in next chunk)…`,
+      meta: {
+        complete: true,
+        version: COMPLETE_VERSION,
+        chunked: true,
+        drive_backup_folder_id: runFolder.id,
+        drive_backup_folder_name: runFolder.name,
+        drive_database_file_id: dbFile.id,
+        database_bytes: dbBytes.length,
+        summary: built.summary,
+        storage_buckets: bucketNames,
+        pending_files: pendingFiles,
+        file_index: batch.nextIndex,
+        storage_files: storageMeta,
+        skipped_storage: skipped,
+        storage_bytes: batch.totalBytes,
+        storage_file_count: storageMeta.length,
+        auth_via: authVia,
+        last_chunk: {
+          uploaded: batch.fileCount,
+          next_index: batch.nextIndex,
+          done: batch.done,
+          elapsed_ms: batch.elapsed_ms,
+        },
+      },
+    }).eq('id', progressLogId)
+
+    if (!batch.done) {
+      await appendDebug(progressLogId, 'start_chunk_incomplete', {
+        next_index: batch.nextIndex,
+        remaining: pendingFiles.length - batch.nextIndex,
+      })
+      return {
+        ok: true,
+        complete: true,
+        done: false,
+        continue: true,
+        version: COMPLETE_VERSION,
+        progress_log_id: progressLogId,
+        status: 'running',
+        kind,
+        filename: runFolder.name,
+        folder_id: runFolder.id,
+        drive_file_id: runFolder.id,
+        drive_web_link: runFolder.webViewLink || null,
+        tables_count: built.tablesCount,
+        rows_count: built.rowsCount,
+        storage_file_count: storageMeta.length,
+        pending_remaining: pendingFiles.length - batch.nextIndex,
+        chunk: batch,
+      }
     }
 
-    return {
-      ok: true,
-      status,
+    return finalizeBackup(progressLogId, {
+      accessToken,
+      runFolder,
+      built,
+      dbFile,
+      dbBytesLen: dbBytes.length,
+      storageMeta,
+      skipped,
+      storageBytes: batch.totalBytes,
+      storageBuckets: bucketNames,
       kind,
-      complete: true,
-      version: COMPLETE_VERSION,
-      progress_log_id: progressLogId,
-      filename: runFolder.name,
-      folder_id: runFolder.id,
-      drive_file_id: runFolder.id,
-      drive_web_link: runFolder.webViewLink || null,
-      tables_count: built.tablesCount,
-      rows_count: built.rowsCount,
-      file_size_bytes: totalBytes,
-      database_bytes: dbBytes.length,
-      storage_bytes: storage.totalBytes,
-      storage_file_count: storage.fileCount,
-      skipped_storage: storage.skipped,
-    }
+      triggerMode,
+      actorEmail,
+      actorName: body.actor_name || null,
+    }, authVia, onProgress)
   } catch (e) {
     const message = (e && e.message) || String(e)
+    await appendDebug(progressLogId, 'backup_error', { error: message })
     if (progressLogId) {
       await setProgress(progressLogId, 100, `Failed: ${message}`, {
         status: 'failed',
@@ -1021,7 +1445,8 @@ serve(async (req) => {
         ok: true,
         complete_backup: true,
         version: COMPLETE_VERSION,
-        supports: ['backup', 'inspect', 'restore', 'progress'],
+        chunked: true,
+        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug'],
       })
     }
 
@@ -1032,6 +1457,11 @@ serve(async (req) => {
     if (body.action === 'restore') {
       const result = await runCompleteRestore(body, req)
       return json(result, result.status === 'failed' ? 500 : 200)
+    }
+
+    if (body.action === 'backup_continue' || body.phase === 'continue') {
+      const result = await continueCompleteBackup(body)
+      return json(result)
     }
 
     const result = await runCompleteBackup(body)
