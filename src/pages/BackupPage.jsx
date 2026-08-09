@@ -15,27 +15,38 @@ import {
   saveBackupSettings,
   startGoogleOAuthConnect,
   disconnectGoogleOAuth,
+  diagnoseBackupSetup,
 } from '../lib/cmsFullBackup'
 
 const secondaryBtn = {
   gap: 5,
   fontSize: 12,
   padding: '7px 12px',
-  background: 'var(--card-bg)',
-  color: 'var(--text-1)',
-  border: '1.5px solid var(--card-border)',
+  background: '#fff',
+  color: '#134e4a',
+  border: '1.5px solid #99f6e4',
   boxShadow: 'none',
+  borderRadius: 9,
+  fontWeight: 700,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
 }
 
-/** Primary actions — action-btn defaults to white text with no fill (invisible on light UI). */
+/** Primary actions — do not rely on .action-btn (white text, no fill). */
 const primaryBtn = {
   gap: 6,
   fontSize: 12,
   padding: '8px 14px',
   background: '#0f766e',
-  color: '#fff',
+  color: '#ffffff',
   border: 'none',
   boxShadow: 'none',
+  borderRadius: 9,
+  fontWeight: 700,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
 }
 
 const thStyle = {
@@ -184,6 +195,9 @@ export default function BackupPage() {
   const [savingDrive, setSavingDrive] = useState(false)
   const [connectingGoogle, setConnectingGoogle] = useState(false)
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false)
+  const [debugInfo, setDebugInfo] = useState(null)
+  const [debugging, setDebugging] = useState(false)
+  const [lastActionError, setLastActionError] = useState(null)
   const [savingAuto, setSavingAuto] = useState(false)
 
   const [fullLogs, setFullLogs] = useState([])
@@ -273,10 +287,14 @@ export default function BackupPage() {
 
   async function handleConnectGoogle() {
     setConnectingGoogle(true)
+    setLastActionError(null)
     try {
       await startGoogleOAuthConnect()
     } catch (e) {
-      toast(e.message || 'Could not start Google login (deploy cms-google-oauth + set OAuth secrets)', 'error')
+      const msg = e.message || 'Could not start Google login (deploy cms-google-oauth + set OAuth secrets)'
+      setLastActionError(msg)
+      console.error('[backup-ui] Connect Google failed', e)
+      toast(msg, 'error')
       setConnectingGoogle(false)
     }
   }
@@ -311,10 +329,12 @@ export default function BackupPage() {
   async function handleRun(kind) {
     const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
     setBusy(true)
+    setLastActionError(null)
     try {
       const r = await runDriveBackup({ kind, triggerMode: 'manual', actor: profile })
       if (r.via === 'local_download') {
         toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
+        if (r.message) setLastActionError(r.message)
       } else {
         toast(
           `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,
@@ -323,9 +343,28 @@ export default function BackupPage() {
       }
       await loadLogs()
     } catch (e) {
-      toast(e.message || 'Backup failed', 'error')
+      const msg = e.message || 'Backup failed'
+      setLastActionError(msg)
+      console.error('[backup-ui] run failed', e)
+      toast(msg, 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleDiagnose() {
+    setDebugging(true)
+    try {
+      const info = await diagnoseBackupSetup()
+      setDebugInfo(info)
+      console.log('[backup-ui] diagnose', info)
+      toast('Debug info updated (see Debug panel below)', 'success')
+    } catch (e) {
+      const msg = e.message || 'Diagnose failed'
+      setLastActionError(msg)
+      toast(msg, 'error')
+    } finally {
+      setDebugging(false)
     }
   }
 
@@ -352,7 +391,9 @@ export default function BackupPage() {
       setProvResult(r)
       toast(prov.mode === 'initialize' ? 'New Setup completed' : 'Upgrade completed', 'success')
     } catch (e) {
-      toast(e.message || 'Provision failed (deploy cms-provision function)', 'error')
+      const msg = e.message || 'Provision failed (deploy cms-provision function)'
+      setLastActionError(msg)
+      toast(msg, 'error')
     } finally {
       setProvRunning(false)
     }
@@ -406,7 +447,7 @@ export default function BackupPage() {
               {!googleConnected ? (
                 <button
                   type="button"
-                  className="action-btn"
+                  className="no-lift"
                   style={primaryBtn}
                   disabled={connectingGoogle}
                   onClick={handleConnectGoogle}
@@ -417,7 +458,7 @@ export default function BackupPage() {
               ) : (
                 <button
                   type="button"
-                  className="action-btn"
+                  className="no-lift"
                   style={secondaryBtn}
                   disabled={disconnectingGoogle}
                   onClick={handleDisconnectGoogle}
@@ -440,7 +481,7 @@ export default function BackupPage() {
             />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button type="button" className="action-btn" style={primaryBtn} disabled={savingDrive} onClick={handleSaveDrive}>
+            <button type="button" className="no-lift" style={primaryBtn} disabled={savingDrive} onClick={handleSaveDrive}>
               {savingDrive ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
               Save folder ID
             </button>
@@ -471,7 +512,7 @@ export default function BackupPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
           <button
             type="button"
-            className="action-btn"
+            className="no-lift"
             style={primaryBtn}
             disabled={runningFull || !backupReady}
             onClick={() => handleRun('full')}
@@ -488,7 +529,7 @@ export default function BackupPage() {
             />
             Automatic daily (default 2:00 AM IST)
           </label>
-          <button type="button" className="action-btn" style={secondaryBtn} onClick={loadLogs}>
+          <button type="button" className="no-lift" style={secondaryBtn} onClick={loadLogs}>
             <RefreshCw size={13} /> Refresh
           </button>
         </div>
@@ -511,7 +552,7 @@ export default function BackupPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
           <button
             type="button"
-            className="action-btn"
+            className="no-lift"
             style={primaryBtn}
             disabled={runningSnap || !backupReady}
             onClick={() => handleRun('snapshot')}
@@ -553,11 +594,12 @@ export default function BackupPage() {
               onClick={() => setProv((p) => ({ ...p, mode: m }))}
               style={{
                 ...secondaryBtn,
-                fontWeight: prov.mode === m ? 800 : 500,
-                borderColor: prov.mode === m ? '#0f766e' : 'var(--card-border)',
-                background: prov.mode === m ? '#f0fdfa' : 'var(--card-bg)',
+                fontWeight: prov.mode === m ? 800 : 600,
+                borderColor: prov.mode === m ? '#0f766e' : '#99f6e4',
+                background: prov.mode === m ? '#ccfbf1' : '#fff',
+                color: '#134e4a',
               }}
-              className="action-btn"
+              className="no-lift"
             >
               {m === 'initialize' ? 'Initialize (new church)' : 'Upgrade'}
             </button>
@@ -598,7 +640,7 @@ export default function BackupPage() {
         <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             type="button"
-            className="action-btn"
+            className="no-lift"
             style={primaryBtn}
             disabled={provRunning}
             onClick={handleProvision}
@@ -633,6 +675,43 @@ export default function BackupPage() {
           Initialize creates bootstrap tables, storage buckets, and your Super Admin on the <em>target</em> project.
           Run the full <code>supabase/migrations</code> SQL on that project (or Upgrade with extra SQL) so it matches this CMS version, then point the website at the new URL + anon key.
         </p>
+      </Section>
+
+      {/* Debug */}
+      <Section
+        title="Debug"
+        icon={Shield}
+        subtitle="Shows the real Edge Function error (instead of only “non-2xx”) and connection status."
+      >
+        {lastActionError && (
+          <div style={{
+            marginBottom: 12, padding: 10, borderRadius: 8,
+            background: '#fef2f2', border: '1px solid #fecaca',
+            color: '#991b1b', fontSize: 12, lineHeight: 1.45, whiteSpace: 'pre-wrap',
+          }}>
+            <strong>Last action error</strong>
+            <div style={{ marginTop: 4 }}>{lastActionError}</div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <button type="button" className="no-lift" style={secondaryBtn} disabled={debugging} onClick={handleDiagnose}>
+            {debugging ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
+            Run diagnostics
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, marginBottom: 8 }}>
+          Google connected: <strong>{settings?.google_connected_email || 'no'}</strong>
+          {' · '}
+          Folder ID: <strong>{settings?.drive_folder_id || '—'}</strong>
+        </div>
+        {debugInfo && (
+          <pre style={{
+            margin: 0, padding: 12, borderRadius: 8, overflow: 'auto', maxHeight: 320,
+            background: '#0f172a', color: '#e2e8f0', fontSize: 11, lineHeight: 1.4,
+          }}>
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        )}
       </Section>
     </div>
   )

@@ -80,13 +80,16 @@ export async function startGoogleOAuthConnect() {
   sessionStorage.setItem('cms_google_oauth_state', state)
   sessionStorage.setItem('cms_google_oauth_redirect', redirectUri)
 
-  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
-    body: { action: 'auth_url', redirect_uri: redirectUri, state },
+  const invoked = await invokeEdgeFunction('cms-google-oauth', {
+    action: 'auth_url',
+    redirect_uri: redirectUri,
+    state,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  if (!data?.auth_url) throw new Error('No auth URL returned')
-  window.location.href = data.auth_url
+  if (!invoked.ok) {
+    throw new Error(invoked.errorMessage || 'Could not start Google login')
+  }
+  if (!invoked.data?.auth_url) throw new Error('No auth URL returned from cms-google-oauth')
+  window.location.href = invoked.data.auth_url
 }
 
 export async function finishGoogleOAuthConnect({ code, state }) {
@@ -95,23 +98,21 @@ export async function finishGoogleOAuthConnect({ code, state }) {
   if (!expected || state !== expected) {
     throw new Error('Google login state mismatch. Try Connect Google again.')
   }
-  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
-    body: { action: 'exchange', code, redirect_uri: redirectUri },
+  const invoked = await invokeEdgeFunction('cms-google-oauth', {
+    action: 'exchange',
+    code,
+    redirect_uri: redirectUri,
   })
   sessionStorage.removeItem('cms_google_oauth_state')
   sessionStorage.removeItem('cms_google_oauth_redirect')
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Failed to connect Google')
+  return invoked.data
 }
 
 export async function disconnectGoogleOAuth() {
-  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
-    body: { action: 'disconnect' },
-  })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
+  const invoked = await invokeEdgeFunction('cms-google-oauth', { action: 'disconnect' })
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Disconnect failed')
+  return invoked.data
 }
 
 export async function listBackupLogs({ kind = null, page = 0, pageSize = 30 } = {}) {
@@ -226,36 +227,118 @@ async function logBackupRun(row) {
   return data
 }
 
-function isFunctionMissingError(error, data) {
-  const msg = `${error?.message || ''} ${data?.error || ''} ${data?.message || ''}`.toLowerCase()
+function isFunctionMissingError(error, data, message = '') {
+  const msg = `${error?.message || ''} ${data?.error || ''} ${data?.message || ''} ${message}`.toLowerCase()
   return (
     /failed to send a request to the edge function/.test(msg)
-    || /not found/.test(msg)
+    || /requested function was not found/.test(msg)
     || /function was not found/.test(msg)
+    || /not found/.test(msg) && /404/.test(String(error?.context?.status || ''))
     || error?.context?.status === 404
   )
 }
 
-async function extractFunctionError(error, data) {
-  if (data?.error) return String(data.error)
-  try {
-    const ctx = error?.context
-    if (ctx && typeof ctx.json === 'function') {
-      const body = await ctx.json()
-      if (body?.error) return String(body.error)
-      if (body?.message) return String(body.message)
+/**
+ * Invoke Edge Function and always surface the real JSON error body
+ * (Supabase otherwise only shows "non-2xx status code").
+ */
+export async function invokeEdgeFunction(name, body = {}) {
+  console.log('[cms-backup] invoke', name, body)
+  const { data, error } = await supabase.functions.invoke(name, { body })
+  let status = 200
+  let parsed = data
+  let errorMessage = null
+
+  if (error) {
+    status = error.context?.status || 500
+    errorMessage = error.message || 'Edge Function failed'
+    try {
+      const ctx = error.context
+      if (ctx) {
+        const text = typeof ctx.text === 'function'
+          ? await ctx.text()
+          : (typeof ctx.json === 'function' ? JSON.stringify(await ctx.json()) : '')
+        console.log('[cms-backup]', name, 'HTTP', status, 'body:', text)
+        if (text) {
+          try {
+            parsed = JSON.parse(text)
+            errorMessage = parsed.error || parsed.message || errorMessage
+          } catch {
+            errorMessage = text.slice(0, 500)
+          }
+        }
+      }
+    } catch (parseErr) {
+      console.warn('[cms-backup] could not read error body', parseErr)
     }
-  } catch (_) { /* ignore */ }
-  return error?.message || 'Backup failed'
+  } else if (data?.error) {
+    status = 500
+    errorMessage = String(data.error)
+    parsed = data
+  }
+
+  console.log('[cms-backup]', name, 'result', { status, errorMessage, parsed })
+  return {
+    ok: !errorMessage,
+    data: parsed,
+    errorMessage,
+    status,
+    missing: isFunctionMissingError(error, parsed, errorMessage || ''),
+  }
+}
+
+/** Quick diagnostics for the Backup page Debug panel. */
+export async function diagnoseBackupSetup() {
+  const out = {
+    at: new Date().toISOString(),
+    settings: null,
+    settingsError: null,
+    lastLogs: [],
+    logsError: null,
+    oauthFn: null,
+    backupFn: null,
+  }
+  try {
+    out.settings = await getBackupSettings()
+  } catch (e) {
+    out.settingsError = e.message || String(e)
+  }
+  try {
+    const { rows } = await listBackupLogs({ pageSize: 3 })
+    out.lastLogs = rows.map((r) => ({
+      created_at: r.created_at,
+      kind: r.kind,
+      status: r.status,
+      error_message: r.error_message,
+      drive_file_id: r.drive_file_id,
+      download_filename: r.download_filename,
+    }))
+  } catch (e) {
+    out.logsError = e.message || String(e)
+  }
+  out.oauthFn = await invokeEdgeFunction('cms-google-oauth', { action: 'status' })
+  // Don't run a full backup dump for diagnose — just report connection readiness
+  out.hints = []
+  if (out.settingsError) out.hints.push('Run SQL migration 20260809_cms_backup_google_oauth.sql')
+  if (!out.settings?.google_connected_email) out.hints.push('Click Connect Google before Run Full Backup')
+  if (!out.settings?.drive_folder_id) out.hints.push('Save Google Drive folder ID')
+  if (out.oauthFn.missing) out.hints.push('Deploy Edge Function cms-google-oauth')
+  if (out.oauthFn.errorMessage && !out.oauthFn.missing) out.hints.push(`OAuth function: ${out.oauthFn.errorMessage}`)
+  return out
 }
 
 function friendlyDriveError(msg) {
+  if (/not connected|connect google/i.test(msg || '')) {
+    return 'Google Drive is not connected. Click Connect Google on the Backup page, then try again.'
+  }
   if (/storage quota|shared drives|service accounts do not have/i.test(msg || '')) {
     return (
       'Google blocked the upload: service accounts cannot save files into a normal personal Drive folder. ' +
-      'Use a Google Workspace Shared Drive, or switch backup destination to Supabase Storage. ' +
-      'Meanwhile the file can still download to your computer.'
+      'Connect Google with OAuth on the Backup page. Meanwhile the file can still download to your computer.'
     )
+  }
+  if (/non-2xx/i.test(msg || '')) {
+    return 'Backup function failed (see Debug panel for details). Usually: Connect Google first, or redeploy cms-full-backup.'
   }
   return msg
 }
@@ -278,26 +361,23 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
 
   // Try Edge Function (Drive upload)
   try {
-    const { data, error } = await supabase.functions.invoke('cms-full-backup', {
-      body: {
-        kind,
-        trigger_mode: triggerMode,
-        drive_folder_id: settings.drive_folder_id.trim(),
-        actor_email: actor?.email || null,
-        actor_name: actor?.full_name || actor?.name || null,
-      },
+    const invoked = await invokeEdgeFunction('cms-full-backup', {
+      kind,
+      trigger_mode: triggerMode,
+      drive_folder_id: settings.drive_folder_id.trim(),
+      actor_email: actor?.email || null,
+      actor_name: actor?.full_name || actor?.name || null,
     })
-    if (!error && data && !data.error) {
-      return { ...data, via: 'drive' }
+    if (invoked.ok && invoked.data && !invoked.data.error) {
+      return { ...invoked.data, via: 'drive' }
     }
-    const raw = await extractFunctionError(error, data)
-    if (isFunctionMissingError(error, data)) {
-      driveErrorMsg = null // use local fallback silently for missing function
+    if (invoked.missing) {
+      driveErrorMsg = null
     } else {
-      driveErrorMsg = friendlyDriveError(raw)
-      // For Drive quota / config errors, still offer local download below
+      driveErrorMsg = friendlyDriveError(invoked.errorMessage || invoked.data?.error || 'Backup failed')
     }
   } catch (e) {
+    console.error('[cms-backup] runDriveBackup exception', e)
     if (isFunctionMissingError(e, null) || /failed to send/i.test(e.message || '')) {
       driveErrorMsg = null
     } else {
@@ -373,27 +453,22 @@ export async function runProvision({
   driveFolderId = null,
   actor = null,
 } = {}) {
-  const { data, error } = await supabase.functions.invoke('cms-provision', {
-    body: {
-      mode,
-      supabase_url: supabaseUrl,
-      anon_key: anonKey,
-      service_role_key: serviceRoleKey,
-      db_password: dbPassword,
-      super_admin_email: superAdminEmail,
-      super_admin_password: superAdminPassword,
-      drive_folder_id: driveFolderId,
-      actor_email: actor?.email || null,
-    },
+  const invoked = await invokeEdgeFunction('cms-provision', {
+    mode,
+    supabase_url: supabaseUrl,
+    anon_key: anonKey,
+    service_role_key: serviceRoleKey,
+    db_password: dbPassword,
+    super_admin_email: superAdminEmail,
+    super_admin_password: superAdminPassword,
+    drive_folder_id: driveFolderId,
+    actor_email: actor?.email || null,
   })
-  if (error) {
-    if (isFunctionMissingError(error, data)) {
-      throw new Error('Edge Function cms-provision is not deployed yet. Deploy it from Supabase → Edge Functions.')
-    }
-    throw error
+  if (invoked.missing) {
+    throw new Error('Edge Function cms-provision is not deployed yet. Deploy it from Supabase → Edge Functions.')
   }
-  if (data?.error) throw new Error(data.error)
-  return data
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Provision failed')
+  return invoked.data
 }
 
 export function formatBytes(n) {
