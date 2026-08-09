@@ -1,3 +1,4 @@
+import { logCmsAudit } from '../lib/cmsAudit'
 /* ═══════════════════════════════════════════════════════════════
    AuctionReportPage.jsx
    ═══════════════════════════════════════════════════════════════ */
@@ -525,6 +526,10 @@ export default function AuctionReportPage() {
         if (error) throw error
       }
 
+      await logCmsAudit({
+        action: 'saved', module: 'finance', entityType: 'auction_tracker',
+        entityId: filterFY, summary: `Imported ${insRows.length} auction tracker rows (FY ${filterFY})`,
+      })
       toast(`${insRows.length} rows imported for FY ${filterFY}`, 'success')
       setPreview(null)
       await loadTracker(filterFY)

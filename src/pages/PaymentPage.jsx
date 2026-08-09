@@ -1,3 +1,4 @@
+import { logCmsAudit } from '../lib/cmsAudit'
 /* ═══════════════════════════════════════════════════════════════
    PaymentPage.jsx — Public UPI payment page (no auth required)
    Route: /pay/:requestId
@@ -208,7 +209,16 @@ function markPaid(){var ref=document.getElementById('ur').value.trim(),b=documen
       updated_at:           new Date().toISOString(),
     }).eq('id', requestId).eq('status', 'pending')
     if (error) alert('Error: ' + error.message)
-    else setDone(true)
+    else {
+      await logCmsAudit({
+        action: 'updated', module: 'finance', entityType: 'payment_request',
+        entityId: requestId,
+        entityLabel: req?.member_name || requestId,
+        summary: `Member marked payment request paid (₹${total})`,
+        changes: [{ field: 'status', from: 'pending', to: 'paid_by_member' }],
+      })
+      setDone(true)
+    }
     setSaving(false)
   }
 

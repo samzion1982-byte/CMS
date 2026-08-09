@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
+import { logCmsAudit } from '../lib/cmsAudit'
 
 /* ─── Constants ──────────────────────────────────────────────────── */
 const TABS = [
@@ -210,6 +211,11 @@ function BaptismTab() {
       if (error) throw error
       if (newId) setEditId(newId)
       if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
+      await logCmsAudit({
+        action: editId ? 'updated' : 'created', module: 'events', entityType: 'baptism_record',
+        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
+        summary: `${editId ? 'Updated' : 'Created'} baptism record ${slNoDisplay} — ${form.name || ''}`,
+      })
       toast(`Baptism record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
@@ -247,6 +253,11 @@ function BaptismTab() {
       }
       const { error } = await supabase.from('baptism_records').delete().eq('id', editId)
       if (error) throw error
+      await logCmsAudit({
+        action: 'deleted', module: 'events', entityType: 'baptism_record',
+        entityId: editId, entityLabel: slNoDisplay,
+        summary: `Deleted baptism record ${slNoDisplay}`,
+      })
       toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
@@ -805,6 +816,11 @@ function ConfirmationTab() {
       if (error) throw error
       if (newId) setEditId(newId)
       if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
+      await logCmsAudit({
+        action: editId ? 'updated' : 'created', module: 'events', entityType: 'confirmation_record',
+        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
+        summary: `${editId ? 'Updated' : 'Created'} confirmation record ${slNoDisplay} — ${form.name || ''}`,
+      })
       toast(`Confirmation record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
@@ -847,6 +863,11 @@ function ConfirmationTab() {
       }
       const { error } = await supabase.from('confirmation_records').delete().eq('id', editId)
       if (error) throw error
+      await logCmsAudit({
+        action: 'deleted', module: 'events', entityType: 'confirmation_record',
+        entityId: editId, entityLabel: slNoDisplay,
+        summary: `Deleted confirmation record ${slNoDisplay}`,
+      })
       toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
@@ -1437,6 +1458,11 @@ function BurialTab() {
       if (newId) setEditId(newId)
       if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
       setDocs(savedDocs)
+      await logCmsAudit({
+        action: editId ? 'updated' : 'created', module: 'events', entityType: 'burial_record',
+        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
+        summary: `${editId ? 'Updated' : 'Created'} burial record ${slNoDisplay} — ${form.name || ''}`,
+      })
       toast(`Burial record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
@@ -1482,6 +1508,11 @@ function BurialTab() {
       if (toRemove.length) await supabase.storage.from('event-media').remove(toRemove)
       const { error } = await supabase.from('burial_records').delete().eq('id', editId)
       if (error) throw error
+      await logCmsAudit({
+        action: 'deleted', module: 'events', entityType: 'burial_record',
+        entityId: editId, entityLabel: slNoDisplay,
+        summary: `Deleted burial record ${slNoDisplay}`,
+      })
       toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
@@ -2181,6 +2212,11 @@ function WeddingTab() {
         }
         return updated
       })
+      await logCmsAudit({
+        action: editId ? 'updated' : 'created', module: 'events', entityType: 'wedding_record',
+        entityId: editId || newId, entityLabel: slNoDisplay,
+        summary: `${editId ? 'Updated' : 'Created'} wedding record ${slNoDisplay}`,
+      })
       toast(`Wedding record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
     } catch (err) {
       toast(err.message || 'Save failed', 'error')
@@ -2237,6 +2273,11 @@ function WeddingTab() {
       if (paths.length) await supabase.storage.from('event-media').remove(paths)
       const { error } = await supabase.from('wedding_records').delete().eq('id', editId)
       if (error) throw error
+      await logCmsAudit({
+        action: 'deleted', module: 'events', entityType: 'wedding_record',
+        entityId: editId, entityLabel: slNoDisplay,
+        summary: `Deleted wedding record ${slNoDisplay}`,
+      })
       toast(`Record ${slNoDisplay} deleted`, 'success')
       handleReset()
     } catch (err) {

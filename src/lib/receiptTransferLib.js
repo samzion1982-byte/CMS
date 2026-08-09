@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { createJournalEntry, postJournalEntry, nextEntryNumber, getAccountingSettings } from './accountingLib'
+import { logCmsAudit } from './cmsAudit'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -376,6 +377,15 @@ export async function executeTransfer({
     .in('id', ids)
   if (rErr) throw rErr
 
+  await logCmsAudit({
+    action: 'transferred',
+    module: 'finance',
+    entityType: 'receipt_transfer',
+    entityId: batch.id,
+    entityLabel: `${fromReceiptNo}–${toReceiptNo}`,
+    summary: `Transferred ${receipts.length} receipts to Accounts (${fromReceiptNo} to ${toReceiptNo})`,
+    actor: performedBy ? (typeof performedBy === 'string' ? { email: performedBy } : performedBy) : null,
+  })
   return { batch, cashJournal, bankJournal }
 }
 
@@ -438,6 +448,15 @@ export async function reverseTransfer(batchId, password, performedBy) {
     .from('receipt_transfer_batches')
     .update({ is_reversed: true, reversed_at: new Date().toISOString(), reversed_by: performedBy })
     .eq('id', batchId)
+
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'finance',
+    entityType: 'receipt_transfer',
+    entityId: batchId,
+    summary: `Reversed receipt transfer batch ${batchId}`,
+    actor: performedBy ? (typeof performedBy === 'string' ? { email: performedBy } : performedBy) : null,
+  })
 }
 
 // ── Load transfer history ─────────────────────────────────────────

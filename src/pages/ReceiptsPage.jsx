@@ -17,6 +17,7 @@ import { exportReceiptPDF, formatMonthsPaid }      from '../lib/exportReceiptPDF
 import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
 import TransferToAccountsModal                     from '../components/receipts/TransferToAccountsModal'
+import { logCmsAudit } from '../lib/cmsAudit'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -209,6 +210,12 @@ export default function ReceiptsPage() {
       await supabase.from('receipt_items').delete().eq('receipt_id', row.id)
       const { error } = await supabase.from('receipts').delete().eq('id', row.id)
       if (error) { toast(error.message, 'error'); return }
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'receipt',
+        entityId: row.id, entityLabel: row.receipt_number,
+        summary: `Deleted receipt ${row.receipt_number} (${row.member_name})`,
+        actor: profile,
+      })
       toast('Receipt deleted', 'success')
       updateFYActivity(row.financial_year)
       loadList(); loadFyStats()
@@ -1310,6 +1317,15 @@ function ReceiptModal({ editId, initialFY, categories, profile, church, toast, o
       }))
       const { error: iErr } = await supabase.from('receipt_items').insert(itemRows)
       if (iErr) throw iErr
+      await logCmsAudit({
+        action: editId ? 'updated' : 'created',
+        module: 'finance',
+        entityType: 'receipt',
+        entityId: receiptId,
+        entityLabel: form.receipt_number,
+        summary: `${editId ? 'Updated' : 'Created'} receipt ${form.receipt_number} for ${form.member_name} (₹${grandTotal})`,
+        actor: profile,
+      })
       toast(editId ? 'Receipt updated' : `Receipt ${form.receipt_number} saved`, 'success')
       onSaved(recData.financial_year)
 
@@ -1949,6 +1965,12 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
     const ids = [...selected]
     await supabase.from('receipt_items').delete().in('receipt_id', ids)
     const { error } = await supabase.from('receipts').delete().in('id', ids)
+    if (!error) {
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'receipt',
+        entityId: ids[0], summary: `Bulk-deleted ${ids.length} receipts (FY ${fy})`,
+      })
+    }
     setDeleting(false)
     if (error) { toast('Delete failed: ' + error.message, 'error'); return }
     toast(`${ids.length} receipt${ids.length !== 1 ? 's' : ''} deleted`, 'success')

@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { supabase } from './supabase'
+import { logCmsAudit } from './cmsAudit'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -90,6 +91,10 @@ export async function saveSimpleSettings(updates) {
     simple_accounting_report_subtitle:  updates.reportSubtitle  || null,
   }).gte('id', '00000000-0000-0000-0000-000000000000')
   if (error) throw error
+  await logCmsAudit({
+    action: 'saved', module: 'finance', entityType: 'simple_settings',
+    summary: 'Saved Simple Accounts settings',
+  })
 }
 
 // Fetch church name/address for use as report header
@@ -138,6 +143,12 @@ export async function createSimpleAccount(account, userEmail) {
     updated_by: userEmail,
   }).select().single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created', module: 'finance', entityType: 'simple_account',
+    entityId: data.id, entityLabel: account?.name || data.id,
+    summary: `Created simple account ${account?.name || data.id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
   return data
 }
 
@@ -146,6 +157,12 @@ export async function updateSimpleAccount(id, updates, userEmail) {
     .update({ ...updates, updated_by: userEmail, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'updated', module: 'finance', entityType: 'simple_account',
+    entityId: id, entityLabel: updates?.name || id,
+    summary: `Updated simple account ${updates?.name || id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
 }
 
 export async function deactivateSimpleAccount(id, userEmail) {
@@ -153,6 +170,11 @@ export async function deactivateSimpleAccount(id, userEmail) {
     .update({ is_active: false, updated_by: userEmail, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deactivated', module: 'finance', entityType: 'simple_account',
+    entityId: id, summary: `Deactivated simple account ${id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
 }
 
 // Compute balance for every account in one pass (opening + transactions)
@@ -190,6 +212,11 @@ export async function createSimpleCategory(cat) {
     ...cat, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).select().single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created', module: 'finance', entityType: 'simple_category',
+    entityId: data.id, entityLabel: cat?.name || data.id,
+    summary: `Created simple category ${cat?.name || data.id}`,
+  })
   return data
 }
 
@@ -198,6 +225,11 @@ export async function updateSimpleCategory(id, updates) {
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'updated', module: 'finance', entityType: 'simple_category',
+    entityId: id, entityLabel: updates?.name || id,
+    summary: `Updated simple category ${updates?.name || id}`,
+  })
 }
 
 export async function deactivateSimpleCategory(id) {
@@ -205,6 +237,10 @@ export async function deactivateSimpleCategory(id) {
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deactivated', module: 'finance', entityType: 'simple_category',
+    entityId: id, summary: `Deactivated simple category ${id}`,
+  })
 }
 
 export async function seedDefaultSimpleCategories() {
@@ -356,6 +392,13 @@ export async function createSimpleTransaction(txn, userEmail) {
     updated_by: userEmail,
   }).select().single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created', module: 'finance', entityType: 'simple_transaction',
+    entityId: data.id,
+    entityLabel: `${txn?.txn_type || 'txn'} ${txn?.amount ?? ''}`.trim(),
+    summary: `Created simple ${txn?.txn_type || 'transaction'} ₹${txn?.amount ?? ''}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
   return data
 }
 
@@ -364,6 +407,11 @@ export async function updateSimpleTransaction(id, updates, userEmail) {
     .update({ ...updates, updated_by: userEmail, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'updated', module: 'finance', entityType: 'simple_transaction',
+    entityId: id, summary: `Updated simple transaction ${id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
 }
 
 export async function deleteSimpleTransaction(id, userEmail) {
@@ -371,6 +419,11 @@ export async function deleteSimpleTransaction(id, userEmail) {
     .update({ is_deleted: true, updated_by: userEmail, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted', module: 'finance', entityType: 'simple_transaction',
+    entityId: id, summary: `Deleted simple transaction ${id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
 }
 
 // ── Dashboard stats ────────────────────────────────────────────────
@@ -430,6 +483,10 @@ export async function flushAllSimpleData() {
   const { error: e3 } = await supabase.from('simple_categories')
     .delete().gte('id', '00000000-0000-0000-0000-000000000000')
   if (e3) throw e3
+  await logCmsAudit({
+    action: 'deleted', module: 'finance', entityType: 'simple_accounts',
+    summary: 'Flushed all Simple Accounts data',
+  })
 }
 
 // Returns the calendar year of the earliest transaction (or current year if none)

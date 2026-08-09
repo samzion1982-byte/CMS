@@ -6,6 +6,7 @@ import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
+import { logCmsAudit } from '../lib/cmsAudit'
 
 /** Walk a contentEditable DOM tree → WhatsApp markdown string */
 function htmlToWaMd(el) {
@@ -789,6 +790,11 @@ export default function MemberReportPage() {
     if (dbErr) {
       toast(`History not saved: ${dbErr.message}`, 'error')
     } else {
+      await logCmsAudit({
+        action: 'created', module: 'finance', entityType: 'member_report',
+        entityId: title, entityLabel: title,
+        summary: `Saved member report "${title}" (${filteredData.length} members)`,
+      })
       await fetchHistory()
     }
   }
@@ -840,6 +846,10 @@ export default function MemberReportPage() {
     try {
       await supabase.storage.from('member-reports').remove([filePath])
       await supabase.from('member_report_history').delete().eq('id', id)
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'member_report',
+        entityId: id, summary: `Deleted saved member report ${id}`,
+      })
       setSavedReports(prev => prev.filter(r => r.id !== id))
       toast('Report deleted', 'success')
     } catch { toast('Delete failed', 'error') }

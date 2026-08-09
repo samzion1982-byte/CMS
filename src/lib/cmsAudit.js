@@ -110,6 +110,9 @@ export const AUDIT_MODULES = [
   { value: 'church_setup', label: 'Church Setup' },
   { value: 'cms_permissions', label: 'CMS Permissions' },
   { value: 'members', label: 'Members' },
+  { value: 'events', label: 'Events' },
+  { value: 'assets', label: 'Asset Management' },
+  { value: 'finance', label: 'Finance' },
 ]
 
 export const AUDIT_ACTIONS = [
@@ -119,6 +122,10 @@ export const AUDIT_ACTIONS = [
   { value: 'deleted', label: 'Deleted' },
   { value: 'deactivated', label: 'Deactivated' },
   { value: 'activated', label: 'Activated' },
+  { value: 'restored', label: 'Restored' },
   { value: 'reset_password', label: 'Reset password' },
   { value: 'saved', label: 'Saved' },
+  { value: 'posted', label: 'Posted' },
+  { value: 'moved', label: 'Moved' },
+  { value: 'transferred', label: 'Transferred' },
 ]

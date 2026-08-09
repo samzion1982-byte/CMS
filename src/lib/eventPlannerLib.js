@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { normalizeWhatsAppNumber } from './whatsapp'
+import { logCmsAudit } from './cmsAudit'
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
@@ -18,21 +19,51 @@ export async function saveEvent(id, payload, userEmail) {
       .update({ ...payload, updated_by: userEmail, updated_at: now })
       .eq('id', id)
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'events',
+      entityType: 'event_plan',
+      entityId: id,
+      entityLabel: payload?.name || payload?.title || id,
+      summary: `Updated event ${payload?.name || payload?.title || id}`,
+      changes: Object.keys(payload || {}).slice(0, 12).map(field => ({
+        field, from: null, to: payload[field] == null ? null : String(payload[field]),
+      })),
+      actor: { email: userEmail },
+    })
     return id
   } else {
     const { data, error } = await supabase.from('event_plans')
       .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
       .select('id').single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'created',
+      module: 'events',
+      entityType: 'event_plan',
+      entityId: data.id,
+      entityLabel: payload?.name || payload?.title || data.id,
+      summary: `Created event ${payload?.name || payload?.title || data.id}`,
+      actor: { email: userEmail },
+    })
     return data.id
   }
 }
 
 export async function deleteEvent(id) {
+  const { data: prev } = await supabase.from('event_plans').select('id,name,title').eq('id', id).maybeSingle()
   const { error } = await supabase.from('event_plans')
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'events',
+    entityType: 'event_plan',
+    entityId: id,
+    entityLabel: prev?.name || prev?.title || id,
+    summary: `Deleted event ${prev?.name || prev?.title || id}`,
+  })
 }
 
 // ── Buckets ───────────────────────────────────────────────────────────────────
@@ -51,6 +82,15 @@ export async function saveBucket(id, payload, userEmail=null) {
     const { error } = await supabase.from('event_task_buckets')
       .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'events',
+      entityType: 'event_bucket',
+      entityId: id,
+      entityLabel: payload?.name || id,
+      summary: `Updated event bucket ${payload?.name || id}`,
+      actor: userEmail ? { email: userEmail } : null,
+    })
     return id
   } else {
     const insertPayload = { ...payload, created_by: userEmail, updated_by: userEmail, created_at: now, updated_at: now }
@@ -60,6 +100,15 @@ export async function saveBucket(id, payload, userEmail=null) {
       console.error('saveBucket insert error', error)
       throw error
     }
+    await logCmsAudit({
+      action: 'created',
+      module: 'events',
+      entityType: 'event_bucket',
+      entityId: data.id,
+      entityLabel: payload?.name || data.id,
+      summary: `Created event bucket ${payload?.name || data.id}`,
+      actor: userEmail ? { email: userEmail } : null,
+    })
     return data.id
   }
 }
@@ -67,6 +116,13 @@ export async function saveBucket(id, payload, userEmail=null) {
 export async function deleteBucket(id) {
   const { error } = await supabase.from('event_task_buckets').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'events',
+    entityType: 'event_bucket',
+    entityId: id,
+    summary: `Deleted event bucket ${id}`,
+  })
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
@@ -110,12 +166,30 @@ export async function saveTask(id, payload, userEmail) {
     const { error } = await supabase.from('event_tasks')
       .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'events',
+      entityType: 'event_task',
+      entityId: id,
+      entityLabel: payload?.title || payload?.name || id,
+      summary: `Updated event task ${payload?.title || payload?.name || id}`,
+      actor: { email: userEmail },
+    })
     return id
   } else {
     const { data, error } = await supabase.from('event_tasks')
       .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
       .select('id').single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'created',
+      module: 'events',
+      entityType: 'event_task',
+      entityId: data.id,
+      entityLabel: payload?.title || payload?.name || data.id,
+      summary: `Created event task ${payload?.title || payload?.name || data.id}`,
+      actor: { email: userEmail },
+    })
     return data.id
   }
 }
@@ -123,6 +197,13 @@ export async function saveTask(id, payload, userEmail) {
 export async function deleteTask(id) {
   const { error } = await supabase.from('event_tasks').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'events',
+    entityType: 'event_task',
+    entityId: id,
+    summary: `Deleted event task ${id}`,
+  })
 }
 
 export async function getTaskLibrary() {
@@ -177,6 +258,14 @@ export async function addLibrarySubtask(parentId, userEmail) {
 export async function deleteLibraryItem(id, userEmail) {
   const { error } = await supabase.from('task_library').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'events',
+    entityType: 'task_library',
+    entityId: id,
+    summary: `Deleted task library item ${id}`,
+    actor: userEmail ? { email: userEmail } : null,
+  })
 }
 
 export async function saveLibraryTask(id, payload, userEmail) {
@@ -185,12 +274,30 @@ export async function saveLibraryTask(id, payload, userEmail) {
     const { error } = await supabase.from('task_library')
       .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'events',
+      entityType: 'task_library',
+      entityId: id,
+      entityLabel: payload?.name || payload?.title || id,
+      summary: `Updated task library item ${payload?.name || payload?.title || id}`,
+      actor: { email: userEmail },
+    })
     return id
   } else {
     const { data, error } = await supabase.from('task_library')
       .insert({ ...payload, created_by: userEmail, updated_by: userEmail })
       .select('id').single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'created',
+      module: 'events',
+      entityType: 'task_library',
+      entityId: data.id,
+      entityLabel: payload?.name || payload?.title || data.id,
+      summary: `Created task library item ${payload?.name || payload?.title || data.id}`,
+      actor: { email: userEmail },
+    })
     return data.id
   }
 }
@@ -221,6 +328,15 @@ export async function saveEventVolunteer(id, payload, userEmail) {
     const { error } = await supabase.from('event_volunteers')
       .update({ ...payload, updated_by: userEmail, updated_at: now }).eq('id', id)
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'events',
+      entityType: 'event_volunteer',
+      entityId: id,
+      entityLabel: payload?.name || id,
+      summary: `Updated event volunteer ${payload?.name || id}`,
+      actor: { email: userEmail },
+    })
     return id
   } else {
     let sortOrder = payload.sort_order
@@ -242,6 +358,15 @@ export async function saveEventVolunteer(id, payload, userEmail) {
       .insert(insertPayload)
       .select('id').single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'created',
+      module: 'events',
+      entityType: 'event_volunteer',
+      entityId: data.id,
+      entityLabel: payload?.name || data.id,
+      summary: `Created event volunteer ${payload?.name || data.id}`,
+      actor: { email: userEmail },
+    })
     return data.id
   }
 }
@@ -275,6 +400,13 @@ export async function searchMemberContactsByName(name) {
 export async function deleteEventVolunteer(id) {
   const { error } = await supabase.from('event_volunteers').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'events',
+    entityType: 'event_volunteer',
+    entityId: id,
+    summary: `Deleted event volunteer ${id}`,
+  })
 }
 
 export async function replaceEventPlannerMasterData(data, userEmail) {
@@ -872,7 +1004,15 @@ export async function carryForward(sourceEventId, targetEventId, advanceDates = 
     }))
 
   if (taskRows.length === 0) {
-    return { buckets: sourceBuckets.length, tasks: 0 }
+    const empty = { buckets: sourceBuckets.length, tasks: 0 }
+    await logCmsAudit({
+      action: 'saved',
+      module: 'events',
+      entityType: 'event_plan',
+      entityId: targetEventId,
+      summary: `Carried forward ${empty.buckets} buckets / 0 tasks from ${sourceEventId} → ${targetEventId}`,
+    })
+    return empty
   }
 
   const { error: insertError } = await supabase.from('event_tasks').insert(taskRows)
@@ -904,7 +1044,15 @@ export async function carryForward(sourceEventId, targetEventId, advanceDates = 
     }
   }
 
-  return { buckets: sourceBuckets.length, tasks: taskRows.length }
+  const result = { buckets: sourceBuckets.length, tasks: taskRows.length }
+  await logCmsAudit({
+    action: 'saved',
+    module: 'events',
+    entityType: 'event_plan',
+    entityId: targetEventId,
+    summary: `Carried forward ${result.buckets} buckets / ${result.tasks} tasks from ${sourceEventId} → ${targetEventId}`,
+  })
+  return result
 }
 
 function advanceOneYear(dateStr) {

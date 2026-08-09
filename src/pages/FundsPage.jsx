@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '../lib/toast'
 import { fmtAmt, getFunds } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
+import { logCmsAudit } from '../lib/cmsAudit'
 import {
   ArrowLeft, Plus, Trash2, Edit2, Loader2, X, Save, Wallet,
 } from 'lucide-react'
@@ -44,6 +45,14 @@ function FundModal({ fund, onSave, onClose }) {
         const { error } = await supabase.from('funds').insert(payload)
         if (error) throw error
       }
+      await logCmsAudit({
+        action: fund?.id ? 'updated' : 'created',
+        module: 'finance',
+        entityType: 'fund',
+        entityId: fund?.id || payload.name,
+        entityLabel: payload.name,
+        summary: `${fund?.id ? 'Updated' : 'Created'} fund ${payload.name}`,
+      })
       toast(fund?.id ? 'Fund updated.' : 'Fund created.', 'success')
       onSave()
     } catch (e) { toast(e.message, 'error') }
@@ -130,6 +139,10 @@ export default function FundsPage() {
     try {
       const { error } = await supabase.from('funds').delete().eq('id', id)
       if (error) throw error
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'fund',
+        entityId: id, summary: `Deleted fund ${id}`,
+      })
       toast('Fund deleted.', 'success')
       setFunds(fs => fs.filter(f => f.id !== id))
     } catch (e) { toast(e.message, 'error') }

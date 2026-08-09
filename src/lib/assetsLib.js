@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { supabase } from './supabase'
+import { logCmsAudit } from './cmsAudit'
 
 const ASSET_SELECT = `
   *,
@@ -252,6 +253,15 @@ export async function saveAsset(payload, id = null) {
     }
     const { data, error } = await supabase.from('assets').update(row).eq('id', id).select(ASSET_SELECT).single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'assets',
+      entityType: 'asset',
+      entityId: id,
+      entityLabel: row.description,
+      summary: `Updated asset ${row.description}`,
+      actor: row.updated_by ? { email: row.updated_by } : null,
+    })
     return data
   }
 
@@ -261,6 +271,15 @@ export async function saveAsset(payload, id = null) {
     .select(ASSET_SELECT)
     .single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: data.id,
+    entityLabel: row.description,
+    summary: `Created asset ${row.description}`,
+    actor: payload.created_by ? { email: payload.created_by } : null,
+  })
   return data
 }
 
@@ -415,6 +434,15 @@ export async function moveStockOut(sourceAsset, {
       .maybeSingle()
     if (error) throw error
     if (!data) throw new Error('Stock changed — refresh and try again.')
+    await logCmsAudit({
+      action: 'moved',
+      module: 'assets',
+      entityType: 'asset',
+      entityId: data?.id,
+      entityLabel: data?.description,
+      summary: `Stock out (full): ${data?.description || data?.id}`,
+      actor: performed_by ? { email: performed_by } : null,
+    })
     return { source: data, moved: data, mode: 'full' }
   }
 
@@ -465,6 +493,15 @@ export async function moveStockOut(sourceAsset, {
     throw new Error('Stock changed — refresh and try again.')
   }
 
+  await logCmsAudit({
+    action: 'moved',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: moved?.id || source?.id,
+    entityLabel: moved?.description || source?.description,
+    summary: `Stock out: ${moved?.description || 'asset'} (qty moved)`,
+    actor: performed_by ? { email: performed_by } : null,
+  })
   return { source, moved, mode: 'split' }
 }
 
@@ -520,6 +557,15 @@ export async function moveStockIn(templateAsset, {
     notes:            noteText,
     created_by:       performed_by,
     updated_by:       performed_by,
+  })
+  await logCmsAudit({
+    action: 'moved',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: data?.id,
+    entityLabel: data?.description || templateAsset?.description,
+    summary: `Stock in: ${data?.description || 'asset'}`,
+    actor: performed_by ? { email: performed_by } : null,
   })
   return { source: templateAsset, moved: data, mode: 'in' }
 }
@@ -581,6 +627,15 @@ export async function returnStockToHand(asset, { performed_by = null } = {}) {
         .eq('id', asset.id)
       if (delErr) throw delErr
 
+      await logCmsAudit({
+        action: 'moved',
+        module: 'assets',
+        entityType: 'asset',
+        entityId: updated?.id || asset?.id,
+        entityLabel: updated?.description || asset?.description,
+        summary: `Returned to stock (merged): ${asset?.description || asset?.id}`,
+        actor: performed_by ? { email: performed_by } : null,
+      })
       return { mode: 'merged', source: updated, moved: null }
     }
   }
@@ -597,6 +652,15 @@ export async function returnStockToHand(asset, { performed_by = null } = {}) {
     (q) => q.not('stock_out_date', 'is', null),
   )
   if (!data) throw new Error('Stock changed — refresh and try again.')
+  await logCmsAudit({
+    action: 'moved',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: asset?.id,
+    entityLabel: asset?.description,
+    summary: `Returned to stock: ${asset?.description || asset?.id}`,
+    actor: performed_by ? { email: performed_by } : null,
+  })
   return { mode: 'reopened', source: data, moved: data }
 }
 
@@ -606,6 +670,14 @@ export async function softDeleteAsset(id, updatedBy = null) {
     .update({ is_active: false, updated_by: updatedBy, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: id,
+    summary: `Soft-deleted asset ${id}`,
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
 }
 
 export async function restoreAsset(id, updatedBy = null) {
@@ -614,15 +686,31 @@ export async function restoreAsset(id, updatedBy = null) {
     .update({ is_active: true, updated_by: updatedBy, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'restored',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: id,
+    summary: `Restored asset ${id}`,
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
 }
 
 export async function hardDeleteAsset(id) {
-  const { data: asset } = await supabase.from('assets').select('photo_path').eq('id', id).maybeSingle()
+  const { data: asset } = await supabase.from('assets').select('photo_path,description').eq('id', id).maybeSingle()
   if (asset?.photo_path) {
     await supabase.storage.from('asset-photos').remove([asset.photo_path]).catch(() => {})
   }
   const { error } = await supabase.from('assets').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'assets',
+    entityType: 'asset',
+    entityId: id,
+    entityLabel: asset?.description || id,
+    summary: `Permanently deleted asset ${asset?.description || id}`,
+  })
 }
 
 export async function uploadAssetPhoto(file, assetId = null) {
@@ -663,10 +751,26 @@ async function upsertMaster(table, { id, name, sort_order, is_active, color, par
   if (id) {
     const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'assets',
+      entityType: table,
+      entityId: id,
+      entityLabel: payload.name,
+      summary: `Updated ${table.replace(/_/g, ' ')} ${payload.name}`,
+    })
     return data
   }
   const { data, error } = await supabase.from(table).insert(payload).select().single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created',
+    module: 'assets',
+    entityType: table,
+    entityId: data.id,
+    entityLabel: payload.name,
+    summary: `Created ${table.replace(/_/g, ' ')} ${payload.name}`,
+  })
   return data
 }
 
@@ -677,14 +781,17 @@ export const saveAssetCondition = (row) => upsertMaster('asset_conditions', row)
 export async function deactivateMaster(table, id) {
   const { error } = await supabase.from(table).update({ is_active: false }).eq('id', id)
   if (error) throw error
+  await logCmsAudit({ action: 'deactivated', module: 'assets', entityType: table, entityId: id, summary: `Deactivated ${table} ${id}` })
 }
 
 export async function reactivateMaster(table, id) {
   const { error } = await supabase.from(table).update({ is_active: true }).eq('id', id)
   if (error) throw error
+  await logCmsAudit({ action: 'activated', module: 'assets', entityType: table, entityId: id, summary: `Reactivated ${table} ${id}` })
 }
 
 export async function deleteMaster(table, id) {
   const { error } = await supabase.from(table).delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({ action: 'deleted', module: 'assets', entityType: table, entityId: id, summary: `Deleted ${table} ${id}` })
 }

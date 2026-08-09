@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { supabase } from './supabase'
+import { logCmsAudit } from './cmsAudit'
 
 // ── Financial Year helpers ────────────────────────────────────────
 
@@ -1253,6 +1254,26 @@ async function logAudit(action, entityType, entityId, entityData, oldData, perfo
   await supabase.from('accounting_audit_log').insert({
     action, entity_type: entityType, entity_id: entityId,
     entity_data: entityData, old_data: oldData, performed_by: performedBy,
+  })
+  const actionMap = {
+    created: 'created',
+    modified: 'updated',
+    modified_posted: 'updated',
+    deleted: 'deleted',
+    soft_deleted: 'deleted',
+    permanently_deleted: 'deleted',
+    posted: 'posted',
+    restored: 'restored',
+  }
+  const label = entityData?.entry_number || entityData?.name || oldData?.entry_number || oldData?.name || entityId
+  await logCmsAudit({
+    action: actionMap[action] || 'saved',
+    module: 'finance',
+    entityType,
+    entityId,
+    entityLabel: label,
+    summary: `Accounts ${action.replace(/_/g, ' ')}: ${entityType} ${label}`,
+    actor: performedBy ? (typeof performedBy === 'string' ? { email: performedBy } : performedBy) : null,
   })
 }
 

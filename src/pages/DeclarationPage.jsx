@@ -5,6 +5,7 @@ import { useToast } from '../lib/toast'
 import { getActiveCategories } from '../lib/paymentCategories'
 import { Search, Loader2, Save, X, FileText, Plus, Edit2, Trash2, RotateCcw, FileSpreadsheet, Settings, ChevronDown, Lock, Unlock } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
+import { logCmsAudit } from '../lib/cmsAudit'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -186,6 +187,13 @@ export default function DeclarationPage() {
       setFyStats(prev => { const n = { ...prev }; delete n[fy]; return n })
     }
     const { error } = await supabase.from('decl_financial_years').delete().eq('fy', fy)
+    if (!error) {
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'declaration_fy',
+        entityId: fy, summary: `Deleted declaration financial year ${fy}`,
+        actor: profile,
+      })
+    }
     if (error) return error.message
     setManualFYs(prev => prev.filter(f => f !== fy))
     setLockedFYs(prev => { const next = new Set(prev); next.delete(fy); return next })
@@ -291,6 +299,12 @@ export default function DeclarationPage() {
     if (!window.confirm(`Delete declaration for ${row.member_name} (FY ${row.financial_year})?`)) return
     const { error } = await supabase.from('declarations').delete().eq('id', row.id)
     if (error) { toast(error.message, 'error'); return }
+    await logCmsAudit({
+      action: 'deleted', module: 'finance', entityType: 'declaration',
+      entityId: row.id, entityLabel: row.member_name,
+      summary: `Deleted declaration for ${row.member_name} (FY ${row.financial_year})`,
+      actor: profile,
+    })
     toast('Declaration deleted', 'success')
     updateFYActivity(row.financial_year)
     loadList(); loadFyStats()
@@ -1239,6 +1253,15 @@ function DeclarationModal({ editId, initialFY, categories, catsLoading, profile,
         if (error) throw error
       }
 
+      await logCmsAudit({
+        action: effectiveEditId ? 'updated' : 'created',
+        module: 'finance',
+        entityType: 'declaration',
+        entityId: declId,
+        entityLabel: selMember.member_name,
+        summary: `${effectiveEditId ? 'Updated' : 'Created'} declaration for ${selMember.member_name} (FY ${decl.financial_year})`,
+        actor: profile,
+      })
       toast(effectiveEditId ? 'Declaration updated' : 'Declaration saved', 'success')
       await onSaved(decl.financial_year)
     } catch (e) { toast(e.message, 'error') }

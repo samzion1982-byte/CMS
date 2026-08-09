@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { supabase } from './supabase'
+import { logCmsAudit } from './cmsAudit'
 
 /**
  * Delete a member (soft delete to deleted_members table)
@@ -37,6 +38,20 @@ export async function deleteMember(memberId, reason, userEmail) {
     console.log('[deleteMember] Starting photo move...')
     const photoResult = await movePhotoToDeleted(memberId)
     console.log('[deleteMember] Photo move result:', photoResult)
+
+    await logCmsAudit({
+      action: 'deleted',
+      module: 'members',
+      entityType: 'member',
+      entityId: memberId,
+      entityLabel: memberId,
+      summary: `Deleted member ${memberId} (reason: ${reason})`,
+      changes: [
+        { field: 'status', from: 'active', to: 'deleted' },
+        { field: 'deleted_reason', from: null, to: reason },
+      ],
+      actor: { email: userEmail },
+    })
 
     return { success: true, message: 'Member deleted successfully' }
   } catch (err) {
@@ -74,6 +89,20 @@ export async function restoreMember(deletedMemberId, newMemberId, userEmail, res
     // 2. Move photo back from deleted to active folder
     const memberIdToUse = newMemberId || (await getOriginalMemberId(deletedMemberId))
     await movePhotoToActive(memberIdToUse)
+
+    await logCmsAudit({
+      action: 'restored',
+      module: 'members',
+      entityType: 'member',
+      entityId: memberIdToUse,
+      entityLabel: memberIdToUse,
+      summary: `Restored member ${memberIdToUse}${restoreReason ? ` (${restoreReason})` : ''}`,
+      changes: [
+        { field: 'status', from: 'deleted', to: 'active' },
+        ...(newMemberId ? [{ field: 'member_id', from: null, to: String(newMemberId) }] : []),
+      ],
+      actor: { email: userEmail },
+    })
 
     return { success: true, message: 'Member restored successfully' }
   } catch (err) {
@@ -288,6 +317,17 @@ export async function permanentDeleteMembers(ids) {
     .delete()
     .in('id', ids)
   if (deleteError) throw new Error(`Delete error: ${deleteError.message}`)
+
+  const labels = (rows || []).map(r => r.member_id).filter(Boolean)
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'members',
+    entityType: 'member',
+    entityId: labels[0] || ids[0],
+    entityLabel: labels.join(', ') || `${ids.length} members`,
+    summary: `Permanently deleted ${ids.length} archived member${ids.length === 1 ? '' : 's'}`,
+    changes: labels.slice(0, 20).map(id => ({ field: 'member_id', from: id, to: null })),
+  })
 
   return { success: true, count: ids.length }
 }

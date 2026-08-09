@@ -226,7 +226,7 @@ export default function AuditTrailPage() {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                    No audit entries yet. Changes to Church Setup, Users, Permissions, and Members will appear here.
+                    No audit entries yet. Changes to Members, Events, Assets, Finance, Users, and Church Setup will appear here.
                   </td>
                 </tr>
               )}

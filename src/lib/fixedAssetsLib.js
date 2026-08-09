@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { supabase } from './supabase'
+import { logCmsAudit } from './cmsAudit'
 
 /** Same master password used across sensitive CMS settings. */
 export const FIXED_ASSETS_MASTER_PASSWORD = 'Master007))&'
@@ -103,6 +104,15 @@ export async function saveFixedAsset(payload, id = null) {
       .select()
       .single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: 'assets',
+      entityType: 'fixed_asset',
+      entityId: id,
+      entityLabel: row.name,
+      summary: `Updated fixed asset ${row.name}`,
+      actor: row.updated_by ? { email: row.updated_by } : null,
+    })
     return data
   }
 
@@ -112,6 +122,15 @@ export async function saveFixedAsset(payload, id = null) {
     .select()
     .single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created',
+    module: 'assets',
+    entityType: 'fixed_asset',
+    entityId: data.id,
+    entityLabel: row.name,
+    summary: `Created fixed asset ${row.name}`,
+    actor: payload.created_by ? { email: payload.created_by } : null,
+  })
   return data
 }
 
@@ -125,6 +144,14 @@ export async function softDeleteFixedAsset(id, updatedBy = null) {
     })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'assets',
+    entityType: 'fixed_asset',
+    entityId: id,
+    summary: `Soft-deleted fixed asset ${id}`,
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
 }
 
 export async function getFixedAssetDocuments(fixedAssetId) {
@@ -221,6 +248,15 @@ export async function saveFixedAssetDocument({
     await removeFixedAssetFile(uploaded.path)
     throw error
   }
+  await logCmsAudit({
+    action: 'created',
+    module: 'assets',
+    entityType: 'fixed_asset_document',
+    entityId: data.id,
+    entityLabel: name,
+    summary: `Uploaded document "${name}" to fixed asset`,
+    actor: created_by ? { email: created_by } : null,
+  })
   return data
 }
 
@@ -240,6 +276,14 @@ export async function softDeleteFixedAssetDocument(id, updatedBy = null) {
     })
     .eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'assets',
+    entityType: 'fixed_asset_document',
+    entityId: id,
+    summary: `Removed fixed asset document ${id}`,
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
 
   // Keep storage file for now (soft delete); optional hard remove:
   // if (doc?.file_path) await removeFixedAssetFile(doc.file_path)

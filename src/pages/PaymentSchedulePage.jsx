@@ -8,6 +8,7 @@ import { getActiveCategories }  from '../lib/paymentCategories'
 import { sendWhatsAppMessage }   from '../lib/whatsapp'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
+import { logCmsAudit } from '../lib/cmsAudit'
 import {
   CreditCard, ScanLine, Loader2, Search, UserX,
   CheckSquare, Square, ChevronDown, RefreshCw, Send,
@@ -146,6 +147,11 @@ export default function PaymentSchedulePage() {
         .from('member_payment_schedules')
         .upsert(rows, { onConflict: 'member_id' })
       if (uErr) throw uErr
+      await logCmsAudit({
+        action: 'saved', module: 'finance', entityType: 'payment_schedule',
+        entityId: fy, summary: `Scanned payment schedule for ${rows.length} members (FY ${fy})`,
+        actor: profile,
+      })
       toast(`${rows.length} members scanned from FY ${fy}`, 'success')
       setDisplayFY(fy)
       load()
@@ -155,11 +161,21 @@ export default function PaymentSchedulePage() {
 
   async function changeSlot(id, slot) {
     setMovingId(id)
+    const prev = schedules.find(s => s.id === id)
     const { error } = await supabase
       .from('member_payment_schedules')
       .update({ slot, last_modified_by: profile?.email, updated_at: new Date().toISOString() })
       .eq('id', id)
-    if (!error) setSchedules(prev => prev.map(s => s.id === id ? { ...s, slot } : s))
+    if (!error) {
+      setSchedules(prevRows => prevRows.map(s => s.id === id ? { ...s, slot } : s))
+      await logCmsAudit({
+        action: 'updated', module: 'finance', entityType: 'payment_schedule',
+        entityId: id, entityLabel: prev?.member_name || prev?.member_id || id,
+        summary: `Changed payment slot for ${prev?.member_name || prev?.member_id || id} → ${slot}`,
+        changes: [{ field: 'slot', from: String(prev?.slot ?? ''), to: String(slot) }],
+        actor: profile,
+      })
+    }
     else toast(error.message, 'error')
     setMovingId(null)
   }
@@ -170,6 +186,15 @@ export default function PaymentSchedulePage() {
       .from('member_payment_schedules')
       .update({ excluded_from_online: next, last_modified_by: profile?.email, updated_at: new Date().toISOString() })
       .eq('id', s.id)
+    if (!error) {
+      await logCmsAudit({
+        action: 'updated', module: 'finance', entityType: 'payment_schedule',
+        entityId: s.id, entityLabel: s.member_name || s.member_id,
+        summary: `${next ? 'Excluded' : 'Included'} ${s.member_name || s.member_id} from online payments`,
+        changes: [{ field: 'excluded_from_online', from: String(!next), to: String(next) }],
+        actor: profile,
+      })
+    }
     if (!error) setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, excluded_from_online: next } : x))
     else toast(error.message, 'error')
   }
@@ -544,6 +569,11 @@ function PushPaymentRequestModal({ church, categories, profile, toast, onClose, 
       setProgress({ done, total: toSend.length })
     }
 
+    await logCmsAudit({
+      action: 'created', module: 'finance', entityType: 'payment_request',
+      entityId: batchId, summary: `Sent ${done} payment request${done !== 1 ? 's' : ''} (FY ${fy})`,
+      actor: profile,
+    })
     toast(`${done} payment request${done !== 1 ? 's' : ''} sent`, 'success')
     setSending(false)
     onSent()
