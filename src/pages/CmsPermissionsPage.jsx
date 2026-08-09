@@ -142,8 +142,8 @@ export default function CmsPermissionsPage() {
             CMS Permissions
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
-            Categories match the sidebar. Tick a category to allow/block everything in it,
-            or open it and choose individual pages / sub-pages. Super Admin always has full access.
+            Choose which pages each role can open. Admin, User1–User4 start at the same level
+            (MAIN pages). Grant Finance, Logs, Fixed Assets, etc. here. Super Admin always has full access.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

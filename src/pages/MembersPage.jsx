@@ -523,7 +523,7 @@ export default function MembersPage() {
           <p style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>{total.toLocaleString()} members total</p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {['super_admin','admin1'].includes(profile?.role) && (
+          {perms.canDelete && (
             <button className="action-btn" onClick={() => navigate('/deleted-members')} style={{background:'#0d9488'}}>
               <Archive size={13}/> Deleted Members
             </button>

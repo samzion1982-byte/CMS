@@ -3,6 +3,10 @@
  * Grants are stored per leaf page key; category/folder checkboxes are aggregates.
  */
 
+import { ASSIGNABLE_ROLES } from './auth'
+
+const ASSIGNABLE_ROLE_SET = new Set(ASSIGNABLE_ROLES)
+
 export const CMS_CONFIG_ROLES = [
   { value: 'admin1', label: 'Admin'  },
   { value: 'admin',  label: 'User1'  },
@@ -42,8 +46,8 @@ export const CMS_PERMISSION_TREE = [
         children: [
           // Tabs share /assets — access is enforced by assetTab grants, not path alone
           { key: 'assets-movable',   label: 'Movable Assets', kind: 'page', assetTab: 'movable' },
-          { key: 'assets-fixed',     label: 'Fixed Assets',   kind: 'page', assetTab: 'building', adminDefault: true, sensitive: true },
-          { key: 'assets-documents', label: 'Documents',      kind: 'page', assetTab: 'document', adminDefault: true, sensitive: true },
+          { key: 'assets-fixed',     label: 'Fixed Assets',   kind: 'page', assetTab: 'building', sensitive: true },
+          { key: 'assets-documents', label: 'Documents',      kind: 'page', assetTab: 'document', sensitive: true },
         ],
       },
     ],
@@ -53,21 +57,21 @@ export const CMS_PERMISSION_TREE = [
     label: 'FINANCE',
     kind: 'category',
     children: [
-      { key: 'declaration',      label: 'Declaration',      kind: 'page', match: '/declaration',      adminDefault: true },
-      { key: 'receipts',         label: 'Receipt Entry',    kind: 'page', match: '/receipts',         adminDefault: true },
-      { key: 'payment-schedule', label: 'Payment Schedule', kind: 'page', match: '/payment-schedule', adminDefault: true },
-      { key: 'accounting',       label: 'Accounts',         kind: 'page', match: '/accounting',       adminDefault: true },
-      { key: 'simple-accounts',  label: 'Simple Accounts',  kind: 'page', match: '/simple-accounts',  adminDefault: true },
+      { key: 'declaration',      label: 'Declaration',      kind: 'page', match: '/declaration' },
+      { key: 'receipts',         label: 'Receipt Entry',    kind: 'page', match: '/receipts' },
+      { key: 'payment-schedule', label: 'Payment Schedule', kind: 'page', match: '/payment-schedule' },
+      { key: 'accounting',       label: 'Accounts',         kind: 'page', match: '/accounting' },
+      { key: 'simple-accounts',  label: 'Simple Accounts',  kind: 'page', match: '/simple-accounts' },
       {
         key: 'folder-reports',
         label: 'Reports',
         kind: 'folder',
         children: [
-          { key: 'report-member',    label: 'Member Report',    kind: 'page', match: '/reports/member',    adminDefault: true },
-          { key: 'member-statement', label: 'Member Statement', kind: 'page', match: '/member-statement',  adminDefault: true },
-          { key: 'report-receipts',  label: 'Receipt Report',   kind: 'page', match: '/reports',           adminDefault: true, exact: true },
-          { key: 'report-auction',   label: 'Auction Report',   kind: 'page', match: '/reports/auction',   adminDefault: true },
-          { key: 'report-transfers', label: 'Transfer Report',  kind: 'page', match: '/reports/transfers', adminDefault: true },
+          { key: 'report-member',    label: 'Member Report',    kind: 'page', match: '/reports/member' },
+          { key: 'member-statement', label: 'Member Statement', kind: 'page', match: '/member-statement' },
+          { key: 'report-receipts',  label: 'Receipt Report',   kind: 'page', match: '/reports', exact: true },
+          { key: 'report-auction',   label: 'Auction Report',   kind: 'page', match: '/reports/auction' },
+          { key: 'report-transfers', label: 'Transfer Report',  kind: 'page', match: '/reports/transfers' },
         ],
       },
     ],
@@ -77,7 +81,7 @@ export const CMS_PERMISSION_TREE = [
     label: 'ADMIN',
     kind: 'category',
     children: [
-      { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup', admin1Default: true },
+      { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup' },
     ],
   },
   {
@@ -85,10 +89,10 @@ export const CMS_PERMISSION_TREE = [
     label: 'LOGS',
     kind: 'category',
     children: [
-      { key: 'announcements-log',    label: 'Announcements Log', kind: 'page', match: '/announcements-log',    adminDefault: true },
-      { key: 'whatsapp-receipt-log', label: 'WhatsApp Receipts', kind: 'page', match: '/whatsapp-receipt-log', adminDefault: true },
-      { key: 'payment-request-log',  label: 'Payment Req. Log',  kind: 'page', match: '/payment-request-log',  adminDefault: true },
-      { key: 'login-logs',           label: 'Login Details',     kind: 'page', match: '/login-logs',           adminDefault: true },
+      { key: 'announcements-log',    label: 'Announcements Log', kind: 'page', match: '/announcements-log' },
+      { key: 'whatsapp-receipt-log', label: 'WhatsApp Receipts', kind: 'page', match: '/whatsapp-receipt-log' },
+      { key: 'payment-request-log',  label: 'Payment Req. Log',  kind: 'page', match: '/payment-request-log' },
+      { key: 'login-logs',           label: 'Login Details',     kind: 'page', match: '/login-logs' },
     ],
   },
 ]
@@ -142,13 +146,12 @@ export function findPageForPath(pathname) {
   return hits[0]
 }
 
-/** Legacy defaults before Super Admin customizes a role. */
+/** Same defaults for every assignable role — Super Admin grants pages in CMS Permissions. */
 export function defaultPageAllowed(role, page) {
   if (role === 'super_admin') return true
   if (page.alwaysOn) return true
-  if (page.admin1Default) return role === 'admin1'
-  if (page.adminDefault) return role === 'admin1' || role === 'admin'
-  if (page.group === 'MAIN') return ['admin1', 'admin', 'user', 'demo', 'user4'].includes(role)
+  // Baseline: MAIN only (Dashboard, Members, Announcements, Events, Movable Assets)
+  if (page.group === 'MAIN' && !page.sensitive) return ASSIGNABLE_ROLE_SET.has(role)
   return false
 }
 

@@ -13,20 +13,31 @@ import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 // ---------- Constants ----------
 const MAX_SLOTS = 5
 
-const PERMS = {
-  admin1: { 'Add member':true,  'Edit member':true,  'Delete member':true,  'Print / export':true,  'Import data':false, 'Manage users':false },
-  admin:  { 'Add member':true,  'Edit member':true,  'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
-  user:   { 'Add member':false, 'Edit member':false, 'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
-  demo:   { 'Add member':true,  'Edit member':true,  'Delete member':true,  'Print / export':true,  'Import data':false, 'Manage users':false },
-  user4:  { 'Add member':false, 'Edit member':false, 'Delete member':false, 'Print / export':true,  'Import data':false, 'Manage users':false },
+const USER_PERMS_MATRIX = {
+  'Add member': true,
+  'Edit member': true,
+  'Delete member': true,
+  'Print / export': true,
+  'Import data': false,
+  'Manage users': false,
 }
 
+const PERMS = {
+  admin1: { ...USER_PERMS_MATRIX },
+  admin:  { ...USER_PERMS_MATRIX },
+  user:   { ...USER_PERMS_MATRIX },
+  demo:   { ...USER_PERMS_MATRIX },
+  user4:  { ...USER_PERMS_MATRIX },
+}
+
+const ROLE_DESC = 'Same level — pages granted in CMS Permissions'
+
 const ROLES = [
-  { value:'admin1', label: ROLE_LABELS.admin1, desc:'Full access — except user management', emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
-  { value:'admin',  label: ROLE_LABELS.admin,  desc:'Add & edit members only',              emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
-  { value:'user',   label: ROLE_LABELS.user,   desc:'View & print only',                    emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
-  { value:'demo',   label: ROLE_LABELS.demo,   desc:'Full access (demo / training)',        emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
-  { value:'user4',  label: ROLE_LABELS.user4,  desc:'View & print only',                    emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
+  { value:'admin1', label: ROLE_LABELS.admin1, desc: ROLE_DESC, emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
+  { value:'admin',  label: ROLE_LABELS.admin,  desc: ROLE_DESC, emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
+  { value:'user',   label: ROLE_LABELS.user,   desc: ROLE_DESC, emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
+  { value:'demo',   label: ROLE_LABELS.demo,   desc: ROLE_DESC, emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
+  { value:'user4',  label: ROLE_LABELS.user4,  desc: ROLE_DESC, emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
 ]
 
 function ini(name = '') {
@@ -414,6 +425,9 @@ export default function UsersPage() {
             {PERMS[form.role] && (
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px' }}>
                 <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', marginBottom: 8 }}>Permissions</p>
+                <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.4 }}>
+                  All users share the same action level. Which pages they can open is set in <strong>CMS Permissions</strong>.
+                </p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
                   {Object.entries(PERMS[form.role]).map(([action, allowed]) => (
                     <div key={action} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>

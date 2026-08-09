@@ -1,13 +1,22 @@
 import { supabase } from './supabase'
 import { formatDate } from './date'
 
+/** Same action level for every assignable user — page access is via CMS Permissions. */
+const USER_LEVEL = {
+  canAdd: true,
+  canEdit: true,
+  canDelete: true,
+  canPrint: true,
+  canManageUsers: false,
+}
+
 export const ROLE_PERMISSIONS = {
-  super_admin: { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:true  },
-  admin1:      { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false }, // label: Admin
-  admin:       { canAdd:true,  canEdit:true,  canDelete:false, canPrint:true,  canManageUsers:false }, // label: User1
-  user:        { canAdd:false, canEdit:false, canDelete:false, canPrint:true,  canManageUsers:false }, // label: User2
-  demo:        { canAdd:true,  canEdit:true,  canDelete:true,  canPrint:true,  canManageUsers:false }, // label: User3
-  user4:       { canAdd:false, canEdit:false, canDelete:false, canPrint:true,  canManageUsers:false }, // label: User4
+  super_admin: { canAdd:true, canEdit:true, canDelete:true, canPrint:true, canManageUsers:true },
+  admin1: { ...USER_LEVEL }, // Admin
+  admin:  { ...USER_LEVEL }, // User1
+  user:   { ...USER_LEVEL }, // User2
+  demo:   { ...USER_LEVEL }, // User3
+  user4:  { ...USER_LEVEL }, // User4
 }
 
 export const ROLE_LABELS = {
@@ -23,7 +32,7 @@ export const ROLE_LABELS = {
 export const ASSIGNABLE_ROLES = ['admin1', 'admin', 'user', 'demo', 'user4']
 
 export function getPerms(role) {
-  return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user
+  return ROLE_PERMISSIONS[role] || USER_LEVEL
 }
 
 export function initials(name = '') { 
