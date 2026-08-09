@@ -7,7 +7,7 @@ import {
   Save, RotateCcw, Edit2, Power, Trash2,
   Eye, EyeOff, Loader2, Users, UserPlus,
   Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle,
-  Copy, X, Search,
+  Copy, ChevronRight,
 } from 'lucide-react'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 
@@ -68,19 +68,18 @@ const fieldLabel = {
 export default function UsersPage() {
   const { profile } = useAuth()
   const toast = useToast()
-  const panelRef = useRef(null)
+  const formRef = useRef(null)
 
   const [users, setUsers] = useState([])
-  const [passwords, setPasswords] = useState({}) // userId -> password
+  const [passwords, setPasswords] = useState({})
   const [vaultReady, setVaultReady] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [selectedId, setSelectedId] = useState(null)
+  const [mode, setMode] = useState('view') // view | create | edit
   const [editing, setEditing] = useState(null)
-  const [panelOpen, setPanelOpen] = useState(false)
   const [showPw, setShowPw] = useState(false)
-  const [revealAll, setRevealAll] = useState(false)
-  const [revealed, setRevealed] = useState({}) // id -> bool
-  const [query, setQuery] = useState('')
+  const [revealPw, setRevealPw] = useState(false)
   const [deactivateDialog, setDeactivateDialog] = useState(null)
   const [permDeleteDialog, setPermDeleteDialog] = useState(null)
   const [resetDialog, setResetDialog] = useState(null)
@@ -105,7 +104,12 @@ export default function UsersPage() {
       console.error(error)
       setUsers([])
     } else {
-      setUsers(data || [])
+      const list = data || []
+      setUsers(list)
+      setSelectedId(prev => {
+        if (prev && list.some(u => u.id === prev)) return prev
+        return list[0]?.id || null
+      })
     }
 
     const { data: pwRows, error: pwErr } = await supabase
@@ -129,12 +133,16 @@ export default function UsersPage() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    setRevealPw(false)
+  }, [selectedId])
+
   function openCreate() {
+    setMode('create')
     setEditing(null)
     setForm({ name: '', email: '', password: '', role: '', mobile: '' })
     setShowPw(false)
-    setPanelOpen(true)
-    setTimeout(() => panelRef.current?.querySelector('input')?.focus(), 50)
+    setTimeout(() => formRef.current?.querySelector('input')?.focus(), 40)
   }
 
   function startEdit(u) {
@@ -142,17 +150,24 @@ export default function UsersPage() {
       toast('You cannot edit your own role or demote yourself.', 'error')
       return
     }
+    setSelectedId(u.id)
+    setMode('edit')
     setEditing(u.id)
     setForm({ name: u.full_name || '', email: u.email || '', password: '', role: u.role || '', mobile: u.mobile || '' })
     setShowPw(false)
-    setPanelOpen(true)
+    setTimeout(() => formRef.current?.querySelector('input')?.focus(), 40)
   }
 
-  function closePanel() {
-    setPanelOpen(false)
+  function cancelForm() {
+    setMode('view')
     setEditing(null)
     setForm({ name: '', email: '', password: '', role: '', mobile: '' })
     setShowPw(false)
+  }
+
+  function selectUser(id) {
+    setSelectedId(id)
+    if (mode !== 'view') cancelForm()
   }
 
   async function copyText(text, label = 'Copied') {
@@ -186,7 +201,8 @@ export default function UsersPage() {
         return
       }
       toast(form.name + ' updated.', 'success')
-      closePanel()
+      setSelectedId(editing)
+      cancelForm()
       load()
       setSaving(false)
       return
@@ -252,7 +268,8 @@ export default function UsersPage() {
     }
 
     toast(form.name + ' created successfully.', 'success')
-    closePanel()
+    setSelectedId(newUserId)
+    cancelForm()
     load()
     setSaving(false)
   }
@@ -306,6 +323,8 @@ export default function UsersPage() {
       await deleteStoredPassword(id)
       await supabase.from('profiles').delete().eq('id', id)
       toast('User permanently deleted.', 'success')
+      if (selectedId === id) setSelectedId(null)
+      cancelForm()
       load()
     } catch (err) {
       console.error('Permanent delete error:', err)
@@ -338,12 +357,13 @@ export default function UsersPage() {
       }
       try {
         await upsertStoredPassword(resetDialog.id, resetPassword)
-      } catch (e) {
+      } catch {
         toast('Password reset in Auth, but vault update failed. Run the SQL migration if needed.', 'error')
       }
       toast(`Password for ${resetDialog.name} has been reset.`, 'success')
       setResetDialog(null)
       setResetPassword('')
+      setRevealPw(true)
       load()
     } catch (err) {
       console.error('Reset error:', err)
@@ -362,474 +382,492 @@ export default function UsersPage() {
   }
 
   const slotsUsed = users.length
-  const filtered = users.filter(u => {
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    return (
-      (u.full_name || '').toLowerCase().includes(q) ||
-      (u.email || '').toLowerCase().includes(q) ||
-      (u.mobile || '').includes(q) ||
-      (ROLE_LABELS[u.role] || u.role || '').toLowerCase().includes(q)
-    )
-  })
+  const selected = users.find(u => u.id === selectedId) || null
+  const selectedPw = selected ? passwords[selected.id] : null
+  const openSlots = Math.max(0, MAX_SLOTS - slotsUsed)
+  const busySelected = selected && (toggleLoading === selected.id || deactivateLoading === selected.id)
 
   return (
-    <div className="page-container animate-fade-in users-dir" style={{ maxWidth: 1180 }}>
-      {/* Compact directory header */}
-      <header style={{
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        gap: 16, flexWrap: 'wrap', marginBottom: 18,
-        paddingBottom: 16, borderBottom: '1px solid var(--card-border)',
-      }}>
-        <div>
-          <p style={{
-            margin: '0 0 4px', fontSize: 11, fontWeight: 700, letterSpacing: '0.14em',
-            textTransform: 'uppercase', color: 'var(--text-3)',
-          }}>
-            Super Admin
-          </p>
-          <h1 className="page-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Users size={22} style={{ color: 'var(--accent)' }} />
-            User directory
-          </h1>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', maxWidth: 480 }}>
-            Manage CMS logins. Passwords are stored for Super Admin viewing when created or reset here.
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 12px', borderRadius: 10,
-            border: '1px solid var(--card-border)', background: 'var(--card-bg)',
-            fontSize: 12, fontWeight: 700, color: 'var(--text-2)',
-          }}>
-            <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>Slots</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {Array.from({ length: MAX_SLOTS }).map((_, i) => (
-                <span
-                  key={i}
-                  title={users[i]?.full_name || `Open slot ${i + 1}`}
-                  style={{
-                    width: 10, height: 10, borderRadius: 3,
-                    background: users[i]
-                      ? (users[i].is_active === false ? 'var(--warning)' : 'var(--accent)')
-                      : 'var(--card-border)',
-                  }}
-                />
-              ))}
-            </div>
-            <span>{slotsUsed}/{MAX_SLOTS}</span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={openCreate}
-            disabled={slotsUsed >= MAX_SLOTS}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 40 }}
-          >
-            <UserPlus size={15} /> Add user
-          </button>
-        </div>
-      </header>
-
-      {/* Toolbar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12, flexWrap: 'wrap', marginBottom: 12,
-      }}>
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: 320 }}>
-          <Search size={14} style={{
-            position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-            color: 'var(--text-3)', pointerEvents: 'none',
-          }} />
-          <input
-            className="field-input"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search name, email, role…"
-            style={{ paddingLeft: 34, height: 38 }}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setRevealAll(v => {
-              const next = !v
-              if (!next) setRevealed({})
-              return next
-            })
-          }}
-          style={{
-            height: 38, padding: '0 12px', borderRadius: 9, cursor: 'pointer',
-            border: '1px solid var(--card-border)', background: 'var(--card-bg)',
-            color: 'var(--text-2)', fontSize: 12, fontWeight: 700,
-            display: 'inline-flex', alignItems: 'center', gap: 7,
-          }}
-          title={revealAll ? 'Hide all passwords' : 'Show all passwords'}
-        >
-          {revealAll ? <EyeOff size={14} /> : <Eye size={14} />}
-          {revealAll ? 'Hide passwords' : 'Show passwords'}
-        </button>
+    <div className="page-container animate-fade-in" style={{ maxWidth: 1100 }}>
+      <div style={{ marginBottom: 16 }}>
+        <h1 className="page-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Users size={22} style={{ color: 'var(--accent)' }} />
+          User Management
+        </h1>
+        <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)' }}>
+          Select a user to inspect credentials and manage access · {slotsUsed}/{MAX_SLOTS} slots
+        </p>
       </div>
 
       {!vaultReady && (
         <div style={{
           marginBottom: 12, padding: '10px 12px', borderRadius: 10, fontSize: 12,
-          background: 'var(--warning-subtle)', border: '1px solid var(--warning)',
-          color: 'var(--text-1)',
+          background: 'var(--warning-subtle)', border: '1px solid var(--warning)', color: 'var(--text-1)',
         }}>
-          Password vault table is missing. Run <code>20260809_cms_user_passwords.sql</code> in Supabase to enable viewing passwords.
+          Password vault missing. Run <code>20260809_cms_user_passwords.sql</code> in Supabase.
         </div>
       )}
 
-      {/* Table directory */}
-      <div style={{
-        background: 'var(--card-bg)', border: '1px solid var(--card-border)',
-        borderRadius: 14, overflow: 'hidden',
-        boxShadow: 'var(--card-shadow)',
-      }}>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 56 }}>
-            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--text-3)' }} />
+      <div
+        className="users-split"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(240px, 300px) 1fr',
+          gap: 0,
+          minHeight: 520,
+          border: '1px solid var(--card-border)',
+          borderRadius: 16,
+          overflow: 'hidden',
+          background: 'var(--card-bg)',
+          boxShadow: 'var(--card-shadow)',
+        }}
+      >
+        {/* Roster rail */}
+        <aside style={{
+          borderRight: '1px solid var(--card-border)',
+          background: 'color-mix(in srgb, var(--page-bg) 70%, var(--card-bg))',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{
+            padding: '14px 14px 10px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          }}>
+            <span style={{
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: 'var(--text-3)',
+            }}>
+              Roster
+            </span>
+            <button
+              type="button"
+              onClick={openCreate}
+              disabled={slotsUsed >= MAX_SLOTS || mode === 'create'}
+              title="Add user"
+              style={{
+                width: 30, height: 30, borderRadius: 8, border: 'none', cursor: slotsUsed >= MAX_SLOTS ? 'not-allowed' : 'pointer',
+                background: 'var(--accent)', color: 'var(--accent-text, #fff)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                opacity: slotsUsed >= MAX_SLOTS ? 0.45 : 1,
+              }}
+            >
+              <UserPlus size={15} />
+            </button>
           </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-            <Users size={28} style={{ color: 'var(--text-3)', marginBottom: 8 }} />
-            <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-1)' }}>
-              {users.length === 0 ? 'No users yet' : 'No matches'}
-            </p>
-            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)' }}>
-              {users.length === 0 ? 'Add the first CMS user to get started.' : 'Try a different search.'}
-            </p>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="users-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-              <thead>
-                <tr style={{ background: 'var(--card-header-bg)', borderBottom: '1px solid var(--card-border)' }}>
-                  {['#', 'User', 'Role', 'Contact', 'Password', 'Status', 'Actions'].map(h => (
-                    <th key={h} style={{
-                      textAlign: 'left', padding: '11px 14px', fontSize: 10, fontWeight: 800,
-                      letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((u, idx) => {
-                  const pw = passwords[u.id]
-                  const show = revealAll || !!revealed[u.id]
-                  const busy = toggleLoading === u.id || deactivateLoading === u.id
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 12px' }}>
+            {loading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                <Loader2 size={20} className="animate-spin" style={{ color: 'var(--text-3)' }} />
+              </div>
+            ) : (
+              <>
+                {users.map((u, idx) => {
+                  const active = selectedId === u.id && mode === 'view'
+                  const editingThis = mode === 'edit' && editing === u.id
+                  const on = active || editingThis
                   return (
-                    <tr
+                    <button
                       key={u.id}
+                      type="button"
+                      onClick={() => selectUser(u.id)}
                       style={{
-                        borderBottom: '1px solid var(--card-border)',
-                        background: idx % 2 ? 'color-mix(in srgb, var(--page-bg) 55%, var(--card-bg))' : 'var(--card-bg)',
-                        animation: `usersRowIn .28s ease ${idx * 0.03}s both`,
+                        width: '100%', textAlign: 'left', marginBottom: 6,
+                        padding: '10px 10px', borderRadius: 12, cursor: 'pointer',
+                        border: on ? '1.5px solid var(--accent)' : '1.5px solid transparent',
+                        background: on ? 'var(--card-bg)' : 'transparent',
+                        boxShadow: on ? '0 4px 14px var(--accent-ring)' : 'none',
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        animation: `usersRosterIn .3s ease ${idx * 0.04}s both`,
+                        transition: 'border-color .12s, box-shadow .12s, background .12s',
                       }}
                     >
-                      <td style={{ padding: '14px', fontSize: 12, fontWeight: 700, color: 'var(--text-3)', width: 40 }}>
-                        {idx + 1}
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{
-                            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                            background: 'var(--sidebar-bg, #0d2244)', color: '#fff',
-                            fontSize: 11, fontWeight: 800,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            {ini(u.full_name)}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{u.full_name}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <Calendar size={11} /> {fmtDate(u.created_at)}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{ padding: '14px' }}>
+                      <div style={{
+                        width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                        background: u.is_active === false
+                          ? 'color-mix(in srgb, var(--text-3) 35%, var(--card-bg))'
+                          : 'var(--sidebar-bg, #0d2244)',
+                        color: '#fff', fontSize: 12, fontWeight: 800,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        position: 'relative',
+                      }}>
+                        {ini(u.full_name)}
                         <span style={{
-                          fontSize: 11, fontWeight: 800, padding: '4px 9px', borderRadius: 6,
-                          background: 'var(--accent-subtle)', color: 'var(--accent)',
-                          border: '1px solid color-mix(in srgb, var(--accent) 25%, var(--card-border))',
+                          position: 'absolute', right: -1, bottom: -1, width: 9, height: 9,
+                          borderRadius: '50%', border: '2px solid var(--card-bg)',
+                          background: u.is_active === false ? 'var(--warning)' : 'var(--success)',
+                        }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 13, fontWeight: 700, color: 'var(--text-1)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
+                          {u.full_name}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
                           {ROLE_LABELS[u.role] || u.role}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            <Mail size={12} style={{ color: 'var(--text-3)' }} /> {u.email}
-                          </span>
-                          {u.mobile && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                              <Phone size={12} style={{ color: 'var(--text-3)' }} /> {u.mobile}
-                            </span>
-                          )}
                         </div>
-                      </td>
-                      <td style={{ padding: '14px', minWidth: 180 }}>
-                        {pw ? (
-                          <div style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '5px 8px', borderRadius: 8,
-                            background: 'var(--page-bg)', border: '1px solid var(--card-border)',
-                          }}>
-                            <Key size={12} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
-                            <code style={{
-                              fontSize: 12, fontWeight: 600, color: 'var(--text-1)',
-                              letterSpacing: show ? '0.02em' : '0.12em',
-                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                              maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {show ? pw : '••••••••'}
-                            </code>
-                            <button
-                              type="button"
-                              title={show ? 'Hide' : 'Show'}
-                              onClick={() => setRevealed(r => ({ ...r, [u.id]: !r[u.id] }))}
-                              style={miniIconBtn}
-                            >
-                              {show ? <EyeOff size={13} /> : <Eye size={13} />}
-                            </button>
-                            <button
-                              type="button"
-                              title="Copy password"
-                              onClick={() => copyText(pw, 'Password copied')}
-                              style={miniIconBtn}
-                            >
-                              <Copy size={13} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}
-                            style={{
-                              fontSize: 11, fontWeight: 700, color: 'var(--warning)',
-                              background: 'var(--warning-subtle)', border: '1px solid color-mix(in srgb, var(--warning) 35%, var(--card-border))',
-                              borderRadius: 8, padding: '5px 9px', cursor: 'pointer',
-                            }}
-                            title="No password recorded yet — reset to store one"
-                          >
-                            Not recorded · Reset
-                          </button>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        {u.is_active === false ? (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            fontSize: 11, fontWeight: 700, color: 'var(--danger)',
-                          }}>
-                            <XCircle size={13} /> Inactive
-                          </span>
-                        ) : (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            fontSize: 11, fontWeight: 700, color: 'var(--success)',
-                          }}>
-                            <Activity size={13} /> Active
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          <button type="button" onClick={() => startEdit(u)} disabled={busy} style={rowBtn}>
-                            <Edit2 size={12} /> Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}
-                            style={rowBtn}
-                          >
-                            <Key size={12} /> Reset
-                          </button>
-                          {u.is_active !== false ? (
-                            <button
-                              type="button"
-                              onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })}
-                              style={{ ...rowBtn, color: 'var(--warning)' }}
-                            >
-                              <Power size={12} /> Off
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => activateUser(u.id)}
-                              disabled={toggleLoading === u.id}
-                              style={{ ...rowBtn, color: 'var(--success)' }}
-                            >
-                              {toggleLoading === u.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
-                              On
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })}
-                            style={{ ...rowBtn, color: 'var(--danger)' }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
+                      <ChevronRight size={14} style={{ color: on ? 'var(--accent)' : 'var(--text-3)', flexShrink: 0 }} />
+                    </button>
                   )
                 })}
-              </tbody>
-            </table>
+
+                {Array.from({ length: openSlots }).map((_, i) => (
+                  <button
+                    key={`open-${i}`}
+                    type="button"
+                    onClick={openCreate}
+                    style={{
+                      width: '100%', textAlign: 'left', marginBottom: 6,
+                      padding: '10px 10px', borderRadius: 12, cursor: 'pointer',
+                      border: mode === 'create' && i === 0 ? '1.5px dashed var(--accent)' : '1.5px dashed var(--card-border)',
+                      background: 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      color: 'var(--text-3)',
+                    }}
+                  >
+                    <div style={{
+                      width: 38, height: 38, borderRadius: '50%',
+                      border: '1.5px dashed var(--card-border)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <UserPlus size={14} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>Open slot</div>
+                      <div style={{ fontSize: 11 }}>Add CMS user</div>
+                    </div>
+                  </button>
+                ))}
+
+                {users.length === 0 && openSlots === 0 && (
+                  <p style={{ padding: 16, fontSize: 12, color: 'var(--text-3)', textAlign: 'center' }}>No slots</p>
+                )}
+              </>
+            )}
           </div>
-        )}
-      </div>
+        </aside>
 
-      <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)' }}>
-        Page access is configured in CMS Permissions. Action rights are the same for all assignable roles.
-      </p>
-
-      {/* Add / Edit slide-over */}
-      {panelOpen && (
-        <div
-          className="fixed inset-0 z-50 flex justify-end"
-          style={{ background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(3px)' }}
-          onClick={e => { if (e.target === e.currentTarget) closePanel() }}
-        >
-          <aside
-            ref={panelRef}
-            className="users-panel"
-            style={{
-              width: '100%', maxWidth: 420, height: '100%',
-              background: 'var(--card-bg)', borderLeft: '1px solid var(--card-border)',
-              boxShadow: '-12px 0 40px rgba(0,0,0,0.18)',
-              display: 'flex', flexDirection: 'column',
-              animation: 'usersPanelIn .22s ease',
-            }}
-          >
-            <div style={{
-              padding: '16px 18px', borderBottom: '1px solid var(--card-border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              background: 'var(--card-header-bg)',
-            }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {editing ? <Edit2 size={15} /> : <UserPlus size={15} />}
-                  {editing ? 'Edit user' : 'Add user'}
+        {/* Inspector */}
+        <section ref={formRef} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {mode === 'create' || mode === 'edit' ? (
+            <>
+              <div style={{
+                padding: '18px 22px 14px',
+                borderBottom: '1px solid var(--card-border)',
+              }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase',
+                  color: 'var(--text-3)', marginBottom: 6,
+                }}>
+                  {mode === 'edit' ? 'Edit account' : 'New account'}
+                </div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--text-1)' }}>
+                  {mode === 'edit' ? 'Update user details' : 'Create CMS user'}
                 </h2>
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-                  {editing ? 'Update name, role, or mobile' : 'Creates a login and stores the password for viewing'}
-                </p>
               </div>
-              <button type="button" onClick={closePanel} style={miniIconBtn} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div style={{ padding: 18, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={fieldLabel}>Full name *</label>
-                <input className="field-input" value={form.name} onChange={e => sf('name', e.target.value)} placeholder="e.g. John Samuel" />
-              </div>
-              <div>
-                <label style={fieldLabel}>Email *</label>
-                <input
-                  type="email" className="field-input" value={form.email}
-                  onChange={e => sf('email', e.target.value)} placeholder="user@church.org"
-                  disabled={!!editing}
-                  style={editing ? { background: 'var(--page-bg)', color: 'var(--text-3)' } : {}}
-                />
-              </div>
-              <div>
-                <label style={fieldLabel}>Mobile</label>
-                <input className="field-input" value={form.mobile} onChange={e => sf('mobile', e.target.value)} placeholder="+91 99999 99999" />
-              </div>
-              {!editing && (
+              <div style={{
+                padding: 22, flex: 1, overflowY: 'auto',
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, alignContent: 'start',
+              }} className="users-form-grid">
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={fieldLabel}>Full name *</label>
+                  <input className="field-input" value={form.name} onChange={e => sf('name', e.target.value)} placeholder="e.g. John Samuel" />
+                </div>
                 <div>
-                  <label style={fieldLabel}>Password *</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPw ? 'text' : 'password'} className="field-input"
-                      value={form.password} onChange={e => sf('password', e.target.value)}
-                      placeholder="Min 8 characters" style={{ paddingRight: 40 }}
-                    />
+                  <label style={fieldLabel}>Email *</label>
+                  <input
+                    type="email" className="field-input" value={form.email}
+                    onChange={e => sf('email', e.target.value)} placeholder="user@church.org"
+                    disabled={mode === 'edit'}
+                    style={mode === 'edit' ? { background: 'var(--page-bg)', color: 'var(--text-3)' } : {}}
+                  />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Mobile</label>
+                  <input className="field-input" value={form.mobile} onChange={e => sf('mobile', e.target.value)} placeholder="+91 99999 99999" />
+                </div>
+                {mode === 'create' && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={fieldLabel}>Password *</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showPw ? 'text' : 'password'} className="field-input"
+                        value={form.password} onChange={e => sf('password', e.target.value)}
+                        placeholder="Min 8 characters" style={{ paddingRight: 40 }}
+                      />
+                      <button
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => setShowPw(v => !v)}
+                        style={{
+                          position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex',
+                        }}
+                      >
+                        {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={fieldLabel}>Role *</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {ROLES.map(r => {
+                      const on = form.role === r.value
+                      return (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() => sf('role', r.value)}
+                          style={{
+                            padding: '8px 12px', borderRadius: 999, cursor: 'pointer',
+                            border: on ? '1.5px solid var(--accent)' : '1.5px solid var(--card-border)',
+                            background: on ? 'var(--accent-subtle)' : 'var(--card-bg)',
+                            color: on ? 'var(--accent)' : 'var(--text-2)',
+                            fontSize: 12, fontWeight: 700,
+                          }}
+                        >
+                          {r.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {PERMS[form.role] && (
+                  <div style={{
+                    gridColumn: '1 / -1', borderRadius: 12, padding: 12,
+                    background: 'var(--page-bg)', border: '1px solid var(--card-border)',
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
+                      Actions · {ROLE_LABELS[form.role]}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {Object.entries(PERMS[form.role]).map(([action, allowed]) => (
+                        <span key={action} style={{
+                          fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: allowed ? 'var(--success-subtle)' : 'var(--card-bg)',
+                          color: allowed ? 'var(--success)' : 'var(--text-3)',
+                          border: `1px solid ${allowed ? 'var(--success-border)' : 'var(--card-border)'}`,
+                        }}>
+                          {allowed ? <CheckCircle size={11} /> : <XCircle size={11} />}
+                          {action}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{
+                padding: '14px 22px', borderTop: '1px solid var(--card-border)',
+                display: 'flex', gap: 8, justifyContent: 'flex-end',
+              }}>
+                <button type="button" className="btn btn-secondary" onClick={cancelForm} style={{ height: 40 }}>
+                  <RotateCcw size={14} style={{ marginRight: 6 }} /> Cancel
+                </button>
+                <button
+                  type="button" className="btn btn-primary" onClick={save} disabled={saving}
+                  style={{ height: 40, display: 'inline-flex', alignItems: 'center', gap: 7 }}
+                >
+                  {saving
+                    ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                    : <><Save size={14} />{mode === 'edit' ? 'Update user' : 'Create user'}</>}
+                </button>
+              </div>
+            </>
+          ) : selected ? (
+            <>
+              <div style={{
+                padding: '22px 24px 18px',
+                background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent-subtle) 80%, var(--card-bg)) 0%, var(--card-bg) 100%)',
+                borderBottom: '1px solid var(--card-border)',
+                animation: 'usersInspectIn .28s ease',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{
+                    width: 64, height: 64, borderRadius: 18, flexShrink: 0,
+                    background: 'var(--sidebar-bg, #0d2244)', color: '#fff',
+                    fontSize: 20, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 10px 24px rgba(15,23,42,0.18)',
+                  }}>
+                    {ini(selected.full_name)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>
+                        {selected.full_name}
+                      </h2>
+                      <span style={{
+                        fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 999,
+                        background: 'var(--accent-subtle)', color: 'var(--accent)',
+                      }}>
+                        {ROLE_LABELS[selected.role] || selected.role}
+                      </span>
+                      {selected.is_active === false ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <XCircle size={13} /> Inactive
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <Activity size={13} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <div style={{
+                      marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: '8px 16px',
+                      fontSize: 13, color: 'var(--text-2)',
+                    }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <Mail size={14} style={{ color: 'var(--text-3)' }} /> {selected.email}
+                      </span>
+                      {selected.mobile && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Phone size={14} style={{ color: 'var(--text-3)' }} /> {selected.mobile}
+                        </span>
+                      )}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <Calendar size={14} style={{ color: 'var(--text-3)' }} /> Joined {fmtDate(selected.created_at)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: 22, flex: 1, overflowY: 'auto' }}>
+                {/* Password focus panel */}
+                <div style={{
+                  borderRadius: 14, padding: 18,
+                  border: '1px solid var(--card-border)',
+                  background: 'var(--page-bg)',
+                  marginBottom: 18,
+                }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 10, marginBottom: 12, flexWrap: 'wrap',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Key size={15} style={{ color: 'var(--accent)' }} />
+                      <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+                        Current password
+                      </span>
+                    </div>
                     <button
                       type="button"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => setShowPw(v => !v)}
-                      style={{
-                        position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                        background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex',
-                      }}
+                      className="btn btn-secondary"
+                      onClick={() => setResetDialog({ id: selected.id, name: selected.full_name, email: selected.email })}
+                      style={{ height: 34, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     >
-                      {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                      <Key size={13} /> Reset
                     </button>
                   </div>
-                </div>
-              )}
-              <div>
-                <label style={fieldLabel}>Role *</label>
-                <select
-                  className="field-input"
-                  value={form.role}
-                  onChange={e => sf('role', e.target.value)}
-                >
-                  <option value="">Select role…</option>
-                  {ROLES.map(r => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
 
-              {PERMS[form.role] && (
-                <div style={{
-                  borderRadius: 10, padding: 12, background: 'var(--page-bg)',
-                  border: '1px solid var(--card-border)',
-                }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
-                    Actions · {ROLE_LABELS[form.role]}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {Object.entries(PERMS[form.role]).map(([action, allowed]) => (
-                      <span key={action} style={{
-                        fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6,
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        background: allowed ? 'var(--success-subtle)' : 'var(--card-bg)',
-                        color: allowed ? 'var(--success)' : 'var(--text-3)',
-                        border: `1px solid ${allowed ? 'var(--success-border)' : 'var(--card-border)'}`,
+                  {selectedPw ? (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      padding: '12px 14px', borderRadius: 12,
+                      background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+                    }}>
+                      <code style={{
+                        flex: 1, minWidth: 140, fontSize: 16, fontWeight: 700,
+                        letterSpacing: revealPw ? '0.04em' : '0.18em',
+                        color: 'var(--text-1)',
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                       }}>
-                        {allowed ? <CheckCircle size={11} /> : <XCircle size={11} />}
-                        {action}
-                      </span>
-                    ))}
-                  </div>
+                        {revealPw ? selectedPw : '••••••••••••'}
+                      </code>
+                      <button type="button" onClick={() => setRevealPw(v => !v)} style={iconAction} title={revealPw ? 'Hide' : 'Show'}>
+                        {revealPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                      <button type="button" onClick={() => copyText(selectedPw, 'Password copied')} style={iconAction} title="Copy">
+                        <Copy size={15} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: '14px 14px', borderRadius: 12, fontSize: 13, color: 'var(--text-2)',
+                      background: 'var(--warning-subtle)', border: '1px solid color-mix(in srgb, var(--warning) 35%, var(--card-border))',
+                    }}>
+                      No password recorded for this account yet. Reset once to store and view it here.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 18,
+                }} className="users-meta-grid">
+                  <MetaTile label="Role" value={ROLE_LABELS[selected.role] || selected.role} />
+                  <MetaTile label="Status" value={selected.is_active === false ? 'Inactive' : 'Active'} />
+                  <MetaTile label="Created" value={fmtDate(selected.created_at)} />
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => startEdit(selected)} disabled={busySelected}
+                    style={{ height: 38, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Edit2 size={14} /> Edit
+                  </button>
+                  {selected.is_active !== false ? (
+                    <button
+                      type="button" className="btn btn-warning"
+                      onClick={() => setDeactivateDialog({ id: selected.id, name: selected.full_name })}
+                      style={{ height: 38, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <Power size={14} /> Deactivate
+                    </button>
+                  ) : (
+                    <button
+                      type="button" className="btn btn-primary"
+                      onClick={() => activateUser(selected.id)}
+                      disabled={toggleLoading === selected.id}
+                      style={{ height: 38, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      {toggleLoading === selected.id ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
+                      Activate
+                    </button>
+                  )}
+                  <button
+                    type="button" className="btn btn-danger"
+                    onClick={() => setPermDeleteDialog({ id: selected.id, name: selected.full_name })}
+                    style={{ height: 38, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
             <div style={{
-              padding: 16, borderTop: '1px solid var(--card-border)',
-              display: 'flex', gap: 8, background: 'var(--card-bg)',
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', padding: 40, textAlign: 'center',
             }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 16, marginBottom: 14,
+                background: 'var(--accent-subtle)', color: 'var(--accent)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Users size={24} />
+              </div>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>No user selected</p>
+              <p style={{ margin: '8px 0 16px', fontSize: 13, color: 'var(--text-3)', maxWidth: 280 }}>
+                Choose someone from the roster, or add a new CMS login.
+              </p>
               <button
-                type="button" onClick={save} disabled={saving}
-                className="btn btn-primary"
-                style={{ flex: 1, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                type="button" className="btn btn-primary" onClick={openCreate}
+                disabled={slotsUsed >= MAX_SLOTS}
+                style={{ height: 40, display: 'inline-flex', alignItems: 'center', gap: 7 }}
               >
-                {saving
-                  ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-                  : <><Save size={14} />{editing ? ' Update' : ' Create'}</>}
-              </button>
-              <button type="button" onClick={closePanel} className="btn btn-secondary" style={{ height: 42, padding: '0 14px' }}>
-                <RotateCcw size={14} />
+                <UserPlus size={15} /> Add user
               </button>
             </div>
-          </aside>
-        </div>
-      )}
+          )}
+        </section>
+      </div>
+
+      <p style={{ margin: '12px 0 0', fontSize: 11, color: 'var(--text-3)' }}>
+        Page access is configured in CMS Permissions.
+      </p>
 
       {deactivateDialog && (
         <ModalShell onClose={() => setDeactivateDialog(null)}>
@@ -881,7 +919,7 @@ export default function UsersPage() {
             <Key size={18} /> Reset password
           </h3>
           <p style={modalBody}>
-            Set a new password for <strong>{resetDialog.name}</strong>. It will be stored so you can view it in the directory.
+            Set a new password for <strong>{resetDialog.name}</strong>. It will be stored for Super Admin viewing.
           </p>
           <div style={{ marginBottom: 16 }}>
             <label style={fieldLabel}>New password</label>
@@ -914,36 +952,44 @@ export default function UsersPage() {
       )}
 
       <style>{`
-        @keyframes usersRowIn {
-          from { opacity: 0; transform: translateY(4px); }
+        @keyframes usersRosterIn {
+          from { opacity: 0; transform: translateX(-6px); }
           to { opacity: 1; transform: none; }
         }
-        @keyframes usersPanelIn {
-          from { transform: translateX(24px); opacity: 0.6; }
-          to { transform: none; opacity: 1; }
+        @keyframes usersInspectIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: none; }
         }
-        .users-table tbody tr:hover td {
-          background: color-mix(in srgb, var(--accent-subtle) 70%, transparent);
-        }
-        @media (max-width: 640px) {
-          .users-panel { max-width: 100% !important; }
+        @media (max-width: 820px) {
+          .users-split { grid-template-columns: 1fr !important; min-height: auto !important; }
+          .users-split > aside { border-right: none !important; border-bottom: 1px solid var(--card-border); max-height: 280px; }
+          .users-form-grid { grid-template-columns: 1fr !important; }
+          .users-meta-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
   )
 }
 
-const miniIconBtn = {
-  width: 28, height: 28, borderRadius: 7, border: 'none',
-  background: 'transparent', cursor: 'pointer', color: 'var(--text-3)',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+function MetaTile({ label, value }) {
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: 12,
+      border: '1px solid var(--card-border)', background: 'var(--card-bg)',
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{value}</div>
+    </div>
+  )
 }
 
-const rowBtn = {
-  display: 'inline-flex', alignItems: 'center', gap: 4,
-  fontSize: 11, fontWeight: 700, padding: '5px 8px', borderRadius: 7,
+const iconAction = {
+  width: 36, height: 36, borderRadius: 10,
   border: '1px solid var(--card-border)', background: 'var(--card-bg)',
   color: 'var(--text-2)', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 }
 
 const modalTitle = { margin: '0 0 8px', fontSize: 17, fontWeight: 800, color: 'var(--text-1)' }
