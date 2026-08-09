@@ -332,6 +332,7 @@ export async function diagnoseBackupSetup() {
     out.logsError = e.message || String(e)
   }
   out.oauthFn = await invokeEdgeFunction('cms-google-oauth', { action: 'status' })
+  out.backupFn = await invokeEdgeFunction('cms-full-backup', { action: 'version' })
   // Don't run a full backup dump for diagnose — just report connection readiness
   out.hints = []
   if (out.settingsError) out.hints.push('Run SQL migration 20260809_cms_backup_google_oauth.sql')
@@ -339,7 +340,15 @@ export async function diagnoseBackupSetup() {
   if (!out.settings?.drive_folder_id) out.hints.push('Save Google Drive folder ID')
   if (out.oauthFn.missing) out.hints.push('Deploy Edge Function cms-google-oauth')
   if (out.oauthFn.errorMessage && !out.oauthFn.missing) out.hints.push(`OAuth function: ${out.oauthFn.errorMessage}`)
-  out.hints.push('For complete backup+restore: run SQL 20260809_cms_complete_backup.sql and redeploy cms-full-backup')
+  if (out.backupFn.missing) out.hints.push('Deploy Edge Function cms-full-backup')
+  else if (!out.backupFn.data?.complete_backup) {
+    out.hints.push(
+      'cms-full-backup is OLD (no complete_backup). Paste the latest index.ts from the repo and redeploy.',
+    )
+  } else {
+    out.hints.push(`cms-full-backup OK (version ${out.backupFn.data?.version || '?'})`)
+  }
+  out.hints.push('For restore truncate: run SQL 20260809_cms_complete_backup.sql')
   return out
 }
 
@@ -385,6 +394,14 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
       actor_name: actor?.full_name || actor?.name || null,
     })
     if (invoked.ok && invoked.data && !invoked.data.error) {
+      if (!invoked.data.complete) {
+        // Old Edge Function still deployed (single JSON upload)
+        throw new Error(
+          'Edge Function cms-full-backup is still the OLD version (DB JSON only). ' +
+          'Redeploy the COMPLETE function from the repo (creates a Drive folder with database.json + storage/ + manifest.json). ' +
+          'After redeploy, Run Complete Full Backup again.',
+        )
+      }
       return { ...invoked.data, via: 'drive' }
     }
     if (invoked.missing) {
@@ -509,7 +526,17 @@ export async function restoreFromDriveBackup({
 
 export function backupFolderIdFromLog(row) {
   if (!row) return null
-  return row?.meta?.drive_backup_folder_id || (row?.meta?.complete ? row.drive_file_id : null) || null
+  // Complete folder backups store folder id in meta; legacy single JSON uses drive_file_id
+  return (
+    row?.meta?.drive_backup_folder_id
+    || (row?.meta?.complete ? row.drive_file_id : null)
+    || row.drive_file_id
+    || null
+  )
+}
+
+export function isCompleteBackupLog(row) {
+  return !!(row?.meta?.complete || row?.meta?.version >= 2)
 }
 
 /**

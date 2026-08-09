@@ -16,6 +16,7 @@ import {
   restoreChoicesFromLog,
   inspectDriveBackup,
   backupFolderIdFromLog,
+  isCompleteBackupLog,
   runProvision,
   saveBackupSettings,
   startGoogleOAuthConnect,
@@ -371,7 +372,7 @@ function LogTable({ rows, loading, empty, restoringId, onRestore }) {
           ) : rows.map((row) => {
             const folderId = backupFolderIdFromLog(row)
             const storageCount = row?.meta?.storage_file_count
-            const isComplete = !!row?.meta?.complete
+            const isComplete = isCompleteBackupLog(row)
             const canRestore = !!folderId && (row.status === 'success' || row.status === 'partial')
             const busy = restoringId === row.id
             return (
@@ -406,7 +407,13 @@ function LogTable({ rows, loading, empty, restoringId, onRestore }) {
                       cursor: canRestore && !busy ? 'pointer' : 'not-allowed',
                     }}
                     disabled={!canRestore || !!restoringId}
-                    title={canRestore ? 'Choose tables and storage to restore' : 'Need a complete Drive backup folder'}
+                    title={
+                      canRestore
+                        ? (isComplete
+                          ? 'Choose tables and storage to restore'
+                          : 'DB-only backup — restore tables (no storage files in this backup)')
+                        : 'No Drive file linked to this history row'
+                    }
                     onClick={() => onRestore?.(row)}
                   >
                     {busy ? <Loader2 size={12} className="spin" /> : <RotateCcw size={12} />}
@@ -814,6 +821,10 @@ export default function BackupPage() {
           <code>cms-google-oauth</code> + <code>cms-full-backup</code>, set secrets{' '}
           <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code>, then click{' '}
           <strong>Connect Google</strong> below. Personal Drive needs OAuth (service accounts have no storage quota).
+          <br />
+          <strong>Complete backup check:</strong> After redeploying <code>cms-full-backup</code>, use Debug → Run diagnostics.
+          It must say <code>complete_backup: true</code>. A good run creates a Drive <em>folder</em> (not a single .json file)
+          named like <code>cms-full-backup-YYYYMMDD-HHMMSSZ</code> containing <code>database.json</code>, <code>storage/</code>, <code>manifest.json</code>.
         </div>
       </div>
 
