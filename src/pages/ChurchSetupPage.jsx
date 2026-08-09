@@ -7,7 +7,7 @@ import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 import MasterPasswordInput from '../components/MasterPasswordInput'
-import { canAccessChurchSection } from '../lib/cmsPermissions'
+import { canAccessChurchSetup } from '../lib/cmsPermissions'
 
 const IDENTITY_KEYS = [
   'church_name', 'church_code', 'diocese', 'denomination', 'email',
@@ -394,9 +394,11 @@ export default function ChurchSetupPage() {
 
   const isSuperAdmin = profile?.role === 'super_admin'
   const role = profile?.role
-  const canIdentity = canAccessChurchSection('identity', role, pageGrants)
-  const canBearers  = canAccessChurchSection('bearers', role, pageGrants)
-  const canEditBasics = !isSuperAdmin && (canIdentity || canBearers)
+  // Single CMS Permissions grant for Church Setup → Admin edits identity + bearers
+  const hasChurchSetup = canAccessChurchSetup(role, pageGrants)
+  const canIdentity = !isSuperAdmin && hasChurchSetup
+  const canBearers  = !isSuperAdmin && hasChurchSetup
+  const canEditBasics = canIdentity || canBearers
   // Non–super-admin roles that were granted this page get the zones/categories view.
   const isAdmin1     = profile?.role === 'admin1' || (!isSuperAdmin && !!profile?.role)
 
