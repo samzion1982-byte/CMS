@@ -6,6 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { logCmsAudit } from '../lib/cmsAudit'
+import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 
 /* ─── Constants ──────────────────────────────────────────────────── */
 const TABS = [
@@ -247,6 +248,10 @@ function BaptismTab() {
     if (!window.confirm(`Delete baptism record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      await captureDeletedRecord({
+        module: 'events', tableName: 'baptism_records', recordId: editId,
+        recordLabel: `Baptism ${slNoDisplay}`,
+      })
       if (photo.url) {
         const idx = photo.url.indexOf('/event-media/'); if (idx >= 0)
           await supabase.storage.from('event-media').remove([photo.url.substring(idx + '/event-media/'.length)])
@@ -857,6 +862,10 @@ function ConfirmationTab() {
     if (!window.confirm(`Delete confirmation record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      await captureDeletedRecord({
+        module: 'events', tableName: 'confirmation_records', recordId: editId,
+        recordLabel: `Confirmation ${slNoDisplay}`,
+      })
       if (photo.url) {
         const idx = photo.url.indexOf('/event-media/'); if (idx >= 0)
           await supabase.storage.from('event-media').remove([photo.url.substring(idx + '/event-media/'.length)])
@@ -1502,6 +1511,10 @@ function BurialTab() {
     if (!window.confirm(`Delete burial record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      await captureDeletedRecord({
+        module: 'events', tableName: 'burial_records', recordId: editId,
+        recordLabel: `Burial ${slNoDisplay}`,
+      })
       const toRemove = [photo.url, docs[0].url, docs[1].url, docs[2].url].filter(Boolean)
         .map(u => { const i = u.indexOf('/event-media/'); return i >= 0 ? u.substring(i + '/event-media/'.length) : null })
         .filter(Boolean)
@@ -2265,6 +2278,10 @@ function WeddingTab() {
     if (!window.confirm(`Delete wedding record ${slNoDisplay}? This cannot be undone.`)) return
     setSaving(true)
     try {
+      await captureDeletedRecord({
+        module: 'events', tableName: 'wedding_records', recordId: editId,
+        recordLabel: `Wedding ${slNoDisplay}`,
+      })
       const paths = FILE_KEYS.filter(k => files[k].url).map(k => {
         const url = files[k].url
         const idx = url.indexOf('/event-media/')

@@ -18,6 +18,7 @@ import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
 import TransferToAccountsModal                     from '../components/receipts/TransferToAccountsModal'
 import { logCmsAudit } from '../lib/cmsAudit'
+import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -207,6 +208,17 @@ export default function ReceiptsPage() {
 
   const del = (row) => {
     setPwGate({ label: `Delete receipt ${row.receipt_number}`, onConfirmed: async () => {
+      const { data: items } = await supabase
+        .from('receipt_items').select('*').eq('receipt_id', row.id)
+      await captureDeletedRecord({
+        module: 'finance',
+        tableName: 'receipts',
+        recordId: row.id,
+        recordLabel: row.receipt_number,
+        row,
+        related: { receipt_items: items || [] },
+        actor: profile,
+      })
       await supabase.from('receipt_items').delete().eq('receipt_id', row.id)
       const { error } = await supabase.from('receipts').delete().eq('id', row.id)
       if (error) { toast(error.message, 'error'); return }
@@ -1963,6 +1975,23 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
     if (authErr) { setPwErr('Incorrect password'); setDeleting(false); setTimeout(() => pwRef.current?.select(), 30); return }
 
     const ids = [...selected]
+    const { data: receiptRows } = await supabase.from('receipts').select('*').in('id', ids)
+    const { data: itemRows } = await supabase.from('receipt_items').select('*').in('receipt_id', ids)
+    const itemsByReceipt = {}
+    for (const it of itemRows || []) {
+      if (!itemsByReceipt[it.receipt_id]) itemsByReceipt[it.receipt_id] = []
+      itemsByReceipt[it.receipt_id].push(it)
+    }
+    for (const r of receiptRows || []) {
+      await captureDeletedRecord({
+        module: 'finance',
+        tableName: 'receipts',
+        recordId: r.id,
+        recordLabel: r.receipt_number,
+        row: r,
+        related: { receipt_items: itemsByReceipt[r.id] || [] },
+      })
+    }
     await supabase.from('receipt_items').delete().in('receipt_id', ids)
     const { error } = await supabase.from('receipts').delete().in('id', ids)
     if (!error) {

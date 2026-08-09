@@ -18,6 +18,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage'
 import AnnouncementsLogPage from './pages/AnnouncementsLogPage'
 import LoginLogsPage from './pages/LoginLogsPage'
 import AuditTrailPage from './pages/AuditTrailPage'
+import BackupPage from './pages/BackupPage'
 import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
@@ -492,6 +493,10 @@ function AppRoutes() {
       <Route
         path="/audit-trail"
         element={<PrivateRoute><AppLayout><AuditTrailPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/backup"
+        element={<PrivateRoute><AppLayout><BackupPage /></AppLayout></PrivateRoute>}
       />
       <Route
         path="/whatsapp-receipt-log"

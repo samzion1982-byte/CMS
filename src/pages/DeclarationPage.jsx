@@ -6,6 +6,7 @@ import { getActiveCategories } from '../lib/paymentCategories'
 import { Search, Loader2, Save, X, FileText, Plus, Edit2, Trash2, RotateCcw, FileSpreadsheet, Settings, ChevronDown, Lock, Unlock } from 'lucide-react'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { logCmsAudit } from '../lib/cmsAudit'
+import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -297,6 +298,20 @@ export default function DeclarationPage() {
 
   const del = async row => {
     if (!window.confirm(`Delete declaration for ${row.member_name} (FY ${row.financial_year})?`)) return
+    const { data: items } = await supabase
+      .from('declaration_items').select('*').eq('declaration_id', row.id)
+    await captureDeletedRecord({
+      module: 'finance',
+      tableName: 'declarations',
+      recordId: row.id,
+      recordLabel: `${row.member_name} (${row.financial_year})`,
+      row,
+      related: { declaration_items: items || [] },
+      actor: profile,
+    })
+    if (items?.length) {
+      await supabase.from('declaration_items').delete().eq('declaration_id', row.id)
+    }
     const { error } = await supabase.from('declarations').delete().eq('id', row.id)
     if (error) { toast(error.message, 'error'); return }
     await logCmsAudit({
