@@ -10,6 +10,7 @@ import {
   Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle, Copy, Lock, X,
 } from 'lucide-react'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
+import { diffFields, logCmsAudit } from '../lib/cmsAudit'
 
 const MASTER_PASSWORD = 'Master007))&'
 const MAX_SLOTS = 5
@@ -195,15 +196,34 @@ export default function UsersPage() {
     setSaving(true)
 
     if (editing) {
+      const prev = users.find((u) => u.id === editing) || {}
+      const nextProfile = {
+        full_name: form.name,
+        role: form.role,
+        mobile: cleanPhone(form.mobile) || null,
+      }
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: form.name, role: form.role, mobile: cleanPhone(form.mobile) || null })
+        .update(nextProfile)
         .eq('id', editing)
       if (error) {
         toast('Update failed: ' + error.message, 'error')
         setSaving(false)
         return
       }
+      await logCmsAudit({
+        action: 'updated',
+        module: 'users',
+        entityType: 'user',
+        entityId: editing,
+        entityLabel: form.name || form.email,
+        summary: `Updated user ${form.name || form.email}`,
+        changes: diffFields(
+          { full_name: prev.full_name, role: prev.role, mobile: prev.mobile },
+          nextProfile
+        ),
+        actor: profile,
+      })
       toast(form.name + ' updated.', 'success')
       closePanel()
       load()
@@ -271,6 +291,21 @@ export default function UsersPage() {
     }
 
     toast(form.name + ' created successfully.', 'success')
+    await logCmsAudit({
+      action: 'created',
+      module: 'users',
+      entityType: 'user',
+      entityId: newUserId,
+      entityLabel: form.name || form.email,
+      summary: `Created user ${form.name} (${form.role})`,
+      changes: [
+        { field: 'email', from: null, to: form.email },
+        { field: 'full_name', from: null, to: form.name },
+        { field: 'role', from: null, to: form.role },
+        { field: 'mobile', from: null, to: cleanPhone(form.mobile) || null },
+      ],
+      actor: profile,
+    })
     closePanel()
     load()
     setSaving(false)
@@ -282,11 +317,22 @@ export default function UsersPage() {
       return
     }
     setDeactivateLoading(id)
+    const target = users.find((u) => u.id === id)
     const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', id)
     setDeactivateLoading(null)
     setDeactivateDialog(null)
     if (error) toast('Deactivation failed: ' + error.message, 'error')
     else {
+      await logCmsAudit({
+        action: 'deactivated',
+        module: 'users',
+        entityType: 'user',
+        entityId: id,
+        entityLabel: target?.full_name || target?.email || id,
+        summary: `Deactivated user ${target?.full_name || target?.email || id}`,
+        changes: [{ field: 'is_active', from: 'true', to: 'false' }],
+        actor: profile,
+      })
       toast('User deactivated. They cannot log in but their data is preserved.', 'success')
       load()
     }
@@ -298,10 +344,21 @@ export default function UsersPage() {
       return
     }
     setToggleLoading(id)
+    const target = users.find((u) => u.id === id)
     const { error } = await supabase.from('profiles').update({ is_active: true }).eq('id', id)
     setToggleLoading(null)
     if (error) toast('Activation failed: ' + error.message, 'error')
     else {
+      await logCmsAudit({
+        action: 'activated',
+        module: 'users',
+        entityType: 'user',
+        entityId: id,
+        entityLabel: target?.full_name || target?.email || id,
+        summary: `Activated user ${target?.full_name || target?.email || id}`,
+        changes: [{ field: 'is_active', from: 'false', to: 'true' }],
+        actor: profile,
+      })
       toast('User activated. They can now log in.', 'success')
       load()
     }
@@ -309,6 +366,7 @@ export default function UsersPage() {
 
   async function permanentDelete(id) {
     setPermDeleteLoading(true)
+    const target = users.find((u) => u.id === id)
     try {
       const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
         method: 'DELETE',
@@ -324,6 +382,16 @@ export default function UsersPage() {
       }
       await deleteStoredPassword(id)
       await supabase.from('profiles').delete().eq('id', id)
+      await logCmsAudit({
+        action: 'deleted',
+        module: 'users',
+        entityType: 'user',
+        entityId: id,
+        entityLabel: target?.full_name || target?.email || id,
+        summary: `Permanently deleted user ${target?.full_name || target?.email || id}`,
+        changes: null,
+        actor: profile,
+      })
       toast('User permanently deleted.', 'success')
       setRevealed(r => {
         const next = { ...r }
@@ -365,6 +433,16 @@ export default function UsersPage() {
       } catch {
         toast('Password reset in Auth, but vault update failed. Run the SQL migration if needed.', 'error')
       }
+      await logCmsAudit({
+        action: 'reset_password',
+        module: 'users',
+        entityType: 'user',
+        entityId: resetDialog.id,
+        entityLabel: resetDialog.name || resetDialog.email,
+        summary: `Reset password for ${resetDialog.name || resetDialog.email}`,
+        changes: [{ field: 'password', from: '(hidden)', to: '(changed)' }],
+        actor: profile,
+      })
       toast(`Password for ${resetDialog.name} has been reset.`, 'success')
       setRevealed(r => ({ ...r, [resetDialog.id]: false }))
       setResetDialog(null)

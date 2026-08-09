@@ -8,6 +8,7 @@ import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { canAccessChurchSetup } from '../lib/cmsPermissions'
+import { diffFields, logCmsAudit } from '../lib/cmsAudit'
 
 const IDENTITY_KEYS = [
   'church_name', 'church_code', 'diocese', 'denomination', 'email',
@@ -229,6 +230,24 @@ export default function ChurchSetupPage() {
       }
       const { error } = await supabase.from('churches').update(payload).eq('id', church.id)
       if (error) throw error
+      const before = {}
+      const after = {}
+      for (const k of Object.keys(payload)) {
+        if (k === 'updated_at') continue
+        before[k] = church?.[k] ?? null
+        after[k] = payload[k]
+      }
+      const changes = diffFields(before, after)
+      await logCmsAudit({
+        action: 'updated',
+        module: 'church_setup',
+        entityType: 'church',
+        entityId: church.id,
+        entityLabel: payload.church_name || church.church_name || 'Church',
+        summary: `Church setup updated (${changes.length} field${changes.length === 1 ? '' : 's'})`,
+        changes,
+        actor: profile,
+      })
       toast('Church details saved.', 'success')
       window.dispatchEvent(new CustomEvent('church-settings-updated'))
       loadChurch()
@@ -295,6 +314,26 @@ export default function ChurchSetupPage() {
     }
     setSaving(false)
     if (err) { toast('Save failed: ' + err.message, 'error'); return }
+    const before = {}
+    const after = {}
+    for (const k of Object.keys(payload)) {
+      if (k === 'updated_at') continue
+      before[k] = church?.[k] ?? null
+      after[k] = payload[k]
+    }
+    const changes = church ? diffFields(before, after) : Object.keys(after).map((field) => ({ field, from: null, to: String(after[field] ?? '') }))
+    await logCmsAudit({
+      action: church ? 'updated' : 'created',
+      module: 'church_setup',
+      entityType: 'church',
+      entityId: church?.id || null,
+      entityLabel: payload.church_name || 'Church',
+      summary: church
+        ? `Church setup saved (${changes.length} field${changes.length === 1 ? '' : 's'})`
+        : 'Church record created',
+      changes,
+      actor: profile,
+    })
     toast('Church details saved.', 'success')
     window.dispatchEvent(new CustomEvent('church-settings-updated'))
     loadChurch()
@@ -338,6 +377,17 @@ export default function ChurchSetupPage() {
       }
       const { error } = await supabase.from('churches').update(blank).eq('id', church.id)
       if (error) throw error
+
+      await logCmsAudit({
+        action: 'deleted',
+        module: 'church_setup',
+        entityType: 'church',
+        entityId: church.id,
+        entityLabel: church.church_name || 'Church',
+        summary: 'Church details flushed (reset to blank)',
+        changes: [{ field: 'church_details', from: 'populated', to: 'blank' }],
+        actor: profile,
+      })
 
       // Clear all church zones
       await supabase.from('church_zones').delete().gte('sort_order', 0)

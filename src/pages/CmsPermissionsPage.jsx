@@ -13,6 +13,7 @@ import {
   buildDefaultGrants, leafKeysUnder, aggregateState,
 } from '../lib/cmsPages'
 import { loadAllRolePageGrants, saveRolePageGrants } from '../lib/cmsPermissions'
+import { logCmsAudit } from '../lib/cmsAudit'
 
 function emptyMatrix() {
   const m = {}
@@ -28,6 +29,7 @@ export default function CmsPermissionsPage() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set(CMS_PERMISSION_TREE.map(c => c.key)))
+  const savedRef = useRef(emptyMatrix())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -39,16 +41,16 @@ export default function CmsPermissionsPage() {
         next[r.value] = grants
       }
       setMatrix(next)
+      savedRef.current = next
       setDirty(false)
     } catch (e) {
       console.error(e)
       toast(
         e.message?.includes('cms_role_page_access')
-          ? 'Permissions table missing — run the CMS permissions SQL migration in Supabase.'
+          ? 'Could not load grants — run the CMS permissions SQL migration in Supabase first.'
           : (e.message || 'Failed to load permissions'),
         'error'
       )
-      setMatrix(emptyMatrix())
     }
     setLoading(false)
   }, [toast])
@@ -119,6 +121,32 @@ export default function CmsPermissionsPage() {
     try {
       await saveRolePageGrants(supabase, matrix)
       await reloadPageGrants?.()
+      const prev = savedRef.current || {}
+      const changes = []
+      for (const r of CMS_CONFIG_ROLES) {
+        const before = prev[r.value] || {}
+        const after = matrix[r.value] || {}
+        const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+        for (const k of keys) {
+          if (!!before[k] === !!after[k]) continue
+          changes.push({
+            field: `${r.label || r.value}.${k}`,
+            from: before[k] ? 'allowed' : 'denied',
+            to: after[k] ? 'allowed' : 'denied',
+          })
+        }
+      }
+      await logCmsAudit({
+        action: 'saved',
+        module: 'cms_permissions',
+        entityType: 'role_grants',
+        entityId: null,
+        entityLabel: 'CMS page grants',
+        summary: `CMS permissions saved (${changes.length} grant change${changes.length === 1 ? '' : 's'})`,
+        changes: changes.slice(0, 80),
+        actor: profile,
+      })
+      savedRef.current = matrix
       toast('CMS permissions saved.', 'success')
       setDirty(false)
     } catch (e) {

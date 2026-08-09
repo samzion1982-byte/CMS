@@ -20,6 +20,7 @@ const EXCLUDED_TABLES = [
   'auth_tracker',
   'cms_user_passwords',
   'cms_role_page_access',
+  'cms_audit_log',
   'announcement_settings',
   'bible_verses',
   // Add more here as needed ↓

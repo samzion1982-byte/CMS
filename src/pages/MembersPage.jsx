@@ -10,6 +10,7 @@ import MemberPrintModal from './MemberPrintModal'
 import BulkPrintModal  from './BulkPrintModal'
 import FamilyRecordsModal from './FamilyRecordsModal'
 import DeleteMemberModal from './DeleteMemberModal'
+import { diffFields, logCmsAudit } from '../lib/cmsAudit'
 
 const BATCH_SIZE = 1000 // Supabase max per request
 // ZONES loaded from church_zones table at runtime (see useEffect in MembersPage)
@@ -236,14 +237,50 @@ export default function MembersPage() {
     else { const r = await supabase.from('members').insert({...record,is_active:true}); err=r.error }
     setSaving(false); setShowSaveDialog(false)
     if (err) toast('Save failed: '+err.message,'error')
-    else { toast(form.member_name+' saved.','success'); setTab('list'); loadMembers(alpha,searchCol,searchVal) }
+    else {
+      const watchKeys = [
+        'member_name', 'family_id', 'title', 'gender', 'mobile', 'email', 'zone',
+        'address', 'city', 'state', 'dob_actual', 'marital_status', 'spouse_name',
+        'is_baptised', 'is_confirmed', 'photo_url', 'old_member_id', 'change_reason',
+      ]
+      const changes = selected
+        ? diffFields(selected, record, watchKeys)
+        : watchKeys
+            .filter((k) => record[k] != null && record[k] !== '')
+            .map((field) => ({ field, from: null, to: String(record[field]) }))
+      await logCmsAudit({
+        action: selected ? 'updated' : 'created',
+        module: 'members',
+        entityType: 'member',
+        entityId: form.member_id,
+        entityLabel: form.member_name || form.member_id,
+        summary: selected
+          ? `Updated member ${form.member_name || form.member_id}`
+          : `Created member ${form.member_name || form.member_id}`,
+        changes,
+        actor: profile,
+      })
+      toast(form.member_name+' saved.','success'); setTab('list'); loadMembers(alpha,searchCol,searchVal)
+    }
   }
 
   const doDelete = async () => {
     const {error} = await supabase.from('members').update({is_active:false}).eq('member_id',selected.member_id)
     setShowDelDialog(false)
     if (error) toast('Delete failed.','error')
-    else { toast(selected.member_name+' deleted.','success'); setTab('list'); loadMembers() }
+    else {
+      await logCmsAudit({
+        action: 'deleted',
+        module: 'members',
+        entityType: 'member',
+        entityId: selected.member_id,
+        entityLabel: selected.member_name || selected.member_id,
+        summary: `Soft-deleted member ${selected.member_name || selected.member_id}`,
+        changes: [{ field: 'is_active', from: 'true', to: 'false' }],
+        actor: profile,
+      })
+      toast(selected.member_name+' deleted.','success'); setTab('list'); loadMembers()
+    }
   }
 
   const [exporting, setExporting] = useState(false)

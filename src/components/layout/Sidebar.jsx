@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
-  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package, Shield,
+  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package, Shield, History,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
@@ -38,6 +38,7 @@ const NAV = [
   ]},
   { group: 'ADMIN', adminOnly: true, items: [
     { label: 'Church Setup',      path: '/church-setup',     icon: Church },
+    { label: 'Audit Trail',       path: '/audit-trail',      icon: History },
     { label: 'Users',             path: '/users',            icon: UserCog,        superOnly: true },
     { label: 'CMS Permissions',   path: '/cms-permissions',  icon: Shield,         superOnly: true },
     { label: 'Import Data',       path: '/import',           icon: Upload,         superOnly: true },

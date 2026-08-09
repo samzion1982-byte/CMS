@@ -82,6 +82,7 @@ export const CMS_PERMISSION_TREE = [
     kind: 'category',
     children: [
       { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup' },
+      { key: 'audit-trail',  label: 'Audit Trail',  kind: 'page', match: '/audit-trail' },
     ],
   },
   {
@@ -150,8 +151,8 @@ export function findPageForPath(pathname) {
 export function defaultPageAllowed(role, page) {
   if (role === 'super_admin') return true
   if (page.alwaysOn) return true
-  // Admin may open Church Setup (identity + office bearers) by default
-  if (role === 'admin1' && page.key === 'church-setup') return true
+  // Admin may open Church Setup (identity + office bearers) and Audit Trail by default
+  if (role === 'admin1' && (page.key === 'church-setup' || page.key === 'audit-trail')) return true
   // Baseline: MAIN only (Dashboard, Members, Announcements, Events, Movable Assets)
   if (page.group === 'MAIN' && !page.sensitive) return ASSIGNABLE_ROLE_SET.has(role)
   return false
