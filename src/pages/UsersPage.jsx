@@ -30,14 +30,12 @@ const PERMS = {
   user4:  { ...USER_PERMS_MATRIX },
 }
 
-const ROLE_DESC = 'Same level — pages granted in CMS Permissions'
-
 const ROLES = [
-  { value:'admin1', label: ROLE_LABELS.admin1, desc: ROLE_DESC, emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
-  { value:'admin',  label: ROLE_LABELS.admin,  desc: ROLE_DESC, emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
-  { value:'user',   label: ROLE_LABELS.user,   desc: ROLE_DESC, emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
-  { value:'demo',   label: ROLE_LABELS.demo,   desc: ROLE_DESC, emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
-  { value:'user4',  label: ROLE_LABELS.user4,  desc: ROLE_DESC, emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
+  { value:'admin1', label: ROLE_LABELS.admin1, emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
+  { value:'admin',  label: ROLE_LABELS.admin,  emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
+  { value:'user',   label: ROLE_LABELS.user,   emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
+  { value:'demo',   label: ROLE_LABELS.demo,   emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
+  { value:'user4',  label: ROLE_LABELS.user4,  emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
 ]
 
 function ini(name = '') {
