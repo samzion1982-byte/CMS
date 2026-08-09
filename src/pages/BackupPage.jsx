@@ -17,6 +17,9 @@ import {
   inspectDriveBackup,
   backupFolderIdFromLog,
   isCompleteBackupLog,
+  listBackupSources,
+  saveBackupSelection,
+  summarizeBackupSelection,
   runProvision,
   saveBackupSettings,
   startGoogleOAuthConnect,
@@ -213,6 +216,168 @@ function CheckList({ items, selected, onToggle, empty, renderMeta }) {
           </label>
         )
       })}
+    </div>
+  )
+}
+
+function BackupChooserModal({
+  open,
+  kind,
+  loading,
+  tables,
+  buckets,
+  selectedTables,
+  selectedBuckets,
+  saveAsDefault,
+  onSaveAsDefaultChange,
+  onClose,
+  onSelectAll,
+  onDeselectAll,
+  onSelectAllTables,
+  onDeselectAllTables,
+  onSelectAllBuckets,
+  onDeselectAllBuckets,
+  onToggleTable,
+  onToggleBucket,
+  onConfirm,
+  confirming,
+}) {
+  if (!open) return null
+  const tableCount = selectedTables.size
+  const bucketCount = selectedBuckets.size
+  const canGo = tableCount > 0 || bucketCount > 0
+  const title = kind === 'snapshot' ? 'Choose Snapshot items' : 'Choose Full Backup items'
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 80,
+        background: 'rgba(15, 23, 42, 0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget && !confirming) onClose() }}
+    >
+      <div style={{
+        width: 'min(720px, 100%)', maxHeight: '90vh', overflow: 'auto',
+        background: 'var(--card-bg, #fff)', borderRadius: 14,
+        border: '1px solid var(--card-border)',
+        boxShadow: '0 20px 50px rgba(15,23,42,0.25)',
+        fontFamily: 'var(--font-ui)',
+      }}>
+        <div style={{
+          padding: '14px 16px', borderBottom: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start',
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>
+              {title}
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
+              Uncheck storage buckets (e.g. member photos) for a fast database-only backup.
+              Saved selection is also used for automatic daily/nightly runs.
+            </p>
+          </div>
+          <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div style={{ padding: 16, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={loading || confirming} onClick={onSelectAll}>
+              Select all
+            </button>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={loading || confirming} onClick={onDeselectAll}>
+              Deselect all
+            </button>
+          </div>
+
+          {loading && !tables.length && !buckets.length ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+              <Loader2 size={18} className="spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />
+              Loading tables and storage buckets…
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Database tables ({tableCount}/{tables.length})</strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onSelectAllTables}>Select all</button>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onDeselectAllTables}>Deselect all</button>
+                  </div>
+                </div>
+                <CheckList
+                  items={tables}
+                  selected={selectedTables}
+                  onToggle={onToggleTable}
+                  empty="No tables found."
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Storage buckets ({bucketCount}/{buckets.length})</strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onSelectAllBuckets}>Select all</button>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onDeselectAllBuckets}>Deselect all</button>
+                  </div>
+                </div>
+                <CheckList
+                  items={buckets}
+                  selected={selectedBuckets}
+                  onToggle={onToggleBucket}
+                  empty="No storage buckets found."
+                  renderMeta={(item) => (item.files != null ? `${item.files} file${item.files === 1 ? '' : 's'}` : '')}
+                />
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9a3412', lineHeight: 1.45 }}>
+                  Tip: leave storage unchecked for a quick daily DB backup; include <code>member-photos</code> / <code>receipt-pdfs</code> only when you need a full disaster-recovery copy.
+                </p>
+              </div>
+            </>
+          )}
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45 }}>
+            <input
+              type="checkbox"
+              checked={!!saveAsDefault}
+              disabled={confirming}
+              onChange={(e) => onSaveAsDefaultChange(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>Save this selection for automatic backups too (recommended)</span>
+          </label>
+        </div>
+
+        <div style={{
+          padding: '12px 16px', borderTop: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            {canGo
+              ? `Will back up ${tableCount} table(s) and ${bucketCount} bucket(s)`
+              : 'Select at least one item'}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="no-lift"
+              style={{ ...primaryBtn, opacity: canGo ? 1 : 0.5 }}
+              disabled={!canGo || confirming || loading}
+              onClick={onConfirm}
+            >
+              {confirming ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
+              {confirming ? 'Backing up…' : (kind === 'snapshot' ? 'Take Snapshot' : 'Run Backup')}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -498,6 +663,13 @@ export default function BackupPage() {
   const [runningSnap, setRunningSnap] = useState(false)
   const [backupProgress, setBackupProgress] = useState({ kind: null, pct: 0, message: '' })
   const [restoringId, setRestoringId] = useState(null)
+  const [backupModal, setBackupModal] = useState(null) // { kind }
+  const [backupSourcesLoading, setBackupSourcesLoading] = useState(false)
+  const [backupTables, setBackupTables] = useState([])
+  const [backupBuckets, setBackupBuckets] = useState([])
+  const [backupSelectedTables, setBackupSelectedTables] = useState(() => new Set())
+  const [backupSelectedBuckets, setBackupSelectedBuckets] = useState(() => new Set())
+  const [backupSaveAsDefault, setBackupSaveAsDefault] = useState(true)
   const [restoreModal, setRestoreModal] = useState(null) // { row, folderId }
   const [restoreTables, setRestoreTables] = useState([])
   const [restoreBuckets, setRestoreBuckets] = useState([])
@@ -625,7 +797,62 @@ export default function BackupPage() {
     }
   }
 
-  async function handleRun(kind) {
+  async function openBackupChooser(kind) {
+    if (!backupReady) {
+      toast(!googleConnected ? 'Connect Google first' : 'Save Google Drive folder ID first', 'error')
+      return
+    }
+    setBackupModal({ kind })
+    setBackupSaveAsDefault(true)
+    setBackupSourcesLoading(true)
+    setLastActionError(null)
+    try {
+      const sources = await listBackupSources()
+      const tables = sources.tables || []
+      const buckets = sources.storage_buckets || []
+      setBackupTables(tables)
+      setBackupBuckets(buckets)
+
+      const saved = settings?.backup_selection || sources.selection || {}
+      const tableNames = tables.map((t) => t.name)
+      const bucketNames = buckets.map((b) => b.name)
+      const selTables = saved.tables == null ? tableNames : saved.tables.filter((n) => tableNames.includes(n))
+      const selBuckets = saved.storage_buckets == null
+        ? bucketNames
+        : saved.storage_buckets.filter((n) => bucketNames.includes(n))
+      setBackupSelectedTables(new Set(selTables))
+      setBackupSelectedBuckets(new Set(selBuckets))
+    } catch (e) {
+      const msg = e.message || 'Could not load backup items'
+      setLastActionError(msg)
+      toast(msg, 'error')
+      setBackupModal(null)
+    } finally {
+      setBackupSourcesLoading(false)
+    }
+  }
+
+  async function confirmBackupSelected() {
+    if (!backupModal) return
+    const kind = backupModal.kind
+    const tables = [...backupSelectedTables]
+    const storageBuckets = [...backupSelectedBuckets]
+    if (!tables.length && !storageBuckets.length) {
+      toast('Select at least one table or storage bucket', 'error')
+      return
+    }
+
+    if (backupSaveAsDefault) {
+      try {
+        const s = await saveBackupSelection({ tables, storageBuckets }, profile)
+        setSettings(s)
+      } catch (e) {
+        toast(e.message || 'Could not save selection for automatic backups', 'error')
+        // still continue with this run
+      }
+    }
+
+    setBackupModal(null)
     const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
     setBusy(true)
     setLastActionError(null)
@@ -635,6 +862,8 @@ export default function BackupPage() {
         kind,
         triggerMode: 'manual',
         actor: profile,
+        tables,
+        storageBuckets,
         onProgress: ({ pct, message }) => {
           setBackupProgress({ kind, pct: pct ?? 0, message: message || 'Working…' })
         },
@@ -654,6 +883,7 @@ export default function BackupPage() {
         }
       }
       await loadLogs()
+      await loadSettings()
     } catch (e) {
       const msg = e.message || 'Backup failed'
       setLastActionError(msg)
@@ -978,8 +1208,8 @@ export default function BackupPage() {
             type="button"
             className="no-lift"
             style={primaryBtn}
-            disabled={runningFull || !backupReady}
-            onClick={() => handleRun('full')}
+            disabled={runningFull || !backupReady || !!backupModal}
+            onClick={() => openBackupChooser('full')}
           >
             {runningFull ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
             {runningFull ? 'Backing up…' : 'Run Complete Full Backup'}
@@ -1003,6 +1233,11 @@ export default function BackupPage() {
           message={backupProgress.message}
           kind="full"
         />
+        <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.45 }}>
+          Current selection (manual + automatic):{' '}
+          <strong>{summarizeBackupSelection(settings?.backup_selection)}</strong>
+          {' · '}Click Run to choose items (you can leave photos unchecked for speed).
+        </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <History size={14} color="var(--text-3)" />
@@ -1043,8 +1278,8 @@ export default function BackupPage() {
             type="button"
             className="no-lift"
             style={primaryBtn}
-            disabled={runningSnap || !backupReady}
-            onClick={() => handleRun('snapshot')}
+            disabled={runningSnap || !backupReady || !!backupModal}
+            onClick={() => openBackupChooser('snapshot')}
           >
             {runningSnap ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
             {runningSnap ? 'Snapshot in progress…' : 'Take Complete Snapshot'}
@@ -1253,6 +1488,35 @@ export default function BackupPage() {
         onToggleBucket={(name) => toggleInSet(setSelectedBuckets, name)}
         onRefresh={refreshRestoreChooser}
         onConfirm={confirmRestoreSelected}
+      />
+
+      <BackupChooserModal
+        open={!!backupModal}
+        kind={backupModal?.kind}
+        loading={backupSourcesLoading}
+        tables={backupTables}
+        buckets={backupBuckets}
+        selectedTables={backupSelectedTables}
+        selectedBuckets={backupSelectedBuckets}
+        saveAsDefault={backupSaveAsDefault}
+        onSaveAsDefaultChange={setBackupSaveAsDefault}
+        confirming={runningFull || runningSnap}
+        onClose={() => { if (!runningFull && !runningSnap) setBackupModal(null) }}
+        onSelectAll={() => {
+          setBackupSelectedTables(new Set(backupTables.map((t) => t.name)))
+          setBackupSelectedBuckets(new Set(backupBuckets.map((b) => b.name)))
+        }}
+        onDeselectAll={() => {
+          setBackupSelectedTables(new Set())
+          setBackupSelectedBuckets(new Set())
+        }}
+        onSelectAllTables={() => setBackupSelectedTables(new Set(backupTables.map((t) => t.name)))}
+        onDeselectAllTables={() => setBackupSelectedTables(new Set())}
+        onSelectAllBuckets={() => setBackupSelectedBuckets(new Set(backupBuckets.map((b) => b.name)))}
+        onDeselectAllBuckets={() => setBackupSelectedBuckets(new Set())}
+        onToggleTable={(name) => toggleInSet(setBackupSelectedTables, name)}
+        onToggleBucket={(name) => toggleInSet(setBackupSelectedBuckets, name)}
+        onConfirm={confirmBackupSelected}
       />
     </div>
   )

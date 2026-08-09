@@ -104,13 +104,37 @@ async function listPublicTables() {
   return [...new Set(FALLBACK_TABLES)]
 }
 
-async function buildDatabaseDump(kind, triggerMode, actorEmail, onProgress) {
-  const tableNames = await listPublicTables()
+async function buildDatabaseDump(kind, triggerMode, actorEmail, onProgress, tableFilter = null) {
+  let tableNames = await listPublicTables()
+  if (Array.isArray(tableFilter)) {
+    const allow = new Set(tableFilter)
+    tableNames = tableNames.filter((t) => allow.has(t))
+  }
   const tables = {}
   const summary = []
   let totalRows = 0
   let okCount = 0
   const total = tableNames.length || 1
+
+  if (!tableNames.length) {
+    if (onProgress) await onProgress(40, 'No tables selected')
+    return {
+      payload: {
+        format: 'cms-complete-backup',
+        version: COMPLETE_VERSION,
+        kind,
+        created_at: new Date().toISOString(),
+        trigger_mode: triggerMode,
+        created_by: actorEmail,
+        includes_storage: true,
+        tables,
+        summary,
+      },
+      tablesCount: 0,
+      rowsCount: 0,
+      summary,
+    }
+  }
 
   for (let i = 0; i < tableNames.length; i++) {
     const table = tableNames[i]
@@ -913,6 +937,74 @@ async function continueCompleteBackup(body) {
   }, authVia, onProgress)
 }
 
+async function resolveBackupSelection(body) {
+  // Explicit request body wins; otherwise use saved settings (for automatic cron too)
+  let tables = asStringArray(body.tables ?? body.selected_tables)
+  let storageBuckets = asStringArray(body.storage_buckets ?? body.selected_storage_buckets)
+
+  if (tables === null || storageBuckets === null) {
+    const { data: settings } = await supabase
+      .from('cms_backup_settings')
+      .select('backup_selection')
+      .eq('id', 1)
+      .maybeSingle()
+    const sel = settings?.backup_selection && typeof settings.backup_selection === 'object'
+      ? settings.backup_selection
+      : {}
+    if (tables === null && Object.prototype.hasOwnProperty.call(sel, 'tables')) {
+      tables = asStringArray(sel.tables)
+      // asStringArray(null) returns null — good (means all)
+      // but if sel.tables is explicitly null, asStringArray gets null → null (all)
+      if (sel.tables === null) tables = null
+      else if (Array.isArray(sel.tables)) tables = sel.tables.map(String).filter(Boolean)
+    }
+    if (storageBuckets === null && Object.prototype.hasOwnProperty.call(sel, 'storage_buckets')) {
+      if (sel.storage_buckets === null) storageBuckets = null
+      else if (Array.isArray(sel.storage_buckets)) storageBuckets = sel.storage_buckets.map(String).filter(Boolean)
+    }
+  }
+
+  return { tables, storageBuckets }
+}
+
+async function listBackupSources() {
+  const tableNames = await listPublicTables()
+  const tables = tableNames.map((name) => ({ name }))
+
+  const { data: buckets, error } = await supabase.storage.listBuckets()
+  if (error) throw new Error(`listBuckets: ${error.message}`)
+  const bucketNames = (buckets || []).map((b) => b.name).filter((n) => n !== 'cms-backups')
+  for (const known of KNOWN_BUCKETS) {
+    if (!bucketNames.includes(known)) bucketNames.push(known)
+  }
+  bucketNames.sort()
+
+  const storage_buckets = []
+  for (const name of bucketNames) {
+    let files = 0
+    try {
+      files = (await listAllStorageFiles(name)).length
+    } catch (_) {
+      files = 0
+    }
+    storage_buckets.push({ name, files })
+  }
+
+  const { data: settings } = await supabase
+    .from('cms_backup_settings')
+    .select('backup_selection')
+    .eq('id', 1)
+    .maybeSingle()
+
+  return {
+    ok: true,
+    action: 'list_sources',
+    tables,
+    storage_buckets,
+    selection: settings?.backup_selection || { tables: null, storage_buckets: null },
+  }
+}
+
 async function runCompleteBackup(body) {
   // Resume path
   if (body.action === 'backup_continue' || body.phase === 'continue') {
@@ -925,21 +1017,36 @@ async function runCompleteBackup(body) {
   const folderId = await resolveFolderId(body.drive_folder_id || null)
   if (!folderId) throw new Error('Google Drive folder ID not configured')
 
+  const { data: settingsRow } = await supabase.from('cms_backup_settings').select('*').eq('id', 1).maybeSingle()
   if (triggerMode === 'automatic') {
-    const { data: settings } = await supabase.from('cms_backup_settings').select('*').eq('id', 1).maybeSingle()
-    if (kind === 'full' && settings && settings.full_auto_enabled === false) {
+    if (kind === 'full' && settingsRow && settingsRow.full_auto_enabled === false) {
       return { ok: true, skipped: true, reason: 'Full auto backup disabled' }
     }
-    if (kind === 'snapshot' && settings && settings.snapshot_auto_enabled === false) {
+    if (kind === 'snapshot' && settingsRow && settingsRow.snapshot_auto_enabled === false) {
       return { ok: true, skipped: true, reason: 'Snapshot auto disabled' }
     }
+  }
+
+  const selection = await resolveBackupSelection(body)
+  // Need at least tables or storage
+  if (Array.isArray(selection.tables) && selection.tables.length === 0
+    && Array.isArray(selection.storageBuckets) && selection.storageBuckets.length === 0) {
+    throw new Error('Nothing selected to back up. Choose at least one table or storage bucket.')
   }
 
   const progressLogId = await ensureProgressLog(body, kind, triggerMode, actorEmail)
   const onProgress = async (pct, message) => setProgress(progressLogId, pct, message)
 
   try {
-    await appendDebug(progressLogId, 'backup_start', { kind, triggerMode, version: COMPLETE_VERSION })
+    await appendDebug(progressLogId, 'backup_start', {
+      kind,
+      triggerMode,
+      version: COMPLETE_VERSION,
+      selection: {
+        tables: selection.tables === null ? 'all' : selection.tables,
+        storage_buckets: selection.storageBuckets === null ? 'all' : selection.storageBuckets,
+      },
+    })
     await onProgress(2, 'Connecting to Google Drive…')
     const { accessToken, via: authVia } = await resolveAccessToken()
     await appendDebug(progressLogId, 'google_auth_ok', { via: authVia })
@@ -949,7 +1056,13 @@ async function runCompleteBackup(body) {
     const runFolder = await driveCreateFolder(accessToken, runName, folderId)
     await appendDebug(progressLogId, 'drive_folder_created', { id: runFolder.id, name: runFolder.name })
 
-    const built = await buildDatabaseDump(kind, triggerMode, actorEmail, onProgress)
+    const built = await buildDatabaseDump(
+      kind,
+      triggerMode,
+      actorEmail,
+      onProgress,
+      selection.tables, // null = all
+    )
     await appendDebug(progressLogId, 'db_dump_done', { tables: built.tablesCount, rows: built.rowsCount })
 
     await onProgress(42, `Uploading database.json (${built.tablesCount} tables, ${built.rowsCount} rows)…`)
@@ -961,13 +1074,25 @@ async function runCompleteBackup(body) {
     await onProgress(45, 'Listing storage files…')
     const { data: buckets, error: bucketErr } = await supabase.storage.listBuckets()
     if (bucketErr) throw new Error(`listBuckets: ${bucketErr.message}`)
-    const bucketNames = (buckets || []).map((b) => b.name).filter((n) => n !== 'cms-backups')
+    let bucketNames = (buckets || []).map((b) => b.name).filter((n) => n !== 'cms-backups')
     for (const known of KNOWN_BUCKETS) {
       if (!bucketNames.includes(known)) bucketNames.push(known)
+    }
+    if (Array.isArray(selection.storageBuckets)) {
+      const allow = new Set(selection.storageBuckets)
+      bucketNames = bucketNames.filter((n) => allow.has(n))
+      await appendDebug(progressLogId, 'storage_filtered', {
+        selected: selection.storageBuckets,
+        effective: bucketNames,
+      })
     }
 
     const pendingFiles = []
     const listSkipped = []
+    if (!bucketNames.length) {
+      await appendDebug(progressLogId, 'storage_skipped', { reason: 'no buckets selected' })
+      if (onProgress) await onProgress(90, 'Skipping storage (none selected)')
+    }
     for (const bucket of bucketNames) {
       try {
         const files = await listAllStorageFiles(bucket)
@@ -989,11 +1114,17 @@ async function runCompleteBackup(body) {
       drive_web_link: runFolder.webViewLink || null,
       download_filename: runFolder.name,
       progress_pct: 47,
-      progress_message: `Uploading storage 0/${pendingFiles.length}…`,
+      progress_message: pendingFiles.length
+        ? `Uploading storage 0/${pendingFiles.length}…`
+        : 'No storage files — finalizing…',
       meta: {
         complete: true,
         version: COMPLETE_VERSION,
         chunked: true,
+        selection: {
+          tables: selection.tables === null ? 'all' : selection.tables,
+          storage_buckets: selection.storageBuckets === null ? 'all' : selection.storageBuckets,
+        },
         drive_backup_folder_id: runFolder.id,
         drive_backup_folder_name: runFolder.name,
         drive_database_file_id: dbFile.id,
@@ -1049,6 +1180,10 @@ async function runCompleteBackup(body) {
         complete: true,
         version: COMPLETE_VERSION,
         chunked: true,
+        selection: {
+          tables: selection.tables === null ? 'all' : selection.tables,
+          storage_buckets: selection.storageBuckets === null ? 'all' : selection.storageBuckets,
+        },
         drive_backup_folder_id: runFolder.id,
         drive_backup_folder_name: runFolder.name,
         drive_database_file_id: dbFile.id,
@@ -1446,8 +1581,12 @@ serve(async (req) => {
         complete_backup: true,
         version: COMPLETE_VERSION,
         chunked: true,
-        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug'],
+        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug', 'list_sources'],
       })
+    }
+
+    if (body.action === 'list_sources') {
+      return json(await listBackupSources())
     }
 
     if (body.action === 'inspect' || body.action === 'preview_restore') {

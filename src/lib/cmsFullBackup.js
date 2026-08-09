@@ -29,11 +29,28 @@ export async function getBackupSettings() {
   const { data, error } = await supabase
     .from('cms_backup_settings')
     .select(
-      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, backup_selection, updated_at, updated_by_email',
     )
     .eq('id', 1)
     .maybeSingle()
-  if (error) throw error
+  if (error) {
+    // Column may not exist yet — retry without backup_selection
+    if (/backup_selection|schema cache|column/i.test(error.message || '')) {
+      const retry = await supabase
+        .from('cms_backup_settings')
+        .select(
+          'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+        )
+        .eq('id', 1)
+        .maybeSingle()
+      if (retry.error) throw retry.error
+      return {
+        ...(retry.data || {}),
+        backup_selection: { tables: null, storage_buckets: null },
+      }
+    }
+    throw error
+  }
   return data || {
     id: 1,
     drive_folder_id: '',
@@ -45,6 +62,7 @@ export async function getBackupSettings() {
     snapshot_retain_days: 14,
     google_connected_email: null,
     google_connected_at: null,
+    backup_selection: { tables: null, storage_buckets: null },
   }
 }
 
@@ -63,10 +81,24 @@ export async function saveBackupSettings(patch, actor = null) {
     .from('cms_backup_settings')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, backup_selection, updated_at, updated_by_email',
     )
     .single()
-  if (error) throw error
+  if (error) {
+    if (/backup_selection/i.test(error.message || '')) {
+      const { backup_selection: _drop, ...without } = payload
+      const retry = await supabase
+        .from('cms_backup_settings')
+        .upsert(without, { onConflict: 'id' })
+        .select(
+          'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+        )
+        .single()
+      if (retry.error) throw retry.error
+      throw new Error('Run SQL 20260809_cms_backup_selection.sql to save backup item choices.')
+    }
+    throw error
+  }
   return data
 }
 
@@ -394,6 +426,8 @@ export async function runDriveBackup({
   triggerMode = 'manual',
   actor = null,
   onProgress = null,
+  tables = null,
+  storageBuckets = null,
 } = {}) {
   const settings = await getBackupSettings()
   if (!settings.drive_folder_id?.trim()) {
@@ -481,6 +515,8 @@ export async function runDriveBackup({
       actor_email: actor?.email || null,
       actor_name: actor?.full_name || actor?.name || null,
       progress_log_id: progressLogId,
+      tables,
+      storage_buckets: storageBuckets,
     })
 
     if (invoked.ok && invoked.data && !invoked.data.error) {
@@ -640,6 +676,46 @@ export async function runDriveBackup({
       ? `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included).`
       : 'Database JSON downloaded locally. Redeploy cms-full-backup for a complete Drive backup (DB + storage files).',
   }
+}
+
+/**
+ * List tables + storage buckets available for backup selection.
+ */
+export async function listBackupSources() {
+  const invoked = await invokeEdgeFunction('cms-full-backup', { action: 'list_sources' })
+  if (invoked.missing) {
+    // Local fallback list
+    return {
+      tables: FULL_BACKUP_TABLES.map((name) => ({ name })),
+      storage_buckets: [
+        'member-photos', 'receipt-pdfs', 'church-logos', 'event-media', 'asset-photos',
+        'announcement-cards', 'announcement-reports', 'member-reports', 'payment-pages',
+      ].map((name) => ({ name, files: null })),
+      selection: { tables: null, storage_buckets: null },
+      via: 'local_fallback',
+    }
+  }
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Could not list backup sources')
+  return invoked.data
+}
+
+export async function saveBackupSelection(selection, actor = null) {
+  return saveBackupSettings({
+    backup_selection: {
+      tables: selection.tables === null ? null : [...selection.tables],
+      storage_buckets: selection.storageBuckets === null ? null : [...selection.storageBuckets],
+    },
+  }, actor)
+}
+
+export function summarizeBackupSelection(selection, { tableCount = 0, bucketCount = 0 } = {}) {
+  const tables = selection?.tables
+  const buckets = selection?.storage_buckets ?? selection?.storageBuckets
+  const tLabel = tables == null ? `all tables${tableCount ? ` (${tableCount})` : ''}` : `${tables.length} table(s)`
+  const bLabel = buckets == null ? `all storage${bucketCount ? ` (${bucketCount})` : ''}` : (
+    buckets.length ? `${buckets.length} bucket(s)` : 'no storage files'
+  )
+  return `${tLabel} · ${bLabel}`
 }
 
 /**
