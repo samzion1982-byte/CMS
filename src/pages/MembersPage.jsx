@@ -238,15 +238,23 @@ export default function MembersPage() {
     setSaving(false); setShowSaveDialog(false)
     if (err) toast('Save failed: '+err.message,'error')
     else {
+      const SKIP_KEYS = new Set([
+        'id', 'created_at', 'updated_at', 'last_modified_by', 'last_modified_at',
+        'is_active', 'age',
+      ])
       const watchKeys = [
-        'member_name', 'family_id', 'title', 'gender', 'mobile', 'email', 'zone',
-        'address', 'city', 'state', 'dob_actual', 'marital_status', 'spouse_name',
-        'is_baptised', 'is_confirmed', 'photo_url', 'old_member_id', 'change_reason',
-      ]
+        ...new Set([
+          ...Object.keys(EMPTY),
+          'old_member_id', 'change_reason',
+          ...Object.keys(selected || {}),
+          ...Object.keys(record || {}),
+        ]),
+      ].filter((k) => !SKIP_KEYS.has(k))
       const changes = selected
         ? diffFields(selected, record, watchKeys)
         : watchKeys
-            .filter((k) => record[k] != null && record[k] !== '')
+            .filter((k) => record[k] != null && record[k] !== '' && record[k] !== false)
+            .slice(0, 40)
             .map((field) => ({ field, from: null, to: String(record[field]) }))
       await logCmsAudit({
         action: selected ? 'updated' : 'created',
@@ -255,7 +263,7 @@ export default function MembersPage() {
         entityId: form.member_id,
         entityLabel: form.member_name || form.member_id,
         summary: selected
-          ? `Updated member ${form.member_name || form.member_id}`
+          ? `Updated member ${form.member_name || form.member_id}${changes.length ? ` (${changes.length} field${changes.length === 1 ? '' : 's'})` : ''}`
           : `Created member ${form.member_name || form.member_id}`,
         changes,
         actor: profile,

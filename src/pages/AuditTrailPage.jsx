@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, RefreshCw, Search, History, Loader2 } from 'lucide-react'
+import { FileSpreadsheet, RefreshCw, Search, History, Loader2 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { ROLE_LABELS } from '../lib/auth'
 import { AUDIT_ACTIONS, AUDIT_MODULES, getCmsAuditLogs } from '../lib/cmsAudit'
+import { exportToExcel } from '../lib/exportExcel'
 
 const PAGE_SIZE = 50
 const ADMIN_ROLES = ['super_admin', 'admin1', 'admin']
 
 const MODULE_STYLE = {
-  members:         { bg: '#eff6ff', color: '#1e40af' },
-  events:          { bg: '#faf5ff', color: '#6b21a8' },
-  assets:          { bg: '#ecfeff', color: '#0e7490' },
-  finance:         { bg: '#ecfdf5', color: '#065f46' },
-  users:           { bg: '#fff7ed', color: '#c2410c' },
-  church_setup:    { bg: '#fef3c7', color: '#92400e' },
-  cms_permissions: { bg: '#f1f5f9', color: '#334155' },
+  members: { bg: '#eff6ff', color: '#1e40af' },
+  events:  { bg: '#faf5ff', color: '#6b21a8' },
+  assets:  { bg: '#ecfeff', color: '#0e7490' },
+  finance: { bg: '#ecfdf5', color: '#065f46' },
 }
 
 const ACTION_STYLE = {
@@ -28,7 +26,6 @@ const ACTION_STYLE = {
   posted:          { bg: '#faf5ff', color: '#7e22ce' },
   moved:           { bg: '#ecfeff', color: '#0e7490' },
   transferred:     { bg: '#fdf4ff', color: '#a21caf' },
-  reset_password:  { bg: '#fef3c7', color: '#a16207' },
 }
 
 function formatWhen(iso) {
@@ -45,30 +42,19 @@ function labelize(s) {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function summarizeChanges(changes) {
-  if (!changes) return '—'
+function formatChangesList(changes) {
+  if (!changes) return []
   if (Array.isArray(changes)) {
-    if (!changes.length) return '—'
-    return changes
-      .slice(0, 5)
-      .map((c) => {
-        const from = c.from == null || c.from === '' ? '∅' : String(c.from).slice(0, 28)
-        const to = c.to == null || c.to === '' ? '∅' : String(c.to).slice(0, 28)
-        return `${c.field}: ${from} → ${to}`
-      })
-      .join(' · ')
+    return changes.map((c) => {
+      const from = c.from == null || c.from === '' ? '∅' : String(c.from)
+      const to = c.to == null || c.to === '' ? '∅' : String(c.to)
+      return `${c.field}: ${from} → ${to}`
+    })
   }
   if (typeof changes === 'object') {
-    const keys = Object.keys(changes).slice(0, 6)
-    return keys.length ? keys.join(', ') : '—'
+    return Object.keys(changes).map((k) => `${k}: ${String(changes[k])}`)
   }
-  return String(changes).slice(0, 120)
-}
-
-function toCsvValue(v) {
-  const s = v == null ? '' : String(v)
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-  return s
+  return [String(changes)]
 }
 
 function Pill({ text, styleMap, fallback }) {
@@ -122,6 +108,7 @@ export default function AuditTrailPage() {
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [moduleFilter, setModuleFilter] = useState('')
   const [actionFilter, setActionFilter] = useState('')
@@ -166,34 +153,47 @@ export default function AuditTrailPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  const exportCsv = () => {
-    const header = ['When', 'Module', 'Action', 'Entity', 'Entity ID', 'Label', 'Actor', 'Role', 'Summary', 'Changes']
-    const lines = [header.join(',')]
-    for (const r of rows) {
-      lines.push(
-        [
-          formatWhen(r.created_at),
-          r.module,
-          r.action,
-          r.entity_type || '',
-          r.entity_id || '',
-          r.entity_label || '',
-          r.actor_name || r.actor_email || '',
-          r.actor_role || '',
-          r.summary || '',
-          JSON.stringify(r.changes || []),
-        ]
-          .map(toCsvValue)
-          .join(',')
-      )
+  const exportExcel = async () => {
+    setExporting(true)
+    try {
+      const { data: all } = await getCmsAuditLogs({
+        module: moduleFilter,
+        action: actionFilter,
+        q,
+        limit: 10000,
+        offset: 0,
+      })
+      const columns = [
+        { header: 'When',      key: 'when',      width: 18 },
+        { header: 'Module',    key: 'module',    width: 16 },
+        { header: 'Action',    key: 'action',    width: 14 },
+        { header: 'User',      key: 'user',      width: 24 },
+        { header: 'Role',      key: 'role',      width: 14 },
+        { header: 'Email',     key: 'email',     width: 28 },
+        { header: 'Summary',   key: 'summary',   width: 40 },
+        { header: 'Entity',    key: 'entity',    width: 22 },
+        { header: 'Entity ID', key: 'entity_id', width: 16 },
+        { header: 'Changes',   key: 'changes',   width: 50 },
+      ]
+      const excelRows = (all || []).map((r) => ({
+        when: formatWhen(r.created_at),
+        module: labelize(r.module),
+        action: labelize(r.action),
+        user: r.actor_name || '—',
+        role: ROLE_LABELS[r.actor_role] || r.actor_role || '—',
+        email: r.actor_email || '—',
+        summary: r.summary || '—',
+        entity: r.entity_label || r.entity_type || '—',
+        entity_id: r.entity_id || '—',
+        changes: formatChangesList(r.changes).join(' | ') || '—',
+      }))
+      const date = new Date().toISOString().slice(0, 10)
+      await exportToExcel(columns, excelRows, 'Audit Trail', `cms-audit-trail-${date}.xlsx`)
+    } catch (err) {
+      setError(err?.message || 'Excel export failed')
+    } finally {
+      setExporting(false)
     }
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `cms-audit-trail-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
@@ -205,7 +205,7 @@ export default function AuditTrailPage() {
             Audit Trail
           </h1>
           <p className="page-subtitle" style={{ margin: '6px 0 0' }}>
-            Who changed what across the CMS — create, update, and delete actions.
+            Who changed what across Members, Events, Assets, and Finance.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -213,8 +213,15 @@ export default function AuditTrailPage() {
             {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Refresh
           </button>
-          <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={!rows.length} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Download size={15} /> Export CSV
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={exportExcel}
+            disabled={exporting || !total}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+            {exporting ? 'Exporting…' : 'Export Excel'}
           </button>
         </div>
       </div>
@@ -265,7 +272,7 @@ export default function AuditTrailPage() {
               <input
                 className="form-control"
                 style={{ paddingLeft: 32 }}
-                placeholder="Actor, summary, entity…"
+                placeholder="User, summary, entity…"
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
               />
@@ -305,7 +312,7 @@ export default function AuditTrailPage() {
           </div>
         ) : !loading && !rows.length ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 160, color: 'var(--text-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>
-            No audit entries yet. Changes to Members, Events, Assets, Finance, Users, and Church Setup will appear here.
+            No audit entries yet. Changes to Members, Events, Assets, and Finance will appear here.
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -327,7 +334,7 @@ export default function AuditTrailPage() {
               </colgroup>
               <thead>
                 <tr>
-                  {['When', 'Module', 'Action', 'Actor', 'Summary', 'Changes'].map((h) => (
+                  {['When', 'Module', 'Action', 'User', 'Summary', 'Changes'].map((h) => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -335,8 +342,11 @@ export default function AuditTrailPage() {
               <tbody>
                 {rows.map((r) => {
                   const roleLabel = ROLE_LABELS[r.actor_role] || r.actor_role || ''
+                  const changeLines = formatChangesList(r.changes)
                   return (
-                    <tr key={r.id} style={{ background: 'transparent' }}
+                    <tr
+                      key={r.id}
+                      style={{ background: 'transparent' }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--table-row-hover)' }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                     >
@@ -370,7 +380,18 @@ export default function AuditTrailPage() {
                         )}
                       </td>
                       <td style={{ ...tdStyle, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, wordBreak: 'break-word' }}>
-                        {summarizeChanges(r.changes)}
+                        {!changeLines.length ? (
+                          '—'
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {changeLines.slice(0, 8).map((line, i) => (
+                              <div key={i}>{line}</div>
+                            ))}
+                            {changeLines.length > 8 && (
+                              <div style={{ color: 'var(--text-3)' }}>+{changeLines.length - 8} more</div>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )

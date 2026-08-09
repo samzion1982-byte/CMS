@@ -1,5 +1,8 @@
 import { supabase } from './supabase'
 
+/** Modules that are intentionally not audited / hidden from the trail UI. */
+export const AUDIT_EXCLUDED_MODULES = ['users', 'church_setup', 'cms_permissions']
+
 /**
  * Write a CMS audit trail entry. Never throws to callers — logging must not break saves.
  */
@@ -14,6 +17,8 @@ export async function logCmsAudit({
   actor = null,
 }) {
   try {
+    if (AUDIT_EXCLUDED_MODULES.includes(module)) return
+
     let actorId = actor?.id || null
     let actorEmail = actor?.email || null
     let actorName = actor?.full_name || actor?.name || null
@@ -65,8 +70,17 @@ export function diffFields(before = {}, after = {}, keys = null) {
   for (const field of list) {
     const from = before?.[field] ?? null
     const to = after?.[field] ?? null
-    const a = from == null || from === '' ? null : String(from)
-    const b = to == null || to === '' ? null : String(to)
+    const norm = (v) => {
+      if (v == null || v === '') return null
+      if (typeof v === 'boolean') return v ? 'true' : 'false'
+      if (typeof v === 'number') return String(v)
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch { return String(v) }
+      }
+      return String(v).trim()
+    }
+    const a = norm(from)
+    const b = norm(to)
     if (a === b) continue
     out.push({ field, from: a, to: b })
   }
@@ -88,6 +102,7 @@ export async function getCmsAuditLogs({
     .range(offset, offset + limit - 1)
 
   if (module && module !== 'all') query = query.eq('module', module)
+  else query = query.not('module', 'in', `(${AUDIT_EXCLUDED_MODULES.join(',')})`)
   if (action && action !== 'all') query = query.eq('action', action)
   if (actor) {
     query = query.or(`actor_email.ilike.%${actor}%,actor_name.ilike.%${actor}%`)
@@ -106,9 +121,6 @@ export async function getCmsAuditLogs({
 
 export const AUDIT_MODULES = [
   { value: '', label: 'All modules' },
-  { value: 'users', label: 'Users' },
-  { value: 'church_setup', label: 'Church Setup' },
-  { value: 'cms_permissions', label: 'CMS Permissions' },
   { value: 'members', label: 'Members' },
   { value: 'events', label: 'Events' },
   { value: 'assets', label: 'Asset Management' },
@@ -123,7 +135,6 @@ export const AUDIT_ACTIONS = [
   { value: 'deactivated', label: 'Deactivated' },
   { value: 'activated', label: 'Activated' },
   { value: 'restored', label: 'Restored' },
-  { value: 'reset_password', label: 'Reset password' },
   { value: 'saved', label: 'Saved' },
   { value: 'posted', label: 'Posted' },
   { value: 'moved', label: 'Moved' },
