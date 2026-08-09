@@ -276,13 +276,20 @@ export default function BackupPage() {
     setBusy(true)
     try {
       const r = await runDriveBackup({ kind, triggerMode: 'manual', actor: profile })
-      toast(
-        `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,
-        'success',
-      )
+      if (r.via === 'local_download') {
+        toast(
+          `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded (${r.tables_count} tables). Deploy Edge Function cms-full-backup to save to Google Drive.`,
+          'success',
+        )
+      } else {
+        toast(
+          `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,
+          'success',
+        )
+      }
       await loadLogs()
     } catch (e) {
-      toast(e.message || 'Backup failed (deploy cms-full-backup + set GOOGLE_SERVICE_ACCOUNT_JSON)', 'error')
+      toast(e.message || 'Backup failed', 'error')
     } finally {
       setBusy(false)
     }

@@ -1,5 +1,6 @@
 /**
- * Full Backup + Snapshot helpers (Google Drive only).
+ * Full Backup + Snapshot helpers (Google Drive via Edge Function).
+ * Manual runs fall back to local JSON download if the function is not deployed yet.
  */
 
 import { supabase } from './supabase'
@@ -21,6 +22,8 @@ export const FULL_BACKUP_TABLES = [
   'announcements', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
   'cms_audit_log', 'login_logs',
 ]
+
+const PAGE = 1000
 
 export async function getBackupSettings() {
   const { data, error } = await supabase
@@ -79,10 +82,110 @@ export async function listBackupLogs({ kind = null, page = 0, pageSize = 30 } = 
   return { rows, total: count || rows.length }
 }
 
+async function fetchAllRows(table) {
+  const rows = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .range(from, from + PAGE - 1)
+    if (error) {
+      if (/does not exist|schema cache|Could not find/i.test(error.message || '')) {
+        return { rows: [], skipped: true, error: error.message }
+      }
+      return { rows: [], skipped: false, error: error.message }
+    }
+    const batch = data || []
+    rows.push(...batch)
+    if (batch.length < PAGE) break
+    from += PAGE
+  }
+  return { rows, skipped: false, error: null }
+}
+
+export async function buildBackupPayload({ kind = 'full', triggerMode = 'manual', actor = null } = {}) {
+  const tables = {}
+  const summary = []
+  let totalRows = 0
+  let okCount = 0
+
+  for (const table of FULL_BACKUP_TABLES) {
+    const result = await fetchAllRows(table)
+    if (result.skipped) {
+      summary.push({ table, status: 'skipped', rows: 0, error: result.error })
+      continue
+    }
+    if (result.error) {
+      summary.push({ table, status: 'error', rows: 0, error: result.error })
+      continue
+    }
+    tables[table] = result.rows
+    totalRows += result.rows.length
+    okCount += 1
+    summary.push({ table, status: 'ok', rows: result.rows.length })
+  }
+
+  return {
+    payload: {
+      format: kind === 'snapshot' ? 'cms-snapshot' : 'cms-full-backup',
+      version: 1,
+      kind,
+      created_at: new Date().toISOString(),
+      trigger_mode: triggerMode,
+      created_by: actor?.email || null,
+      tables,
+      summary,
+    },
+    tablesCount: okCount,
+    rowsCount: totalRows,
+    summary,
+  }
+}
+
+function backupFilename(kind, date = new Date()) {
+  const p = (n) => String(n).padStart(2, '0')
+  const stamp = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}`
+  return kind === 'snapshot' ? `cms-snapshot-${stamp}.json` : `cms-full-backup-${stamp}.json`
+}
+
+function downloadJson(payload, filename) {
+  const text = JSON.stringify(payload, null, 2)
+  const blob = new Blob([text], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return { bytes: blob.size, filename }
+}
+
+async function logBackupRun(row) {
+  const { data, error } = await supabase.from('cms_backup_log').insert(row).select('*').single()
+  if (error) {
+    console.error('cms_backup_log insert failed:', error)
+    return null
+  }
+  return data
+}
+
+function isFunctionMissingError(error, data) {
+  const msg = `${error?.message || ''} ${data?.error || ''} ${data?.message || ''}`.toLowerCase()
+  return (
+    /failed to send a request to the edge function/.test(msg)
+    || /not found/.test(msg)
+    || /function was not found/.test(msg)
+    || error?.context?.status === 404
+  )
+}
+
 /**
- * Run Full Backup or Snapshot via Edge Function → Google Drive only.
- * @param {'full'|'snapshot'} kind
- * @param {'manual'|'automatic'} triggerMode
+ * Run Full Backup or Snapshot.
+ * 1) Prefer Edge Function → Google Drive
+ * 2) If function missing, dump + download locally and log history
  */
 export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', actor = null } = {}) {
   const settings = await getBackupSettings()
@@ -90,18 +193,66 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     throw new Error('Save a Google Drive folder ID first (Google Drive section).')
   }
 
-  const { data, error } = await supabase.functions.invoke('cms-full-backup', {
-    body: {
-      kind,
-      trigger_mode: triggerMode,
-      drive_folder_id: settings.drive_folder_id.trim(),
-      actor_email: actor?.email || null,
-      actor_name: actor?.full_name || actor?.name || null,
-    },
+  // Try Edge Function (Drive upload)
+  try {
+    const { data, error } = await supabase.functions.invoke('cms-full-backup', {
+      body: {
+        kind,
+        trigger_mode: triggerMode,
+        drive_folder_id: settings.drive_folder_id.trim(),
+        actor_email: actor?.email || null,
+        actor_name: actor?.full_name || actor?.name || null,
+      },
+    })
+    if (!error && data && !data.error) {
+      return { ...data, via: 'drive' }
+    }
+    if (error && !isFunctionMissingError(error, data)) {
+      throw new Error(data?.error || error.message || 'Backup failed')
+    }
+    if (data?.error && !isFunctionMissingError(error, data)) {
+      throw new Error(data.error)
+    }
+    // fall through to local if function missing
+  } catch (e) {
+    if (!isFunctionMissingError(e, null) && !/failed to send/i.test(e.message || '')) {
+      throw e
+    }
+  }
+
+  // Local fallback — works before Edge Function is deployed
+  const { payload, tablesCount, rowsCount, summary } = await buildBackupPayload({
+    kind, triggerMode, actor,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
+  const filename = backupFilename(kind)
+  const { bytes } = downloadJson(payload, filename)
+
+  await logBackupRun({
+    backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
+    kind,
+    trigger_mode: triggerMode,
+    status: 'partial',
+    tables_count: tablesCount,
+    rows_count: rowsCount,
+    file_size_bytes: bytes,
+    download_filename: filename,
+    error_message: 'Downloaded locally. Deploy Edge Function cms-full-backup and set GOOGLE_SERVICE_ACCOUNT_JSON to upload to Google Drive.',
+    meta: { summary, via: 'local_download', drive_folder_id: settings.drive_folder_id },
+    created_by_email: actor?.email || null,
+    created_by_name: actor?.full_name || actor?.name || null,
+  })
+
+  return {
+    ok: true,
+    via: 'local_download',
+    status: 'partial',
+    kind,
+    filename,
+    tables_count: tablesCount,
+    rows_count: rowsCount,
+    file_size_bytes: bytes,
+    message: 'Backup downloaded to your computer. Deploy cms-full-backup to also save to Google Drive.',
+  }
 }
 
 export async function restoreFromDriveBackup({ logId, kind = 'full', actor = null } = {}) {
@@ -122,7 +273,7 @@ export async function restoreFromDriveBackup({ logId, kind = 'full', actor = nul
  * New Setup / Upgrade — provision a target Supabase project.
  */
 export async function runProvision({
-  mode = 'initialize', // initialize | upgrade
+  mode = 'initialize',
   supabaseUrl,
   anonKey,
   serviceRoleKey,
@@ -145,7 +296,12 @@ export async function runProvision({
       actor_email: actor?.email || null,
     },
   })
-  if (error) throw error
+  if (error) {
+    if (isFunctionMissingError(error, data)) {
+      throw new Error('Edge Function cms-provision is not deployed yet. Deploy it from Supabase → Edge Functions.')
+    }
+    throw error
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }
