@@ -276,8 +276,7 @@ function BackupChooserModal({
               {title}
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
-              <code>member-photos</code> and <code>receipt-pdfs</code> use incremental sync (parent Drive folder — only new/changed files).
-              Other buckets are copied into each dated backup folder.
+              All storage buckets use incremental sync under the parent Drive folder — only new or changed files are uploaded after the first sync.
             </p>
           </div>
           <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
@@ -338,7 +337,7 @@ function BackupChooserModal({
                   }}
                 />
                 <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9a3412', lineHeight: 1.45 }}>
-                  Tip: include <code>member-photos</code> / <code>receipt-pdfs</code> safely — after the first sync, later backups only upload newly added or changed files into <code>cms-storage-sync/</code> on Drive.
+                  Tip: after the first sync, later backups only upload newly added or changed files into <code>cms-storage-sync/</code> on Drive.
                 </p>
               </div>
             </>
@@ -519,7 +518,7 @@ function RestoreChooserModal({
           )}
 
           <p style={{ margin: 0, fontSize: 11, color: '#9a3412', lineHeight: 1.45, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '8px 10px' }}>
-            Selected tables are truncated then reloaded from the backup. Sync buckets (<code>member-photos</code>, <code>receipt-pdfs</code>) only download missing or changed files from the parent <code>cms-storage-sync/</code> folder.
+            Selected tables are truncated then reloaded from the backup. Storage restore is incremental from the parent <code>cms-storage-sync/</code> folder — only missing or changed files are downloaded.
           </p>
         </div>
 
@@ -1121,7 +1120,7 @@ export default function BackupPage() {
           <strong>Complete backup check:</strong> After redeploying <code>cms-full-backup</code>, use Debug → Run diagnostics.
           It must say <code>complete_backup: true</code>, version ≥ 4, and list <code>storage_sync</code>.
           Each run creates a dated Drive folder with <code>database.json</code> + <code>manifest.json</code>.
-          Photos/PDFs live under the parent <code>cms-storage-sync/</code> folder and sync incrementally.
+          All storage buckets live under the parent <code>cms-storage-sync/</code> folder and sync incrementally.
         </div>
       </div>
 
