@@ -6,11 +6,11 @@ import { formatDate } from '../lib/date'
 import {
   Save, RotateCcw, Edit2, Power, Trash2,
   Eye, EyeOff, Loader2, Users, UserPlus,
-  Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle
+  Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle,
+  Shield, Sparkles,
 } from 'lucide-react'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 
-// ---------- Constants ----------
 const MAX_SLOTS = 5
 
 const USER_PERMS_MATRIX = {
@@ -31,11 +31,11 @@ const PERMS = {
 }
 
 const ROLES = [
-  { value:'admin1', label: ROLE_LABELS.admin1, emoji:'👑', color:'#6366f1', bg:'#eef2ff', border:'#c7d2fe' },
-  { value:'admin',  label: ROLE_LABELS.admin,  emoji:'🛡️', color:'#059669', bg:'#ecfdf5', border:'#a7f3d0' },
-  { value:'user',   label: ROLE_LABELS.user,   emoji:'👤', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' },
-  { value:'demo',   label: ROLE_LABELS.demo,   emoji:'🧪', color:'#d97706', bg:'#fffbeb', border:'#fde68a' },
-  { value:'user4',  label: ROLE_LABELS.user4,  emoji:'👥', color:'#0e7490', bg:'#ecfeff', border:'#a5f3fc' },
+  { value: 'admin1', label: ROLE_LABELS.admin1, color: '#1d4ed8', bg: 'rgba(29,78,216,0.10)',  border: 'rgba(29,78,216,0.35)' },
+  { value: 'admin',  label: ROLE_LABELS.admin,  color: '#059669', bg: 'rgba(5,150,105,0.10)',  border: 'rgba(5,150,105,0.35)' },
+  { value: 'user',   label: ROLE_LABELS.user,   color: '#475569', bg: 'rgba(71,85,105,0.10)',  border: 'rgba(71,85,105,0.28)' },
+  { value: 'demo',   label: ROLE_LABELS.demo,   color: '#d97706', bg: 'rgba(217,119,6,0.10)',  border: 'rgba(217,119,6,0.35)' },
+  { value: 'user4',  label: ROLE_LABELS.user4,  color: '#0e7490', bg: 'rgba(14,116,144,0.10)', border: 'rgba(14,116,144,0.35)' },
 ]
 
 function ini(name = '') {
@@ -46,10 +46,23 @@ function ini(name = '') {
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 function fmtDate(iso) { return iso ? formatDate(iso, '') : '' }
-function roleConf(r) { return ROLES.find(x=>x.value===r) || { label:r, emoji:'?', color:'#64748b', bg:'#f8fafc', border:'#e2e8f0' } }
+function roleConf(r) {
+  return ROLES.find(x => x.value === r) || { label: r, color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)' }
+}
 
 const cleanPhone = (raw) => (raw || '').replace(/\D/g, '')
 const isValidPhone = (raw) => cleanPhone(raw).length >= 10
+
+const labelStyle = {
+  display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+  letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 6,
+}
+
+const iconBtn = (color = 'var(--text-3)') => ({
+  width: 34, height: 34, borderRadius: 9, border: '1.5px solid var(--card-border)',
+  background: 'var(--card-bg)', cursor: 'pointer', display: 'flex',
+  alignItems: 'center', justifyContent: 'center', color, transition: 'transform .12s, border-color .12s',
+})
 
 export default function UsersPage() {
   const { profile } = useAuth()
@@ -61,8 +74,8 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showPw, setShowPw] = useState(false)
-  const [deactivateDialog, setDeactivateDialog] = useState(null)  // For deactivate (soft delete)
-  const [permDeleteDialog, setPermDeleteDialog] = useState(null)  // For permanent delete
+  const [deactivateDialog, setDeactivateDialog] = useState(null)
+  const [permDeleteDialog, setPermDeleteDialog] = useState(null)
   const [resetDialog, setResetDialog] = useState(null)
   const [resetPassword, setResetPassword] = useState('')
   const [resetShowPw, setResetShowPw] = useState(false)
@@ -70,8 +83,8 @@ export default function UsersPage() {
   const [toggleLoading, setToggleLoading] = useState(null)
   const [deactivateLoading, setDeactivateLoading] = useState(null)
   const [permDeleteLoading, setPermDeleteLoading] = useState(false)
-  const [form, setForm] = useState({ name:'', email:'', password:'', role:'', mobile:'' })
-  const sf = (k,v) => setForm(f=>({...f,[k]:v}))
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: '', mobile: '' })
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -108,12 +121,12 @@ export default function UsersPage() {
 
   function resetForm() {
     setEditing(null)
-    setForm({ name:'', email:'', password:'', role:'', mobile:'' })
+    setForm({ name: '', email: '', password: '', role: '', mobile: '' })
     setShowPw(false)
   }
 
   async function save() {
-    if (!form.name.trim())  return toast('Full name is required.', 'error')
+    if (!form.name.trim()) return toast('Full name is required.', 'error')
     if (!form.email.trim()) return toast('Email is required.', 'error')
     if (!/^\S+@\S+\.\S+$/.test(form.email)) return toast('Enter a valid email address.', 'error')
     if (form.mobile && !isValidPhone(form.mobile)) return toast('Mobile must have at least 10 digits (spaces, + allowed).', 'error')
@@ -139,26 +152,20 @@ export default function UsersPage() {
       return
     }
 
-    // CREATE NEW USER - using temporary client to avoid session hijacking
     if (users.length >= MAX_SLOTS) {
       toast(`All ${MAX_SLOTS} slots are in use.`, 'error')
       setSaving(false)
       return
     }
 
-    // Create a TEMPORARY client that won't affect the current session
     const tempClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false
-      }
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
     const { data: authData, error: signUpError } = await tempClient.auth.signUp({
       email: form.email,
       password: form.password,
-      options: { data: { full_name: form.name } }
+      options: { data: { full_name: form.name } },
     })
 
     if (signUpError) {
@@ -184,7 +191,7 @@ export default function UsersPage() {
       full_name: form.name,
       role: form.role,
       mobile: cleanPhone(form.mobile) || null,
-      is_active: true
+      is_active: true,
     }, { onConflict: 'id' })
 
     if (profileError) {
@@ -199,48 +206,37 @@ export default function UsersPage() {
     setSaving(false)
   }
 
-  // Deactivate user (soft delete) - sets is_active = false
   async function deactivateUser(id) {
     if (id === profile?.id) {
       toast('You cannot deactivate your own account.', 'error')
       return
     }
     setDeactivateLoading(id)
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_active: false })
-      .eq('id', id)
+    const { error } = await supabase.from('profiles').update({ is_active: false }).eq('id', id)
     setDeactivateLoading(null)
     setDeactivateDialog(null)
-    if (error) {
-      toast('Deactivation failed: ' + error.message, 'error')
-    } else {
+    if (error) toast('Deactivation failed: ' + error.message, 'error')
+    else {
       toast('User deactivated. They cannot log in but their data is preserved.', 'success')
       load()
     }
   }
 
-  // Activate user - sets is_active = true
   async function activateUser(id) {
     if (id === profile?.id) {
       toast('You cannot activate/deactivate your own account.', 'error')
       return
     }
     setToggleLoading(id)
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_active: true })
-      .eq('id', id)
+    const { error } = await supabase.from('profiles').update({ is_active: true }).eq('id', id)
     setToggleLoading(null)
-    if (error) {
-      toast('Activation failed: ' + error.message, 'error')
-    } else {
+    if (error) toast('Activation failed: ' + error.message, 'error')
+    else {
       toast('User activated. They can now log in.', 'success')
       load()
     }
   }
 
-  // Permanent delete – completely removes user from auth.users and profiles
   async function permanentDelete(id) {
     setPermDeleteLoading(true)
     try {
@@ -248,17 +244,15 @@ export default function UsersPage() {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`
-        }
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
       })
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Auth deletion failed: ${response.status} - ${errorText}`)
       }
-
       await supabase.from('profiles').delete().eq('id', id)
-
       toast('User permanently deleted.', 'success')
       load()
     } catch (err) {
@@ -270,30 +264,26 @@ export default function UsersPage() {
     }
   }
 
-  // Reset password via Admin API
   async function resetUserPassword() {
     if (!resetPassword || resetPassword.length < 8) {
       toast('Password must be at least 8 characters.', 'error')
       return
     }
     setResetLoading(true)
-
     try {
       const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${resetDialog.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
         },
-        body: JSON.stringify({ password: resetPassword })
+        body: JSON.stringify({ password: resetPassword }),
       })
-
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Auth update failed: ${response.status} - ${errorText}`)
       }
-
       toast(`Password for ${resetDialog.name} has been reset.`, 'success')
       setResetDialog(null)
       setResetPassword('')
@@ -306,222 +296,422 @@ export default function UsersPage() {
   }
 
   if (profile?.role !== 'super_admin') {
-    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Access denied — Super Admin only.</div>
+    return (
+      <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 280 }}>
+        <p style={{ color: 'var(--text-3)', fontSize: 14 }}>Access denied — Super Admin only.</p>
+      </div>
+    )
   }
 
   const slotsUsed = users.length
+  const fillPct = Math.round((slotsUsed / MAX_SLOTS) * 100)
+  const selectedRole = ROLES.find(r => r.value === form.role)
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1100, margin: '0 auto' }}>
-      <div style={{ marginBottom: 28 }}>
-        <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Users size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            User Management
-          </h1>
-        <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
-          {slotsUsed} of {MAX_SLOTS} slots used
-          {slotsUsed < MAX_SLOTS
-            ? <span style={{ color: '#16a34a', fontWeight: 600 }}> · {MAX_SLOTS - slotsUsed} slot{MAX_SLOTS - slotsUsed !== 1 ? 's' : ''} available</span>
-            : <span style={{ color: '#dc2626', fontWeight: 600 }}> · All slots in use</span>
-          }
-        </p>
+    <div className="page-container animate-fade-in" style={{ maxWidth: 1120 }}>
+      {/* Header band */}
+      <div style={{
+        position: 'relative', overflow: 'hidden', borderRadius: 18, marginBottom: 22,
+        background: 'linear-gradient(135deg, var(--sidebar-bg, #0d2244) 0%, color-mix(in srgb, var(--accent) 55%, #0f172a) 100%)',
+        color: '#fff', padding: '22px 24px 20px',
+        boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.22,
+          background: 'radial-gradient(ellipse 60% 80% at 100% 0%, #fff 0%, transparent 55%)',
+        }} />
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.75, marginBottom: 8 }}>
+              <Shield size={12} /> Admin · Access control
+            </div>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Users size={24} /> User Management
+            </h1>
+            <p style={{ margin: '8px 0 0', fontSize: 13, opacity: 0.82, maxWidth: 420, lineHeight: 1.45 }}>
+              Create and manage CMS users. Page access is controlled in CMS Permissions.
+            </p>
+          </div>
+          <div style={{
+            minWidth: 180, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 14, padding: '12px 14px', backdropFilter: 'blur(6px)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+              <span>Slots</span>
+              <span>{slotsUsed} / {MAX_SLOTS}</span>
+            </div>
+            <div style={{ height: 8, borderRadius: 99, background: 'rgba(255,255,255,0.18)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', width: `${fillPct}%`, borderRadius: 99,
+                background: slotsUsed >= MAX_SLOTS
+                  ? 'linear-gradient(90deg,#f97316,#ef4444)'
+                  : 'linear-gradient(90deg,#34d399,#a7f3d0)',
+                transition: 'width .4s ease',
+              }} />
+            </div>
+            <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.8 }}>
+              {slotsUsed < MAX_SLOTS ? `${MAX_SLOTS - slotsUsed} available` : 'All slots filled'}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Slot pills */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
+      {/* Slot strip */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10, marginBottom: 22,
+      }} className="users-slot-grid">
         {Array.from({ length: MAX_SLOTS }).map((_, i) => {
           const u = users[i]
           const rc = u ? roleConf(u.role) : null
+          const filled = !!u
           return (
-            <div key={i} onClick={() => u && startEdit(u)}
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                if (u) startEdit(u)
+                else { resetForm(); scrollToForm() }
+              }}
               style={{
-                flex: 1, padding: '12px 14px', borderRadius: 12,
-                border: u ? `1.5px solid ${rc.border}` : '1.5px dashed #e2e8f0',
-                background: u ? rc.bg : '#f8fafc',
-                cursor: u ? 'pointer' : 'default'
+                textAlign: 'left', padding: '14px 12px', borderRadius: 14, cursor: 'pointer',
+                border: filled ? `1.5px solid ${rc.border}` : '1.5px dashed var(--card-border)',
+                background: filled
+                  ? `linear-gradient(160deg, ${rc.bg} 0%, var(--card-bg) 70%)`
+                  : 'var(--card-bg)',
+                boxShadow: filled ? '0 4px 14px rgba(15,23,42,0.06)' : 'none',
+                transition: 'transform .15s ease, box-shadow .15s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)' }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'none' }}
+            >
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase',
+                color: filled ? rc.color : 'var(--text-3)', marginBottom: 8,
               }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: u ? rc.color : '#cbd5e1', marginBottom: 4 }}>
                 Slot {i + 1}
               </div>
-              {u ? (
+              {filled ? (
                 <>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.full_name}</div>
-                  <div style={{ fontSize: 11, color: rc.color, marginTop: 2 }}>{rc.emoji} {rc.label}</div>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 11, marginBottom: 8,
+                    background: `linear-gradient(135deg, ${rc.color}, color-mix(in srgb, ${rc.color} 70%, #0f172a))`,
+                    color: '#fff', fontSize: 12, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {ini(u.full_name)}
+                  </div>
+                  <div style={{
+                    fontSize: 13, fontWeight: 700, color: 'var(--text-1)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {u.full_name}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: rc.color, marginTop: 3 }}>{rc.label}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>— Open —</div>
+                <div className="users-open-pulse" style={{ display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text-3)' }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 11, border: '1.5px dashed var(--card-border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <UserPlus size={15} />
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Open slot</span>
+                </div>
               )}
-            </div>
+            </button>
           )
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
-        {/* LEFT: Form */}
-        <div ref={formRef} id="user-form" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, overflow: 'hidden', position: 'sticky', top: 24 }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: editing ? 'linear-gradient(135deg,#fffbeb,#fff)' : 'linear-gradient(135deg,#eff6ff,#fff)' }}>
-            <h2 style={{ fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {editing ? <Edit2 size={15} style={{ color: '#d97706' }} /> : <UserPlus size={15} style={{ color: '#2563eb' }} />}
+      <div className="users-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: 22, alignItems: 'start' }}>
+        {/* Form */}
+        <div
+          ref={formRef}
+          style={{
+            background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 18,
+            overflow: 'hidden', position: 'sticky', top: 20,
+            boxShadow: '0 8px 28px rgba(15,23,42,0.06)',
+          }}
+        >
+          <div style={{
+            padding: '16px 18px',
+            borderBottom: '1px solid var(--card-border)',
+            background: editing
+              ? 'linear-gradient(120deg, color-mix(in srgb, #d97706 14%, var(--card-bg)), var(--card-bg))'
+              : 'linear-gradient(120deg, var(--accent-subtle), var(--card-bg))',
+          }}>
+            <h2 style={{
+              margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-1)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              {editing
+                ? <Edit2 size={15} style={{ color: '#d97706' }} />
+                : <UserPlus size={15} style={{ color: 'var(--accent)' }} />}
               {editing ? 'Edit user' : 'Add new user'}
             </h2>
-            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{editing ? 'Update details and role assignment' : 'Create a new user account'}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
+              {editing ? 'Update details and role' : 'Fill details to create a login'}
+            </p>
           </div>
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* Full name */}
+
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 13 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 6 }}>Full name *</label>
+              <label style={labelStyle}>Full name *</label>
               <input className="field-input" value={form.name} onChange={e => sf('name', e.target.value)} placeholder="e.g. John Samuel" />
             </div>
-
-            {/* Email */}
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 6 }}>Email address *</label>
-              <input type="email" className="field-input" value={form.email} onChange={e => sf('email', e.target.value)} placeholder="admin@church.org" disabled={!!editing} style={editing ? { background: '#f8fafc', color: '#94a3b8' } : {}} />
-              <p style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>This will be their login email.</p>
+              <label style={labelStyle}>Email address *</label>
+              <input
+                type="email" className="field-input" value={form.email}
+                onChange={e => sf('email', e.target.value)} placeholder="admin@church.org"
+                disabled={!!editing}
+                style={editing ? { background: 'var(--page-bg)', color: 'var(--text-3)' } : {}}
+              />
             </div>
-
-            {/* Mobile */}
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 6 }}>Mobile number</label>
+              <label style={labelStyle}>Mobile number</label>
               <input className="field-input" value={form.mobile} onChange={e => sf('mobile', e.target.value)} placeholder="+91 99999 99999" />
-              <p style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>At least 10 digits (spaces, + allowed)</p>
             </div>
 
-            {/* Password (new only) */}
             {!editing && (
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 6 }}>Password *</label>
-                <div className="relative">
-                  <input type={showPw ? 'text' : 'password'} className="field-input w-full pr-10" value={form.password} onChange={e => sf('password', e.target.value)} placeholder="Min 8 characters" />
-                  <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <label style={labelStyle}>Password *</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPw ? 'text' : 'password'} className="field-input"
+                    value={form.password} onChange={e => sf('password', e.target.value)}
+                    placeholder="Min 8 characters" style={{ paddingRight: 40 }}
+                  />
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => setShowPw(v => !v)}
+                    style={{
+                      position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex',
+                    }}
+                  >
                     {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
-                <p style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Min 8 characters</p>
               </div>
             )}
 
-            {/* Role selector */}
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: 8 }}>Role *</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {ROLES.map(r => (
-                  <label key={r.value} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-                    border: form.role === r.value ? `2px solid ${r.color}` : '1.5px solid #e2e8f0',
-                    background: form.role === r.value ? r.bg : '#fff'
-                  }}>
-                    <input type="radio" name="role" value={r.value} checked={form.role === r.value} onChange={() => sf('role', r.value)} style={{ accentColor: r.color, width: 14, height: 14 }} />
-                    <span style={{ fontSize: 15 }}>{r.emoji}</span>
-                    <div style={{ flex: 1 }}><span style={{ fontSize: 12, fontWeight: 700, color: form.role === r.value ? r.color : '#0f172a' }}>{r.label}</span></div>
-                  </label>
-                ))}
+              <label style={labelStyle}>Role *</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {ROLES.map((r, i) => {
+                  const on = form.role === r.value
+                  const lastOdd = i === ROLES.length - 1 && ROLES.length % 2 === 1
+                  return (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => sf('role', r.value)}
+                      style={{
+                        padding: '10px 10px', borderRadius: 11, cursor: 'pointer', textAlign: 'left',
+                        border: on ? `2px solid ${r.color}` : '1.5px solid var(--card-border)',
+                        background: on ? r.bg : 'var(--card-bg)',
+                        boxShadow: on ? `0 0 0 3px color-mix(in srgb, ${r.color} 18%, transparent)` : 'none',
+                        transition: 'border-color .12s, box-shadow .12s, transform .12s',
+                        gridColumn: lastOdd ? '1 / -1' : undefined,
+                        transform: on ? 'translateY(-1px)' : 'none',
+                      }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 800, color: on ? r.color : 'var(--text-1)' }}>{r.label}</div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
-            {/* Permissions preview */}
             {PERMS[form.role] && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px' }}>
-                <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', marginBottom: 8 }}>Permissions</p>
-                <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.4 }}>
-                  All users share the same action level. Which pages they can open is set in <strong>CMS Permissions</strong>.
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
+              <div style={{
+                borderRadius: 12, padding: '12px 12px',
+                background: 'var(--page-bg)', border: '1px solid var(--card-border)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <Sparkles size={12} style={{ color: selectedRole?.color || 'var(--accent)' }} />
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+                    Actions · {selectedRole?.label}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {Object.entries(PERMS[form.role]).map(([action, allowed]) => (
-                    <div key={action} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-                      <span style={{ color: '#475569' }}>{action}</span>
-                      {allowed ? <CheckCircle size={13} style={{ color: '#16a34a' }} /> : <XCircle size={13} style={{ color: '#e2e8f0' }} />}
-                    </div>
+                    <span key={action} style={{
+                      fontSize: 11, fontWeight: 600, padding: '4px 8px', borderRadius: 99,
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      background: allowed ? 'color-mix(in srgb, #16a34a 12%, var(--card-bg))' : 'var(--card-bg)',
+                      color: allowed ? '#15803d' : 'var(--text-3)',
+                      border: `1px solid ${allowed ? 'rgba(22,163,74,0.25)' : 'var(--card-border)'}`,
+                    }}>
+                      {allowed ? <CheckCircle size={11} /> : <XCircle size={11} />}
+                      {action}
+                    </span>
                   ))}
                 </div>
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                  Pages are granted in CMS Permissions.
+                </p>
               </div>
             )}
 
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-              <button onClick={save} disabled={saving}
+            <div style={{ display: 'flex', gap: 8, paddingTop: 2 }}>
+              <button
+                type="button" onClick={save} disabled={saving}
                 style={{
-                  flex: 1, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  background: saving ? '#93c5fd' : 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-                  color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700,
-                  cursor: saving ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(37,99,235,.3)'
-                }}>
-                {saving ? <><Loader2 size={13} className="animate-spin" /> Saving...</> : <><Save size={13} />{editing ? ' Update user' : ' Create user'}</>}
+                  flex: 1, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                  background: saving ? 'color-mix(in srgb, var(--accent) 55%, #94a3b8)' : 'var(--accent)',
+                  color: 'var(--accent-text, #fff)', border: 'none', borderRadius: 11,
+                  fontSize: 13, fontWeight: 700, cursor: saving ? 'wait' : 'pointer',
+                  boxShadow: '0 6px 16px var(--accent-ring)',
+                }}
+              >
+                {saving
+                  ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                  : <><Save size={14} />{editing ? ' Update user' : ' Create user'}</>}
               </button>
-              <button onClick={resetForm} title="Reset"
-                style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 9, cursor: 'pointer', color: '#64748b' }}>
-                <RotateCcw size={14} />
+              <button
+                type="button" onClick={resetForm} title="Clear form"
+                style={{ ...iconBtn(), width: 42, height: 42 }}
+              >
+                <RotateCcw size={15} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: User cards */}
+        {/* User list */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: '1rem', color: '#0f172a', fontWeight: 700 }}>Current Administrators / Users</h2>
-            <span style={{ fontSize: 12, color: '#64748b' }}>{users.length} active</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-1)' }}>
+              Current users
+            </h2>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99,
+              background: 'var(--accent-subtle)', color: 'var(--accent)',
+            }}>
+              {users.filter(u => u.is_active !== false).length} active
+            </span>
           </div>
+
           {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+              <Loader2 size={24} className="animate-spin" style={{ color: 'var(--text-3)' }} />
+            </div>
+          ) : users.length === 0 ? (
+            <div style={{
+              padding: '40px 24px', textAlign: 'center', borderRadius: 16,
+              border: '1.5px dashed var(--card-border)', background: 'var(--card-bg)',
+            }}>
+              <UserPlus size={28} style={{ color: 'var(--text-3)', marginBottom: 10 }} />
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>No users yet</p>
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-3)' }}>Add the first user using the form.</p>
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {users.map(u => {
+              {users.map((u, idx) => {
                 const rc = roleConf(u.role)
+                const busy = toggleLoading === u.id || deactivateLoading === u.id
                 return (
-                  <div key={u.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, borderLeft: `4px solid ${rc.color}` }}>
-                    <div style={{ padding: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                        <div style={{ width: 46, height: 46, borderRadius: '50%', background: `linear-gradient(135deg,${rc.color},${rc.color}cc)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 800 }}>{ini(u.full_name)}</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-                            <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{u.full_name}</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: rc.bg, color: rc.color, border: `1px solid ${rc.border}` }}>{rc.emoji} {rc.label}</span>
-                            {!u.is_active && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Inactive</span>}
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 12, color: '#64748b' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={12} /> {u.email}</span>
-                            {u.mobile && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={12} /> {u.mobile}</span>}
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> Since {fmtDate(u.created_at)}</span>
-                            {u.is_active && <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#16a34a' }}><Activity size={12} /> Active</span>}
-                          </div>
+                  <div
+                    key={u.id}
+                    style={{
+                      background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+                      borderRadius: 16, overflow: 'hidden',
+                      boxShadow: '0 4px 16px rgba(15,23,42,0.04)',
+                      animation: `usersCardIn .35s ease ${idx * 0.04}s both`,
+                    }}
+                  >
+                    <div style={{ height: 3, background: `linear-gradient(90deg, ${rc.color}, transparent)` }} />
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{
+                          width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+                          background: `linear-gradient(145deg, ${rc.color}, color-mix(in srgb, ${rc.color} 65%, #0f172a))`,
+                          color: '#fff', fontSize: 14, fontWeight: 800,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          boxShadow: `0 6px 14px color-mix(in srgb, ${rc.color} 35%, transparent)`,
+                        }}>
+                          {ini(u.full_name)}
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => startEdit(u)} title="Edit" disabled={toggleLoading === u.id || deactivateLoading === u.id}
-                            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', opacity: (toggleLoading === u.id || deactivateLoading === u.id) ? 0.5 : 1 }}>
-                            <Edit2 size={13} />
-                          </button>
-                          <button onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })} title="Reset Password"
-                            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                            <Key size={13} />
-                          </button>
-                          {/* Activate/Deactivate Button */}
-                          {u.is_active ? (
-                            <button onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })} title="Deactivate"
-                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f97316' }}>
-                              <Power size={13} />
-                            </button>
-                          ) : (
-                            <button onClick={() => activateUser(u.id)} title="Activate" disabled={toggleLoading === u.id}
-                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #a7f3d0', background: '#ecfdf5', color: '#16a34a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: toggleLoading === u.id ? 0.5 : 1 }}>
-                              {toggleLoading === u.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={13} />}
-                            </button>
-                          )}
-                          {/* Permanent Delete Button */}
-                          <button onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })} title="Permanently Delete"
-                            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626' }}>
-                            <AlertTriangle size={13} />
-                          </button>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 5 }}>
+                            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-1)' }}>{u.full_name}</span>
+                            <span style={{
+                              fontSize: 10, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
+                              background: rc.bg, color: rc.color, border: `1px solid ${rc.border}`,
+                            }}>
+                              {rc.label}
+                            </span>
+                            {u.is_active === false && (
+                              <span style={{
+                                fontSize: 10, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
+                                background: 'color-mix(in srgb, #dc2626 12%, var(--card-bg))',
+                                color: '#dc2626',
+                                border: '1px solid color-mix(in srgb, #dc2626 28%, var(--card-border))',
+                              }}>
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <div style={{
+                            display: 'flex', flexWrap: 'wrap', gap: '6px 14px',
+                            fontSize: 12, color: 'var(--text-3)',
+                          }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Mail size={12} /> {u.email}</span>
+                            {u.mobile && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Phone size={12} /> {u.mobile}</span>}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> {fmtDate(u.created_at)}</span>
+                            {u.is_active !== false && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#16a34a', fontWeight: 600 }}>
+                                <Activity size={12} /> Active
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #f1f5f9', display: 'flex', gap: 6 }}>
-                        <button onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })} className="btn-sm btn-reset" style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}>Reset password</button>
-                        {u.is_active ? (
-                          <button onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })} className="btn-sm btn-warning" style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#f97316', cursor: 'pointer' }}>Deactivate</button>
+
+                      <div style={{
+                        marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--card-border)',
+                        display: 'flex', flexWrap: 'wrap', gap: 8,
+                      }}>
+                        <button type="button" onClick={() => startEdit(u)} disabled={busy} style={actionChip('var(--text-2)')}>
+                          <Edit2 size={12} /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}
+                          style={actionChip('var(--text-2)')}
+                        >
+                          <Key size={12} /> Reset password
+                        </button>
+                        {u.is_active !== false ? (
+                          <button
+                            type="button"
+                            onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })}
+                            style={actionChip('#c2410c')}
+                          >
+                            <Power size={12} /> Deactivate
+                          </button>
                         ) : (
-                          <button onClick={() => activateUser(u.id)} disabled={toggleLoading === u.id} style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#16a34a', cursor: 'pointer', opacity: toggleLoading === u.id ? 0.5 : 1 }}>Activate</button>
+                          <button
+                            type="button"
+                            onClick={() => activateUser(u.id)}
+                            disabled={toggleLoading === u.id}
+                            style={actionChip('#15803d')}
+                          >
+                            {toggleLoading === u.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+                            Activate
+                          </button>
                         )}
-                        <button onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })} className="btn-sm btn-danger" style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99, border: '1px solid #e2e8f0', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}>Perm Delete</button>
+                        <button
+                          type="button"
+                          onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })}
+                          style={actionChip('#b91c1c', true)}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -532,64 +722,139 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Deactivate Dialog (Soft Delete) */}
+      {/* Dialogs */}
       {deactivateDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up">
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-2">Deactivate User?</h3>
-            <p className="text-sm text-slate-500 mb-5">Deactivate <strong>{deactivateDialog.name}</strong>? They will lose access immediately but their data is preserved. You can reactivate them later.</p>
-            <div className="flex gap-3 justify-end">
-              <button className="btn btn-secondary" onClick={() => setDeactivateDialog(null)}>Cancel</button>
-              <button className="btn btn-warning" onClick={() => deactivateUser(deactivateDialog.id)} disabled={deactivateLoading === deactivateDialog.id}>
-                {deactivateLoading === deactivateDialog.id ? <><Loader2 size={14} className="animate-spin" /> Deactivating...</> : 'Deactivate'}
-              </button>
-            </div>
+        <ModalShell onClose={() => setDeactivateDialog(null)}>
+          <h3 style={modalTitle}>Deactivate user?</h3>
+          <p style={modalBody}>
+            Deactivate <strong>{deactivateDialog.name}</strong>? They lose access immediately; data is kept so you can reactivate later.
+          </p>
+          <div style={modalActions}>
+            <button type="button" className="btn btn-secondary" onClick={() => setDeactivateDialog(null)}>Cancel</button>
+            <button
+              type="button" className="btn btn-warning"
+              onClick={() => deactivateUser(deactivateDialog.id)}
+              disabled={deactivateLoading === deactivateDialog.id}
+            >
+              {deactivateLoading === deactivateDialog.id
+                ? <><Loader2 size={14} className="animate-spin" /> Deactivating…</>
+                : 'Deactivate'}
+            </button>
           </div>
-        </div>
+        </ModalShell>
       )}
 
-      {/* Permanent Delete Dialog */}
       {permDeleteDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up">
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-2 flex items-center gap-2"><AlertTriangle size={18} className="text-red-600" /> Permanently Delete User?</h3>
-            <p className="text-sm text-slate-500 mb-5">
-              Delete <strong>{permDeleteDialog.name}</strong>? This action is <strong className="text-red-600">irreversible</strong> and will remove all their data permanently.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button className="btn btn-secondary" onClick={() => setPermDeleteDialog(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={() => permanentDelete(permDeleteDialog.id)} disabled={permDeleteLoading}>
-                {permDeleteLoading ? <><Loader2 size={14} className="animate-spin" /> Deleting...</> : 'Permanently Delete'}
-              </button>
-            </div>
+        <ModalShell onClose={() => setPermDeleteDialog(null)}>
+          <h3 style={{ ...modalTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={18} style={{ color: '#dc2626' }} /> Permanently delete?
+          </h3>
+          <p style={modalBody}>
+            Delete <strong>{permDeleteDialog.name}</strong>? This is <strong style={{ color: '#dc2626' }}>irreversible</strong>.
+          </p>
+          <div style={modalActions}>
+            <button type="button" className="btn btn-secondary" onClick={() => setPermDeleteDialog(null)}>Cancel</button>
+            <button
+              type="button" className="btn btn-danger"
+              onClick={() => permanentDelete(permDeleteDialog.id)}
+              disabled={permDeleteLoading}
+            >
+              {permDeleteLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Deleting…</>
+                : 'Permanently delete'}
+            </button>
           </div>
-        </div>
+        </ModalShell>
       )}
 
-      {/* Reset Password Modal */}
       {resetDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-slide-up">
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-2 flex items-center gap-2"><Key size={18} /> Reset Password</h3>
-            <p className="text-sm text-slate-500 mb-4">Set a new password for <strong>{resetDialog.name}</strong>.</p>
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">New Password (min 8 characters)</label>
-              <div className="relative">
-                <input type={resetShowPw ? 'text' : 'password'} className="field-input w-full pr-10" value={resetPassword} onChange={e => setResetPassword(e.target.value)} placeholder="Min 8 characters" />
-                <button type="button" onClick={() => setResetShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                  {resetShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-            <div className="flex gap-3 justify-end">
-              <button className="btn btn-secondary" onClick={() => { setResetDialog(null); setResetPassword(''); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={resetUserPassword} disabled={resetLoading}>
-                {resetLoading ? <><Loader2 size={14} className="animate-spin" /> Resetting...</> : 'Reset Password'}
+        <ModalShell onClose={() => { setResetDialog(null); setResetPassword('') }}>
+          <h3 style={{ ...modalTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Key size={18} /> Reset password
+          </h3>
+          <p style={modalBody}>Set a new password for <strong>{resetDialog.name}</strong>.</p>
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>New password</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={resetShowPw ? 'text' : 'password'} className="field-input"
+                value={resetPassword} onChange={e => setResetPassword(e.target.value)}
+                placeholder="Min 8 characters" style={{ paddingRight: 40 }}
+              />
+              <button
+                type="button" onClick={() => setResetShowPw(v => !v)}
+                style={{
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex',
+                }}
+              >
+                {resetShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
           </div>
-        </div>
+          <div style={modalActions}>
+            <button type="button" className="btn btn-secondary" onClick={() => { setResetDialog(null); setResetPassword('') }}>Cancel</button>
+            <button type="button" className="btn btn-primary" onClick={resetUserPassword} disabled={resetLoading}>
+              {resetLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Resetting…</>
+                : 'Reset password'}
+            </button>
+          </div>
+        </ModalShell>
       )}
+
+      <style>{`
+        @keyframes usersCardIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: none; }
+        }
+        @keyframes usersSlotPulse {
+          0%, 100% { opacity: 0.55; }
+          50% { opacity: 1; }
+        }
+        .users-slot-grid button:not(:hover) .users-open-pulse {
+          animation: usersSlotPulse 2.2s ease-in-out infinite;
+        }
+        @media (max-width: 900px) {
+          .users-layout { grid-template-columns: 1fr !important; }
+          .users-slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+        @media (max-width: 520px) {
+          .users-slot-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function actionChip(color, danger = false) {
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    fontSize: 11, fontWeight: 700, padding: '6px 11px', borderRadius: 9,
+    border: `1px solid ${danger ? 'color-mix(in srgb, #dc2626 28%, var(--card-border))' : 'var(--card-border)'}`,
+    background: danger ? 'color-mix(in srgb, #dc2626 10%, var(--card-bg))' : 'var(--page-bg)',
+    color, cursor: 'pointer',
+  }
+}
+
+const modalTitle = { margin: '0 0 8px', fontSize: 17, fontWeight: 800, color: 'var(--text-1)' }
+const modalBody = { margin: '0 0 18px', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }
+const modalActions = { display: 'flex', gap: 10, justifyContent: 'flex-end' }
+
+function ModalShell({ children, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose?.() }}
+    >
+      <div style={{
+        background: 'var(--card-bg)', borderRadius: 18, width: '100%', maxWidth: 400,
+        padding: 22, border: '1px solid var(--card-border)',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.28)',
+      }}>
+        {children}
+      </div>
     </div>
   )
 }
