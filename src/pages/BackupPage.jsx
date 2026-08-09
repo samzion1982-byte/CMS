@@ -277,10 +277,7 @@ export default function BackupPage() {
     try {
       const r = await runDriveBackup({ kind, triggerMode: 'manual', actor: profile })
       if (r.via === 'local_download') {
-        toast(
-          `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded (${r.tables_count} tables). Deploy Edge Function cms-full-backup to save to Google Drive.`,
-          'success',
-        )
+        toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
       } else {
         toast(
           `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,

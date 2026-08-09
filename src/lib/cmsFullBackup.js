@@ -182,16 +182,42 @@ function isFunctionMissingError(error, data) {
   )
 }
 
+async function extractFunctionError(error, data) {
+  if (data?.error) return String(data.error)
+  try {
+    const ctx = error?.context
+    if (ctx && typeof ctx.json === 'function') {
+      const body = await ctx.json()
+      if (body?.error) return String(body.error)
+      if (body?.message) return String(body.message)
+    }
+  } catch (_) { /* ignore */ }
+  return error?.message || 'Backup failed'
+}
+
+function friendlyDriveError(msg) {
+  if (/storage quota|shared drives|service accounts do not have/i.test(msg || '')) {
+    return (
+      'Google blocked the upload: service accounts cannot save files into a normal personal Drive folder. ' +
+      'Use a Google Workspace Shared Drive, or switch backup destination to Supabase Storage. ' +
+      'Meanwhile the file can still download to your computer.'
+    )
+  }
+  return msg
+}
+
 /**
  * Run Full Backup or Snapshot.
  * 1) Prefer Edge Function → Google Drive
- * 2) If function missing, dump + download locally and log history
+ * 2) If Drive blocked / function missing, dump + download locally and log history
  */
 export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', actor = null } = {}) {
   const settings = await getBackupSettings()
   if (!settings.drive_folder_id?.trim()) {
     throw new Error('Save a Google Drive folder ID first (Google Drive section).')
   }
+
+  let driveErrorMsg = null
 
   // Try Edge Function (Drive upload)
   try {
@@ -207,25 +233,30 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     if (!error && data && !data.error) {
       return { ...data, via: 'drive' }
     }
-    if (error && !isFunctionMissingError(error, data)) {
-      throw new Error(data?.error || error.message || 'Backup failed')
+    const raw = await extractFunctionError(error, data)
+    if (isFunctionMissingError(error, data)) {
+      driveErrorMsg = null // use local fallback silently for missing function
+    } else {
+      driveErrorMsg = friendlyDriveError(raw)
+      // For Drive quota / config errors, still offer local download below
     }
-    if (data?.error && !isFunctionMissingError(error, data)) {
-      throw new Error(data.error)
-    }
-    // fall through to local if function missing
   } catch (e) {
-    if (!isFunctionMissingError(e, null) && !/failed to send/i.test(e.message || '')) {
-      throw e
+    if (isFunctionMissingError(e, null) || /failed to send/i.test(e.message || '')) {
+      driveErrorMsg = null
+    } else {
+      driveErrorMsg = friendlyDriveError(e.message || String(e))
     }
   }
 
-  // Local fallback — works before Edge Function is deployed
+  // Local fallback — download JSON when Drive upload is unavailable
   const { payload, tablesCount, rowsCount, summary } = await buildBackupPayload({
     kind, triggerMode, actor,
   })
   const filename = backupFilename(kind)
   const { bytes } = downloadJson(payload, filename)
+
+  const errNote = driveErrorMsg
+    || 'Downloaded locally. Deploy Edge Function cms-full-backup and set GOOGLE_SERVICE_ACCOUNT_JSON to upload to Google Drive.'
 
   await logBackupRun({
     backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
@@ -236,7 +267,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     rows_count: rowsCount,
     file_size_bytes: bytes,
     download_filename: filename,
-    error_message: 'Downloaded locally. Deploy Edge Function cms-full-backup and set GOOGLE_SERVICE_ACCOUNT_JSON to upload to Google Drive.',
+    error_message: errNote,
     meta: { summary, via: 'local_download', drive_folder_id: settings.drive_folder_id },
     created_by_email: actor?.email || null,
     created_by_name: actor?.full_name || actor?.name || null,
@@ -251,7 +282,9 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     tables_count: tablesCount,
     rows_count: rowsCount,
     file_size_bytes: bytes,
-    message: 'Backup downloaded to your computer. Deploy cms-full-backup to also save to Google Drive.',
+    message: driveErrorMsg
+      ? `${driveErrorMsg} Backup JSON was downloaded to your computer instead.`
+      : 'Backup downloaded to your computer. Deploy cms-full-backup to also save to Google Drive.',
   }
 }
 
