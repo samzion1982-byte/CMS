@@ -100,14 +100,21 @@ async function listPublicTables() {
   return [...new Set(FALLBACK_TABLES)]
 }
 
-async function buildDatabaseDump(kind, triggerMode, actorEmail) {
+async function buildDatabaseDump(kind, triggerMode, actorEmail, onProgress) {
   const tableNames = await listPublicTables()
   const tables = {}
   const summary = []
   let totalRows = 0
   let okCount = 0
+  const total = tableNames.length || 1
 
-  for (const table of tableNames) {
+  for (let i = 0; i < tableNames.length; i++) {
+    const table = tableNames[i]
+    if (onProgress) {
+      // Database phase: 5% → 40%
+      const pct = 5 + Math.round(((i + 1) / total) * 35)
+      await onProgress(pct, `Reading table ${i + 1}/${total}: ${table}`)
+    }
     const result = await fetchAll(table)
     if (result.skipped) {
       summary.push({ table, status: 'skipped', rows: 0, error: result.error || undefined })
@@ -371,7 +378,7 @@ async function listAllStorageFiles(bucket, prefix = '') {
   return out
 }
 
-async function backupStorageToDrive(accessToken, runFolderId) {
+async function backupStorageToDrive(accessToken, runFolderId, onProgress) {
   const { data: buckets, error: bucketErr } = await supabase.storage.listBuckets()
   if (bucketErr) throw new Error(`listBuckets: ${bucketErr.message}`)
 
@@ -388,18 +395,32 @@ async function backupStorageToDrive(accessToken, runFolderId) {
   let totalBytes = 0
   let fileCount = 0
 
-  const storageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
+  if (onProgress) await onProgress(46, 'Listing storage files…')
 
+  // Pre-count files for smoother % (best-effort)
+  const filesByBucket = []
+  let totalFiles = 0
   for (const bucket of bucketNames) {
-    let files = []
     try {
-      files = await listAllStorageFiles(bucket)
+      const files = await listAllStorageFiles(bucket)
+      filesByBucket.push({ bucket, files })
+      totalFiles += files.length
     } catch (e) {
       skipped.push(`bucket ${bucket}: ${e.message || e}`)
-      continue
+      filesByBucket.push({ bucket, files: [] })
     }
-    if (!files.length) continue
+  }
 
+  if (!totalFiles) {
+    if (onProgress) await onProgress(90, 'No storage files to upload')
+    return { storageMeta, skipped, totalBytes, fileCount, buckets: bucketNames }
+  }
+
+  const storageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
+  let doneFiles = 0
+
+  for (const { bucket, files } of filesByBucket) {
+    if (!files.length) continue
     const bucketFolder = await findOrCreateNamedFolder(accessToken, storageRoot.id, bucket)
 
     for (const file of files) {
@@ -407,6 +428,11 @@ async function backupStorageToDrive(accessToken, runFolderId) {
         const { data: blob, error: dlErr } = await supabase.storage.from(bucket).download(file.path)
         if (dlErr || !blob) {
           skipped.push(`${bucket}/${file.path}: ${dlErr?.message || 'empty'}`)
+          doneFiles += 1
+          if (onProgress) {
+            const pct = 48 + Math.round((doneFiles / totalFiles) * 42)
+            await onProgress(pct, `Storage ${doneFiles}/${totalFiles}: ${bucket}/${file.path} (skipped)`)
+          }
           continue
         }
         const bytes = new Uint8Array(await blob.arrayBuffer())
@@ -429,6 +455,11 @@ async function backupStorageToDrive(accessToken, runFolderId) {
         fileCount += 1
       } catch (e) {
         skipped.push(`${bucket}/${file.path}: ${e.message || e}`)
+      }
+      doneFiles += 1
+      if (onProgress) {
+        const pct = 48 + Math.round((doneFiles / totalFiles) * 42)
+        await onProgress(pct, `Uploading storage ${doneFiles}/${totalFiles}: ${bucket}/${file.path}`)
       }
     }
   }
@@ -471,6 +502,48 @@ async function assertCallerCanRestore(req) {
   return { via: 'user', email: user.email }
 }
 
+async function ensureProgressLog(body, kind, triggerMode, actorEmail) {
+  let logId = body.progress_log_id || body.log_id || null
+  if (logId) {
+    await supabase.from('cms_backup_log').update({
+      status: 'running',
+      progress_pct: 1,
+      progress_message: 'Starting complete backup…',
+      kind,
+      trigger_mode: triggerMode,
+      backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
+    }).eq('id', logId)
+    return logId
+  }
+
+  const { data, error } = await supabase.from('cms_backup_log').insert({
+    backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
+    kind,
+    trigger_mode: triggerMode,
+    status: 'running',
+    progress_pct: 1,
+    progress_message: 'Starting complete backup…',
+    created_by_email: actorEmail,
+    created_by_name: body.actor_name || null,
+  }).select('id').single()
+  if (error) {
+    console.warn('progress log insert failed', error.message)
+    return null
+  }
+  return data?.id || null
+}
+
+async function setProgress(logId, pct, message, extra = {}) {
+  if (!logId) return
+  const patch = {
+    progress_pct: Math.max(0, Math.min(100, Math.round(pct))),
+    progress_message: String(message || '').slice(0, 500),
+    ...extra,
+  }
+  const { error } = await supabase.from('cms_backup_log').update(patch).eq('id', logId)
+  if (error) console.warn('progress update failed', error.message)
+}
+
 async function runCompleteBackup(body) {
   const kind = body.kind === 'snapshot' ? 'snapshot' : 'full'
   const triggerMode = body.trigger_mode === 'automatic' ? 'automatic' : 'manual'
@@ -488,107 +561,143 @@ async function runCompleteBackup(body) {
     }
   }
 
-  const { accessToken, via: authVia } = await resolveAccessToken()
-  const runName = runFolderName(kind)
-  const runFolder = await driveCreateFolder(accessToken, runName, folderId)
+  const progressLogId = await ensureProgressLog(body, kind, triggerMode, actorEmail)
+  const onProgress = async (pct, message) => setProgress(progressLogId, pct, message)
 
-  const built = await buildDatabaseDump(kind, triggerMode, actorEmail)
-  const dbJson = JSON.stringify(built.payload)
-  const dbBytes = new TextEncoder().encode(dbJson)
-  const dbFile = await driveUploadBytes(accessToken, runFolder.id, 'database.json', dbBytes, 'application/json')
+  try {
+    await onProgress(2, 'Connecting to Google Drive…')
+    const { accessToken, via: authVia } = await resolveAccessToken()
 
-  const storage = await backupStorageToDrive(accessToken, runFolder.id)
+    await onProgress(4, 'Creating Drive backup folder…')
+    const runName = runFolderName(kind)
+    const runFolder = await driveCreateFolder(accessToken, runName, folderId)
 
-  const manifest = {
-    format: 'cms-complete-backup',
-    version: COMPLETE_VERSION,
-    kind,
-    created_at: new Date().toISOString(),
-    drive_folder_id: runFolder.id,
-    drive_folder_name: runFolder.name,
-    auth_via: authVia,
-    database: {
-      file_id: dbFile.id,
-      file_name: 'database.json',
-      bytes: dbBytes.length,
-      tables: built.tablesCount,
-      rows: built.rowsCount,
-      summary: built.summary,
-    },
-    storage: {
-      file_count: storage.fileCount,
-      bytes: storage.totalBytes,
-      buckets: storage.buckets,
-      files: storage.storageMeta,
-      skipped: storage.skipped,
-    },
-    total_bytes: dbBytes.length + storage.totalBytes,
-  }
-  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2))
-  const manifestFile = await driveUploadBytes(
-    accessToken,
-    runFolder.id,
-    'manifest.json',
-    manifestBytes,
-    'application/json',
-  )
+    const built = await buildDatabaseDump(kind, triggerMode, actorEmail, onProgress)
 
-  const totalBytes = dbBytes.length + storage.totalBytes
-  const status = storage.skipped.length && !storage.fileCount && built.tablesCount === 0
-    ? 'failed'
-    : (storage.skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
+    await onProgress(42, `Uploading database.json (${built.tablesCount} tables, ${built.rowsCount} rows)…`)
+    const dbJson = JSON.stringify(built.payload)
+    const dbBytes = new TextEncoder().encode(dbJson)
+    const dbFile = await driveUploadBytes(accessToken, runFolder.id, 'database.json', dbBytes, 'application/json')
 
-  await supabase.from('cms_backup_log').insert({
-    backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
-    kind,
-    trigger_mode: triggerMode,
-    status,
-    tables_count: built.tablesCount,
-    rows_count: built.rowsCount,
-    file_size_bytes: totalBytes,
-    drive_file_id: runFolder.id,
-    drive_web_link: runFolder.webViewLink || null,
-    download_filename: runFolder.name,
-    error_message: [
-      ...built.summary.filter((s) => s.status === 'error' || s.status === 'skipped').map((s) => `${s.table}: ${s.error || s.status}`),
-      ...storage.skipped.slice(0, 15),
-    ].slice(0, 20).join(' | ') || null,
-    meta: {
+    await onProgress(45, 'Starting storage file upload…')
+    const storage = await backupStorageToDrive(accessToken, runFolder.id, onProgress)
+
+    await onProgress(93, 'Writing manifest.json…')
+    const manifest = {
+      format: 'cms-complete-backup',
+      version: COMPLETE_VERSION,
+      kind,
+      created_at: new Date().toISOString(),
+      drive_folder_id: runFolder.id,
+      drive_folder_name: runFolder.name,
+      auth_via: authVia,
+      database: {
+        file_id: dbFile.id,
+        file_name: 'database.json',
+        bytes: dbBytes.length,
+        tables: built.tablesCount,
+        rows: built.rowsCount,
+        summary: built.summary,
+      },
+      storage: {
+        file_count: storage.fileCount,
+        bytes: storage.totalBytes,
+        buckets: storage.buckets,
+        files: storage.storageMeta,
+        skipped: storage.skipped,
+      },
+      total_bytes: dbBytes.length + storage.totalBytes,
+    }
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2))
+    const manifestFile = await driveUploadBytes(
+      accessToken,
+      runFolder.id,
+      'manifest.json',
+      manifestBytes,
+      'application/json',
+    )
+
+    const totalBytes = dbBytes.length + storage.totalBytes
+    const status = storage.skipped.length && !storage.fileCount && built.tablesCount === 0
+      ? 'failed'
+      : (storage.skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
+
+    const finalMessage = status === 'success'
+      ? `Complete: ${built.tablesCount} tables, ${storage.fileCount} files`
+      : status === 'partial'
+        ? `Partial: ${built.tablesCount} tables, ${storage.fileCount} files (${storage.skipped.length} storage issues)`
+        : 'Backup failed'
+
+    const finalRow = {
+      backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
+      kind,
+      trigger_mode: triggerMode,
+      status,
+      progress_pct: 100,
+      progress_message: finalMessage,
+      tables_count: built.tablesCount,
+      rows_count: built.rowsCount,
+      file_size_bytes: totalBytes,
+      drive_file_id: runFolder.id,
+      drive_web_link: runFolder.webViewLink || null,
+      download_filename: runFolder.name,
+      error_message: [
+        ...built.summary.filter((s) => s.status === 'error' || s.status === 'skipped').map((s) => `${s.table}: ${s.error || s.status}`),
+        ...storage.skipped.slice(0, 15),
+      ].slice(0, 20).join(' | ') || null,
+      meta: {
+        complete: true,
+        version: COMPLETE_VERSION,
+        drive_backup_folder_id: runFolder.id,
+        drive_backup_folder_name: runFolder.name,
+        drive_manifest_file_id: manifestFile.id,
+        drive_database_file_id: dbFile.id,
+        database_bytes: dbBytes.length,
+        storage_bytes: storage.totalBytes,
+        storage_file_count: storage.fileCount,
+        storage_buckets: storage.buckets,
+        summary: built.summary,
+        skipped_storage: storage.skipped,
+        auth_via: authVia,
+      },
+      created_by_email: actorEmail,
+      created_by_name: body.actor_name || null,
+    }
+
+    if (progressLogId) {
+      await supabase.from('cms_backup_log').update(finalRow).eq('id', progressLogId)
+    } else {
+      await supabase.from('cms_backup_log').insert(finalRow)
+    }
+
+    return {
+      ok: true,
+      status,
+      kind,
       complete: true,
       version: COMPLETE_VERSION,
-      drive_backup_folder_id: runFolder.id,
-      drive_backup_folder_name: runFolder.name,
-      drive_manifest_file_id: manifestFile.id,
-      drive_database_file_id: dbFile.id,
+      progress_log_id: progressLogId,
+      filename: runFolder.name,
+      folder_id: runFolder.id,
+      drive_file_id: runFolder.id,
+      drive_web_link: runFolder.webViewLink || null,
+      tables_count: built.tablesCount,
+      rows_count: built.rowsCount,
+      file_size_bytes: totalBytes,
       database_bytes: dbBytes.length,
       storage_bytes: storage.totalBytes,
       storage_file_count: storage.fileCount,
-      storage_buckets: storage.buckets,
-      summary: built.summary,
       skipped_storage: storage.skipped,
-      auth_via: authVia,
-    },
-    created_by_email: actorEmail,
-    created_by_name: body.actor_name || null,
-  })
-
-  return {
-    ok: true,
-    status,
-    kind,
-    complete: true,
-    version: COMPLETE_VERSION,
-    filename: runFolder.name,
-    folder_id: runFolder.id,
-    drive_file_id: runFolder.id,
-    drive_web_link: runFolder.webViewLink || null,
-    tables_count: built.tablesCount,
-    rows_count: built.rowsCount,
-    file_size_bytes: totalBytes,
-    database_bytes: dbBytes.length,
-    storage_bytes: storage.totalBytes,
-    storage_file_count: storage.fileCount,
-    skipped_storage: storage.skipped,
+    }
+  } catch (e) {
+    const message = (e && e.message) || String(e)
+    if (progressLogId) {
+      await setProgress(progressLogId, 100, `Failed: ${message}`, {
+        status: 'failed',
+        error_message: message,
+      })
+    }
+    throw e
   }
 }
 
@@ -912,7 +1021,7 @@ serve(async (req) => {
         ok: true,
         complete_backup: true,
         version: COMPLETE_VERSION,
-        supports: ['backup', 'inspect', 'restore'],
+        supports: ['backup', 'inspect', 'restore', 'progress'],
       })
     }
 

@@ -133,6 +133,7 @@ function StatusPill({ status }) {
     success: { bg: '#ecfdf5', color: '#047857' },
     partial: { bg: '#fff7ed', color: '#c2410c' },
     failed: { bg: '#fef2f2', color: '#b91c1c' },
+    running: { bg: '#ecfeff', color: '#0e7490' },
     pending: { bg: '#f1f5f9', color: '#475569' },
   }
   const s = map[status] || map.pending
@@ -143,6 +144,41 @@ function StatusPill({ status }) {
     }}>
       {String(status || '—')}
     </span>
+  )
+}
+
+function BackupProgressBar({ active, pct, message, kind }) {
+  if (!active) return null
+  const value = Math.max(0, Math.min(100, Number(pct) || 0))
+  return (
+    <div style={{
+      marginTop: 12, marginBottom: 4, padding: 12, borderRadius: 10,
+      border: '1px solid #99f6e4', background: '#f0fdfa',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <strong style={{ fontSize: 12, color: '#115e59' }}>
+          {kind === 'snapshot' ? 'Snapshot' : 'Full Backup'} progress — {value}%
+        </strong>
+        <Loader2 size={14} className="spin" color="#0f766e" />
+      </div>
+      <div style={{
+        height: 10, borderRadius: 999, background: '#ccfbf1', overflow: 'hidden',
+        border: '1px solid #99f6e4',
+      }}>
+        <div style={{
+          width: `${value}%`,
+          height: '100%',
+          background: 'linear-gradient(90deg, #0f766e, #14b8a6)',
+          transition: 'width 0.35s ease',
+        }} />
+      </div>
+      <p style={{
+        margin: '8px 0 0', fontSize: 11, color: '#134e4a', lineHeight: 1.45,
+        wordBreak: 'break-word',
+      }}>
+        {message || 'Working…'}
+      </p>
+    </div>
   )
 }
 
@@ -450,6 +486,7 @@ export default function BackupPage() {
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [runningFull, setRunningFull] = useState(false)
   const [runningSnap, setRunningSnap] = useState(false)
+  const [backupProgress, setBackupProgress] = useState({ kind: null, pct: 0, message: '' })
   const [restoringId, setRestoringId] = useState(null)
   const [restoreModal, setRestoreModal] = useState(null) // { row, folderId }
   const [restoreTables, setRestoreTables] = useState([])
@@ -582,17 +619,29 @@ export default function BackupPage() {
     const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
     setBusy(true)
     setLastActionError(null)
+    setBackupProgress({ kind, pct: 0, message: 'Starting…' })
     try {
-      const r = await runDriveBackup({ kind, triggerMode: 'manual', actor: profile })
+      const r = await runDriveBackup({
+        kind,
+        triggerMode: 'manual',
+        actor: profile,
+        onProgress: ({ pct, message }) => {
+          setBackupProgress({ kind, pct: pct ?? 0, message: message || 'Working…' })
+        },
+      })
       if (r.via === 'local_download') {
         toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
         if (r.message) setLastActionError(r.message)
       } else {
         const files = r.storage_file_count != null ? `, ${r.storage_file_count} storage files` : ''
+        const label = r.status === 'partial' ? 'Partial' : 'Complete'
         toast(
-          `${kind === 'full' ? 'Complete Full Backup' : 'Complete Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows${files} (${formatBytes(r.file_size_bytes)}).`,
-          'success',
+          `${label} ${kind === 'full' ? 'Full Backup' : 'Snapshot'} — ${r.tables_count} tables, ${r.rows_count} rows${files} (${formatBytes(r.file_size_bytes)}).`,
+          r.status === 'partial' ? 'error' : 'success',
         )
+        if (r.status === 'partial' && r.skipped_storage?.length) {
+          setLastActionError(r.skipped_storage.slice(0, 12).join('\n'))
+        }
       }
       await loadLogs()
     } catch (e) {
@@ -602,6 +651,7 @@ export default function BackupPage() {
       toast(msg, 'error')
     } finally {
       setBusy(false)
+      setBackupProgress({ kind: null, pct: 0, message: '' })
     }
   }
 
@@ -922,7 +972,7 @@ export default function BackupPage() {
             onClick={() => handleRun('full')}
           >
             {runningFull ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
-            {runningFull ? 'Backing up everything…' : 'Run Complete Full Backup'}
+            {runningFull ? 'Backing up…' : 'Run Complete Full Backup'}
           </button>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
             <input
@@ -937,6 +987,12 @@ export default function BackupPage() {
             <RefreshCw size={13} /> Refresh
           </button>
         </div>
+        <BackupProgressBar
+          active={runningFull && backupProgress.kind === 'full'}
+          pct={backupProgress.pct}
+          message={backupProgress.message}
+          kind="full"
+        />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <History size={14} color="var(--text-3)" />
@@ -993,6 +1049,12 @@ export default function BackupPage() {
             Automatic nightly (default 1:00 AM IST)
           </label>
         </div>
+        <BackupProgressBar
+          active={runningSnap && backupProgress.kind === 'snapshot'}
+          pct={backupProgress.pct}
+          message={backupProgress.message}
+          kind="snapshot"
+        />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <History size={14} color="var(--text-3)" />

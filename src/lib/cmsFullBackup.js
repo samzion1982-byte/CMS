@@ -372,8 +372,14 @@ function friendlyDriveError(msg) {
  * Run Full Backup or Snapshot.
  * 1) Prefer Edge Function → Google Drive
  * 2) If Drive blocked / function missing, dump + download locally and log history
+ * onProgress({ pct, message, status, logId }) while running
  */
-export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', actor = null } = {}) {
+export async function runDriveBackup({
+  kind = 'full',
+  triggerMode = 'manual',
+  actor = null,
+  onProgress = null,
+} = {}) {
   const settings = await getBackupSettings()
   if (!settings.drive_folder_id?.trim()) {
     throw new Error('Save a Google Drive folder ID first (Google Drive section).')
@@ -383,56 +389,155 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
   }
 
   let driveErrorMsg = null
+  let progressLogId = null
+  let pollTimer = null
+
+  const report = (pct, message, status = 'running') => {
+    if (typeof onProgress === 'function') {
+      onProgress({ pct, message, status, logId: progressLogId })
+    }
+  }
+
+  // Create a running log row so the UI can poll % while the Edge Function works
+  try {
+    let insert = await supabase
+      .from('cms_backup_log')
+      .insert({
+        backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
+        kind,
+        trigger_mode: triggerMode,
+        status: 'running',
+        progress_pct: 0,
+        progress_message: 'Queued…',
+        created_by_email: actor?.email || null,
+        created_by_name: actor?.full_name || actor?.name || null,
+      })
+      .select('id')
+      .single()
+
+    // If SQL for progress/running not applied yet, retry with pending
+    if (insert.error) {
+      insert = await supabase
+        .from('cms_backup_log')
+        .insert({
+          backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
+          kind,
+          trigger_mode: triggerMode,
+          status: 'pending',
+          created_by_email: actor?.email || null,
+          created_by_name: actor?.full_name || actor?.name || null,
+          meta: { progress_fallback: true },
+        })
+        .select('id')
+        .single()
+    }
+
+    if (!insert.error && insert.data?.id) {
+      progressLogId = insert.data.id
+      report(0, 'Queued…')
+      pollTimer = setInterval(async () => {
+        try {
+          const { data } = await supabase
+            .from('cms_backup_log')
+            .select('progress_pct, progress_message, status, error_message, meta')
+            .eq('id', progressLogId)
+            .maybeSingle()
+          if (data) {
+            const pct = data.progress_pct ?? data.meta?.progress_pct ?? 0
+            const message = data.progress_message || data.meta?.progress_message || 'Working…'
+            report(pct, message, data.status || 'running')
+          }
+        } catch (e) {
+          console.warn('[cms-backup] progress poll failed', e)
+        }
+      }, 1200)
+    }
+  } catch (e) {
+    console.warn('[cms-backup] could not create progress log (run SQL cms_backup_progress?)', e)
+  }
 
   // Complete backup (all tables + all storage files) via Edge Function → Google Drive folder
   try {
+    report(1, 'Calling Edge Function…')
     const invoked = await invokeEdgeFunction('cms-full-backup', {
       kind,
       trigger_mode: triggerMode,
       drive_folder_id: settings.drive_folder_id.trim(),
       actor_email: actor?.email || null,
       actor_name: actor?.full_name || actor?.name || null,
+      progress_log_id: progressLogId,
     })
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+
     if (invoked.ok && invoked.data && !invoked.data.error) {
       if (!invoked.data.complete) {
-        // Old Edge Function still deployed (single JSON upload)
         throw new Error(
           'Edge Function cms-full-backup is still the OLD version (DB JSON only). ' +
           'Redeploy the COMPLETE function from the repo (creates a Drive folder with database.json + storage/ + manifest.json). ' +
           'After redeploy, Run Complete Full Backup again.',
         )
       }
-      return { ...invoked.data, via: 'drive' }
+      report(100, invoked.data.status === 'partial' ? 'Finished with partial status' : 'Complete', invoked.data.status || 'success')
+      return { ...invoked.data, via: 'drive', progress_log_id: progressLogId }
     }
     if (invoked.missing) {
       driveErrorMsg = null
     } else {
       driveErrorMsg = friendlyDriveError(invoked.errorMessage || invoked.data?.error || 'Backup failed')
+      if (progressLogId) {
+        await supabase.from('cms_backup_log').update({
+          status: 'failed',
+          progress_pct: 100,
+          progress_message: driveErrorMsg,
+          error_message: driveErrorMsg,
+        }).eq('id', progressLogId)
+      }
     }
   } catch (e) {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
     console.error('[cms-backup] runDriveBackup exception', e)
     if (isFunctionMissingError(e, null) || /failed to send/i.test(e.message || '')) {
       driveErrorMsg = null
     } else {
       driveErrorMsg = friendlyDriveError(e.message || String(e))
+      if (progressLogId) {
+        await supabase.from('cms_backup_log').update({
+          status: 'failed',
+          progress_pct: 100,
+          progress_message: driveErrorMsg,
+          error_message: driveErrorMsg,
+        }).eq('id', progressLogId)
+      }
+      // Re-throw clear "old version" / config errors instead of silent local fallback
+      if (/OLD version|Connect Google|folder ID/i.test(driveErrorMsg || '')) {
+        throw new Error(driveErrorMsg)
+      }
     }
+  } finally {
+    if (pollTimer) clearInterval(pollTimer)
   }
 
   // Local fallback — DB JSON only (no storage files) when Drive upload is unavailable
+  report(10, 'Edge Function unavailable — building local DB JSON…')
   const { payload, tablesCount, rowsCount, summary } = await buildBackupPayload({
     kind, triggerMode, actor,
   })
+  report(80, 'Downloading local JSON…')
   const filename = backupFilename(kind)
   const { bytes } = downloadJson(payload, filename)
 
   const errNote = driveErrorMsg
     || 'Downloaded DB JSON only (no photos/PDFs). Deploy Edge Function cms-full-backup for a complete Drive backup.'
 
-  await logBackupRun({
+  const localRow = {
     backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
     kind,
     trigger_mode: triggerMode,
     status: 'partial',
+    progress_pct: 100,
+    progress_message: 'Local DB JSON only',
     tables_count: tablesCount,
     rows_count: rowsCount,
     file_size_bytes: bytes,
@@ -441,8 +546,15 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     meta: { summary, via: 'local_download', complete: false, drive_folder_id: settings.drive_folder_id },
     created_by_email: actor?.email || null,
     created_by_name: actor?.full_name || actor?.name || null,
-  })
+  }
 
+  if (progressLogId) {
+    await supabase.from('cms_backup_log').update(localRow).eq('id', progressLogId)
+  } else {
+    await logBackupRun(localRow)
+  }
+
+  report(100, 'Local download finished (partial)', 'partial')
   return {
     ok: true,
     via: 'local_download',
@@ -452,6 +564,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     tables_count: tablesCount,
     rows_count: rowsCount,
     file_size_bytes: bytes,
+    progress_log_id: progressLogId,
     message: driveErrorMsg
       ? `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included).`
       : 'Database JSON downloaded locally. Redeploy cms-full-backup for a complete Drive backup (DB + storage files).',
