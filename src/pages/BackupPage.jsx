@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Cloud, Database, HardDrive, History, Loader2, RefreshCw,
-  RotateCcw, Save, Settings2, Shield,
+  RotateCcw, Save, Settings2, Shield, Link2, Unlink,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -13,6 +13,8 @@ import {
   runDriveBackup,
   runProvision,
   saveBackupSettings,
+  startGoogleOAuthConnect,
+  disconnectGoogleOAuth,
 } from '../lib/cmsFullBackup'
 
 const secondaryBtn = {
@@ -180,6 +182,8 @@ export default function BackupPage() {
   const [settings, setSettings] = useState(null)
   const [driveFolderId, setDriveFolderId] = useState('')
   const [savingDrive, setSavingDrive] = useState(false)
+  const [connectingGoogle, setConnectingGoogle] = useState(false)
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false)
   const [savingAuto, setSavingAuto] = useState(false)
 
   const [fullLogs, setFullLogs] = useState([])
@@ -233,6 +237,15 @@ export default function BackupPage() {
     loadLogs()
   }, [isSuper, loadSettings, loadLogs])
 
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get('google') === 'connected') {
+      toast('Google Drive connected', 'success')
+      window.history.replaceState({}, '', '/backup')
+      loadSettings()
+    }
+  }, [toast, loadSettings])
+
   if (!isSuper) {
     return (
       <div style={{ padding: 32, fontFamily: 'var(--font-ui)', color: 'var(--text-2)' }}>
@@ -255,6 +268,30 @@ export default function BackupPage() {
       toast(e.message || 'Save failed', 'error')
     } finally {
       setSavingDrive(false)
+    }
+  }
+
+  async function handleConnectGoogle() {
+    setConnectingGoogle(true)
+    try {
+      await startGoogleOAuthConnect()
+    } catch (e) {
+      toast(e.message || 'Could not start Google login (deploy cms-google-oauth + set OAuth secrets)', 'error')
+      setConnectingGoogle(false)
+    }
+  }
+
+  async function handleDisconnectGoogle() {
+    if (!window.confirm('Disconnect Google Drive from backups?')) return
+    setDisconnectingGoogle(true)
+    try {
+      await disconnectGoogleOAuth()
+      await loadSettings()
+      toast('Google Drive disconnected', 'success')
+    } catch (e) {
+      toast(e.message || 'Disconnect failed', 'error')
+    } finally {
+      setDisconnectingGoogle(false)
     }
   }
 
@@ -322,6 +359,8 @@ export default function BackupPage() {
   }
 
   const driveOk = !!(settings?.drive_folder_id || driveFolderId.trim())
+  const googleConnected = !!settings?.google_connected_email
+  const backupReady = driveOk && googleConnected
 
   return (
     <div style={{ padding: '20px 24px 48px', maxWidth: 960, margin: '0 auto', fontFamily: 'var(--font-ui)' }}>
@@ -337,9 +376,10 @@ export default function BackupPage() {
           background: '#fff7ed', border: '1px solid #fed7aa',
           fontSize: 12, color: '#9a3412', lineHeight: 1.5,
         }}>
-          <strong>One-time setup for Drive upload:</strong> In Supabase Dashboard → Edge Functions, deploy{' '}
-          <code>cms-full-backup</code> (and <code>cms-provision</code> for New Setup), then add secret{' '}
-          <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>. Until then, manual backup still downloads a JSON file to your computer.
+          <strong>Google Drive setup:</strong> Create an OAuth client in Google Cloud, deploy Edge Functions{' '}
+          <code>cms-google-oauth</code> + <code>cms-full-backup</code>, set secrets{' '}
+          <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code>, then click{' '}
+          <strong>Connect Google</strong> below. Personal Drive needs OAuth (service accounts have no storage quota).
         </div>
       </div>
 
@@ -347,9 +387,48 @@ export default function BackupPage() {
       <Section
         title="Google Drive"
         icon={Cloud}
-        subtitle="Save this church’s Drive folder ID. All Full Backups and Snapshots are stored only here."
+        subtitle="Connect your Google account (OAuth), then save the folder ID. Backups upload as you — using your Drive storage."
       >
-        <div style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
+        <div style={{ display: 'grid', gap: 12, maxWidth: 560 }}>
+          <div style={{
+            padding: 12, borderRadius: 8, border: '1px solid var(--card-border)',
+            background: googleConnected ? '#f0fdfa' : '#fffbeb',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-1)' }}>
+              {googleConnected ? 'Google connected' : 'Google not connected'}
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
+              {googleConnected
+                ? `Signed in as ${settings.google_connected_email}`
+                : 'Connect once so automatic and manual backups can upload to your Drive folder.'}
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {!googleConnected ? (
+                <button
+                  type="button"
+                  className="action-btn"
+                  style={primaryBtn}
+                  disabled={connectingGoogle}
+                  onClick={handleConnectGoogle}
+                >
+                  {connectingGoogle ? <Loader2 size={14} className="spin" /> : <Link2 size={14} />}
+                  Connect Google
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="action-btn"
+                  style={secondaryBtn}
+                  disabled={disconnectingGoogle}
+                  onClick={handleDisconnectGoogle}
+                >
+                  {disconnectingGoogle ? <Loader2 size={14} className="spin" /> : <Unlink size={14} />}
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </div>
+
           <div>
             <label style={labelStyle}>Google Drive folder ID</label>
             <input
@@ -367,13 +446,18 @@ export default function BackupPage() {
             </button>
             <span style={{
               fontSize: 12, fontWeight: 600,
-              color: driveOk ? '#047857' : '#b45309',
+              color: backupReady ? '#047857' : '#b45309',
             }}>
-              {driveOk ? 'Drive folder configured' : 'Not configured yet'}
+              {backupReady
+                ? 'Ready for Drive backups'
+                : !googleConnected
+                  ? 'Connect Google first'
+                  : 'Save folder ID'}
             </span>
           </div>
           <p style={{ margin: 0, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
-            Share the folder with your Google service-account email. Set Edge Function secret <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>.
+            OAuth redirect URI to add in Google Cloud:{' '}
+            <code>{typeof window !== 'undefined' ? `${window.location.origin}/backup/google-callback` : '/backup/google-callback'}</code>
           </p>
         </div>
       </Section>
@@ -389,7 +473,7 @@ export default function BackupPage() {
             type="button"
             className="action-btn"
             style={primaryBtn}
-            disabled={runningFull || !driveOk}
+            disabled={runningFull || !backupReady}
             onClick={() => handleRun('full')}
           >
             {runningFull ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
@@ -429,7 +513,7 @@ export default function BackupPage() {
             type="button"
             className="action-btn"
             style={primaryBtn}
-            disabled={runningSnap || !driveOk}
+            disabled={runningSnap || !backupReady}
             onClick={() => handleRun('snapshot')}
           >
             {runningSnap ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}

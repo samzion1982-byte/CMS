@@ -19,6 +19,7 @@ import AnnouncementsLogPage from './pages/AnnouncementsLogPage'
 import LoginLogsPage from './pages/LoginLogsPage'
 import AuditTrailPage from './pages/AuditTrailPage'
 import BackupPage from './pages/BackupPage'
+import GoogleDriveCallbackPage from './pages/GoogleDriveCallbackPage'
 import DeclarationPage from './pages/DeclarationPage'
 import ReceiptsPage from './pages/ReceiptsPage'
 import MemberStatementPage from './pages/MemberStatementPage'
@@ -497,6 +498,10 @@ function AppRoutes() {
       <Route
         path="/backup"
         element={<PrivateRoute><AppLayout><BackupPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/backup/google-callback"
+        element={<PrivateRoute><AppLayout><GoogleDriveCallbackPage /></AppLayout></PrivateRoute>}
       />
       <Route
         path="/whatsapp-receipt-log"

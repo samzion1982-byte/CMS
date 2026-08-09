@@ -152,12 +152,62 @@ async function googleAccessToken(sa) {
   return tokenJson.access_token
 }
 
-async function uploadToDrive(folderId, name, content) {
+async function getOAuthAccessToken(refreshToken) {
+  const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+  const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET secrets are not set')
+  }
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+  const tokenJson = await tokenRes.json()
+  if (!tokenJson.access_token) {
+    throw new Error(tokenJson.error_description || tokenJson.error || 'Google OAuth token refresh failed')
+  }
+  return tokenJson.access_token
+}
+
+async function resolveAccessToken() {
+  const { data: settings } = await supabase
+    .from('cms_backup_settings')
+    .select('google_refresh_token, google_connected_email')
+    .eq('id', 1)
+    .maybeSingle()
+
+  if (settings?.google_refresh_token) {
+    return {
+      accessToken: await getOAuthAccessToken(settings.google_refresh_token),
+      via: 'oauth',
+      email: settings.google_connected_email || null,
+    }
+  }
+
   const raw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON secret is not set on the Edge Function')
+  if (raw) {
+    const sa = JSON.parse(raw)
+    return {
+      accessToken: await googleAccessToken(sa),
+      via: 'service_account',
+      email: sa.client_email || null,
+    }
+  }
+
+  throw new Error(
+    'Google Drive not connected. On Backup page click Connect Google (OAuth), or set GOOGLE_SERVICE_ACCOUNT_JSON (Shared Drives only).',
+  )
+}
+
+async function uploadToDrive(folderId, name, content) {
   if (!folderId) throw new Error('Google Drive folder ID is required')
-  const sa = JSON.parse(raw)
-  const accessToken = await googleAccessToken(sa)
+  const { accessToken, via } = await resolveAccessToken()
   const metadata = { name, parents: [folderId], mimeType: 'application/json' }
   const boundary = 'cms_backup_boundary'
   const body =
@@ -177,8 +227,16 @@ async function uploadToDrive(folderId, name, content) {
     },
   )
   const data = await res.json()
-  if (!res.ok) throw new Error(data?.error?.message || `Drive upload failed (${res.status})`)
-  return { fileId: data.id, webLink: data.webViewLink || null }
+  if (!res.ok) {
+    const msg = data?.error?.message || `Drive upload failed (${res.status})`
+    if (/storage quota|service accounts do not have/i.test(msg)) {
+      throw new Error(
+        `${msg} Tip: Connect Google with OAuth on the Backup page (personal Drive needs user login, not service account).`,
+      )
+    }
+    throw new Error(msg)
+  }
+  return { fileId: data.id, webLink: data.webViewLink || null, via }
 }
 
 async function resolveFolderId(bodyFolder) {

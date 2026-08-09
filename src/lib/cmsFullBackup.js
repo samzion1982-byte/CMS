@@ -28,7 +28,9 @@ const PAGE = 1000
 export async function getBackupSettings() {
   const { data, error } = await supabase
     .from('cms_backup_settings')
-    .select('*')
+    .select(
+      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+    )
     .eq('id', 1)
     .maybeSingle()
   if (error) throw error
@@ -41,22 +43,74 @@ export async function getBackupSettings() {
     snapshot_auto_enabled: true,
     snapshot_auto_hour_ist: 1,
     snapshot_retain_days: 14,
+    google_connected_email: null,
+    google_connected_at: null,
   }
 }
 
 export async function saveBackupSettings(patch, actor = null) {
+  // Never allow browser to write refresh tokens
+  const safe = { ...patch }
+  delete safe.google_refresh_token
+
   const payload = {
     id: 1,
-    ...patch,
+    ...safe,
     updated_at: new Date().toISOString(),
     updated_by_email: actor?.email || null,
   }
   const { data, error } = await supabase
     .from('cms_backup_settings')
     .upsert(payload, { onConflict: 'id' })
-    .select('*')
+    .select(
+      'id, drive_folder_id, drive_enabled, full_auto_enabled, full_auto_hour_ist, snapshot_auto_enabled, snapshot_auto_hour_ist, snapshot_retain_days, google_connected_email, google_connected_at, updated_at, updated_by_email',
+    )
     .single()
   if (error) throw error
+  return data
+}
+
+export function googleOAuthRedirectUri() {
+  return `${window.location.origin}/backup/google-callback`
+}
+
+export async function startGoogleOAuthConnect() {
+  const redirectUri = googleOAuthRedirectUri()
+  const state = crypto.randomUUID()
+  sessionStorage.setItem('cms_google_oauth_state', state)
+  sessionStorage.setItem('cms_google_oauth_redirect', redirectUri)
+
+  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
+    body: { action: 'auth_url', redirect_uri: redirectUri, state },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  if (!data?.auth_url) throw new Error('No auth URL returned')
+  window.location.href = data.auth_url
+}
+
+export async function finishGoogleOAuthConnect({ code, state }) {
+  const expected = sessionStorage.getItem('cms_google_oauth_state')
+  const redirectUri = sessionStorage.getItem('cms_google_oauth_redirect') || googleOAuthRedirectUri()
+  if (!expected || state !== expected) {
+    throw new Error('Google login state mismatch. Try Connect Google again.')
+  }
+  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
+    body: { action: 'exchange', code, redirect_uri: redirectUri },
+  })
+  sessionStorage.removeItem('cms_google_oauth_state')
+  sessionStorage.removeItem('cms_google_oauth_redirect')
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+export async function disconnectGoogleOAuth() {
+  const { data, error } = await supabase.functions.invoke('cms-google-oauth', {
+    body: { action: 'disconnect' },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
   return data
 }
 
@@ -215,6 +269,9 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
   const settings = await getBackupSettings()
   if (!settings.drive_folder_id?.trim()) {
     throw new Error('Save a Google Drive folder ID first (Google Drive section).')
+  }
+  if (!settings.google_connected_email) {
+    throw new Error('Connect Google first (Backup page → Connect Google).')
   }
 
   let driveErrorMsg = null
