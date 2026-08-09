@@ -1064,7 +1064,7 @@ export default function BackupPage() {
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
           Super Admin only. Complete backups include every database table and every storage file (photos, PDFs, logos, etc.) in a Google Drive folder. Restore replaces live data from that folder.
         </p>
-        <p style={{ margin: '12px 0 0' }}>
+        <p style={{ margin: '12px 0 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <a
             href="/docs/Google_Drive_Backup_Setup_Guide.docx"
             download="Google_Drive_Backup_Setup_Guide.docx"
@@ -1078,6 +1078,20 @@ export default function BackupPage() {
           >
             <FileText size={15} />
             Setup Documentation
+          </a>
+          <a
+            href="/docs/Multi_Church_Deployment_Guide.docx"
+            download="Multi_Church_Deployment_Guide.docx"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontSize: 13, fontWeight: 700, color: '#0f766e',
+              textDecoration: 'none',
+              padding: '8px 12px', borderRadius: 8,
+              border: '1px solid #99f6e4', background: '#f0fdfa',
+            }}
+          >
+            <FileText size={15} />
+            Deployment Guide
           </a>
         </p>
       </div>
