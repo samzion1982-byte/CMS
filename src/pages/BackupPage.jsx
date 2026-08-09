@@ -335,6 +335,15 @@ export default function BackupPage() {
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
           Super Admin only. Backups and snapshots are stored in Google Drive. Use New Setup when deploying a church to a new Supabase project.
         </p>
+        <div style={{
+          marginTop: 12, padding: '10px 12px', borderRadius: 8,
+          background: '#fff7ed', border: '1px solid #fed7aa',
+          fontSize: 12, color: '#9a3412', lineHeight: 1.5,
+        }}>
+          <strong>One-time setup for Drive upload:</strong> In Supabase Dashboard → Edge Functions, deploy{' '}
+          <code>cms-full-backup</code> (and <code>cms-provision</code> for New Setup), then add secret{' '}
+          <code>GOOGLE_SERVICE_ACCOUNT_JSON</code>. Until then, manual backup still downloads a JSON file to your computer.
+        </div>
       </div>
 
       {/* 1. Google Drive */}
