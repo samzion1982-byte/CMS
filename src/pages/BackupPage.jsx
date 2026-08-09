@@ -1107,21 +1107,22 @@ export default function BackupPage() {
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
           Super Admin only. Complete backups include every database table and every storage file (photos, PDFs, logos, etc.) in a Google Drive folder. Restore replaces live data from that folder.
         </p>
-        <div style={{
-          marginTop: 12, padding: '10px 12px', borderRadius: 8,
-          background: '#fff7ed', border: '1px solid #fed7aa',
-          fontSize: 12, color: '#9a3412', lineHeight: 1.5,
-        }}>
-          <strong>Google Drive setup:</strong> Create an OAuth client in Google Cloud, deploy Edge Functions{' '}
-          <code>cms-google-oauth</code> + <code>cms-full-backup</code>, set secrets{' '}
-          <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code>, then click{' '}
-          <strong>Connect Google</strong> below. Personal Drive needs OAuth (service accounts have no storage quota).
-          <br />
-          <strong>Complete backup check:</strong> After redeploying <code>cms-full-backup</code>, use Debug → Run diagnostics.
-          It must say <code>complete_backup: true</code>, version ≥ 4, and list <code>storage_sync</code>.
-          Each run creates a dated Drive folder with <code>database.json</code> + <code>manifest.json</code>.
-          All storage buckets live under the parent <code>cms-storage-sync/</code> folder and sync incrementally.
-        </div>
+        <p style={{ margin: '12px 0 0' }}>
+          <a
+            href="/docs/Google_Drive_Backup_Setup_Guide.docx"
+            download="Google_Drive_Backup_Setup_Guide.docx"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              fontSize: 13, fontWeight: 700, color: '#0f766e',
+              textDecoration: 'none',
+              padding: '8px 12px', borderRadius: 8,
+              border: '1px solid #99f6e4', background: '#f0fdfa',
+            }}
+          >
+            <FileText size={15} />
+            Setup Documentation
+          </a>
+        </p>
       </div>
 
       {/* 1. Google Drive */}
