@@ -610,9 +610,7 @@ async function runCompleteBackup(body: Record<string, unknown>) {
   }
 }
 
-async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
-  await assertCallerCanRestore(req)
-
+async function resolveBackupFolderId(body: Record<string, unknown>) {
   let folderId = String(body.drive_backup_folder_id || body.folder_id || '').trim()
   if (!folderId && body.log_id) {
     const { data: logRow, error } = await supabase
@@ -624,6 +622,126 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
     folderId = String(logRow?.meta?.drive_backup_folder_id || logRow?.drive_file_id || '').trim()
   }
   if (!folderId) throw new Error('drive_backup_folder_id (or log_id of a complete backup) is required')
+  return folderId
+}
+
+function asStringArray(value: unknown): string[] | null {
+  if (value == null) return null
+  if (!Array.isArray(value)) return null
+  return value.map((v) => String(v)).filter(Boolean)
+}
+
+/** Preview contents of a Drive backup for the restore chooser UI. */
+async function inspectBackup(body: Record<string, unknown>, req: Request) {
+  await assertCallerCanRestore(req)
+  const folderId = await resolveBackupFolderId(body)
+  const { accessToken } = await resolveAccessToken()
+  const rootFiles = await driveListChildren(accessToken, folderId)
+  const dbEntry = rootFiles.find((f) => f.name === 'database.json')
+  const manifestEntry = rootFiles.find((f) => f.name === 'manifest.json')
+
+  const tables: Array<{ name: string; rows: number }> = []
+  const buckets: Array<{ name: string; files: number; bytes: number }> = []
+
+  if (manifestEntry) {
+    try {
+      const mBytes = await driveDownloadBytes(accessToken, manifestEntry.id)
+      const manifest = JSON.parse(new TextDecoder().decode(mBytes)) as {
+        database?: { summary?: Array<{ table: string; status: string; rows: number }> }
+        storage?: {
+          files?: Array<{ bucket: string; size?: number }>
+          buckets?: string[]
+        }
+      }
+      for (const s of manifest.database?.summary || []) {
+        if (s.status === 'ok' || (s.rows || 0) > 0) {
+          tables.push({ name: s.table, rows: s.rows || 0 })
+        }
+      }
+      const fileCounts = new Map<string, { files: number; bytes: number }>()
+      for (const f of manifest.storage?.files || []) {
+        const cur = fileCounts.get(f.bucket) || { files: 0, bytes: 0 }
+        cur.files += 1
+        cur.bytes += Number(f.size || 0)
+        fileCounts.set(f.bucket, cur)
+      }
+      for (const [name, stats] of fileCounts) {
+        buckets.push({ name, files: stats.files, bytes: stats.bytes })
+      }
+      for (const name of manifest.storage?.buckets || []) {
+        if (!fileCounts.has(name)) buckets.push({ name, files: 0, bytes: 0 })
+      }
+    } catch {
+      // fall through to database.json / storage walk
+    }
+  }
+
+  if (!tables.length) {
+    let data: Record<string, unknown[]> = {}
+    if (dbEntry) {
+      const dbBytes = await driveDownloadBytes(accessToken, dbEntry.id)
+      const dbJson = JSON.parse(new TextDecoder().decode(dbBytes)) as {
+        tables?: Record<string, unknown[]>
+        data?: Record<string, unknown[]>
+        summary?: Array<{ table: string; status: string; rows: number }>
+      }
+      if (dbJson.summary?.length) {
+        for (const s of dbJson.summary) {
+          if (s.status === 'ok' || (s.rows || 0) > 0) tables.push({ name: s.table, rows: s.rows || 0 })
+        }
+      }
+      data = dbJson.tables || dbJson.data || {}
+      if (!tables.length) {
+        for (const name of Object.keys(data)) {
+          tables.push({ name, rows: (data[name] || []).length })
+        }
+      }
+    }
+  }
+
+  if (!buckets.length) {
+    const storageFolder = rootFiles.find(
+      (f) => f.name === 'storage' && f.mimeType === 'application/vnd.google-apps.folder',
+    )
+    if (storageFolder) {
+      const children = await driveListChildren(accessToken, storageFolder.id)
+      for (const child of children) {
+        if (child.mimeType === 'application/vnd.google-apps.folder') {
+          const files = await collectDriveFilesRecursive(accessToken, child.id)
+          buckets.push({ name: child.name, files: files.length, bytes: 0 })
+        }
+      }
+    }
+  }
+
+  tables.sort((a, b) => a.name.localeCompare(b.name))
+  buckets.sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    ok: true,
+    action: 'inspect',
+    drive_backup_folder_id: folderId,
+    folder_name: rootFiles.find((f) => f.name)?.name || null,
+    tables,
+    storage_buckets: buckets,
+    table_count: tables.length,
+    storage_bucket_count: buckets.length,
+  }
+}
+
+async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
+  await assertCallerCanRestore(req)
+
+  const folderId = await resolveBackupFolderId(body)
+  const selectedTables = asStringArray(body.tables ?? body.selected_tables)
+  const selectedBuckets = asStringArray(body.storage_buckets ?? body.selected_storage_buckets)
+  // null = all (legacy); [] = none selected
+  const filterTables = selectedTables !== null
+  const filterBuckets = selectedBuckets !== null
+
+  if (filterTables && selectedTables!.length === 0 && filterBuckets && selectedBuckets!.length === 0) {
+    throw new Error('Select at least one table or storage bucket to restore')
+  }
 
   const { accessToken } = await resolveAccessToken()
   const rootFiles = await driveListChildren(accessToken, folderId)
@@ -656,40 +774,47 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
     }
   }
 
-  const tables = Object.keys(data)
-  if (!tables.length) throw new Error('Backup has no table data')
-
-  // Truncate then insert
-  const { error: truncErr } = await supabase.rpc('cms_truncate_tables', { p_tables: tables })
-  if (truncErr) {
-    throw new Error(
-      `Truncate failed (${truncErr.message}). Run SQL migration 20260809_cms_complete_backup.sql first.`,
-    )
+  let tables = Object.keys(data)
+  if (filterTables) {
+    const allow = new Set(selectedTables!)
+    tables = tables.filter((t) => allow.has(t))
   }
-
-  const priority = [
-    'roles', 'profiles', 'user_profiles', 'church_settings', 'churches', 'church_zones',
-    'organization_units', 'cms_role_page_access', 'members', 'families',
-  ]
-  const ordered = [
-    ...priority.filter((t) => tables.includes(t)),
-    ...tables.filter((t) => !priority.includes(t) && t !== 'cms_backup_log' && t !== 'cms_backup_settings'),
-  ]
+  // Never wipe backup control tables unless explicitly selected
+  tables = tables.filter((t) => t !== 'cms_backup_log' && t !== 'cms_backup_settings')
 
   let restoredRows = 0
   const insertErrors: string[] = []
-  for (const table of ordered) {
-    const rows = data[table] || []
-    if (!rows.length) continue
-    for (let i = 0; i < rows.length; i += 200) {
-      const chunk = rows.slice(i, i + 200)
-      const { error } = await supabase.from(table).upsert(chunk as never[], { onConflict: 'id' })
-      if (error) {
-        const { error: insErr } = await supabase.from(table).insert(chunk as never[])
-        if (insErr) insertErrors.push(`${table}: ${insErr.message}`)
-        else restoredRows += chunk.length
-      } else {
-        restoredRows += chunk.length
+
+  if (tables.length) {
+    const { error: truncErr } = await supabase.rpc('cms_truncate_tables', { p_tables: tables })
+    if (truncErr) {
+      throw new Error(
+        `Truncate failed (${truncErr.message}). Run SQL migration 20260809_cms_complete_backup.sql first.`,
+      )
+    }
+
+    const priority = [
+      'roles', 'profiles', 'user_profiles', 'church_settings', 'churches', 'church_zones',
+      'organization_units', 'cms_role_page_access', 'members', 'families',
+    ]
+    const ordered = [
+      ...priority.filter((t) => tables.includes(t)),
+      ...tables.filter((t) => !priority.includes(t)),
+    ]
+
+    for (const table of ordered) {
+      const rows = data[table] || []
+      if (!rows.length) continue
+      for (let i = 0; i < rows.length; i += 200) {
+        const chunk = rows.slice(i, i + 200)
+        const { error } = await supabase.from(table).upsert(chunk as never[], { onConflict: 'id' })
+        if (error) {
+          const { error: insErr } = await supabase.from(table).insert(chunk as never[])
+          if (insErr) insertErrors.push(`${table}: ${insErr.message}`)
+          else restoredRows += chunk.length
+        } else {
+          restoredRows += chunk.length
+        }
       }
     }
   }
@@ -700,8 +825,9 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
   const storageFolder = rootFiles.find(
     (f) => f.name === 'storage' && f.mimeType === 'application/vnd.google-apps.folder',
   )
+  const wantStorage = !filterBuckets || (selectedBuckets && selectedBuckets.length > 0)
 
-  if (storageFolder) {
+  if (storageFolder && wantStorage) {
     let fileList: Array<{ bucket: string; path: string; drive_file_id?: string; mime?: string }> = []
     if (manifestEntry) {
       try {
@@ -722,6 +848,11 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
         const path = parts.join('/')
         if (bucket && path) fileList.push({ bucket, path, drive_file_id: f.id })
       }
+    }
+
+    if (filterBuckets) {
+      const allow = new Set(selectedBuckets!)
+      fileList = fileList.filter((f) => allow.has(f.bucket))
     }
 
     // Ensure buckets exist
@@ -749,7 +880,9 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
     }
   }
 
-  const status = insertErrors.length && !restoredRows ? 'failed' : (insertErrors.length || storageErrors.length ? 'partial' : 'success')
+  const status = insertErrors.length && !restoredRows && !restoredFiles
+    ? 'failed'
+    : (insertErrors.length || storageErrors.length ? 'partial' : 'success')
 
   await supabase.from('cms_backup_log').insert({
     backup_type: 'full',
@@ -765,6 +898,9 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
     meta: {
       action: 'restore',
       complete: true,
+      selective: filterTables || filterBuckets,
+      selected_tables: filterTables ? selectedTables : 'all',
+      selected_storage_buckets: filterBuckets ? selectedBuckets : 'all',
       drive_backup_folder_id: folderId,
       restored_rows: restoredRows,
       restored_files: restoredFiles,
@@ -782,6 +918,8 @@ async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
     tables: tables.length,
     restored_rows: restoredRows,
     restored_files: restoredFiles,
+    selected_tables: filterTables ? selectedTables : tables,
+    selected_storage_buckets: filterBuckets ? selectedBuckets : null,
     insert_errors: insertErrors,
     storage_errors: storageErrors,
   }
@@ -791,6 +929,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   try {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
+
+    if (body.action === 'inspect' || body.action === 'preview_restore') {
+      const result = await inspectBackup(body, req)
+      return json(result)
+    }
 
     if (body.action === 'restore') {
       const result = await runCompleteRestore(body, req)

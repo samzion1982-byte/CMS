@@ -13,6 +13,8 @@ import {
   clearBackupLogs,
   runDriveBackup,
   restoreFromDriveBackup,
+  restoreChoicesFromLog,
+  inspectDriveBackup,
   backupFolderIdFromLog,
   runProvision,
   saveBackupSettings,
@@ -143,6 +145,206 @@ function StatusPill({ status }) {
   )
 }
 
+function CheckList({ items, selected, onToggle, empty, renderMeta }) {
+  if (!items.length) {
+    return <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)' }}>{empty}</p>
+  }
+  return (
+    <div style={{
+      maxHeight: 220, overflow: 'auto', border: '1px solid var(--card-border)',
+      borderRadius: 8, padding: '4px 0',
+    }}>
+      {items.map((item) => {
+        const name = item.name
+        const checked = selected.has(name)
+        return (
+          <label
+            key={name}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 10px', fontSize: 12, color: 'var(--text-1)',
+              cursor: 'pointer', borderBottom: '1px solid var(--table-border)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onToggle(name)}
+            />
+            <span style={{ flex: 1, fontFamily: 'var(--font-ui)' }}>{name}</span>
+            <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{renderMeta?.(item)}</span>
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+function RestoreChooserModal({
+  open,
+  row,
+  loading,
+  tables,
+  buckets,
+  selectedTables,
+  selectedBuckets,
+  onClose,
+  onSelectAll,
+  onDeselectAll,
+  onSelectAllTables,
+  onDeselectAllTables,
+  onSelectAllBuckets,
+  onDeselectAllBuckets,
+  onToggleTable,
+  onToggleBucket,
+  onRefresh,
+  onConfirm,
+  confirming,
+}) {
+  if (!open) return null
+  const label = row?.download_filename || 'backup'
+  const tableCount = selectedTables.size
+  const bucketCount = selectedBuckets.size
+  const canGo = tableCount > 0 || bucketCount > 0
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 80,
+        background: 'rgba(15, 23, 42, 0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget && !confirming) onClose() }}
+    >
+      <div style={{
+        width: 'min(720px, 100%)', maxHeight: '90vh', overflow: 'auto',
+        background: 'var(--card-bg, #fff)', borderRadius: 14,
+        border: '1px solid var(--card-border)',
+        boxShadow: '0 20px 50px rgba(15,23,42,0.25)',
+        fontFamily: 'var(--font-ui)',
+      }}>
+        <div style={{
+          padding: '14px 16px', borderBottom: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start',
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>
+              Choose what to restore
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
+              From <strong>{label}</strong>. Only checked items are replaced. Unchecked tables and buckets stay as they are now.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="no-lift"
+            style={secondaryBtn}
+            disabled={confirming}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        <div style={{ padding: 16, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={loading || confirming} onClick={onSelectAll}>
+              Select all
+            </button>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={loading || confirming} onClick={onDeselectAll}>
+              Deselect all
+            </button>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={loading || confirming} onClick={onRefresh}>
+              {loading ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
+              Refresh list from Drive
+            </button>
+          </div>
+
+          {loading && !tables.length && !buckets.length ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+              <Loader2 size={18} className="spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />
+              Loading backup contents…
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Database tables ({tableCount}/{tables.length})</strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onSelectAllTables}>Select all</button>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onDeselectAllTables}>Deselect all</button>
+                  </div>
+                </div>
+                <CheckList
+                  items={tables}
+                  selected={selectedTables}
+                  onToggle={onToggleTable}
+                  empty="No tables found in this backup."
+                  renderMeta={(item) => (item.rows != null ? `${item.rows} rows` : '')}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Storage buckets ({bucketCount}/{buckets.length})</strong>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onSelectAllBuckets}>Select all</button>
+                    <button type="button" className="no-lift" style={{ ...secondaryBtn, padding: '5px 8px' }} disabled={confirming} onClick={onDeselectAllBuckets}>Deselect all</button>
+                  </div>
+                </div>
+                <CheckList
+                  items={buckets}
+                  selected={selectedBuckets}
+                  onToggle={onToggleBucket}
+                  empty="No storage files in this backup (DB-only or older backup)."
+                  renderMeta={(item) => (
+                    item.files != null
+                      ? `${item.files} file${item.files === 1 ? '' : 's'}${item.bytes ? ` · ${formatBytes(item.bytes)}` : ''}`
+                      : ''
+                  )}
+                />
+              </div>
+            </>
+          )}
+
+          <p style={{ margin: 0, fontSize: 11, color: '#9a3412', lineHeight: 1.45, background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '8px 10px' }}>
+            Selected tables are truncated then reloaded from the backup. Related tables may fail if you omit dependencies (e.g. members without families). Storage files in selected buckets are overwritten.
+          </p>
+        </div>
+
+        <div style={{
+          padding: '12px 16px', borderTop: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            {canGo
+              ? `Will restore ${tableCount} table(s) and ${bucketCount} bucket(s)`
+              : 'Select at least one item'}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="no-lift"
+              style={{ ...primaryBtn, opacity: canGo ? 1 : 0.5 }}
+              disabled={!canGo || confirming || loading}
+              onClick={onConfirm}
+            >
+              {confirming ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
+              {confirming ? 'Restoring…' : 'Restore selected'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LogTable({ rows, loading, empty, restoringId, onRestore }) {
   return (
     <div style={{ overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: 8 }}>
@@ -204,11 +406,11 @@ function LogTable({ rows, loading, empty, restoringId, onRestore }) {
                       cursor: canRestore && !busy ? 'pointer' : 'not-allowed',
                     }}
                     disabled={!canRestore || !!restoringId}
-                    title={canRestore ? 'Restore this complete backup (DB + storage)' : 'Need a complete Drive backup folder'}
+                    title={canRestore ? 'Choose tables and storage to restore' : 'Need a complete Drive backup folder'}
                     onClick={() => onRestore?.(row)}
                   >
                     {busy ? <Loader2 size={12} className="spin" /> : <RotateCcw size={12} />}
-                    Restore
+                    Restore…
                   </button>
                 </td>
               </tr>
@@ -242,6 +444,12 @@ export default function BackupPage() {
   const [runningFull, setRunningFull] = useState(false)
   const [runningSnap, setRunningSnap] = useState(false)
   const [restoringId, setRestoringId] = useState(null)
+  const [restoreModal, setRestoreModal] = useState(null) // { row, folderId }
+  const [restoreTables, setRestoreTables] = useState([])
+  const [restoreBuckets, setRestoreBuckets] = useState([])
+  const [selectedTables, setSelectedTables] = useState(() => new Set())
+  const [selectedBuckets, setSelectedBuckets] = useState(() => new Set())
+  const [restoreLoading, setRestoreLoading] = useState(false)
 
   const [prov, setProv] = useState({
     mode: 'initialize',
@@ -390,22 +598,113 @@ export default function BackupPage() {
     }
   }
 
-  async function handleRestore(row) {
+  async function openRestoreChooser(row) {
     const folderId = backupFolderIdFromLog(row)
     if (!folderId) {
       toast('This history row has no Drive backup folder id. Run a new Complete Backup first.', 'error')
       return
     }
-    const label = row.download_filename || folderId
-    if (!window.confirm(
-      `COMPLETE RESTORE from "${label}"?\n\nThis replaces ALL current database tables and storage files with that backup.\nAuth users are not deleted, but church data will match the backup.\n\nThis cannot be undone except by restoring another backup.`,
-    )) return
-    if (!window.confirm('Type-confirm: restore will wipe current CMS data and reload from Google Drive. Continue?')) return
 
-    setRestoringId(row.id)
+    setRestoreModal({ row, folderId })
+    setLastActionError(null)
+
+    const fromLog = restoreChoicesFromLog(row)
+    const needsDriveList = fromLog.incomplete
+      || (row?.meta?.complete && (row?.meta?.storage_file_count || 0) > 0 && !fromLog.storage_buckets.length)
+
+    if (!needsDriveList) {
+      setRestoreTables(fromLog.tables)
+      setRestoreBuckets(fromLog.storage_buckets)
+      setSelectedTables(new Set(fromLog.tables.map((t) => t.name)))
+      setSelectedBuckets(new Set(fromLog.storage_buckets.map((b) => b.name)))
+      return
+    }
+
+    // Thin history meta — load from Drive
+    setRestoreLoading(true)
+    setRestoreTables([])
+    setRestoreBuckets([])
+    setSelectedTables(new Set())
+    setSelectedBuckets(new Set())
+    try {
+      const info = await inspectDriveBackup({ logId: row.id, folderId })
+      const tables = info.tables || []
+      const buckets = info.storage_buckets || []
+      setRestoreTables(tables)
+      setRestoreBuckets(buckets)
+      setSelectedTables(new Set(tables.map((t) => t.name)))
+      setSelectedBuckets(new Set(buckets.map((b) => b.name)))
+    } catch (e) {
+      const msg = e.message || 'Could not load backup contents'
+      setLastActionError(msg)
+      toast(msg, 'error')
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
+  async function refreshRestoreChooser() {
+    if (!restoreModal) return
+    setRestoreLoading(true)
+    try {
+      const info = await inspectDriveBackup({
+        logId: restoreModal.row.id,
+        folderId: restoreModal.folderId,
+      })
+      const tables = info.tables || []
+      const buckets = info.storage_buckets || []
+      setRestoreTables(tables)
+      setRestoreBuckets(buckets)
+      setSelectedTables(new Set(tables.map((t) => t.name)))
+      setSelectedBuckets(new Set(buckets.map((b) => b.name)))
+      toast('Backup contents refreshed from Drive', 'success')
+    } catch (e) {
+      const msg = e.message || 'Refresh failed'
+      setLastActionError(msg)
+      toast(msg, 'error')
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
+  function closeRestoreChooser() {
+    if (restoringId) return
+    setRestoreModal(null)
+  }
+
+  function toggleInSet(setter, name) {
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  async function confirmRestoreSelected() {
+    if (!restoreModal) return
+    const tables = [...selectedTables]
+    const buckets = [...selectedBuckets]
+    if (!tables.length && !buckets.length) {
+      toast('Select at least one table or storage bucket', 'error')
+      return
+    }
+
+    const label = restoreModal.row.download_filename || restoreModal.folderId
+    if (!window.confirm(
+      `Restore ${tables.length} table(s) and ${buckets.length} storage bucket(s) from "${label}"?\n\nSelected tables will be wiped and replaced. Selected storage files will be overwritten.\n\nThis cannot be undone except by restoring another backup.`,
+    )) return
+
+    setRestoringId(restoreModal.row.id)
     setLastActionError(null)
     try {
-      const r = await restoreFromDriveBackup({ logId: row.id, folderId, actor: profile })
+      const r = await restoreFromDriveBackup({
+        logId: restoreModal.row.id,
+        folderId: restoreModal.folderId,
+        tables,
+        storageBuckets: buckets,
+        actor: profile,
+      })
       toast(
         `Restore ${r.status || 'done'}: ${r.restored_rows ?? 0} rows, ${r.restored_files ?? 0} files.`,
         r.status === 'failed' ? 'error' : 'success',
@@ -415,6 +714,7 @@ export default function BackupPage() {
           [...(r.insert_errors || []), ...(r.storage_errors || [])].slice(0, 12).join('\n'),
         )
       }
+      setRestoreModal(null)
       await loadLogs()
     } catch (e) {
       const msg = e.message || 'Restore failed'
@@ -647,7 +947,7 @@ export default function BackupPage() {
           loading={loadingLogs}
           empty="No full backups yet"
           restoringId={restoringId}
-          onRestore={handleRestore}
+          onRestore={openRestoreChooser}
         />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
           Each successful run creates a Drive folder with <code>database.json</code>, <code>storage/…</code>, and <code>manifest.json</code>.
@@ -703,7 +1003,7 @@ export default function BackupPage() {
           loading={loadingLogs}
           empty="No snapshots yet"
           restoringId={restoringId}
-          onRestore={handleRestore}
+          onRestore={openRestoreChooser}
         />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
           Restoring a snapshot replaces current database rows and storage files with that day’s complete copy. Keep automatic snapshots on for treasurer “back to yesterday” recovery.
@@ -843,6 +1143,34 @@ export default function BackupPage() {
           </pre>
         )}
       </Section>
+
+      <RestoreChooserModal
+        open={!!restoreModal}
+        row={restoreModal?.row}
+        loading={restoreLoading}
+        tables={restoreTables}
+        buckets={restoreBuckets}
+        selectedTables={selectedTables}
+        selectedBuckets={selectedBuckets}
+        confirming={!!restoringId}
+        onClose={closeRestoreChooser}
+        onSelectAll={() => {
+          setSelectedTables(new Set(restoreTables.map((t) => t.name)))
+          setSelectedBuckets(new Set(restoreBuckets.map((b) => b.name)))
+        }}
+        onDeselectAll={() => {
+          setSelectedTables(new Set())
+          setSelectedBuckets(new Set())
+        }}
+        onSelectAllTables={() => setSelectedTables(new Set(restoreTables.map((t) => t.name)))}
+        onDeselectAllTables={() => setSelectedTables(new Set())}
+        onSelectAllBuckets={() => setSelectedBuckets(new Set(restoreBuckets.map((b) => b.name)))}
+        onDeselectAllBuckets={() => setSelectedBuckets(new Set())}
+        onToggleTable={(name) => toggleInSet(setSelectedTables, name)}
+        onToggleBucket={(name) => toggleInSet(setSelectedBuckets, name)}
+        onRefresh={refreshRestoreChooser}
+        onConfirm={confirmRestoreSelected}
+      />
     </div>
   )
 }

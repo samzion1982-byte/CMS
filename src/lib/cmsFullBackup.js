@@ -442,18 +442,62 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
 }
 
 /**
+ * List tables + storage buckets inside a Drive backup (for restore chooser).
+ */
+export async function inspectDriveBackup({ logId = null, folderId = null } = {}) {
+  const invoked = await invokeEdgeFunction('cms-full-backup', {
+    action: 'inspect',
+    log_id: logId,
+    drive_backup_folder_id: folderId,
+  })
+  if (invoked.missing) {
+    throw new Error('Edge Function cms-full-backup is not deployed. Redeploy it, then try again.')
+  }
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Could not inspect backup')
+  return invoked.data
+}
+
+/**
+ * Build restore chooser items from a history log row (fast path; may call inspect if thin).
+ */
+export function restoreChoicesFromLog(row) {
+  const summary = Array.isArray(row?.meta?.summary) ? row.meta.summary : []
+  const tables = summary
+    .filter((s) => s && (s.status === 'ok' || (s.rows || 0) > 0) && s.table)
+    .map((s) => ({ name: s.table, rows: s.rows || 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const bucketNames = Array.isArray(row?.meta?.storage_buckets) ? row.meta.storage_buckets : []
+  const storage_buckets = bucketNames
+    .filter(Boolean)
+    .map((name) => ({ name, files: null, bytes: 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    tables,
+    storage_buckets,
+    from_log: true,
+    incomplete: !tables.length && !storage_buckets.length,
+  }
+}
+
+/**
  * Complete restore from a Drive backup folder (database.json + storage/...).
- * Prefer logId from history (meta.drive_backup_folder_id). Or pass folderId directly.
+ * Pass tables / storageBuckets arrays to restore only those items.
  */
 export async function restoreFromDriveBackup({
   logId = null,
   folderId = null,
+  tables = null,
+  storageBuckets = null,
   actor = null,
 } = {}) {
   const invoked = await invokeEdgeFunction('cms-full-backup', {
     action: 'restore',
     log_id: logId,
     drive_backup_folder_id: folderId,
+    tables,
+    storage_buckets: storageBuckets,
     actor_email: actor?.email || null,
   })
   if (invoked.missing) {
