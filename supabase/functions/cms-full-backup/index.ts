@@ -1,12 +1,20 @@
-// cms-full-backup — Full Backup or Snapshot to Google Drive only
-// Secret required: GOOGLE_SERVICE_ACCOUNT_JSON
-// Body: { kind, trigger_mode, drive_folder_id, actor_email, actor_name }
-
+/**
+ * Complete CMS Backup & Restore
+ * - All public tables → database.json
+ * - All storage buckets/files → storage/<bucket>/...
+ * - manifest.json
+ * Uploads to a Google Drive folder per run (OAuth preferred; SA for Shared Drives).
+ *
+ * Body:
+ *   { kind: 'full'|'snapshot', trigger_mode, drive_folder_id, actor_email, actor_name }
+ *   { action: 'restore', drive_backup_folder_id | log_id }
+ */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_ANON') || ''
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
 const CORS = {
@@ -14,42 +22,56 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const TABLES = [
-  'churches', 'church_zones', 'profiles', 'cms_role_page_access', 'cms_user_passwords',
-  'cms_backup_settings',
-  'members', 'deleted_members',
-  'baptism_records', 'confirmation_records', 'wedding_records', 'burial_records',
-  'event_task_buckets', 'event_tasks', 'event_volunteers', 'task_library', 'event_plans',
-  'assets', 'asset_locations', 'asset_item_types', 'asset_conditions',
-  'fixed_assets', 'fixed_asset_documents',
-  'receipts', 'receipt_items', 'receipt_financial_years', 'payment_categories',
-  'declarations', 'declaration_items', 'decl_financial_years', 'funds',
-  'chart_of_accounts', 'journal_entries', 'journal_entry_lines',
-  'accounting_settings', 'accounting_entities', 'bank_accounts',
-  'simple_accounts', 'simple_categories', 'simple_transactions',
-  'announcements', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
-  'cms_audit_log', 'login_logs',
-]
-
 const PAGE = 1000
 
-function json(body, status = 200) {
+/** Fallback if cms_list_public_tables RPC is not installed yet */
+const FALLBACK_TABLES = [
+  'churches', 'church_zones', 'profiles', 'cms_role_page_access', 'cms_user_passwords',
+  'cms_backup_settings', 'cms_backup_log', 'cms_recycle_bin', 'cms_audit_log',
+  'members', 'deleted_members', 'member_photos', 'member_relationships', 'member_custom_field_values',
+  'member_contributions', 'member_fees', 'custom_field_definitions',
+  'baptism_records', 'confirmation_records', 'wedding_records', 'burial_records',
+  'families', 'family_relationships', 'family_tree_layouts',
+  'event_task_buckets', 'event_tasks', 'event_volunteers', 'task_library', 'event_plans',
+  'events', 'event_media', 'event_registrations',
+  'assets', 'asset_locations', 'asset_item_types', 'asset_conditions', 'asset_categories',
+  'asset_stock_movements', 'fixed_assets', 'fixed_asset_documents',
+  'receipts', 'receipt_items', 'receipt_financial_years', 'receipt_counters', 'receipt_sequences',
+  'payment_categories', 'payment_pages', 'payment_page_versions',
+  'declarations', 'declaration_items', 'decl_financial_years', 'funds',
+  'chart_of_accounts', 'accounts', 'journal_entries', 'journal_entry_lines', 'journal_entry_sequences',
+  'recurring_journal_templates', 'accounting_settings', 'accounting_entities', 'bank_accounts',
+  'simple_accounts', 'simple_categories', 'simple_transactions', 'transactions',
+  'contribution_types', 'fee_plans', 'fee_structures', 'festival_periods',
+  'voucher_counters', 'voucher_sequences',
+  'announcements', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
+  'login_announcements', 'login_logs',
+  'organization_units', 'page_permissions', 'roles', 'user_profiles',
+  'devices', 'device_sessions', 'church_settings',
+]
+
+const KNOWN_BUCKETS = [
+  'announcement-cards', 'announcement-reports', 'asset-photos', 'church-logos',
+  'event-media', 'member-photos', 'member-reports', 'payment-pages', 'receipt-pdfs',
+]
+
+function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 }
 
-function filename(kind, date = new Date()) {
-  const p = (n) => String(n).padStart(2, '0')
-  const stamp = `${date.getUTCFullYear()}${p(date.getUTCMonth() + 1)}${p(date.getUTCDate())}-${p(date.getUTCHours())}${p(date.getUTCMinutes())}Z`
-  return kind === 'snapshot'
-    ? `cms-snapshot-${stamp}.json`
-    : `cms-full-backup-${stamp}.json`
+function runFolderName(kind: string, date = new Date()) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  const stamp =
+    `${date.getUTCFullYear()}${p(date.getUTCMonth() + 1)}${p(date.getUTCDate())}-` +
+    `${p(date.getUTCHours())}${p(date.getUTCMinutes())}${p(date.getUTCSeconds())}Z`
+  return kind === 'snapshot' ? `cms-snapshot-${stamp}` : `cms-full-backup-${stamp}`
 }
 
-async function fetchAll(table) {
-  const rows = []
+async function fetchAll(table: string) {
+  const rows: unknown[] = []
   let from = 0
   for (;;) {
     const { data, error } = await supabase.from(table).select('*').range(from, from + PAGE - 1)
@@ -64,15 +86,28 @@ async function fetchAll(table) {
     if (batch.length < PAGE) break
     from += PAGE
   }
-  return { rows, skipped: false, error: null }
+  return { rows, skipped: false, error: null as string | null }
 }
 
-async function buildPayload(kind, triggerMode, actorEmail) {
-  const tables = {}
-  const summary = []
+async function listPublicTables(): Promise<string[]> {
+  const { data, error } = await supabase.rpc('cms_list_public_tables')
+  if (!error && Array.isArray(data) && data.length) {
+    return data
+      .map((r: { table_name?: string } | string) => (typeof r === 'string' ? r : String(r?.table_name || '')))
+      .filter(Boolean)
+  }
+  // Prefer union of fallback + known client list
+  return [...new Set(FALLBACK_TABLES)]
+}
+
+async function buildDatabaseDump(kind: string, triggerMode: string, actorEmail: string | null) {
+  const tableNames = await listPublicTables()
+  const tables: Record<string, unknown[]> = {}
+  const summary: Array<{ table: string; status: string; rows: number; error?: string }> = []
   let totalRows = 0
   let okCount = 0
-  for (const table of TABLES) {
+
+  for (const table of tableNames) {
     const result = await fetchAll(table)
     if (result.skipped) {
       summary.push({ table, status: 'skipped', rows: 0, error: result.error || undefined })
@@ -87,14 +122,16 @@ async function buildPayload(kind, triggerMode, actorEmail) {
     okCount += 1
     summary.push({ table, status: 'ok', rows: result.rows.length })
   }
+
   return {
     payload: {
-      format: kind === 'snapshot' ? 'cms-snapshot' : 'cms-full-backup',
-      version: 1,
+      format: 'cms-complete-backup',
+      version: 2,
       kind,
       created_at: new Date().toISOString(),
       trigger_mode: triggerMode,
       created_by: actorEmail,
+      includes_storage: true,
       tables,
       summary,
     },
@@ -104,7 +141,7 @@ async function buildPayload(kind, triggerMode, actorEmail) {
   }
 }
 
-async function googleAccessToken(sa) {
+async function googleAccessTokenFromSA(sa: { client_email: string; private_key: string }) {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'RS256', typ: 'JWT' }
   const claim = {
@@ -114,45 +151,36 @@ async function googleAccessToken(sa) {
     iat: now,
     exp: now + 3600,
   }
-  const enc = (obj) =>
+  const enc = (obj: unknown) =>
     btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const unsigned = `${enc(header)}.${enc(claim)}`
   const pem = sa.private_key.replace(/\\n/g, '\n')
-  const pemBody = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s+/g, '')
-  const binary = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0))
+  const pemContents = pem.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\s/g, '')
+  const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0))
   const key = await crypto.subtle.importKey(
     'pkcs8',
-    binary.buffer,
+    binaryDer,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['sign'],
   )
-  const sig = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    new TextEncoder().encode(unsigned),
-  )
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned))
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   const jwt = `${unsigned}.${sigB64}`
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
-    }),
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }),
   })
   const tokenJson = await tokenRes.json()
   if (!tokenJson.access_token) {
     throw new Error(tokenJson.error_description || tokenJson.error || 'Google token failed')
   }
-  return tokenJson.access_token
+  return tokenJson.access_token as string
 }
 
-async function getOAuthAccessToken(refreshToken) {
+async function getOAuthAccessToken(refreshToken: string) {
   const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
   const clientSecret = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
   if (!clientId || !clientSecret) {
@@ -172,7 +200,7 @@ async function getOAuthAccessToken(refreshToken) {
   if (!tokenJson.access_token) {
     throw new Error(tokenJson.error_description || tokenJson.error || 'Google OAuth token refresh failed')
   }
-  return tokenJson.access_token
+  return tokenJson.access_token as string
 }
 
 async function resolveAccessToken() {
@@ -185,7 +213,7 @@ async function resolveAccessToken() {
   if (settings?.google_refresh_token) {
     return {
       accessToken: await getOAuthAccessToken(settings.google_refresh_token),
-      via: 'oauth',
+      via: 'oauth' as const,
       email: settings.google_connected_email || null,
     }
   }
@@ -194,8 +222,8 @@ async function resolveAccessToken() {
   if (raw) {
     const sa = JSON.parse(raw)
     return {
-      accessToken: await googleAccessToken(sa),
-      via: 'service_account',
+      accessToken: await googleAccessTokenFromSA(sa),
+      via: 'service_account' as const,
       email: sa.client_email || null,
     }
   }
@@ -205,18 +233,80 @@ async function resolveAccessToken() {
   )
 }
 
-async function uploadToDrive(folderId, name, content) {
-  if (!folderId) throw new Error('Google Drive folder ID is required')
-  const { accessToken, via } = await resolveAccessToken()
-  const metadata = { name, parents: [folderId], mimeType: 'application/json' }
-  const boundary = 'cms_backup_boundary'
-  const body =
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
-    `${content}\r\n--${boundary}--`
+async function resolveFolderId(bodyFolder: string | null) {
+  if (bodyFolder && String(bodyFolder).trim()) return String(bodyFolder).trim()
+  const { data } = await supabase.from('cms_backup_settings').select('drive_folder_id').eq('id', 1).maybeSingle()
+  return data?.drive_folder_id?.trim() || null
+}
+
+async function driveCreateFolder(accessToken: string, name: string, parentId: string) {
+  const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    }),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(body?.error?.message || `Drive create folder failed (${res.status})`)
+  return body as { id: string; name: string; webViewLink?: string }
+}
+
+async function driveListChildren(accessToken: string, folderId: string) {
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`)
   const res = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name',
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType,size)&pageSize=1000`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  const body = await res.json()
+  if (!res.ok) throw new Error(body?.error?.message || `Drive list failed (${res.status})`)
+  return (body.files || []) as Array<{ id: string; name: string; mimeType: string; size?: string }>
+}
+
+async function findOrCreateNamedFolder(accessToken: string, parentId: string, name: string) {
+  const children = await driveListChildren(accessToken, parentId)
+  const existing = children.find((f) => f.name === name && f.mimeType === 'application/vnd.google-apps.folder')
+  if (existing) return existing
+  return driveCreateFolder(accessToken, name, parentId)
+}
+
+async function ensureNestedFolder(accessToken: string, rootId: string, relativePath: string) {
+  const parts = relativePath.split('/').filter(Boolean)
+  let current = rootId
+  for (const part of parts) {
+    const folder = await findOrCreateNamedFolder(accessToken, current, part)
+    current = folder.id
+  }
+  return current
+}
+
+async function driveUploadBytes(
+  accessToken: string,
+  parentId: string,
+  fileName: string,
+  bytes: Uint8Array,
+  mimeType: string,
+) {
+  const metadata = JSON.stringify({ name: fileName, parents: [parentId] })
+  const boundary = `cms_boundary_${crypto.randomUUID().replace(/-/g, '')}`
+  const encoder = new TextEncoder()
+  const head = encoder.encode(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+  )
+  const tail = encoder.encode(`\r\n--${boundary}--`)
+  const body = new Uint8Array(head.length + bytes.length + tail.length)
+  body.set(head, 0)
+  body.set(bytes, head.length)
+  body.set(tail, head.length + bytes.length)
+
+  const res = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,webViewLink',
     {
       method: 'POST',
       headers: {
@@ -228,7 +318,7 @@ async function uploadToDrive(folderId, name, content) {
   )
   const data = await res.json()
   if (!res.ok) {
-    const msg = data?.error?.message || `Drive upload failed (${res.status})`
+    const msg = data?.error?.message || `Drive upload failed (${res.status}) for ${fileName}`
     if (/storage quota|service accounts do not have/i.test(msg)) {
       throw new Error(
         `${msg} Tip: Connect Google with OAuth on the Backup page (personal Drive needs user login, not service account).`,
@@ -236,104 +326,496 @@ async function uploadToDrive(folderId, name, content) {
     }
     throw new Error(msg)
   }
-  return { fileId: data.id, webLink: data.webViewLink || null, via }
+  return data as { id: string; name: string; size?: string; webViewLink?: string }
 }
 
-async function resolveFolderId(bodyFolder) {
-  if (bodyFolder && String(bodyFolder).trim()) return String(bodyFolder).trim()
-  const { data } = await supabase.from('cms_backup_settings').select('drive_folder_id').eq('id', 1).maybeSingle()
-  return data?.drive_folder_id?.trim() || null
+async function driveDownloadBytes(accessToken: string, fileId: string) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Drive download failed: ${text}`)
+  }
+  return new Uint8Array(await res.arrayBuffer())
+}
+
+async function listAllStorageFiles(
+  bucket: string,
+  prefix = '',
+): Promise<Array<{ path: string; size?: number; mime?: string }>> {
+  const out: Array<{ path: string; size?: number; mime?: string }> = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix || undefined, {
+      limit: 1000,
+      offset,
+    })
+    if (error) throw new Error(`Storage list ${bucket}/${prefix}: ${error.message}`)
+    const items = data || []
+    if (!items.length) break
+
+    for (const item of items) {
+      const path = prefix ? `${prefix}/${item.name}` : item.name
+      // Files have an id; folder placeholders typically do not
+      if (item.id) {
+        out.push({
+          path,
+          size: (item.metadata as { size?: number } | null)?.size,
+          mime: (item.metadata as { mimetype?: string } | null)?.mimetype,
+        })
+      } else {
+        const nested = await listAllStorageFiles(bucket, path)
+        out.push(...nested)
+      }
+    }
+    if (items.length < 1000) break
+    offset += 1000
+  }
+  return out
+}
+
+async function backupStorageToDrive(accessToken: string, runFolderId: string) {
+  const { data: buckets, error: bucketErr } = await supabase.storage.listBuckets()
+  if (bucketErr) throw new Error(`listBuckets: ${bucketErr.message}`)
+
+  const bucketNames = (buckets || [])
+    .map((b) => b.name)
+    .filter((n) => n !== 'cms-backups')
+
+  for (const known of KNOWN_BUCKETS) {
+    if (!bucketNames.includes(known)) bucketNames.push(known)
+  }
+
+  const storageMeta: Array<{
+    bucket: string
+    path: string
+    size: number
+    mime: string
+    drive_file_id: string
+  }> = []
+  const skipped: string[] = []
+  let totalBytes = 0
+  let fileCount = 0
+
+  const storageRoot = await findOrCreateNamedFolder(accessToken, runFolderId, 'storage')
+
+  for (const bucket of bucketNames) {
+    let files: Array<{ path: string; size?: number; mime?: string }> = []
+    try {
+      files = await listAllStorageFiles(bucket)
+    } catch (e) {
+      skipped.push(`bucket ${bucket}: ${(e as Error).message}`)
+      continue
+    }
+    if (!files.length) continue
+
+    const bucketFolder = await findOrCreateNamedFolder(accessToken, storageRoot.id, bucket)
+
+    for (const file of files) {
+      try {
+        const { data: blob, error: dlErr } = await supabase.storage.from(bucket).download(file.path)
+        if (dlErr || !blob) {
+          skipped.push(`${bucket}/${file.path}: ${dlErr?.message || 'empty'}`)
+          continue
+        }
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const mime = file.mime || blob.type || 'application/octet-stream'
+        const parts = file.path.split('/')
+        const fileName = parts.pop()!
+        const parentPath = parts.join('/')
+        const parentId = parentPath
+          ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
+          : bucketFolder.id
+        const uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
+        storageMeta.push({
+          bucket,
+          path: file.path,
+          size: bytes.length,
+          mime,
+          drive_file_id: uploaded.id,
+        })
+        totalBytes += bytes.length
+        fileCount += 1
+      } catch (e) {
+        skipped.push(`${bucket}/${file.path}: ${(e as Error).message}`)
+      }
+    }
+  }
+
+  return { storageMeta, skipped, totalBytes, fileCount, buckets: bucketNames }
+}
+
+async function collectDriveFilesRecursive(
+  accessToken: string,
+  folderId: string,
+  prefix = '',
+): Promise<Array<{ id: string; name: string; path: string; mimeType: string }>> {
+  const children = await driveListChildren(accessToken, folderId)
+  const out: Array<{ id: string; name: string; path: string; mimeType: string }> = []
+  for (const child of children) {
+    const path = prefix ? `${prefix}/${child.name}` : child.name
+    if (child.mimeType === 'application/vnd.google-apps.folder') {
+      out.push(...await collectDriveFilesRecursive(accessToken, child.id, path))
+    } else {
+      out.push({ id: child.id, name: child.name, path, mimeType: child.mimeType })
+    }
+  }
+  return out
+}
+
+async function assertCallerCanRestore(req: Request) {
+  const authHeader = req.headers.get('Authorization') || ''
+  // Cron / service role may restore; user JWT must be super_admin
+  if (authHeader.includes(SERVICE_KEY)) return { via: 'service_role' }
+  if (!ANON_KEY) return { via: 'service_role' } // best-effort when anon missing
+
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  })
+  const { data: { user }, error } = await userClient.auth.getUser()
+  if (error || !user) throw new Error('Unauthorized')
+
+  // profiles.role (live schema) or user_profiles.role
+  const { data: profile } = await userClient.from('profiles').select('role').eq('id', user.id).maybeSingle()
+  let role = String(profile?.role || '').toLowerCase()
+  if (!role) {
+    const { data: up } = await userClient.from('user_profiles').select('role').eq('id', user.id).maybeSingle()
+    role = String(up?.role || '').toLowerCase()
+  }
+  if (role !== 'super_admin') throw new Error('Only Super Admin can restore backups')
+  return { via: 'user', email: user.email }
+}
+
+async function runCompleteBackup(body: Record<string, unknown>) {
+  const kind = body.kind === 'snapshot' ? 'snapshot' : 'full'
+  const triggerMode = body.trigger_mode === 'automatic' ? 'automatic' : 'manual'
+  const actorEmail = (body.actor_email as string) || (triggerMode === 'automatic' ? 'cron' : null)
+  const folderId = await resolveFolderId((body.drive_folder_id as string) || null)
+  if (!folderId) throw new Error('Google Drive folder ID not configured')
+
+  if (triggerMode === 'automatic') {
+    const { data: settings } = await supabase.from('cms_backup_settings').select('*').eq('id', 1).maybeSingle()
+    if (kind === 'full' && settings && settings.full_auto_enabled === false) {
+      return { ok: true, skipped: true, reason: 'Full auto backup disabled' }
+    }
+    if (kind === 'snapshot' && settings && settings.snapshot_auto_enabled === false) {
+      return { ok: true, skipped: true, reason: 'Snapshot auto disabled' }
+    }
+  }
+
+  const { accessToken, via: authVia } = await resolveAccessToken()
+  const runName = runFolderName(kind)
+  const runFolder = await driveCreateFolder(accessToken, runName, folderId)
+
+  // 1) Database
+  const built = await buildDatabaseDump(kind, triggerMode, actorEmail)
+  const dbJson = JSON.stringify(built.payload)
+  const dbBytes = new TextEncoder().encode(dbJson)
+  const dbFile = await driveUploadBytes(accessToken, runFolder.id, 'database.json', dbBytes, 'application/json')
+
+  // 2) Storage
+  const storage = await backupStorageToDrive(accessToken, runFolder.id)
+
+  // 3) Manifest
+  const manifest = {
+    format: 'cms-complete-backup',
+    version: 2,
+    kind,
+    created_at: new Date().toISOString(),
+    drive_folder_id: runFolder.id,
+    drive_folder_name: runFolder.name,
+    auth_via: authVia,
+    database: {
+      file_id: dbFile.id,
+      file_name: 'database.json',
+      bytes: dbBytes.length,
+      tables: built.tablesCount,
+      rows: built.rowsCount,
+      summary: built.summary,
+    },
+    storage: {
+      file_count: storage.fileCount,
+      bytes: storage.totalBytes,
+      buckets: storage.buckets,
+      files: storage.storageMeta,
+      skipped: storage.skipped,
+    },
+    total_bytes: dbBytes.length + storage.totalBytes,
+  }
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2))
+  const manifestFile = await driveUploadBytes(
+    accessToken,
+    runFolder.id,
+    'manifest.json',
+    manifestBytes,
+    'application/json',
+  )
+
+  const totalBytes = dbBytes.length + storage.totalBytes
+  const status = storage.skipped.length && !storage.fileCount && built.tablesCount === 0
+    ? 'failed'
+    : (storage.skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
+
+  await supabase.from('cms_backup_log').insert({
+    backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
+    kind,
+    trigger_mode: triggerMode,
+    status,
+    tables_count: built.tablesCount,
+    rows_count: built.rowsCount,
+    file_size_bytes: totalBytes,
+    drive_file_id: runFolder.id,
+    drive_web_link: runFolder.webViewLink || null,
+    download_filename: runFolder.name,
+    error_message: [
+      ...built.summary.filter((s) => s.status === 'error' || s.status === 'skipped').map((s) => `${s.table}: ${s.error || s.status}`),
+      ...storage.skipped.slice(0, 15),
+    ].slice(0, 20).join(' | ') || null,
+    meta: {
+      complete: true,
+      version: 2,
+      drive_backup_folder_id: runFolder.id,
+      drive_backup_folder_name: runFolder.name,
+      drive_manifest_file_id: manifestFile.id,
+      drive_database_file_id: dbFile.id,
+      database_bytes: dbBytes.length,
+      storage_bytes: storage.totalBytes,
+      storage_file_count: storage.fileCount,
+      storage_buckets: storage.buckets,
+      summary: built.summary,
+      skipped_storage: storage.skipped,
+      auth_via: authVia,
+    },
+    created_by_email: actorEmail,
+    created_by_name: (body.actor_name as string) || null,
+  })
+
+  return {
+    ok: true,
+    status,
+    kind,
+    complete: true,
+    filename: runFolder.name,
+    folder_id: runFolder.id,
+    drive_file_id: runFolder.id,
+    drive_web_link: runFolder.webViewLink || null,
+    tables_count: built.tablesCount,
+    rows_count: built.rowsCount,
+    file_size_bytes: totalBytes,
+    database_bytes: dbBytes.length,
+    storage_bytes: storage.totalBytes,
+    storage_file_count: storage.fileCount,
+    skipped_storage: storage.skipped,
+  }
+}
+
+async function runCompleteRestore(body: Record<string, unknown>, req: Request) {
+  await assertCallerCanRestore(req)
+
+  let folderId = String(body.drive_backup_folder_id || body.folder_id || '').trim()
+  if (!folderId && body.log_id) {
+    const { data: logRow, error } = await supabase
+      .from('cms_backup_log')
+      .select('drive_file_id, meta')
+      .eq('id', body.log_id)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    folderId = String(logRow?.meta?.drive_backup_folder_id || logRow?.drive_file_id || '').trim()
+  }
+  if (!folderId) throw new Error('drive_backup_folder_id (or log_id of a complete backup) is required')
+
+  const { accessToken } = await resolveAccessToken()
+  const rootFiles = await driveListChildren(accessToken, folderId)
+  const dbEntry = rootFiles.find((f) => f.name === 'database.json')
+  const manifestEntry = rootFiles.find((f) => f.name === 'manifest.json')
+
+  // Legacy single-file JSON backup support
+  let data: Record<string, unknown[]> = {}
+  let dbBytesLen = 0
+
+  if (dbEntry) {
+    const dbBytes = await driveDownloadBytes(accessToken, dbEntry.id)
+    dbBytesLen = dbBytes.length
+    const dbJson = JSON.parse(new TextDecoder().decode(dbBytes)) as {
+      tables?: Record<string, unknown[]>
+      data?: Record<string, unknown[]>
+    }
+    data = dbJson.tables || dbJson.data || {}
+  } else {
+    // Maybe the folder id is actually a single JSON file id (old backups)
+    try {
+      const bytes = await driveDownloadBytes(accessToken, folderId)
+      dbBytesLen = bytes.length
+      const parsed = JSON.parse(new TextDecoder().decode(bytes)) as {
+        tables?: Record<string, unknown[]>
+      }
+      data = parsed.tables || {}
+    } catch {
+      throw new Error('database.json not found in backup folder, and folder id is not a legacy JSON file.')
+    }
+  }
+
+  const tables = Object.keys(data)
+  if (!tables.length) throw new Error('Backup has no table data')
+
+  // Truncate then insert
+  const { error: truncErr } = await supabase.rpc('cms_truncate_tables', { p_tables: tables })
+  if (truncErr) {
+    throw new Error(
+      `Truncate failed (${truncErr.message}). Run SQL migration 20260809_cms_complete_backup.sql first.`,
+    )
+  }
+
+  const priority = [
+    'roles', 'profiles', 'user_profiles', 'church_settings', 'churches', 'church_zones',
+    'organization_units', 'cms_role_page_access', 'members', 'families',
+  ]
+  const ordered = [
+    ...priority.filter((t) => tables.includes(t)),
+    ...tables.filter((t) => !priority.includes(t) && t !== 'cms_backup_log' && t !== 'cms_backup_settings'),
+  ]
+
+  let restoredRows = 0
+  const insertErrors: string[] = []
+  for (const table of ordered) {
+    const rows = data[table] || []
+    if (!rows.length) continue
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200)
+      const { error } = await supabase.from(table).upsert(chunk as never[], { onConflict: 'id' })
+      if (error) {
+        const { error: insErr } = await supabase.from(table).insert(chunk as never[])
+        if (insErr) insertErrors.push(`${table}: ${insErr.message}`)
+        else restoredRows += chunk.length
+      } else {
+        restoredRows += chunk.length
+      }
+    }
+  }
+
+  // Storage restore
+  let restoredFiles = 0
+  const storageErrors: string[] = []
+  const storageFolder = rootFiles.find(
+    (f) => f.name === 'storage' && f.mimeType === 'application/vnd.google-apps.folder',
+  )
+
+  if (storageFolder) {
+    let fileList: Array<{ bucket: string; path: string; drive_file_id?: string; mime?: string }> = []
+    if (manifestEntry) {
+      try {
+        const mBytes = await driveDownloadBytes(accessToken, manifestEntry.id)
+        const manifest = JSON.parse(new TextDecoder().decode(mBytes)) as {
+          storage?: { files?: Array<{ bucket: string; path: string; drive_file_id: string; mime?: string }> }
+        }
+        fileList = manifest.storage?.files || []
+      } catch {
+        fileList = []
+      }
+    }
+    if (!fileList.length) {
+      const all = await collectDriveFilesRecursive(accessToken, storageFolder.id)
+      for (const f of all) {
+        const parts = f.path.split('/')
+        const bucket = parts.shift()!
+        const path = parts.join('/')
+        if (bucket && path) fileList.push({ bucket, path, drive_file_id: f.id })
+      }
+    }
+
+    // Ensure buckets exist
+    const { data: existingBuckets } = await supabase.storage.listBuckets()
+    const existingNames = new Set((existingBuckets || []).map((b) => b.name))
+    for (const bucket of new Set(fileList.map((f) => f.bucket))) {
+      if (!existingNames.has(bucket)) {
+        await supabase.storage.createBucket(bucket, { public: true }).catch(() => null)
+      }
+    }
+
+    for (const file of fileList) {
+      try {
+        if (!file.drive_file_id) continue
+        const bytes = await driveDownloadBytes(accessToken, file.drive_file_id)
+        const { error: upErr } = await supabase.storage.from(file.bucket).upload(file.path, bytes, {
+          contentType: file.mime || 'application/octet-stream',
+          upsert: true,
+        })
+        if (upErr) storageErrors.push(`${file.bucket}/${file.path}: ${upErr.message}`)
+        else restoredFiles += 1
+      } catch (e) {
+        storageErrors.push(`${file.bucket}/${file.path}: ${(e as Error).message}`)
+      }
+    }
+  }
+
+  const status = insertErrors.length && !restoredRows ? 'failed' : (insertErrors.length || storageErrors.length ? 'partial' : 'success')
+
+  await supabase.from('cms_backup_log').insert({
+    backup_type: 'full',
+    kind: 'full',
+    trigger_mode: 'manual',
+    status,
+    tables_count: tables.length,
+    rows_count: restoredRows,
+    file_size_bytes: dbBytesLen,
+    drive_file_id: folderId,
+    download_filename: `restore-${folderId}`,
+    error_message: [...insertErrors, ...storageErrors].slice(0, 20).join(' | ') || null,
+    meta: {
+      action: 'restore',
+      complete: true,
+      drive_backup_folder_id: folderId,
+      restored_rows: restoredRows,
+      restored_files: restoredFiles,
+      insert_errors: insertErrors,
+      storage_errors: storageErrors,
+    },
+    created_by_email: (body.actor_email as string) || null,
+  })
+
+  return {
+    ok: true,
+    action: 'restore',
+    complete: true,
+    status,
+    tables: tables.length,
+    restored_rows: restoredRows,
+    restored_files: restoredFiles,
+    insert_errors: insertErrors,
+    storage_errors: storageErrors,
+  }
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   try {
-    const body = await req.json().catch(() => ({}))
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>
+
     if (body.action === 'restore') {
-      return json({
-        error: 'One-click restore not enabled in v1. Download the Drive JSON and restore with care.',
-      }, 501)
+      const result = await runCompleteRestore(body, req)
+      return json(result, result.status === 'failed' ? 500 : 200)
     }
 
-    const kind = body.kind === 'snapshot' ? 'snapshot' : 'full'
-    const triggerMode = body.trigger_mode === 'automatic' ? 'automatic' : 'manual'
-    const actorEmail = body.actor_email || (triggerMode === 'automatic' ? 'cron' : null)
-    const folderId = await resolveFolderId(body.drive_folder_id || null)
-    if (!folderId) {
-      return json({ error: 'Google Drive folder ID not configured' }, 400)
-    }
-
-    if (triggerMode === 'automatic') {
-      const { data: settings } = await supabase.from('cms_backup_settings').select('*').eq('id', 1).maybeSingle()
-      if (kind === 'full' && settings && settings.full_auto_enabled === false) {
-        return json({ ok: true, skipped: true, reason: 'Full auto backup disabled' })
-      }
-      if (kind === 'snapshot' && settings && settings.snapshot_auto_enabled === false) {
-        return json({ ok: true, skipped: true, reason: 'Snapshot auto disabled' })
-      }
-    }
-
-    const built = await buildPayload(kind, triggerMode, actorEmail)
-    const name = filename(kind)
-    const content = JSON.stringify(built.payload)
-    const bytes = new TextEncoder().encode(content).byteLength
-
-    let driveFileId = null
-    let driveWebLink = null
-    let status = 'success'
-    let errorMessage = null
-    try {
-      const drive = await uploadToDrive(folderId, name, content)
-      driveFileId = drive.fileId
-      driveWebLink = drive.webLink
-    } catch (e) {
-      status = 'failed'
-      errorMessage = e.message || String(e)
-    }
-
-    await supabase.from('cms_backup_log').insert({
-      backup_type: kind === 'snapshot' ? 'snapshot' : (triggerMode === 'automatic' ? 'scheduled' : 'full'),
-      kind,
-      trigger_mode: triggerMode,
-      status,
-      tables_count: built.tablesCount,
-      rows_count: built.rowsCount,
-      file_size_bytes: bytes,
-      drive_file_id: driveFileId,
-      drive_web_link: driveWebLink,
-      download_filename: name,
-      error_message: errorMessage,
-      meta: { summary: built.summary, drive_folder_id: folderId },
-      created_by_email: actorEmail,
-      created_by_name: body.actor_name || null,
-    })
-
-    if (status === 'failed') return json({ error: errorMessage, status }, 500)
-    return json({
-      ok: true,
-      status,
-      kind,
-      filename: name,
-      tables_count: built.tablesCount,
-      rows_count: built.rowsCount,
-      file_size_bytes: bytes,
-      drive_file_id: driveFileId,
-      drive_web_link: driveWebLink,
-    })
+    const result = await runCompleteBackup(body)
+    if (result.skipped) return json(result)
+    if (result.status === 'failed') return json({ error: 'Backup failed', ...result }, 500)
+    return json(result)
   } catch (e) {
     console.error('cms-full-backup error', e)
+    const message = (e as Error).message || String(e)
     try {
       await supabase.from('cms_backup_log').insert({
         backup_type: 'full',
         kind: 'full',
-        trigger_mode: 'automatic',
+        trigger_mode: 'manual',
         status: 'failed',
-        error_message: e.message || String(e),
-        created_by_email: 'cron',
+        error_message: message,
+        created_by_email: 'system',
       })
-    } catch (_err) {
-      // ignore log failure
+    } catch {
+      // ignore
     }
-    return json({ error: e.message || String(e) }, 500)
+    return json({ error: message }, 500)
   }
 })

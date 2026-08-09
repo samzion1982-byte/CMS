@@ -339,6 +339,7 @@ export async function diagnoseBackupSetup() {
   if (!out.settings?.drive_folder_id) out.hints.push('Save Google Drive folder ID')
   if (out.oauthFn.missing) out.hints.push('Deploy Edge Function cms-google-oauth')
   if (out.oauthFn.errorMessage && !out.oauthFn.missing) out.hints.push(`OAuth function: ${out.oauthFn.errorMessage}`)
+  out.hints.push('For complete backup+restore: run SQL 20260809_cms_complete_backup.sql and redeploy cms-full-backup')
   return out
 }
 
@@ -374,7 +375,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
 
   let driveErrorMsg = null
 
-  // Try Edge Function (Drive upload)
+  // Complete backup (all tables + all storage files) via Edge Function → Google Drive folder
   try {
     const invoked = await invokeEdgeFunction('cms-full-backup', {
       kind,
@@ -400,7 +401,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     }
   }
 
-  // Local fallback — download JSON when Drive upload is unavailable
+  // Local fallback — DB JSON only (no storage files) when Drive upload is unavailable
   const { payload, tablesCount, rowsCount, summary } = await buildBackupPayload({
     kind, triggerMode, actor,
   })
@@ -408,7 +409,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
   const { bytes } = downloadJson(payload, filename)
 
   const errNote = driveErrorMsg
-    || 'Downloaded locally. Deploy Edge Function cms-full-backup and set GOOGLE_SERVICE_ACCOUNT_JSON to upload to Google Drive.'
+    || 'Downloaded DB JSON only (no photos/PDFs). Deploy Edge Function cms-full-backup for a complete Drive backup.'
 
   await logBackupRun({
     backup_type: kind === 'snapshot' ? 'snapshot' : 'full',
@@ -420,7 +421,7 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     file_size_bytes: bytes,
     download_filename: filename,
     error_message: errNote,
-    meta: { summary, via: 'local_download', drive_folder_id: settings.drive_folder_id },
+    meta: { summary, via: 'local_download', complete: false, drive_folder_id: settings.drive_folder_id },
     created_by_email: actor?.email || null,
     created_by_name: actor?.full_name || actor?.name || null,
   })
@@ -435,23 +436,36 @@ export async function runDriveBackup({ kind = 'full', triggerMode = 'manual', ac
     rows_count: rowsCount,
     file_size_bytes: bytes,
     message: driveErrorMsg
-      ? `${driveErrorMsg} Backup JSON was downloaded to your computer instead.`
-      : 'Backup downloaded to your computer. Deploy cms-full-backup to also save to Google Drive.',
+      ? `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included).`
+      : 'Database JSON downloaded locally. Redeploy cms-full-backup for a complete Drive backup (DB + storage files).',
   }
 }
 
-export async function restoreFromDriveBackup({ logId, kind = 'full', actor = null } = {}) {
-  const { data, error } = await supabase.functions.invoke('cms-full-backup', {
-    body: {
-      action: 'restore',
-      log_id: logId,
-      kind,
-      actor_email: actor?.email || null,
-    },
+/**
+ * Complete restore from a Drive backup folder (database.json + storage/...).
+ * Prefer logId from history (meta.drive_backup_folder_id). Or pass folderId directly.
+ */
+export async function restoreFromDriveBackup({
+  logId = null,
+  folderId = null,
+  actor = null,
+} = {}) {
+  const invoked = await invokeEdgeFunction('cms-full-backup', {
+    action: 'restore',
+    log_id: logId,
+    drive_backup_folder_id: folderId,
+    actor_email: actor?.email || null,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
+  if (invoked.missing) {
+    throw new Error('Edge Function cms-full-backup is not deployed. Redeploy it, then try Restore again.')
+  }
+  if (!invoked.ok) throw new Error(invoked.errorMessage || 'Restore failed')
+  return invoked.data
+}
+
+export function backupFolderIdFromLog(row) {
+  if (!row) return null
+  return row?.meta?.drive_backup_folder_id || (row?.meta?.complete ? row.drive_file_id : null) || null
 }
 
 /**

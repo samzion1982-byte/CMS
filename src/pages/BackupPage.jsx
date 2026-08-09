@@ -12,6 +12,8 @@ import {
   listBackupLogs,
   clearBackupLogs,
   runDriveBackup,
+  restoreFromDriveBackup,
+  backupFolderIdFromLog,
   runProvision,
   saveBackupSettings,
   startGoogleOAuthConnect,
@@ -141,7 +143,7 @@ function StatusPill({ status }) {
   )
 }
 
-function LogTable({ rows, loading, empty }) {
+function LogTable({ rows, loading, empty, restoringId, onRestore }) {
   return (
     <div style={{ overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: 8 }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -153,33 +155,65 @@ function LogTable({ rows, loading, empty }) {
             <th style={thStyle}>Tables</th>
             <th style={thStyle}>Rows</th>
             <th style={thStyle}>Size</th>
+            <th style={thStyle}>Files</th>
             <th style={thStyle}>Drive</th>
-            <th style={thStyle}>File</th>
+            <th style={thStyle}>Folder / file</th>
+            <th style={thStyle}>Restore</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
-            <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>Loading…</td></tr>
+            <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>Loading…</td></tr>
           ) : !rows.length ? (
-            <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>{empty}</td></tr>
-          ) : rows.map((row) => (
-            <tr key={row.id}>
-              <td style={tdStyle}>{formatWhen(row.created_at)}</td>
-              <td style={tdStyle}>{row.trigger_mode || '—'}</td>
-              <td style={tdStyle}><StatusPill status={row.status} /></td>
-              <td style={tdStyle}>{row.tables_count ?? '—'}</td>
-              <td style={tdStyle}>{row.rows_count ?? '—'}</td>
-              <td style={tdStyle}>{formatBytes(row.file_size_bytes)}</td>
-              <td style={tdStyle}>
-                {row.drive_web_link ? (
-                  <a href={row.drive_web_link} target="_blank" rel="noreferrer" style={{ color: '#0369a1', fontWeight: 600 }}>
-                    Open
-                  </a>
-                ) : row.drive_file_id ? 'Yes' : '—'}
-              </td>
-              <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>{row.download_filename || '—'}</td>
-            </tr>
-          ))}
+            <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)' }}>{empty}</td></tr>
+          ) : rows.map((row) => {
+            const folderId = backupFolderIdFromLog(row)
+            const storageCount = row?.meta?.storage_file_count
+            const isComplete = !!row?.meta?.complete
+            const canRestore = !!folderId && (row.status === 'success' || row.status === 'partial')
+            const busy = restoringId === row.id
+            return (
+              <tr key={row.id}>
+                <td style={tdStyle}>{formatWhen(row.created_at)}</td>
+                <td style={tdStyle}>{row.trigger_mode || '—'}</td>
+                <td style={tdStyle}><StatusPill status={row.status} /></td>
+                <td style={tdStyle}>{row.tables_count ?? '—'}</td>
+                <td style={tdStyle}>{row.rows_count ?? '—'}</td>
+                <td style={tdStyle}>{formatBytes(row.file_size_bytes ?? row.bytes)}</td>
+                <td style={tdStyle}>
+                  {isComplete
+                    ? (storageCount != null ? storageCount : 'yes')
+                    : 'DB only'}
+                </td>
+                <td style={tdStyle}>
+                  {row.drive_web_link ? (
+                    <a href={row.drive_web_link} target="_blank" rel="noreferrer" style={{ color: '#0369a1', fontWeight: 600 }}>
+                      Open
+                    </a>
+                  ) : row.drive_file_id ? 'Yes' : '—'}
+                </td>
+                <td style={{ ...tdStyle, fontSize: 11, color: 'var(--text-3)' }}>{row.download_filename || '—'}</td>
+                <td style={tdStyle}>
+                  <button
+                    type="button"
+                    className="no-lift"
+                    style={{
+                      ...secondaryBtn,
+                      padding: '5px 8px',
+                      opacity: canRestore ? 1 : 0.45,
+                      cursor: canRestore && !busy ? 'pointer' : 'not-allowed',
+                    }}
+                    disabled={!canRestore || !!restoringId}
+                    title={canRestore ? 'Restore this complete backup (DB + storage)' : 'Need a complete Drive backup folder'}
+                    onClick={() => onRestore?.(row)}
+                  >
+                    {busy ? <Loader2 size={12} className="spin" /> : <RotateCcw size={12} />}
+                    Restore
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -207,6 +241,7 @@ export default function BackupPage() {
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [runningFull, setRunningFull] = useState(false)
   const [runningSnap, setRunningSnap] = useState(false)
+  const [restoringId, setRestoringId] = useState(null)
 
   const [prov, setProv] = useState({
     mode: 'initialize',
@@ -338,8 +373,9 @@ export default function BackupPage() {
         toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
         if (r.message) setLastActionError(r.message)
       } else {
+        const files = r.storage_file_count != null ? `, ${r.storage_file_count} storage files` : ''
         toast(
-          `${kind === 'full' ? 'Full Backup' : 'Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows.`,
+          `${kind === 'full' ? 'Complete Full Backup' : 'Complete Snapshot'} saved to Google Drive — ${r.tables_count} tables, ${r.rows_count} rows${files} (${formatBytes(r.file_size_bytes)}).`,
           'success',
         )
       }
@@ -351,6 +387,41 @@ export default function BackupPage() {
       toast(msg, 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleRestore(row) {
+    const folderId = backupFolderIdFromLog(row)
+    if (!folderId) {
+      toast('This history row has no Drive backup folder id. Run a new Complete Backup first.', 'error')
+      return
+    }
+    const label = row.download_filename || folderId
+    if (!window.confirm(
+      `COMPLETE RESTORE from "${label}"?\n\nThis replaces ALL current database tables and storage files with that backup.\nAuth users are not deleted, but church data will match the backup.\n\nThis cannot be undone except by restoring another backup.`,
+    )) return
+    if (!window.confirm('Type-confirm: restore will wipe current CMS data and reload from Google Drive. Continue?')) return
+
+    setRestoringId(row.id)
+    setLastActionError(null)
+    try {
+      const r = await restoreFromDriveBackup({ logId: row.id, folderId, actor: profile })
+      toast(
+        `Restore ${r.status || 'done'}: ${r.restored_rows ?? 0} rows, ${r.restored_files ?? 0} files.`,
+        r.status === 'failed' ? 'error' : 'success',
+      )
+      if (r.insert_errors?.length || r.storage_errors?.length) {
+        setLastActionError(
+          [...(r.insert_errors || []), ...(r.storage_errors || [])].slice(0, 12).join('\n'),
+        )
+      }
+      await loadLogs()
+    } catch (e) {
+      const msg = e.message || 'Restore failed'
+      setLastActionError(msg)
+      toast(msg, 'error')
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -432,7 +503,7 @@ export default function BackupPage() {
           Backup &amp; Restore
         </h1>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
-          Super Admin only. Backups and snapshots are stored in Google Drive. Use New Setup when deploying a church to a new Supabase project.
+          Super Admin only. Complete backups include every database table and every storage file (photos, PDFs, logos, etc.) in a Google Drive folder. Restore replaces live data from that folder.
         </p>
         <div style={{
           marginTop: 12, padding: '10px 12px', borderRadius: 8,
@@ -529,7 +600,7 @@ export default function BackupPage() {
       <Section
         title="Full Backup"
         icon={Database}
-        subtitle="Complete safety copy for crash recovery or moving to a new Supabase project. Automatic daily + manual."
+        subtitle="Complete safety copy: all tables + all storage files (member photos, receipt PDFs, logos, event media, etc.) into one Drive folder. Automatic daily + manual."
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
           <button
@@ -540,7 +611,7 @@ export default function BackupPage() {
             onClick={() => handleRun('full')}
           >
             {runningFull ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
-            {runningFull ? 'Backing up…' : 'Run Full Backup now'}
+            {runningFull ? 'Backing up everything…' : 'Run Complete Full Backup'}
           </button>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
             <input
@@ -571,9 +642,16 @@ export default function BackupPage() {
             Clear history
           </button>
         </div>
-        <LogTable rows={fullLogs} loading={loadingLogs} empty="No full backups yet" />
+        <LogTable
+          rows={fullLogs}
+          loading={loadingLogs}
+          empty="No full backups yet"
+          restoringId={restoringId}
+          onRestore={handleRestore}
+        />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
-          Restore: open the Drive file, then use New Setup / restore tooling on the target project. A one-click restore will replace live data — use Snapshots for “back to yesterday”.
+          Each successful run creates a Drive folder with <code>database.json</code>, <code>storage/…</code>, and <code>manifest.json</code>.
+          Use <strong>Restore</strong> for disaster recovery on this project. Large photo libraries may take several minutes; keep the tab open.
         </p>
       </Section>
 
@@ -581,7 +659,7 @@ export default function BackupPage() {
       <Section
         title="Snapshot"
         icon={RotateCcw}
-        subtitle="Dated restore points so you can roll the church back (e.g. to yesterday) if wrong entries were made."
+        subtitle="Same complete copy (DB + storage) as Full Backup, kept as dated restore points so you can roll back (e.g. to yesterday)."
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
           <button
@@ -592,7 +670,7 @@ export default function BackupPage() {
             onClick={() => handleRun('snapshot')}
           >
             {runningSnap ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
-            {runningSnap ? 'Taking snapshot…' : 'Take Snapshot now'}
+            {runningSnap ? 'Snapshot in progress…' : 'Take Complete Snapshot'}
           </button>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
             <input
@@ -620,9 +698,15 @@ export default function BackupPage() {
             Clear history
           </button>
         </div>
-        <LogTable rows={snapLogs} loading={loadingLogs} empty="No snapshots yet" />
+        <LogTable
+          rows={snapLogs}
+          loading={loadingLogs}
+          empty="No snapshots yet"
+          restoringId={restoringId}
+          onRestore={handleRestore}
+        />
         <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
-          Restoring a snapshot replaces current data with that day’s copy. Keep automatic snapshots on for treasurer “back to yesterday” recovery.
+          Restoring a snapshot replaces current database rows and storage files with that day’s complete copy. Keep automatic snapshots on for treasurer “back to yesterday” recovery.
         </p>
       </Section>
 
