@@ -502,7 +502,7 @@ export default function BackupPage() {
           <button
             type="button"
             className="action-btn"
-            style={{ gap: 6, fontSize: 12, padding: '8px 14px' }}
+            style={primaryBtn}
             disabled={provRunning}
             onClick={handleProvision}
           >
