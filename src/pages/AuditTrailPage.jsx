@@ -1,18 +1,48 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, RefreshCw, Search, History } from 'lucide-react'
+import { Download, RefreshCw, Search, History, Loader2 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
+import { ROLE_LABELS } from '../lib/auth'
 import { AUDIT_ACTIONS, AUDIT_MODULES, getCmsAuditLogs } from '../lib/cmsAudit'
 
 const PAGE_SIZE = 50
 const ADMIN_ROLES = ['super_admin', 'admin1', 'admin']
 
+const MODULE_STYLE = {
+  members:         { bg: '#eff6ff', color: '#1e40af' },
+  events:          { bg: '#faf5ff', color: '#6b21a8' },
+  assets:          { bg: '#ecfeff', color: '#0e7490' },
+  finance:         { bg: '#ecfdf5', color: '#065f46' },
+  users:           { bg: '#fff7ed', color: '#c2410c' },
+  church_setup:    { bg: '#fef3c7', color: '#92400e' },
+  cms_permissions: { bg: '#f1f5f9', color: '#334155' },
+}
+
+const ACTION_STYLE = {
+  created:         { bg: '#ecfdf5', color: '#047857' },
+  updated:         { bg: '#eff6ff', color: '#1d4ed8' },
+  saved:           { bg: '#eff6ff', color: '#1d4ed8' },
+  deleted:         { bg: '#fef2f2', color: '#b91c1c' },
+  deactivated:     { bg: '#fff7ed', color: '#c2410c' },
+  activated:       { bg: '#ecfdf5', color: '#047857' },
+  restored:        { bg: '#f0fdf4', color: '#15803d' },
+  posted:          { bg: '#faf5ff', color: '#7e22ce' },
+  moved:           { bg: '#ecfeff', color: '#0e7490' },
+  transferred:     { bg: '#fdf4ff', color: '#a21caf' },
+  reset_password:  { bg: '#fef3c7', color: '#a16207' },
+}
+
 function formatWhen(iso) {
   if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString()
-  } catch {
-    return String(iso)
-  }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function labelize(s) {
+  return String(s || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function summarizeChanges(changes) {
@@ -20,10 +50,10 @@ function summarizeChanges(changes) {
   if (Array.isArray(changes)) {
     if (!changes.length) return '—'
     return changes
-      .slice(0, 6)
+      .slice(0, 5)
       .map((c) => {
-        const from = c.from == null || c.from === '' ? '∅' : String(c.from).slice(0, 36)
-        const to = c.to == null || c.to === '' ? '∅' : String(c.to).slice(0, 36)
+        const from = c.from == null || c.from === '' ? '∅' : String(c.from).slice(0, 28)
+        const to = c.to == null || c.to === '' ? '∅' : String(c.to).slice(0, 28)
         return `${c.field}: ${from} → ${to}`
       })
       .join(' · ')
@@ -39,6 +69,52 @@ function toCsvValue(v) {
   const s = v == null ? '' : String(v)
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
   return s
+}
+
+function Pill({ text, styleMap, fallback }) {
+  const style = styleMap[text] || fallback || { bg: '#f1f5f9', color: '#475569' }
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '3px 9px',
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+        background: style.bg,
+        color: style.color,
+        whiteSpace: 'nowrap',
+        lineHeight: 1.3,
+      }}
+    >
+      {labelize(text)}
+    </span>
+  )
+}
+
+const thStyle = {
+  padding: '10px 12px',
+  textAlign: 'left',
+  fontSize: 11,
+  fontWeight: 700,
+  color: 'var(--text-3)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  whiteSpace: 'nowrap',
+  borderBottom: '1px solid var(--card-border)',
+  background: 'var(--table-header-bg)',
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+}
+
+const tdStyle = {
+  padding: '12px',
+  verticalAlign: 'top',
+  borderBottom: '1px solid var(--table-border)',
+  fontSize: 13,
+  color: 'var(--text-1)',
 }
 
 export default function AuditTrailPage() {
@@ -121,85 +197,90 @@ export default function AuditTrailPage() {
   }
 
   return (
-    <div className="page-container">
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+    <div className="page-container animate-fade-in">
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-            <History size={22} /> Audit Trail
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+            <History size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            Audit Trail
           </h1>
-          <p style={{ margin: '6px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          <p className="page-subtitle" style={{ margin: '6px 0 0' }}>
             Who changed what across the CMS — create, update, and delete actions.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-secondary" onClick={() => load(page)} disabled={loading}>
-            <RefreshCw size={16} /> Refresh
+          <button type="button" className="btn btn-secondary" onClick={() => load(page)} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            Refresh
           </button>
-          <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={!rows.length}>
-            <Download size={16} /> Export CSV
+          <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={!rows.length} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Download size={15} /> Export CSV
           </button>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label>Module</label>
-            <select className="form-control" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
-              {AUDIT_MODULES.map((m) => (
-                <option key={m.value || 'all'} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
-            <label>Action</label>
-            <select className="form-control" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
-              {AUDIT_ACTIONS.map((a) => (
-                <option key={a.value || 'all'} value={a.value}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <form
-            className="form-group"
-            style={{ marginBottom: 0, flex: 1, minWidth: 200 }}
-            onSubmit={(e) => {
-              e.preventDefault()
-              setQ(qInput.trim())
-            }}
-          >
-            <label>Search</label>
-            <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <Search
-                  size={16}
-                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
-                />
-                <input
-                  className="form-control"
-                  style={{ paddingLeft: 34 }}
-                  placeholder="Actor, summary, entity…"
-                  value={qInput}
-                  onChange={(e) => setQInput(e.target.value)}
-                />
-              </div>
-              <button type="submit" className="btn btn-secondary">
-                Search
-              </button>
-            </div>
-          </form>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 10,
+          alignItems: 'flex-end',
+          marginBottom: 14,
+          padding: '12px 14px',
+          background: 'var(--card-bg)',
+          border: '1px solid var(--card-border)',
+          borderRadius: 10,
+        }}
+      >
+        <div style={{ minWidth: 150 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Module
+          </label>
+          <select className="form-control" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)} style={{ minWidth: 150 }}>
+            {AUDIT_MODULES.map((m) => (
+              <option key={m.value || 'all'} value={m.value}>{m.label}</option>
+            ))}
+          </select>
         </div>
-        <p style={{ margin: '12px 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+        <div style={{ minWidth: 140 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Action
+          </label>
+          <select className="form-control" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} style={{ minWidth: 140 }}>
+            {AUDIT_ACTIONS.map((a) => (
+              <option key={a.value || 'all'} value={a.value}>{a.label}</option>
+            ))}
+          </select>
+        </div>
+        <form
+          onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()) }}
+          style={{ flex: 1, minWidth: 220, display: 'flex', gap: 8, alignItems: 'flex-end' }}
+        >
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Search
+            </label>
+            <div style={{ position: 'relative' }}>
+              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
+              <input
+                className="form-control"
+                style={{ paddingLeft: 32 }}
+                placeholder="Actor, summary, entity…"
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
+              />
+            </div>
+          </div>
+          <button type="submit" className="btn btn-secondary">Search</button>
+        </form>
+        <div style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--text-3)', paddingBottom: 8, whiteSpace: 'nowrap' }}>
           {loading ? 'Loading…' : `${total} entr${total === 1 ? 'y' : 'ies'}`}
-          {!loading && totalPages > 1 ? ` · Page ${page + 1} of ${totalPages}` : ''}
-        </p>
+          {!loading && totalPages > 1 ? ` · Page ${page + 1}/${totalPages}` : ''}
+        </div>
       </div>
 
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+        <div className="alert alert-error" style={{ marginBottom: 14 }}>
           {error}
           {/relation .* does not exist|cms_audit_log/i.test(error) && (
             <div style={{ marginTop: 8, fontSize: '0.9rem' }}>
@@ -209,60 +290,98 @@ export default function AuditTrailPage() {
         </div>
       )}
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table" style={{ margin: 0 }}>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Module</th>
-                <th>Action</th>
-                <th>Actor</th>
-                <th>Summary</th>
-                <th>Changes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading && rows.length === 0 && (
+      <div
+        style={{
+          background: 'var(--card-bg)',
+          border: '1px solid var(--card-border)',
+          borderRadius: 10,
+          overflow: 'hidden',
+        }}
+      >
+        {loading && !rows.length ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 160, color: 'var(--text-3)' }}>
+            <Loader2 size={18} className="animate-spin" />
+            <span style={{ fontSize: 13 }}>Loading…</span>
+          </div>
+        ) : !loading && !rows.length ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 160, color: 'var(--text-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>
+            No audit entries yet. Changes to Members, Events, Assets, Finance, Users, and Church Setup will appear here.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table
+              style={{
+                width: '100%',
+                minWidth: 960,
+                borderCollapse: 'collapse',
+                tableLayout: 'fixed',
+              }}
+            >
+              <colgroup>
+                <col style={{ width: 140 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 200 }} />
+                <col style={{ width: 260 }} />
+                <col />
+              </colgroup>
+              <thead>
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                    No audit entries yet. Changes to Members, Events, Assets, Finance, Users, and Church Setup will appear here.
-                  </td>
+                  {['When', 'Module', 'Action', 'Actor', 'Summary', 'Changes'].map((h) => (
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
                 </tr>
-              )}
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{formatWhen(r.created_at)}</td>
-                  <td>
-                    <span className="badge badge-secondary" style={{ textTransform: 'capitalize' }}>
-                      {(r.module || '').replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td style={{ textTransform: 'capitalize', fontWeight: 600 }}>{(r.action || '').replace(/_/g, ' ')}</td>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{r.actor_name || r.actor_email || '—'}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {[r.actor_role, r.actor_email].filter(Boolean).join(' · ')}
-                    </div>
-                  </td>
-                  <td style={{ maxWidth: 280 }}>
-                    <div>{r.summary || '—'}</div>
-                    {(r.entity_label || r.entity_type || r.entity_id) && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {[r.entity_label, r.entity_type, r.entity_id].filter(Boolean).join(' · ')}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ maxWidth: 360, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    {summarizeChanges(r.changes)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const roleLabel = ROLE_LABELS[r.actor_role] || r.actor_role || ''
+                  return (
+                    <tr key={r.id} style={{ background: 'transparent' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--table-row-hover)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'var(--font-mono, monospace)', fontSize: 12, color: 'var(--text-2)' }}>
+                        {formatWhen(r.created_at)}
+                      </td>
+                      <td style={tdStyle}>
+                        <Pill text={r.module} styleMap={MODULE_STYLE} />
+                      </td>
+                      <td style={tdStyle}>
+                        <Pill text={r.action} styleMap={ACTION_STYLE} />
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.35, wordBreak: 'break-word' }}>
+                          {r.actor_name || r.actor_email || '—'}
+                        </div>
+                        {(roleLabel || r.actor_email) && (
+                          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3, lineHeight: 1.35, wordBreak: 'break-word' }}>
+                            {[roleLabel, r.actor_email].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 500, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                          {r.summary || '—'}
+                        </div>
+                        {(r.entity_label || r.entity_type || r.entity_id) && (
+                          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.35, wordBreak: 'break-word' }}>
+                            {[r.entity_label, r.entity_type, r.entity_id].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.45, wordBreak: 'break-word' }}>
+                        {summarizeChanges(r.changes)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {totalPages > 1 && (
-          <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center', gap: 8 }}>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--card-border)', display: 'flex', justifyContent: 'center', gap: 8 }}>
             <button type="button" className="btn btn-secondary" disabled={loading || page <= 0} onClick={() => load(page - 1)}>
               Previous
             </button>
