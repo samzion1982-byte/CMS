@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Cloud, Database, HardDrive, History, Loader2, RefreshCw,
-  RotateCcw, Save, Settings2, Shield, Link2, Unlink, Trash2,
+  RotateCcw, Save, Settings2, Shield, Link2, Unlink, Trash2, FileText,
 } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
