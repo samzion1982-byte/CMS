@@ -425,8 +425,8 @@ export default function UsersPage() {
       ) : (
         <div className="users-tile-grid" style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: 16,
+          gridTemplateColumns: '1fr',
+          gap: 14,
         }}>
           {users.map((u, idx) => {
             const rc = roleConf(u.role)
@@ -444,21 +444,24 @@ export default function UsersPage() {
                   borderRadius: 18,
                   boxShadow: `0 10px 28px color-mix(in srgb, ${rc.color} 12%, transparent)`,
                   animation: `usersTileIn .35s ease ${idx * 0.05}s both`,
-                  display: 'flex', flexDirection: 'column',
+                  display: 'flex',
                   transition: 'transform .18s ease, box-shadow .18s ease',
                 }}
               >
                 <div style={{
-                  height: 6,
-                  background: `linear-gradient(90deg, ${rc.color}, color-mix(in srgb, ${rc.color} 20%, transparent))`,
+                  width: 6, flexShrink: 0,
+                  background: `linear-gradient(180deg, ${rc.color}, color-mix(in srgb, ${rc.color} 25%, transparent))`,
                 }} />
                 <div style={{
-                  position: 'absolute', top: 18, right: 16, width: 90, height: 90, borderRadius: '50%',
+                  position: 'absolute', top: 10, right: 16, width: 120, height: 120, borderRadius: '50%',
                   background: `radial-gradient(circle, ${rc.bg} 0%, transparent 70%)`, pointerEvents: 'none',
                 }} />
 
-                <div style={{ padding: '18px 18px 14px', flex: 1, position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                <div style={{
+                  flex: 1, padding: '16px 18px', position: 'relative',
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '14px 20px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 200, flex: '1 1 220px' }}>
                     <div style={{
                       width: 52, height: 52, borderRadius: 16, flexShrink: 0,
                       background: `linear-gradient(145deg, ${rc.color}, color-mix(in srgb, ${rc.color} 60%, #0f172a))`,
@@ -468,7 +471,7 @@ export default function UsersPage() {
                     }}>
                       {ini(u.full_name)}
                     </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{
                         fontSize: 16, fontWeight: 800, color: 'var(--text-1)',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -495,7 +498,10 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12, color: 'var(--text-2)', marginBottom: 14 }}>
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: '6px 16px',
+                    fontSize: 12, color: 'var(--text-2)', flex: '1 1 240px',
+                  }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                       <Mail size={13} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</span>
@@ -512,12 +518,12 @@ export default function UsersPage() {
 
                   {/* Password — gated */}
                   <div style={{
-                    padding: '10px 11px', borderRadius: 12,
+                    padding: '8px 11px', borderRadius: 12, flex: '1 1 220px', maxWidth: 360,
                     background: 'var(--page-bg)', border: '1px solid var(--card-border)',
                   }}>
                     <div style={{
                       fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      color: 'var(--text-3)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5,
+                      color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5,
                     }}>
                       <Lock size={11} /> Password
                     </div>
@@ -566,49 +572,47 @@ export default function UsersPage() {
                       </button>
                     )}
                   </div>
-                </div>
 
-                <div style={{
-                  padding: '12px 14px', borderTop: '1px solid var(--card-border)',
-                  display: 'flex', flexWrap: 'wrap', gap: 7,
-                  background: 'color-mix(in srgb, var(--page-bg) 55%, var(--card-bg))',
-                }}>
-                  <button type="button" onClick={() => startEdit(u)} disabled={busy} style={chip('var(--text-2)')}>
-                    <Edit2 size={12} /> Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}
-                    style={chip('var(--text-2)')}
-                  >
-                    <Key size={12} /> Reset
-                  </button>
-                  {u.is_active !== false ? (
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 7, marginLeft: 'auto',
+                  }}>
+                    <button type="button" onClick={() => startEdit(u)} disabled={busy} style={chip('var(--text-2)')}>
+                      <Edit2 size={12} /> Edit
+                    </button>
                     <button
                       type="button"
-                      onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })}
-                      style={chip('#c2410c')}
+                      onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}
+                      style={chip('var(--text-2)')}
                     >
-                      <Power size={12} /> Off
+                      <Key size={12} /> Reset
                     </button>
-                  ) : (
+                    {u.is_active !== false ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeactivateDialog({ id: u.id, name: u.full_name })}
+                        style={chip('#c2410c')}
+                      >
+                        <Power size={12} /> Off
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => activateUser(u.id)}
+                        disabled={toggleLoading === u.id}
+                        style={chip('#15803d')}
+                      >
+                        {toggleLoading === u.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+                        On
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => activateUser(u.id)}
-                      disabled={toggleLoading === u.id}
-                      style={chip('#15803d')}
+                      onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })}
+                      style={chip('#b91c1c', true)}
                     >
-                      {toggleLoading === u.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
-                      On
+                      <Trash2 size={12} /> Delete
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setPermDeleteDialog({ id: u.id, name: u.full_name })}
-                    style={chip('#b91c1c', true)}
-                  >
-                    <Trash2 size={12} /> Delete
-                  </button>
+                  </div>
                 </div>
               </article>
             )
@@ -621,25 +625,27 @@ export default function UsersPage() {
               onClick={openCreate}
               className="users-tile-open"
               style={{
-                minHeight: 280, borderRadius: 18, cursor: 'pointer',
+                width: '100%', minHeight: 72, borderRadius: 18, cursor: 'pointer',
                 border: '1.5px dashed var(--card-border)',
                 background: 'var(--card-bg)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 10, color: 'var(--text-3)',
+                display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start',
+                gap: 14, padding: '14px 18px', color: 'var(--text-3)',
                 animation: `usersTileIn .35s ease ${(users.length + i) * 0.05}s both`,
                 transition: 'transform .18s ease, border-color .18s ease, color .18s ease',
               }}
             >
               <div style={{
-                width: 52, height: 52, borderRadius: 16,
+                width: 44, height: 44, borderRadius: 14,
                 border: '1.5px dashed var(--card-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'var(--page-bg)',
               }}>
-                <UserPlus size={20} />
+                <UserPlus size={18} />
               </div>
-              <div style={{ fontSize: 14, fontWeight: 800 }}>Open slot</div>
-              <div style={{ fontSize: 12 }}>Tap to add user</div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>Open slot</div>
+                <div style={{ fontSize: 12 }}>Tap to add user</div>
+              </div>
             </button>
           ))}
         </div>
@@ -906,12 +912,9 @@ export default function UsersPage() {
           box-shadow: 0 16px 34px rgba(15,23,42,0.12) !important;
         }
         .users-tile-open:hover {
-          transform: translateY(-3px);
+          transform: translateY(-2px);
           border-color: var(--accent) !important;
           color: var(--accent) !important;
-        }
-        @media (max-width: 640px) {
-          .users-tile-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
