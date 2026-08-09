@@ -18,6 +18,8 @@ const EXCLUDED_TABLES = [
   'profiles',
   'churches',
   'auth_tracker',
+  'cms_user_passwords',
+  'cms_role_page_access',
   'announcement_settings',
   'bible_verses',
   // Add more here as needed ↓
