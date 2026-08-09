@@ -176,9 +176,17 @@ If a column already exists, `IF NOT EXISTS` migrations are safe to re-run.
 
 ## Step 8 — Point the website at this church’s Supabase
 
-Confirm the live site (or church URL) uses this project’s:
-- Supabase URL  
-- Anon key  
+In **Vercel** → church project → **Settings** → **Environment Variables**, set (from Supabase → Project Settings → API):
+
+| Variable | Value |
+|----------|--------|
+| `VITE_SUPABASE_URL` | Project URL |
+| `VITE_SUPABASE_ANON_KEY` | `anon` `public` key |
+| `VITE_SUPABASE_SERVICE_ROLE_KEY` | `service_role` key (required for user admin flows in the CMS) |
+
+Redeploy after saving. The same GitHub `main` branch can power every church site; only these env vars differ per Vercel project.
+
+For local dev, copy `.env.example` to `.env` and fill in that church’s values.
 
 Super Admin must be able to open **Backup & Restore** (`/backup`).
 

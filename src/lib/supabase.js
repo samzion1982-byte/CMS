@@ -1,12 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const SUPABASE_URL = 'https://wjasjrthijpxlarreics.supabase.co'
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqYXNqcnRoaWpweGxhcnJlaWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxODAzMDAsImV4cCI6MjA5MTc1NjMwMH0.cCWk_U3kbLvCRuk916hoYP7cIlWusHTRbgSpvHnuktY'
-export const SUPABASE_SERVICE_ROLE = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqYXNqcnRoaWpweGxhcnJlaWNzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjE4MDMwMCwiZXhwIjoyMDkxNzU2MzAwfQ.B8oBuQRGxdkhFnvSrbddtMQ1Abo9YNwexRy1nks3SnM'
+function requireEnv(name) {
+  const value = import.meta.env[name]
+  if (!value || !String(value).trim()) {
+    throw new Error(
+      `Missing ${name}. Set it in Vercel (or .env for local dev) to your church Supabase project URL/keys.`,
+    )
+  }
+  return String(value).trim()
+}
 
-console.log('🔌 Supabase URL:', SUPABASE_URL)
-console.log('🔑 Supabase Anon Key exists:', !!SUPABASE_ANON_KEY)
-console.log('🔐 Supabase Service Role exists:', !!SUPABASE_SERVICE_ROLE)
+export const SUPABASE_URL = requireEnv('VITE_SUPABASE_URL')
+export const SUPABASE_ANON_KEY = requireEnv('VITE_SUPABASE_ANON_KEY')
+export const SUPABASE_SERVICE_ROLE = requireEnv('VITE_SUPABASE_SERVICE_ROLE_KEY')
+
+if (import.meta.env.DEV) {
+  console.log('🔌 Supabase URL:', SUPABASE_URL)
+  console.log('🔑 Supabase Anon Key configured:', !!SUPABASE_ANON_KEY)
+  console.log('🔐 Supabase Service Role configured:', !!SUPABASE_SERVICE_ROLE)
+}
 
 // Main Supabase client with enhanced session persistence
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
