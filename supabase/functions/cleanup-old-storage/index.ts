@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    cleanup-old-storage — FIFO auto-flush for transient storage
-   buckets + DB log tables. Template files/folders are never touched.
+   buckets + DB log tables + Recycle Bin (45-day purge).
+   Template files/folders are never touched.
    ═══════════════════════════════════════════════════════════════ */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -25,8 +26,94 @@ const DB_RULES = [
   { table: 'cms_audit_log',         maxAgeDays: 15, dateColumn: 'created_at' },
 ]
 
+const RECYCLE_BIN_RETENTION_DAYS = 45
+const QUARANTINE_ROOT = '_quarantine'
+const QUARANTINE_BUCKETS = [
+  'event-media',
+  'asset-photos',
+  'receipt-pdfs',
+  'fixed-asset-docs',
+]
+
 const isTemplate = (f) =>
   !f.metadata || f.name.toLowerCase().includes('template')
+
+async function listStorageFilePaths(bucket, folderPrefix) {
+  const paths = []
+  async function walk(dir) {
+    const { data, error } = await sb.storage.from(bucket).list(dir || '', { limit: 1000 })
+    if (error || !data?.length) return
+    for (const item of data) {
+      if (item.name === '.emptyFolderPlaceholder') continue
+      const full = dir ? `${dir}/${item.name}` : item.name
+      if (folderPrefix && full !== folderPrefix && !full.startsWith(`${folderPrefix}/`)) continue
+      if (item.id || item.metadata) paths.push(full)
+      else await walk(full)
+    }
+  }
+  await walk(folderPrefix || '')
+  return paths
+}
+
+async function purgeQuarantineForSnapshot(item) {
+  const q = item?.payload?.quarantine || {}
+  const buckets = q.bucket ? [q.bucket] : QUARANTINE_BUCKETS
+  const folder = `${QUARANTINE_ROOT}/${item.id}`
+
+  for (const bucket of buckets) {
+    const toRemove = new Set()
+    if ((!q.bucket || q.bucket === bucket) && q.paths?.length) {
+      for (const p of q.paths) if (p?.to) toRemove.add(p.to)
+    }
+    const found = await listStorageFilePaths(bucket, folder)
+    for (const f of found) toRemove.add(f)
+
+    const unique = [...toRemove]
+    for (let i = 0; i < unique.length; i += 100) {
+      const chunk = unique.slice(i, i + 100)
+      if (!chunk.length) continue
+      await sb.storage.from(bucket).remove(chunk)
+    }
+  }
+}
+
+async function purgeExpiredRecycleBin(now) {
+  const cutoff = new Date(now - RECYCLE_BIN_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const stale = []
+  let errMsg = null
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error } = await sb
+      .from('cms_recycle_bin')
+      .select('id, payload')
+      .eq('status', 'deleted')
+      .lt('deleted_at', cutoff)
+      .range(from, from + 999)
+    if (error) { errMsg = error.message; break }
+    const rows = page || []
+    for (const r of rows) stale.push(r)
+    if (rows.length < 1000) break
+  }
+  if (errMsg) return { table: 'cms_recycle_bin', deleted: 0, error: errMsg }
+  if (!stale.length) return { table: 'cms_recycle_bin', deleted: 0, error: null }
+
+  const purgedAt = new Date().toISOString()
+  let deleted = 0
+  for (const item of stale) {
+    try {
+      await purgeQuarantineForSnapshot(item)
+      const { error: updErr } = await sb
+        .from('cms_recycle_bin')
+        .update({ status: 'purged', purged_at: purgedAt })
+        .eq('id', item.id)
+        .eq('status', 'deleted')
+      if (updErr) return { table: 'cms_recycle_bin', deleted, error: updErr.message }
+      deleted++
+    } catch (e) {
+      return { table: 'cms_recycle_bin', deleted, error: e?.message || String(e) }
+    }
+  }
+  return { table: 'cms_recycle_bin', deleted, error: null, retentionDays: RECYCLE_BIN_RETENTION_DAYS }
+}
 
 serve(async (_req) => {
   const summary = []
@@ -114,6 +201,10 @@ serve(async (_req) => {
     }
     summary.push({ table: rule.table, deleted, error: delErrMsg })
   }
+
+  // Recycle Bin: permanently purge deleted snapshots older than 45 days
+  // (also removes quarantined photos/files under _quarantine/{snapshotId}/)
+  summary.push(await purgeExpiredRecycleBin(now))
 
   console.log('[cleanup-old-storage]', JSON.stringify(summary))
 

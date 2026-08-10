@@ -7,6 +7,10 @@ import { Upload, FileSpreadsheet, CheckCircle, Loader2, RefreshCw, Camera, Trash
 import { getActiveCategories } from '../lib/paymentCategories'
 import { useEntity } from '../lib/EntityContext'
 import { getChartOfAccounts, TYPE_COLOR } from '../lib/accountingLib'
+import {
+  RECYCLE_BIN_RETENTION_DAYS,
+  purgeExpiredRecycleBinItems,
+} from '../lib/cmsRecycleBin'
 
 // ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
 // Add any table names here that should never appear in the Flush All modal
@@ -2092,6 +2096,14 @@ const DB_CLEANUP_RULES = [
   { table: 'announcements_log',     label: 'Announcement Log',      maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Announcement send logs older than 15 days are removed.' },
   { table: 'payment_request_logs',  label: 'Payment Request Log',   maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Payment request send logs older than 15 days are removed.' },
   { table: 'cms_audit_log',         label: 'Audit Trail',           maxAgeDays: 15, dateColumn: 'created_at', note: 'CMS audit trail entries older than 15 days are removed.' },
+  {
+    table: 'cms_recycle_bin',
+    label: 'Recycle Bin',
+    maxAgeDays: RECYCLE_BIN_RETENTION_DAYS,
+    dateColumn: 'deleted_at',
+    note: `Deleted snapshots older than ${RECYCLE_BIN_RETENTION_DAYS} days are permanently purged (quarantined photos/files removed).`,
+    mode: 'recycle_purge',
+  },
 ]
 
 // A file is a template if it has no metadata (folder) or name contains "template"
@@ -2141,9 +2153,9 @@ function AutoFlushTab() {
         next[rule.bucket] = count
       }),
       ...DB_CLEANUP_RULES.map(async (rule) => {
-        const { count, error } = await adminSupabase
-          .from(rule.table)
-          .select('*', { count: 'exact', head: true })
+        let q = adminSupabase.from(rule.table).select('*', { count: 'exact', head: true })
+        if (rule.mode === 'recycle_purge') q = q.eq('status', 'deleted')
+        const { count, error } = await q
         next[rule.table] = error ? null : (count ?? 0)
       }),
     ])
@@ -2211,6 +2223,32 @@ function AutoFlushTab() {
 
     // DB table cleanup — select matching ids first so kept/removed counts are accurate
     for (const rule of DB_CLEANUP_RULES) {
+      if (rule.mode === 'recycle_purge') {
+        try {
+          const { purged, keptFresh, error: purgeErr } = await purgeExpiredRecycleBinItems(rule.maxAgeDays)
+          out.push({
+            label: rule.label,
+            deleted: purgeErr ? 0 : purged,
+            kept: 0,
+            keptFresh,
+            error: purgeErr || null,
+            isDb: true,
+            retentionDays: rule.maxAgeDays,
+          })
+        } catch (e) {
+          out.push({
+            label: rule.label,
+            deleted: 0,
+            kept: 0,
+            keptFresh: 0,
+            error: e?.message || String(e),
+            isDb: true,
+            retentionDays: rule.maxAgeDays,
+          })
+        }
+        continue
+      }
+
       const cutoff = new Date(Date.now() - rule.maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
       const { count: totalCount, error: totalErr } = await adminSupabase
         .from(rule.table)
@@ -2367,14 +2405,18 @@ function AutoFlushTab() {
                   {rule.label}
                   {itemCountBadge(rule.table)}
                 </p>
-                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>{rule.table} · {rule.dateColumn}</p>
+                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>
+                  {rule.mode === 'recycle_purge'
+                    ? `${rule.table} · status=deleted · ${rule.dateColumn}`
+                    : `${rule.table} · ${rule.dateColumn}`}
+                </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Clock size={10} /> {rule.maxAgeDays} days
                 </span>
-                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fdf4ff', color: '#7e22ce', fontWeight: 500 }}>
-                  DB table
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: rule.mode === 'recycle_purge' ? '#fef2f2' : '#fdf4ff', color: rule.mode === 'recycle_purge' ? '#b91c1c' : '#7e22ce', fontWeight: 500 }}>
+                  {rule.mode === 'recycle_purge' ? 'Auto purge' : 'DB table'}
                 </span>
               </div>
             </div>
