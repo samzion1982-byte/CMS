@@ -7,6 +7,7 @@ import {
   Users, Home, Calendar, MapPin, Activity, UserPlus,
   Users2, AlertCircle, RefreshCw,
   Wifi, WifiOff, Settings, Info, BarChart3, Heart, Lock, Unlock,
+  Mars, Venus, BadgeCheck,
 } from 'lucide-react'
 import Highcharts from 'highcharts'
 import 'highcharts/highcharts-3d'
@@ -27,6 +28,22 @@ function greetingForNow() {
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
+}
+
+function isBaptisedMember(m) {
+  const t = String(m?.baptism_type || '').trim().toLowerCase()
+  if (t && !['not baptised', 'not baptized', 'no', 'n', 'false', '0', '-'].includes(t)) return true
+  if (m?.baptism_date) return true
+  return false
+}
+
+function isConfirmedMember(m) {
+  const v = m?.confirmation_taken
+  if (v === true || v === 1) return true
+  const s = String(v ?? '').trim().toLowerCase()
+  if (['yes', 'y', 'true', '1'].includes(s)) return true
+  if (m?.confirmation_date) return true
+  return false
 }
 
 /* ── Stat Card — tinted tile with texture + accent bar ───────── */
@@ -79,9 +96,9 @@ function GenderCard({ male, female, total, loading }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
         <div style={{
           width: 40, height: 40, borderRadius: 11,
-          background: 'linear-gradient(135deg, var(--sidebar-bg, #0d2244), #1e3a5f)',
+          background: 'linear-gradient(135deg, var(--sidebar-bg), var(--sidebar-bg-end, var(--sidebar-bg)))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(13,34,68,0.25)',
+          boxShadow: '0 2px 8px color-mix(in srgb, var(--sidebar-bg) 35%, transparent)',
         }}>
           <Users2 size={18} color="#fff" />
         </div>
@@ -94,23 +111,48 @@ function GenderCard({ male, female, total, loading }) {
           <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, marginLeft: 4 }}>total</span>
         </div>
       </div>
-      <div style={{
-        height: 14, borderRadius: 99, overflow: 'hidden',
-        background: 'color-mix(in srgb, var(--sidebar-bg, #0d2244) 6%, #f1f5f9)',
-        marginBottom: 14,
-        boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)',
-      }}>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
         <div style={{
-          height: '100%', width: `${mPct}%`,
-          background: 'linear-gradient(90deg,#60a5fa,#2563eb)',
-          float: 'left', transition: 'width .7s ease',
-        }} />
+          width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+          background: 'linear-gradient(135deg,#dbeafe,#93c5fd)',
+          border: '1px solid #93c5fd',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(37,99,235,0.18)',
+        }} title="Men">
+          <Mars size={24} color="#1d4ed8" strokeWidth={2.25} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            height: 14, borderRadius: 99, overflow: 'hidden',
+            background: 'color-mix(in srgb, var(--sidebar-bg, #0d2244) 6%, #f1f5f9)',
+            boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)',
+          }}>
+            <div style={{
+              height: '100%', width: `${mPct}%`,
+              background: 'linear-gradient(90deg,#60a5fa,#2563eb)',
+              float: 'left', transition: 'width .7s ease',
+            }} />
+            <div style={{
+              height: '100%', width: `${fPct}%`,
+              background: 'linear-gradient(90deg,#fb7185,#e11d48)',
+              float: 'left', transition: 'width .7s ease',
+            }} />
+          </div>
+        </div>
+
         <div style={{
-          height: '100%', width: `${fPct}%`,
-          background: 'linear-gradient(90deg,#fb7185,#e11d48)',
-          float: 'left', transition: 'width .7s ease',
-        }} />
+          width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+          background: 'linear-gradient(135deg,#ffe4e6,#fda4af)',
+          border: '1px solid #fda4af',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(225,29,72,0.18)',
+        }} title="Women">
+          <Venus size={24} color="#be123c" strokeWidth={2.25} />
+        </div>
       </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
@@ -118,8 +160,8 @@ function GenderCard({ male, female, total, loading }) {
           background: 'linear-gradient(135deg,#eff6ff,#dbeafe88)',
           border: '1px solid #bfdbfe',
         }}>
-          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#2563eb' }} />
-          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Male</span>
+          <Mars size={14} color="#1d4ed8" />
+          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Men</span>
           <span style={{ fontSize: 17, fontWeight: 800, color: '#1d4ed8', marginLeft: 2 }}>{loading ? '—' : male.toLocaleString()}</span>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({mPct}%)</span>
         </div>
@@ -131,8 +173,8 @@ function GenderCard({ male, female, total, loading }) {
         }}>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({fPct}%)</span>
           <span style={{ fontSize: 17, fontWeight: 800, color: '#be123c', marginRight: 2 }}>{loading ? '—' : female.toLocaleString()}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Female</span>
-          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#e11d48' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Women</span>
+          <Venus size={14} color="#be123c" />
         </div>
       </div>
     </div>
@@ -540,7 +582,9 @@ export default function DashboardPage() {
       const female   = membersData.filter(m => m.gender === 'Female' || m.gender === 'F').length
       const married  = membersData.filter(m => m.marital_status === 'Married' || m.marital_status === 'M').length
       const single   = membersData.filter(m => m.marital_status === 'Single' || m.marital_status === 'S').length
-      setStats({ total: activeCount, families, male, female, married, single })
+      const baptised = membersData.filter(isBaptisedMember).length
+      const confirmed = membersData.filter(isConfirmedMember).length
+      setStats({ total: activeCount, families, male, female, married, single, baptised, confirmed })
 
       const ageData = {
         'Super Senior':  { title: 'Super Senior (80+)',      male: 0, female: 0 },
@@ -681,14 +725,30 @@ export default function DashboardPage() {
     },
     {
       icon: Heart, label: 'Baptised',
-      value: stats?.total ? Math.round(stats.total * 0.9).toLocaleString() : '—',
-      sub: 'Est. 90% baptised',
+      value: stats?.baptised?.toLocaleString() ?? '—',
+      sub: stats?.total
+        ? `${Math.round(((stats.baptised || 0) / stats.total) * 100)}% of active members`
+        : 'From baptism records',
       accent: {
         bg: 'linear-gradient(155deg, #fffbeb 0%, #fef3c7 48%, #fde68a55 100%)',
         border: '#f6d58a', text: '#92400e', bar: '#f59e0b',
         iconBg: 'linear-gradient(135deg,#fbbf24,#d97706)',
         shadow: '0 4px 16px rgba(245,158,11,0.14)',
         shadowHover: '0 12px 28px rgba(245,158,11,0.22)',
+      },
+    },
+    {
+      icon: BadgeCheck, label: 'Confirmed',
+      value: stats?.confirmed?.toLocaleString() ?? '—',
+      sub: stats?.total
+        ? `${Math.round(((stats.confirmed || 0) / stats.total) * 100)}% of active members`
+        : 'From confirmation records',
+      accent: {
+        bg: 'linear-gradient(155deg, #f0f9ff 0%, #e0f2fe 48%, #bae6fd55 100%)',
+        border: '#7dd3fc', text: '#075985', bar: '#0284c7',
+        iconBg: 'linear-gradient(135deg,#38bdf8,#0284c7)',
+        shadow: '0 4px 16px rgba(2,132,199,0.12)',
+        shadowHover: '0 12px 28px rgba(2,132,199,0.2)',
       },
     },
   ]
@@ -756,10 +816,10 @@ export default function DashboardPage() {
           margin-bottom: 22px;
           padding: 22px 24px;
           background:
-            radial-gradient(ellipse at 12% 30%, rgba(255,255,255,0.12) 0%, transparent 50%),
-            radial-gradient(ellipse at 90% 80%, rgba(56,189,248,0.16) 0%, transparent 45%),
-            linear-gradient(135deg, var(--sidebar-bg, #0d2244) 0%, #143057 55%, #0a1a36 100%);
-          box-shadow: 0 8px 28px rgba(8,20,40,0.28);
+            radial-gradient(ellipse at 12% 30%, color-mix(in srgb, var(--accent) 28%, transparent) 0%, transparent 52%),
+            radial-gradient(ellipse at 90% 80%, rgba(255,255,255,0.1) 0%, transparent 45%),
+            linear-gradient(135deg, var(--sidebar-bg) 0%, color-mix(in srgb, var(--sidebar-bg) 70%, var(--accent)) 48%, var(--sidebar-bg-end, var(--sidebar-bg)) 100%);
+          box-shadow: 0 8px 28px color-mix(in srgb, var(--sidebar-bg) 45%, transparent);
           color: #fff;
           animation: dashFadeUp 0.3s ease both;
         }
@@ -792,21 +852,22 @@ export default function DashboardPage() {
       <div className="dash-hero">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
           <div>
-            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.65)' }}>
-              Congregation overview
+            <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.7)' }}>
+              {greetingForNow()}, {displayName}
             </p>
-            <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: 'rgba(255,255,255,0.12)',
+                width: 40, height: 40, borderRadius: 11,
+                background: 'color-mix(in srgb, var(--accent) 55%, transparent)',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid rgba(255,255,255,0.18)',
+                border: '1px solid color-mix(in srgb, var(--accent) 70%, #fff)',
+                boxShadow: '0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent)',
               }}>
                 <Home size={18} color="#fff" />
               </span>
-              {greetingForNow()}, {displayName}
+              Congregation Overview
             </h2>
-            <p style={{ margin: '8px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.45 }}>
+            <p style={{ margin: '10px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.78)', lineHeight: 1.5, maxWidth: 520 }}>
               Live membership stats, age groups, zones, and recent additions.
             </p>
           </div>
@@ -819,7 +880,7 @@ export default function DashboardPage() {
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 14px', fontSize: 12, fontWeight: 700,
                 borderRadius: 9, border: '1px solid rgba(255,255,255,0.22)',
-                background: 'rgba(255,255,255,0.12)', color: '#fff',
+                background: 'color-mix(in srgb, var(--accent) 35%, rgba(255,255,255,0.12))', color: '#fff',
                 cursor: loading ? 'default' : 'pointer',
               }}
             >
