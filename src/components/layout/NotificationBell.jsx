@@ -362,7 +362,7 @@ export default function NotificationBell({ g }) {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', position: 'relative' }}>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           onClick={() => { setOpen(false); navigate(a.href) }}
@@ -392,7 +392,8 @@ export default function NotificationBell({ g }) {
                             onClick={() => setSnoozeFor(snoozeFor === a.id ? null : a.id)}
                             style={{
                               fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7,
-                              border: `1px solid ${g.drop.border}`, background: 'transparent',
+                              border: `1px solid ${snoozeFor === a.id ? sev.icon : g.drop.border}`,
+                              background: snoozeFor === a.id ? 'rgba(15,23,42,0.04)' : 'transparent',
                               color: g.drop.text, cursor: 'pointer',
                               display: 'inline-flex', alignItems: 'center', gap: 4,
                             }}
@@ -400,33 +401,37 @@ export default function NotificationBell({ g }) {
                             <Clock size={11} /> Snooze
                           </button>
                         )}
-
-                        {snoozeFor === a.id && (
-                          <div style={{
-                            position: 'absolute', left: 0, top: '100%', marginTop: 4,
-                            background: g.drop.bg, border: `1px solid ${g.drop.border}`,
-                            borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-                            zIndex: 5, minWidth: 150, overflow: 'hidden',
-                          }}>
-                            {SNOOZE_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                onClick={() => handleSnooze(a.id, opt.id)}
-                                style={{
-                                  display: 'block', width: '100%', textAlign: 'left',
-                                  padding: '8px 12px', border: 'none', background: 'transparent',
-                                  color: g.drop.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = g.drop.hov }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
+
+                      {snoozeFor === a.id && !snoozed && (
+                        <div style={{
+                          marginTop: 8,
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: 6,
+                          padding: 8,
+                          borderRadius: 10,
+                          border: `1px solid ${g.drop.border}`,
+                          background: g.drop.bg,
+                        }}>
+                          {SNOOZE_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => handleSnooze(a.id, opt.id)}
+                              style={{
+                                padding: '8px 10px', borderRadius: 8,
+                                border: `1px solid ${g.drop.border}`,
+                                background: g.drop.hov || 'rgba(15,23,42,0.04)',
+                                color: g.drop.text, fontSize: 12, fontWeight: 700,
+                                cursor: 'pointer', textAlign: 'center',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
