@@ -83,42 +83,64 @@ function eventMediaPathFromUrl(url) {
   return null
 }
 
-/** Delete every file under event-media/{prefix}/ (including placeholders). */
+/** Record folder must be kind/####-YYYY — never a bucket root or event-type root. */
+const EVENT_MEDIA_FOLDER_RE = /^(baptism|confirmation|wedding|burial)\/\d{4}-\d{4}$/
+
+function eventFolderPrefix(kind, seqNum, year) {
+  const n = Number(seqNum)
+  const y = Number(year)
+  if (!Number.isFinite(n) || n < 1 || !Number.isFinite(y) || y < 1800) return null
+  const padded = String(Math.trunc(n)).padStart(4, '0')
+  const prefix = `${kind}/${padded}-${Math.trunc(y)}`
+  return EVENT_MEDIA_FOLDER_RE.test(prefix) ? prefix : null
+}
+
+/**
+ * Delete every file under event-media/{recordFolder}/ only.
+ * Refuses shallow prefixes (e.g. "wedding") so one delete cannot wipe the whole type folder.
+ */
 async function flushEventMediaFolder(prefix) {
-  if (!prefix) return 0
+  if (!prefix || !EVENT_MEDIA_FOLDER_RE.test(prefix)) {
+    console.warn('[event-media] refused flush — invalid record folder:', prefix)
+    return 0
+  }
   const paths = []
   async function walk(dir) {
+    // Never walk above the record folder
+    if (dir !== prefix && !dir.startsWith(`${prefix}/`)) return
     const { data, error } = await supabase.storage.from('event-media').list(dir, { limit: 1000 })
     if (error || !data?.length) return
     for (const item of data) {
       const full = `${dir}/${item.name}`
+      if (!full.startsWith(`${prefix}/`)) continue
       if (item.id) paths.push(full)
       else await walk(full)
     }
   }
   await walk(prefix)
-  for (let i = 0; i < paths.length; i += 100) {
-    const chunk = paths.slice(i, i + 100)
+  // Extra safety: only remove paths that remain under the record folder
+  const safe = paths.filter((p) => p.startsWith(`${prefix}/`))
+  for (let i = 0; i < safe.length; i += 100) {
+    const chunk = safe.slice(i, i + 100)
     const { error } = await supabase.storage.from('event-media').remove(chunk)
     if (error) throw new Error(`Storage flush failed (${prefix}): ${error.message}`)
   }
-  return paths.length
+  return safe.length
 }
 
-/** Remove explicit URL paths, then wipe the record folder so nothing is left behind. */
+/** Remove explicit URL paths (must be under record folder), then wipe that folder only. */
 async function flushEventMediaUrlsAndFolder(urls, folderPrefix) {
+  if (!folderPrefix || !EVENT_MEDIA_FOLDER_RE.test(folderPrefix)) {
+    console.warn('[event-media] skip flush — missing/invalid folderPrefix', folderPrefix)
+    return 0
+  }
   const fromUrls = [...new Set((urls || []).map(eventMediaPathFromUrl).filter(Boolean))]
+    .filter((p) => p === folderPrefix || p.startsWith(`${folderPrefix}/`))
   if (fromUrls.length) {
     const { error } = await supabase.storage.from('event-media').remove(fromUrls)
     if (error) console.warn('[event-media] remove by url failed', error.message)
   }
   return flushEventMediaFolder(folderPrefix)
-}
-
-function eventFolderPrefix(kind, seqNum, year) {
-  const padded = String(seqNum ?? '').padStart(4, '0')
-  if (!seqNum || !year) return null
-  return `${kind}/${padded}-${year}`
 }
 
 /** True when year/month/day form a real calendar date. */

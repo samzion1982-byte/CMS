@@ -275,7 +275,7 @@ function BackupChooserModal({
               {title}
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
-              All storage buckets use incremental sync under the parent Drive folder — only new or changed files are uploaded after the first sync.
+              All storage buckets use incremental sync under the parent Drive folder — new/changed files are uploaded, and files deleted from Supabase are removed from Drive on the next sync.
             </p>
           </div>
           <button type="button" className="no-lift" style={secondaryBtn} disabled={confirming} onClick={onClose}>
@@ -336,7 +336,7 @@ function BackupChooserModal({
                   }}
                 />
                 <p style={{ margin: '8px 0 0', fontSize: 11, color: '#9a3412', lineHeight: 1.45 }}>
-                  Tip: after the first sync, later backups only upload newly added or changed files into <code>cms-storage-sync/</code> on Drive.
+                  Tip: after the first sync, later backups upload new/changed files into <code>cms-storage-sync/</code> and prune Drive copies of files deleted from Supabase.
                 </p>
               </div>
             </>

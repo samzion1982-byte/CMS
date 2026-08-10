@@ -27,7 +27,7 @@ const CORS = {
 }
 
 const PAGE = 1000
-const COMPLETE_VERSION = 6
+const COMPLETE_VERSION = 7
 /** Soft time budget per Edge invoke so we return before platform kill (~60–150s). */
 const CHUNK_BUDGET_MS = 40_000
 const MAX_FILES_PER_CHUNK = 6
@@ -330,6 +330,119 @@ async function driveListChildren(accessToken, folderId) {
   const body = await res.json()
   if (!res.ok) throw new Error(body?.error?.message || `Drive list failed (${res.status})`)
   return body.files || []
+}
+
+async function findNamedFolder(accessToken, parentId, name) {
+  const children = await driveListChildren(accessToken, parentId)
+  return children.find((f) => f.name === name && f.mimeType === 'application/vnd.google-apps.folder') || null
+}
+
+/** Permanently delete a Drive file/folder (404 = already gone). */
+async function driveDeleteFile(accessToken, fileId) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (res.ok || res.status === 204 || res.status === 404) return
+  const body = await res.json().catch(() => ({}))
+  throw new Error(body?.error?.message || `Drive delete failed (${res.status})`)
+}
+
+/** Recursive list of files + folders under a Drive folder (relative paths). */
+async function collectDriveTree(accessToken, folderId, prefix = '') {
+  const children = await driveListChildren(accessToken, folderId)
+  const out = []
+  for (const child of children) {
+    const path = prefix ? `${prefix}/${child.name}` : child.name
+    if (child.mimeType === 'application/vnd.google-apps.folder') {
+      out.push({ id: child.id, name: child.name, path, isFolder: true })
+      out.push(...await collectDriveTree(accessToken, child.id, path))
+    } else {
+      if (isSkippableStorageName(child.name)) continue
+      out.push({
+        id: child.id,
+        name: child.name,
+        path,
+        isFolder: false,
+        size: child.size != null ? Number(child.size) : null,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Remove Drive files/folders that no longer exist in Supabase storage for this bucket.
+ * Mutates syncIndex.files in place. Sync is then a true mirror (upload + prune).
+ */
+async function pruneDriveOrphans(accessToken, syncRootId, bucket, localFiles, syncIndex) {
+  const localPaths = new Set(
+    (localFiles || [])
+      .filter((f) => f?.path && !isSkippableStorageName(String(f.path).split('/').pop()))
+      .map((f) => f.path),
+  )
+
+  const deleted = []
+  const errors = []
+
+  // Drop stale index entries (and try deleting by stored Drive id)
+  for (const key of Object.keys(syncIndex.files || {})) {
+    const entry = syncIndex.files[key]
+    if (!entry || entry.bucket !== bucket) continue
+    if (localPaths.has(entry.path)) continue
+    if (entry.drive_file_id) {
+      try {
+        await driveDeleteFile(accessToken, entry.drive_file_id)
+        deleted.push({ path: entry.path, id: entry.drive_file_id, via: 'index' })
+      } catch (e) {
+        errors.push(`${entry.path}: ${e.message || e}`)
+      }
+    }
+    delete syncIndex.files[key]
+  }
+
+  const bucketFolder = await findNamedFolder(accessToken, syncRootId, bucket)
+  if (!bucketFolder) {
+    return { deleted, errors, pruned: deleted.length, walked: 0 }
+  }
+
+  const tree = await collectDriveTree(accessToken, bucketFolder.id)
+  // Files first
+  for (const item of tree) {
+    if (item.isFolder) continue
+    if (localPaths.has(item.path)) continue
+    try {
+      await driveDeleteFile(accessToken, item.id)
+      deleted.push({ path: item.path, id: item.id, via: 'walk' })
+      const key = syncFileKey(bucket, item.path)
+      if (syncIndex.files?.[key]) delete syncIndex.files[key]
+    } catch (e) {
+      errors.push(`${item.path}: ${e.message || e}`)
+    }
+  }
+
+  // Empty folders deepest-first
+  const folders = tree
+    .filter((i) => i.isFolder)
+    .sort((a, b) => b.path.split('/').length - a.path.split('/').length || b.path.length - a.path.length)
+
+  for (const folder of folders) {
+    const stillNeeded = [...localPaths].some(
+      (p) => p === folder.path || p.startsWith(`${folder.path}/`),
+    )
+    if (stillNeeded) continue
+    try {
+      const children = await driveListChildren(accessToken, folder.id)
+      if (children.length === 0) {
+        await driveDeleteFile(accessToken, folder.id)
+        deleted.push({ path: `${folder.path}/`, id: folder.id, via: 'empty-folder' })
+      }
+    } catch (e) {
+      errors.push(`folder ${folder.path}: ${e.message || e}`)
+    }
+  }
+
+  return { deleted, errors, pruned: deleted.length, walked: tree.length }
 }
 
 async function findOrCreateNamedFolder(accessToken, parentId, name) {
@@ -949,6 +1062,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     syncRootId = null,
     syncIndex = null,
     syncUnchanged = 0,
+    syncPruned = 0,
     parentDriveFolderId = null,
   } = state
 
@@ -977,6 +1091,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
         files_tracked: Object.keys(nextFiles).length,
         uploaded_this_run: syncFilesMeta.length,
         unchanged: syncUnchanged,
+        pruned: syncPruned,
       })
     } catch (e) {
       skipped.push(`sync-index: ${e.message || e}`)
@@ -1024,6 +1139,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
       buckets: syncBucketsUsed,
       uploaded: syncFilesMeta.length,
       unchanged: syncUnchanged,
+      pruned: syncPruned,
       index_file_id: savedSyncIndex?.drive_file_id || null,
       files: syncFilesMeta,
     },
@@ -1044,7 +1160,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     : (skipped.length || built.summary.some((s) => s.status === 'error') ? 'partial' : 'success')
 
   const finalMessage = status === 'success'
-    ? `Complete: ${built.tablesCount} tables, ${dumpFiles.length} dump file(s), sync ${syncFilesMeta.length} new/changed (${syncUnchanged} unchanged)`
+    ? `Complete: ${built.tablesCount} tables, ${dumpFiles.length} dump file(s), sync ${syncFilesMeta.length} new/changed (${syncUnchanged} unchanged${syncPruned ? `, ${syncPruned} pruned` : ''})`
     : status === 'partial'
       ? `Partial: ${built.tablesCount} tables, ${storageMeta.length} files (${skipped.length} storage issues)`
       : 'Backup failed'
@@ -1088,6 +1204,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
       storage_files: storageMeta,
       sync_root_folder_id: syncRootId,
       sync_unchanged: syncUnchanged,
+      sync_pruned: syncPruned,
       sync_uploaded: syncFilesMeta.length,
       sync_index_file_id: savedSyncIndex?.drive_file_id || null,
       summary: built.summary,
@@ -1109,6 +1226,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     files: storageMeta.length,
     sync_uploaded: syncFilesMeta.length,
     sync_unchanged: syncUnchanged,
+    sync_pruned: syncPruned,
     bytes: totalBytes,
   })
 
@@ -1133,6 +1251,7 @@ async function finalizeBackup(progressLogId, state, authVia, onProgress) {
     storage_file_count: storageMeta.length,
     sync_uploaded: syncFilesMeta.length,
     sync_unchanged: syncUnchanged,
+    sync_pruned: syncPruned,
     skipped_storage: skipped,
   }
 }
@@ -1301,6 +1420,7 @@ async function continueCompleteBackup(body) {
     syncRootId: meta.sync_root_folder_id || null,
     syncIndex,
     syncUnchanged: Number(meta.sync_unchanged) || 0,
+    syncPruned: Number(meta.sync_pruned) || 0,
     parentDriveFolderId: meta.parent_drive_folder_id || null,
   }, authVia, onProgress)
 }
@@ -1463,6 +1583,8 @@ async function runCompleteBackup(body) {
     let syncRootId = null
     let syncIndex = null
     let syncUnchanged = 0
+    let syncPruned = 0
+    const syncPruneErrors = []
     const pendingFiles = []
     const listSkipped = []
 
@@ -1506,10 +1628,39 @@ async function runCompleteBackup(body) {
               missing: diff.missingNames.slice(0, 30),
             })
           }
+
+          // Mirror deletions: remove Drive files that no longer exist in Supabase
+          await onProgress(46, `Pruning deleted files from Drive sync (${bucket})…`)
+          const pruned = await pruneDriveOrphans(accessToken, syncRootId, bucket, files, syncIndex)
+          syncPruned += pruned.pruned || 0
+          if (pruned.errors?.length) syncPruneErrors.push(...pruned.errors.map((e) => `${bucket}: ${e}`))
+          await appendDebug(progressLogId, 'sync_prune', {
+            bucket,
+            pruned: pruned.pruned || 0,
+            walked: pruned.walked || 0,
+            sample: (pruned.deleted || []).slice(0, 15).map((d) => d.path),
+            errors: (pruned.errors || []).slice(0, 10),
+          })
         } catch (e) {
           listSkipped.push(`bucket ${bucket}: ${e.message || e}`)
           await appendDebug(progressLogId, 'bucket_list_fail', { bucket, error: e.message || String(e) })
         }
+      }
+
+      // Persist pruned index immediately so chunked continues don't revive deleted keys
+      if (syncPruned > 0 && syncIndex) {
+        try {
+          syncIndex = await saveSyncIndex(accessToken, syncRootId, syncIndex)
+          await appendDebug(progressLogId, 'sync_index_saved_after_prune', {
+            pruned: syncPruned,
+            tracked: Object.keys(syncIndex.files || {}).length,
+          })
+        } catch (e) {
+          listSkipped.push(`sync-index after prune: ${e.message || e}`)
+        }
+      }
+      if (syncPruneErrors.length) {
+        listSkipped.push(...syncPruneErrors.slice(0, 20))
       }
     }
 
@@ -1531,9 +1682,9 @@ async function runCompleteBackup(body) {
       download_filename: runFolder.name,
       progress_pct: 47,
       progress_message: pendingFiles.length
-        ? `Uploading/syncing storage 0/${pendingFiles.length}… (${syncUnchanged} unchanged skipped)`
-        : (syncUnchanged
-          ? `Storage sync up to date (${syncUnchanged} unchanged) — finalizing…`
+        ? `Uploading/syncing storage 0/${pendingFiles.length}… (${syncUnchanged} unchanged${syncPruned ? `, ${syncPruned} pruned` : ''} skipped)`
+        : (syncUnchanged || syncPruned
+          ? `Storage sync up to date (${syncUnchanged} unchanged${syncPruned ? `, ${syncPruned} pruned from Drive` : ''}) — finalizing…`
           : 'No storage files — finalizing…'),
       meta: {
         complete: true,
@@ -1559,6 +1710,7 @@ async function runCompleteBackup(body) {
         sync_root_folder_id: syncRootId,
         sync_index_file_id: syncIndex?.drive_file_id || null,
         sync_unchanged: syncUnchanged,
+        sync_pruned: syncPruned,
         parent_drive_folder_id: folderId,
       },
     }).eq('id', progressLogId)
@@ -1581,6 +1733,7 @@ async function runCompleteBackup(body) {
         syncRootId,
         syncIndex,
         syncUnchanged,
+        syncPruned,
         parentDriveFolderId: folderId,
       }, authVia, onProgress)
     }
@@ -1629,6 +1782,7 @@ async function runCompleteBackup(body) {
         sync_root_folder_id: syncRootId,
         sync_index_file_id: syncIndex?.drive_file_id || null,
         sync_unchanged: syncUnchanged,
+        sync_pruned: syncPruned,
         parent_drive_folder_id: folderId,
         last_chunk: {
           uploaded: batch.fileCount,
@@ -1701,6 +1855,7 @@ async function runCompleteBackup(body) {
             storage_bytes: batch.totalBytes,
             sync_root_folder_id: syncRootId,
             sync_unchanged: syncUnchanged,
+            sync_pruned: syncPruned,
             parent_drive_folder_id: folderId,
             sync_verify_missing: stillMissing.length,
             auth_via: authVia,
@@ -1743,6 +1898,7 @@ async function runCompleteBackup(body) {
       syncRootId,
       syncIndex,
       syncUnchanged,
+      syncPruned,
       parentDriveFolderId: folderId,
     }, authVia, onProgress)
   } catch (e) {
