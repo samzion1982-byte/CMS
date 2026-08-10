@@ -22,6 +22,7 @@ const DB_RULES = [
   { table: 'whatsapp_receipt_logs', maxAgeDays: 15, dateColumn: 'sent_at' },
   { table: 'announcements_log',     maxAgeDays: 15, dateColumn: 'sent_at' },
   { table: 'payment_request_logs',  maxAgeDays: 15, dateColumn: 'sent_at' },
+  { table: 'cms_audit_log',         maxAgeDays: 15, dateColumn: 'created_at' },
 ]
 
 const isTemplate = (f) =>

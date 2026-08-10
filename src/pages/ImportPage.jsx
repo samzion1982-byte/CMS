@@ -20,7 +20,6 @@ const EXCLUDED_TABLES = [
   'auth_tracker',
   'cms_user_passwords',
   'cms_role_page_access',
-  'cms_audit_log',
   'cms_backup_settings',
   'cms_backup_log',
   'announcement_settings',
@@ -95,6 +94,7 @@ const FLUSH_CATEGORIES = [
       { key: 'whatsapp', label: 'WhatsApp Receipts',   color: '#8b95a8' },
       { key: 'payment',  label: 'Payment Req. Log',    color: '#9ea7b6' },
       { key: 'audit',    label: 'Accounting Audit',    color: '#b0b8c4' },
+      { key: 'cms-audit', label: 'Audit Trail',        color: '#64748b' },
     ],
   },
   {
@@ -162,6 +162,7 @@ const TABLE_FLUSH_META = {
   whatsapp_receipt_logs:   { category: 'logs', sub: 'whatsapp' },
   payment_request_logs:    { category: 'logs', sub: 'payment' },
   accounting_audit_log:    { category: 'logs', sub: 'audit' },
+  cms_audit_log:           { category: 'logs', sub: 'cms-audit' },
   cms_recycle_bin:         { category: 'other', sub: 'misc' },
 }
 
@@ -535,24 +536,25 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   useEffect(() => { if (open) loadItems() }, [open])
 
   async function countStorageFiles(bucket, folder) {
+    // Recursive count so nested paths (incl. _quarantine/{id}/…) are included for fresh-setup Flush
     const rootPath = folder || ''
-    const { data: rootItems, error } = await adminSupabase.storage
-      .from(bucket).list(rootPath, { limit: 10000 })
-    if (error) return { count: null, error }
     let count = 0
-    for (const item of (rootItems || [])) {
-      // Never count recycle-bin quarantine media as flushable inventory
-      if (item.name === '_quarantine') continue
-      if (item.metadata) { count++; continue }
-      const subPath = rootPath ? `${rootPath}/${item.name}` : item.name
-      const { data: subItems } = await adminSupabase.storage
-        .from(bucket).list(subPath, { limit: 10000 })
-      for (const f of (subItems || [])) {
-        if (f.name === '_quarantine') continue
-        if (f.metadata) count++
+    async function walk(dir) {
+      const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
+      if (error || !data?.length) return
+      for (const item of data) {
+        if (item.name === '.emptyFolderPlaceholder') continue
+        const full = dir ? `${dir}/${item.name}` : item.name
+        if (item.metadata || item.id) count++
+        else await walk(full)
       }
     }
-    return { count, error: null }
+    try {
+      await walk(rootPath)
+      return { count, error: null }
+    } catch (e) {
+      return { count: null, error: e.message || String(e) }
+    }
   }
 
   async function loadItems() {
@@ -574,7 +576,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           const meta = flushMetaForTable(tbl)
           discovered.push({
             id: `table::${tbl}`,
-            label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)' : tbl,
+            label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)'
+              : tbl === 'cms_audit_log' ? 'Audit Trail (cms_audit_log)'
+              : tbl,
             type: 'table',
             count: count || 0,
             checked: false,
@@ -589,9 +593,10 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       { bucket: 'member-photos',        folder: 'active',  label: 'Photos — Active Members',  category: 'members',       sub: 'photos' },
       { bucket: 'member-photos',        folder: 'deleted', label: 'Photos — Deleted Members', category: 'members',       sub: 'photos' },
       { bucket: 'family-records',       folder: '',        label: 'Family Records',           category: 'members',       sub: 'roster' },
-      { bucket: 'event-media',          folder: '',        label: 'Event Media',              category: 'events',        sub: 'recorder' },
-      { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos',             category: 'assets',        sub: 'movable' },
-      { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs',             category: 'receipts',      sub: 'files' },
+      { bucket: 'event-media',          folder: '',        label: 'Event Media (incl. quarantine)',     category: 'events',        sub: 'recorder' },
+      { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos (incl. quarantine)',    category: 'assets',        sub: 'movable' },
+      { bucket: 'fixed-asset-docs',     folder: '',        label: 'Fixed Asset Docs (incl. quarantine)', category: 'assets',       sub: 'fixed' },
+      { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs (incl. quarantine)',    category: 'receipts',      sub: 'files' },
       { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
       { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
       { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
@@ -644,22 +649,19 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     const bucket = parts[1]
     const folder = parts[2] || ''
     const rootPath = folder
-    const { data: rootItems } = await adminSupabase.storage.from(bucket).list(rootPath, { limit: 10000 })
+    // Recursive collect — includes _quarantine/{snapshotId}/… for fresh-setup wipes
     const toDelete = []
-    for (const itemRow of (rootItems || [])) {
-      // Protect recycle-bin quarantine media from Flush Data
-      if (itemRow.name === '_quarantine') continue
-      if (itemRow.metadata) {
-        toDelete.push(rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name)
-        continue
-      }
-      const subPath = rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name
-      const { data: subItems } = await adminSupabase.storage.from(bucket).list(subPath, { limit: 10000 })
-      for (const f of (subItems || [])) {
-        if (f.name === '_quarantine') continue
-        if (f.metadata) toDelete.push(`${subPath}/${f.name}`)
+    async function walk(dir) {
+      const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
+      if (error || !data?.length) return
+      for (const itemRow of data) {
+        if (itemRow.name === '.emptyFolderPlaceholder') continue
+        const full = dir ? `${dir}/${itemRow.name}` : itemRow.name
+        if (itemRow.metadata || itemRow.id) toDelete.push(full)
+        else await walk(full)
       }
     }
+    await walk(rootPath)
     for (let i = 0; i < toDelete.length; i += 100) {
       const chunk = toDelete.slice(i, i + 100)
       const { error } = await adminSupabase.storage.from(bucket).remove(chunk)
@@ -692,6 +694,25 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
               skipped.push(item.label)
             } else {
               throw new Error(`${tbl}: ${error.message} (code: ${error.code})`)
+            }
+          }
+          // Fresh setup: wiping recycle-bin rows also clears leftover quarantine media
+          if (tbl === 'cms_recycle_bin') {
+            for (const bucket of ['event-media', 'asset-photos', 'receipt-pdfs', 'fixed-asset-docs']) {
+              const toDelete = []
+              async function walk(dir) {
+                const { data } = await adminSupabase.storage.from(bucket).list(dir, { limit: 10000 })
+                for (const row of (data || [])) {
+                  if (row.name === '.emptyFolderPlaceholder') continue
+                  const full = `${dir}/${row.name}`
+                  if (row.metadata || row.id) toDelete.push(full)
+                  else await walk(full)
+                }
+              }
+              await walk('_quarantine')
+              for (let i = 0; i < toDelete.length; i += 100) {
+                await adminSupabase.storage.from(bucket).remove(toDelete.slice(i, i + 100))
+              }
             }
           }
         } else {
@@ -1985,10 +2006,11 @@ const CLEANUP_RULES = [
 ]
 
 const DB_CLEANUP_RULES = [
-  { table: 'login_logs',            label: 'Login Logs',            maxAgeDays: 15, dateColumn: 'login_at', note: 'Login sessions older than 15 days are automatically removed.' },
-  { table: 'whatsapp_receipt_logs', label: 'WhatsApp Receipt Log',  maxAgeDays: 15, dateColumn: 'sent_at',  note: 'WhatsApp receipt send logs older than 15 days are removed.' },
-  { table: 'announcements_log',     label: 'Announcement Log',      maxAgeDays: 15, dateColumn: 'sent_at',  note: 'Announcement send logs older than 15 days are removed.' },
-  { table: 'payment_request_logs',  label: 'Payment Request Log',   maxAgeDays: 15, dateColumn: 'sent_at',  note: 'Payment request send logs older than 15 days are removed.' },
+  { table: 'login_logs',            label: 'Login Logs',            maxAgeDays: 15, dateColumn: 'login_at',   note: 'Login sessions older than 15 days are automatically removed.' },
+  { table: 'whatsapp_receipt_logs', label: 'WhatsApp Receipt Log',  maxAgeDays: 15, dateColumn: 'sent_at',    note: 'WhatsApp receipt send logs older than 15 days are removed.' },
+  { table: 'announcements_log',     label: 'Announcement Log',      maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Announcement send logs older than 15 days are removed.' },
+  { table: 'payment_request_logs',  label: 'Payment Request Log',   maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Payment request send logs older than 15 days are removed.' },
+  { table: 'cms_audit_log',         label: 'Audit Trail',           maxAgeDays: 15, dateColumn: 'created_at', note: 'CMS audit trail entries older than 15 days are removed.' },
 ]
 
 // A file is a template if it has no metadata (folder) or name contains "template"
