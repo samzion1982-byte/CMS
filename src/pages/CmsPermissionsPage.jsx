@@ -28,18 +28,45 @@ export default function CmsPermissionsPage() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set(CMS_PERMISSION_TREE.map(c => c.key)))
+  /** role value → [{ full_name, email, is_active }] */
+  const [rolePeople, setRolePeople] = useState({})
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await loadAllRolePageGrants(supabase)
+      const roleValues = CMS_CONFIG_ROLES.map(r => r.value)
+      const [grantsData, peopleRes] = await Promise.all([
+        loadAllRolePageGrants(supabase),
+        supabase
+          .from('profiles')
+          .select('full_name, email, role, is_active')
+          .in('role', roleValues)
+          .order('full_name', { ascending: true }),
+      ])
+
       const next = {}
       for (const r of CMS_CONFIG_ROLES) {
-        const { _custom, ...grants } = data[r.value] || buildDefaultGrants(r.value)
+        const { _custom, ...grants } = grantsData[r.value] || buildDefaultGrants(r.value)
         next[r.value] = grants
       }
       setMatrix(next)
       setDirty(false)
+
+      const byRole = {}
+      for (const r of roleValues) byRole[r] = []
+      if (peopleRes.error) {
+        console.warn('[cms-permissions] could not load role names', peopleRes.error)
+      } else {
+        for (const row of peopleRes.data || []) {
+          if (!byRole[row.role]) byRole[row.role] = []
+          byRole[row.role].push({
+            full_name: (row.full_name || '').trim(),
+            email: row.email || '',
+            is_active: row.is_active !== false,
+          })
+        }
+      }
+      setRolePeople(byRole)
     } catch (e) {
       console.error(e)
       toast(
@@ -179,21 +206,46 @@ export default function CmsPermissionsPage() {
               <thead>
                 <tr style={{ background: 'var(--table-header-bg, var(--card-header-bg))' }}>
                   <th style={thStyle(true)}>Category / Page</th>
-                  {CMS_CONFIG_ROLES.map(r => (
-                    <th key={r.value} style={thStyle(false)}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                        <span>{r.label}</span>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button type="button" title={`Allow all for ${r.label}`} onClick={() => setRoleAll(r.value, true)} style={miniBtn}>
-                            <CheckSquare size={12} /> All
-                          </button>
-                          <button type="button" title={`Clear ${r.label}`} onClick={() => setRoleAll(r.value, false)} style={miniBtn}>
-                            <Square size={12} /> None
-                          </button>
+                  {CMS_CONFIG_ROLES.map(r => {
+                    const people = (rolePeople[r.value] || []).filter(p => p.is_active !== false)
+                    const inactive = (rolePeople[r.value] || []).filter(p => p.is_active === false)
+                    const names = people
+                      .map(p => p.full_name || p.email)
+                      .filter(Boolean)
+                    const title = [
+                      ...people.map(p => p.full_name ? `${p.full_name}${p.email ? ` <${p.email}>` : ''}` : p.email),
+                      ...inactive.map(p => `${p.full_name || p.email || 'User'} (inactive)`),
+                    ].filter(Boolean).join('\n')
+                    return (
+                      <th key={r.value} style={thStyle(false)} title={title || undefined}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                          <span>{r.label}</span>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            letterSpacing: 0,
+                            color: names.length ? 'var(--text-1)' : 'var(--text-3)',
+                            lineHeight: 1.25,
+                            maxWidth: 120,
+                            textAlign: 'center',
+                          }}>
+                            {names.length
+                              ? names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
+                              : '— unassigned —'}
+                          </span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button type="button" title={`Allow all for ${r.label}`} onClick={() => setRoleAll(r.value, true)} style={miniBtn}>
+                              <CheckSquare size={12} /> All
+                            </button>
+                            <button type="button" title={`Clear ${r.label}`} onClick={() => setRoleAll(r.value, false)} style={miniBtn}>
+                              <Square size={12} /> None
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </th>
-                  ))}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
