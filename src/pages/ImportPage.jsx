@@ -1133,12 +1133,20 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
   const [sheetName, setSheetName] = useState('')
   const [headers, setHeaders] = useState([])
   const [rows, setRows] = useState([])
-  const [progress,    setProgress]    = useState(0)
+  const [progress,    setProgress]    = useState({ percent: 0, done: 0, pending: 0, total: 0, label: 'Importing…' })
   const [result,      setResult]      = useState(null)
   const [importing,   setImporting]   = useState(false)
   const [dragOver,    setDragOver]    = useState(false)
   const [importError, setImportError] = useState(null)
   const [overwriteFY, setOverwriteFY] = useState(false)
+
+  function updateImportProgress(done, total, label) {
+    const safeTotal = Math.max(0, total || 0)
+    const safeDone = Math.min(Math.max(0, done || 0), safeTotal)
+    const pending = Math.max(0, safeTotal - safeDone)
+    const percent = safeTotal > 0 ? Math.round((safeDone / safeTotal) * 100) : 0
+    setProgress({ percent, done: safeDone, pending, total: safeTotal, label: label || 'Importing…' })
+  }
 
   async function handleFile(file) {
     if (!file) return
@@ -1266,10 +1274,11 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       console.log('[ReceiptImport] parseDateDMY result →', parseDateDMY(sampleDate))
     }
 
-    setImporting(true); setStep(4); setProgress(0)
+    setImporting(true); setStep(4); updateImportProgress(0, rows.length, `Importing receipts — FY ${fy}`)
 
     // Overwrite mode: delete all existing receipts for this FY first
     if (overwriteFY) {
+      updateImportProgress(0, rows.length, 'Clearing existing FY receipts…')
       const { data: exIds } = await supabase.from('receipts').select('id').eq('financial_year', fy)
       if (exIds?.length) {
         const ids = exIds.map(r => r.id)
@@ -1289,7 +1298,6 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     try {
       // `rows` is already header-stripped by loadSheet; iterate all data rows
       for (let ri = 0; ri < rows.length; ri++) {
-        if (ri % 10 === 0) setProgress(Math.round((ri / total) * 100))
         const row = rows[ri]
         try {
           // Skip fully blank rows
@@ -1336,15 +1344,18 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
             if (!cc) continue
             const amt    = parseFloat(String(row[cc.amtIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
             const months = cc.monIdx >= 0 ? parseFloat(String(row[cc.monIdx] ?? '1').replace(/[^0-9.]/g, '')) || 1 : 1
-            const total  = cc.totIdx >= 0 ? parseFloat(String(row[cc.totIdx] ?? '0').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
-            if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total })
+            const itemTotal = cc.totIdx >= 0 ? parseFloat(String(row[cc.totIdx] ?? '0').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
+            if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total: itemTotal })
           }
           if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
           existingNums.add(receiptNo)
           imported++
         } catch (e) { console.warn('[ReceiptImport] row error:', e); errors++ }
+        // Update after every row so transferred / pending / % stay live
+        updateImportProgress(ri + 1, total, `Importing receipts — FY ${fy}`)
       }
 
+      updateImportProgress(total, total, `Importing receipts — FY ${fy}`)
       setResult({ total: rows.length, inserted: imported, errors, dups: skipped })
       if (imported > 0) {
         await logMigration('receipts', `${sheetName} (FY)`, 'success', imported + skipped, imported, errors)
@@ -1390,7 +1401,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
         return
       }
 
-      setImporting(true); setStep(4); setProgress(0)
+      setImporting(true); setStep(4); updateImportProgress(0, zones.length, 'Importing zones…')
 
       try {
         const records = zones
@@ -1398,12 +1409,15 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
           .map((zone_name, idx) => ({ zone_name, sort_order: idx + 1, created_by: profile?.email }))
         records.push({ zone_name: 'Others', sort_order: 99, created_by: profile?.email })
 
+        updateImportProgress(0, records.length, 'Clearing existing zones…')
         const { error: delErr } = await supabase.from('church_zones').delete().not('id', 'is', null)
         if (delErr) throw new Error(`Clear failed: ${delErr.message}`)
 
+        updateImportProgress(Math.floor(records.length / 2), records.length, 'Importing zones…')
         const { error: insErr } = await supabase.from('church_zones').insert(records)
         if (insErr) throw new Error(`Insert failed: ${insErr.message}`)
 
+        updateImportProgress(records.length, records.length, 'Importing zones…')
         await logMigration('zones', sheetName, 'success', records.length, records.length, 0)
         setResult({ total: records.length, inserted: records.length, errors: 0, dups: 0 })
         toast(`${records.length} zones imported successfully.`, 'success')
@@ -1448,7 +1462,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
       return
     }
 
-    setImporting(true); setStep(4); setProgress(0)
+    setImporting(true); setStep(4); updateImportProgress(0, validRows.length, `Importing ${targetTable === 'members' ? 'members' : 'deleted members'}…`)
 
     // Transform rows using position-only mapping
     const dateDebugLog = []
@@ -1487,12 +1501,22 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
     const dupCount = records.length - dedupedRecords.length
     if (dupCount > 0) console.warn(`⚠️ ${dupCount} duplicate member_id(s) found — last occurrence kept.`)
 
+    const total = dedupedRecords.length
+    const BATCH = 50
+    const progressLabel = targetTable === 'members' ? 'Importing members…' : 'Importing deleted members…'
+
     try {
       if (targetTable === 'members') {
-        // Atomic swap via staging for main members table
+        // Atomic swap via staging for main members table — insert in batches for live progress
+        updateImportProgress(0, total, 'Preparing staging…')
         await supabase.from('members_staging').delete().gte('created_at', '1970-01-01')
-        const { error: stagingError } = await supabase.from('members_staging').insert(dedupedRecords)
-        if (stagingError) throw new Error(`Staging insert failed: ${stagingError.message}`)
+        for (let i = 0; i < dedupedRecords.length; i += BATCH) {
+          const chunk = dedupedRecords.slice(i, i + BATCH)
+          const { error: stagingError } = await supabase.from('members_staging').insert(chunk)
+          if (stagingError) throw new Error(`Staging insert failed: ${stagingError.message}`)
+          updateImportProgress(Math.min(i + chunk.length, total), total, progressLabel)
+        }
+        updateImportProgress(total, total, 'Finalizing member swap…')
         const { error: swapError } = await supabase.rpc('atomic_swap_members')
         if (swapError) throw new Error(`Atomic swap failed: ${swapError.message}`)
       } else {
@@ -1504,13 +1528,19 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
           deleted_by:  r.deleted_by  || importedBy,
           deleted_at:  r.deleted_at  || now,
         }))
-        // Clear and re-insert (no unique constraint needed)
+        // Clear and re-insert in batches (no unique constraint needed)
+        updateImportProgress(0, total, 'Clearing existing deleted members…')
         const { error: delError } = await supabase.from(targetTable).delete().gte('member_id', '')
         if (delError) throw new Error(`Clear failed: ${delError.message}`)
-        const { error } = await supabase.from(targetTable).insert(stamped)
-        if (error) throw new Error(`Import failed: ${error.message}`)
+        for (let i = 0; i < stamped.length; i += BATCH) {
+          const chunk = stamped.slice(i, i + BATCH)
+          const { error } = await supabase.from(targetTable).insert(chunk)
+          if (error) throw new Error(`Import failed: ${error.message}`)
+          updateImportProgress(Math.min(i + chunk.length, total), total, progressLabel)
+        }
       }
 
+      updateImportProgress(total, total, progressLabel)
       // Only log on success
       await logMigration(targetCategory, sheetName, 'success', dedupedRecords.length, dedupedRecords.length, 0)
       setResult({ total: dedupedRecords.length, inserted: dedupedRecords.length, errors: 0, dups: dupCount })
@@ -1530,7 +1560,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
   }
 
   function reset() {
-    setWb(null);setSheetName('');setHeaders([]);setRows([]);setProgress(0)
+    setWb(null);setSheetName('');setHeaders([]);setRows([]);updateImportProgress(0, 0, 'Importing…')
     setResult(null);setStep(1);setImporting(false);setImportError(null);setOverwriteFY(false)
   }
 
@@ -1765,7 +1795,7 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
                   color:'#fff',cursor:importing?'default':'pointer',
                   boxShadow:`0 2px 8px ${btnShadow}`}}>
                 {importing
-                  ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing…</>
+                  ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing {progress.percent}%…</>
                   : isWorkings
                   ? <><CheckCircle size={13}/>Replace {zoneNames.length} zones</>
                   : isReceipts
@@ -1787,15 +1817,29 @@ function ImportTab({ onRefreshBoard, setPasswordModal }) {
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
             <Loader2 size={16} style={{color:'#2563eb',animation:'spin 1s linear infinite',flexShrink:0}}/>
             <div>
-              <p style={{margin:'0 0 1px',fontSize:13,fontWeight:600,color:'#0f172a'}}>Importing receipts…</p>
+              <p style={{margin:'0 0 1px',fontSize:13,fontWeight:600,color:'#0f172a'}}>{progress.label || 'Importing…'}</p>
               <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>"{sheetName}"</p>
             </div>
-            <span style={{marginLeft:'auto',fontSize:13,fontWeight:700,color:'#2563eb'}}>{progress}%</span>
+            <span style={{marginLeft:'auto',fontSize:18,fontWeight:800,color:'#2563eb',lineHeight:1}}>{progress.percent}%</span>
           </div>
-          <div style={{height:8,borderRadius:4,background:'#e2e8f0',overflow:'hidden'}}>
-            <div style={{height:'100%',borderRadius:4,background:'#2563eb',transition:'width .3s',width:progress+'%'}}/>
+          <div style={{height:10,borderRadius:5,background:'#e2e8f0',overflow:'hidden',marginBottom:14}}>
+            <div style={{height:'100%',borderRadius:5,background:'#2563eb',transition:'width .25s ease',width:progress.percent+'%'}}/>
           </div>
-          <p style={{margin:'8px 0 0',fontSize:11,color:'#94a3b8'}}>Please wait — do not close this page.</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            {[
+              ['Transferred', progress.done, '#16a34a', '#f0fdf4'],
+              ['Pending', progress.pending, '#d97706', '#fffbeb'],
+              ['Total', progress.total, '#2563eb', '#eff6ff'],
+            ].map(([l, v, c, bg]) => (
+              <div key={l} style={{background:bg,borderRadius:10,padding:'12px 10px',textAlign:'center'}}>
+                <p style={{margin:'0 0 2px',fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{Number(v).toLocaleString()}</p>
+                <p style={{margin:0,fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:c,opacity:0.75}}>{l}</p>
+              </div>
+            ))}
+          </div>
+          <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>
+            {progress.done.toLocaleString()} of {progress.total.toLocaleString()} processed — please wait, do not close this page.
+          </p>
         </div>
       )}
 
@@ -1846,8 +1890,7 @@ function PhotosTab({ onRefreshBoard }) {
   const [folder, setFolder] = useState('active')
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [done, setDone] = useState(0)
+  const [progress, setProgress] = useState({ percent: 0, done: 0, pending: 0, total: 0 })
   const [errors, setErrors] = useState(0)
   const [existing, setExisting] = useState([])
   const [loadingExisting, setLoadingExisting] = useState(false)
@@ -1868,10 +1911,22 @@ function PhotosTab({ onRefreshBoard }) {
     setFiles(imgs)
   }
 
+  function updatePhotoProgress(processed, total) {
+    const safeTotal = Math.max(0, total || 0)
+    const safeDone = Math.min(Math.max(0, processed || 0), safeTotal)
+    setProgress({
+      percent: safeTotal > 0 ? Math.round((safeDone / safeTotal) * 100) : 0,
+      done: safeDone,
+      pending: Math.max(0, safeTotal - safeDone),
+      total: safeTotal,
+    })
+  }
+
   async function upload() {
     if (!files.length) return
     const targetFolder = folder // capture at call time — avoids stale closure
-    setUploading(true); setProgress(0); setDone(0); setErrors(0)
+    const total = files.length
+    setUploading(true); updatePhotoProgress(0, total); setErrors(0)
     let d=0, e=0
     for (let i=0;i<files.length;i++) {
       const f = files[i]
@@ -1879,8 +1934,8 @@ function PhotosTab({ onRefreshBoard }) {
       const ext = f.name.split('.').pop().toLowerCase()
       const { error } = await supabase.storage.from('member-photos').upload(`${targetFolder}/${memberId}.${ext}`, f, { upsert:true })
       if (error) { e++; console.error(f.name, error.message) } else d++
-      setProgress(Math.round(((i+1)/files.length)*100))
-      setDone(d); setErrors(e)
+      updatePhotoProgress(i + 1, total)
+      setErrors(e)
       await new Promise(r=>setTimeout(r,50))
     }
     setUploading(false)
@@ -1944,17 +1999,43 @@ function PhotosTab({ onRefreshBoard }) {
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-semibold text-slate-700">{files.length} photo(s) ready</p>
             <div className="flex gap-2">
-              <button onClick={()=>setFiles([])} className="btn btn-ghost btn-sm">Clear</button>
+              <button onClick={()=>setFiles([])} disabled={uploading} className="btn btn-ghost btn-sm">Clear</button>
               <button onClick={upload} disabled={uploading} className="btn btn-primary btn-sm">
-                {uploading?<><Loader2 size={13} className="animate-spin"/>Uploading {progress}%...</>:<><Upload size={13}/>Upload {files.length} photos</>}
+                {uploading
+                  ? <><Loader2 size={13} className="animate-spin"/>Uploading {progress.percent}%…</>
+                  : <><Upload size={13}/>Upload {files.length} photos</>}
               </button>
             </div>
           </div>
           {uploading && (
-            <>
-              <div className="h-2 rounded bg-slate-100 overflow-hidden mb-1.5"><div className="h-full rounded bg-blue-600 transition-all" style={{width:progress+'%'}}/></div>
-              <p className="text-xs text-slate-400">{done} uploaded{errors?', '+errors+' failed':''}</p>
-            </>
+            <div style={{marginBottom:12}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <Loader2 size={15} style={{color:'#2563eb',animation:'spin 1s linear infinite',flexShrink:0}}/>
+                <div style={{flex:1}}>
+                  <p style={{margin:0,fontSize:13,fontWeight:600,color:'#0f172a'}}>Uploading photos to {folder}/</p>
+                  <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>
+                    {progress.done.toLocaleString()} of {progress.total.toLocaleString()} processed
+                    {errors ? ` · ${errors} failed` : ''}
+                  </p>
+                </div>
+                <span style={{fontSize:18,fontWeight:800,color:'#2563eb',lineHeight:1}}>{progress.percent}%</span>
+              </div>
+              <div style={{height:10,borderRadius:5,background:'#e2e8f0',overflow:'hidden',marginBottom:12}}>
+                <div style={{height:'100%',borderRadius:5,background:'#2563eb',transition:'width .25s ease',width:progress.percent+'%'}}/>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+                {[
+                  ['Transferred', progress.done, '#16a34a', '#f0fdf4'],
+                  ['Pending', progress.pending, '#d97706', '#fffbeb'],
+                  ['Total', progress.total, '#2563eb', '#eff6ff'],
+                ].map(([l, v, c, bg]) => (
+                  <div key={l} style={{background:bg,borderRadius:10,padding:'12px 10px',textAlign:'center'}}>
+                    <p style={{margin:'0 0 2px',fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{Number(v).toLocaleString()}</p>
+                    <p style={{margin:0,fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:c,opacity:0.75}}>{l}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           <div className="grid gap-2 mt-3" style={{gridTemplateColumns:'repeat(auto-fill,minmax(80px,1fr))'}}>
             {files.slice(0,12).map((f,i)=>(
