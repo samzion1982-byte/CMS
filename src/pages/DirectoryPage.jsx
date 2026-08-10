@@ -558,36 +558,78 @@ export default function DirectoryPage() {
                             )}
                           </div>
                         )}
-                        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {c.phone && (
-                            phoneLink ? (
-                              <a href={phoneLink} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 5,
-                                padding: '5px 10px', borderRadius: 7, textDecoration: 'none',
-                                background: '#eff6ff', color: '#1d4ed8', fontSize: 12, fontWeight: 700,
-                              }}>
-                                <Phone size={12} /> {c.phone}
-                              </a>
-                            ) : (
-                              <span style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 5,
-                                padding: '5px 10px', borderRadius: 7,
-                                background: '#eff6ff', color: '#1d4ed8', fontSize: 12, fontWeight: 700,
-                              }}>
-                                <Phone size={12} /> {c.phone}
-                              </span>
-                            )
-                          )}
-                          {(c.whatsapp || c.phone) && waLink && (
-                            <a href={waLink} target="_blank" rel="noreferrer" style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 5,
-                              padding: '5px 10px', borderRadius: 7, textDecoration: 'none',
-                              background: '#ecfdf5', color: '#047857', fontSize: 12, fontWeight: 700,
-                            }}>
-                              <MessageCircle size={12} /> WhatsApp
-                            </a>
-                          )}
-                          {c.email && (
+
+                        {(c.phone || c.whatsapp) && (
+                          <div style={{
+                            marginTop: 10,
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 10,
+                            alignItems: 'stretch',
+                          }}>
+                            {c.phone && (
+                              phoneLink ? (
+                                <a href={phoneLink} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                                  padding: '8px 14px', borderRadius: 10, textDecoration: 'none',
+                                  background: '#eff6ff', color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                }}>
+                                  <Phone size={16} strokeWidth={2.4} />
+                                  <span>
+                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>Phone</span>
+                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.phone}</span>
+                                  </span>
+                                </a>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                                  padding: '8px 14px', borderRadius: 10,
+                                  background: '#eff6ff', color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                }}>
+                                  <Phone size={16} strokeWidth={2.4} />
+                                  <span>
+                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>Phone</span>
+                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.phone}</span>
+                                  </span>
+                                </span>
+                              )
+                            )}
+                            {c.whatsapp && (
+                              waHref(c.whatsapp) ? (
+                                <a href={waHref(c.whatsapp)} target="_blank" rel="noreferrer" style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                                  padding: '8px 14px', borderRadius: 10, textDecoration: 'none',
+                                  background: '#ecfdf5', color: '#047857',
+                                  border: '1px solid #a7f3d0',
+                                }}>
+                                  <MessageCircle size={16} strokeWidth={2.4} />
+                                  <span>
+                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>WhatsApp</span>
+                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.whatsapp}</span>
+                                  </span>
+                                </a>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                                  padding: '8px 14px', borderRadius: 10,
+                                  background: '#ecfdf5', color: '#047857',
+                                  border: '1px solid #a7f3d0',
+                                }}>
+                                  <MessageCircle size={16} strokeWidth={2.4} />
+                                  <span>
+                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>WhatsApp</span>
+                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.whatsapp}</span>
+                                  </span>
+                                </span>
+                              )
+                            )}
+                          </div>
+                        )}
+
+                        {c.email && (
+                          <div style={{ marginTop: 8 }}>
                             <a href={`mailto:${c.email}`} style={{
                               display: 'inline-flex', alignItems: 'center', gap: 5,
                               padding: '5px 10px', borderRadius: 7, textDecoration: 'none',
@@ -596,15 +638,15 @@ export default function DirectoryPage() {
                             }}>
                               <Mail size={12} /> {c.email}
                             </a>
-                          )}
-                        </div>
+                          </div>
+                        )}
                         {c.notes && (
                           <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.4 }}>
                             {c.notes}
                           </p>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignSelf: 'flex-start' }}>
                         <button
                           type="button"
                           title="Edit"
