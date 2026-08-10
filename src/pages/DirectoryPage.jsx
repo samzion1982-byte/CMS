@@ -1071,6 +1071,9 @@ export default function DirectoryPage() {
                   const primary = c.whatsapp || ''
                   const secondary = c.phone || ''
                   const hasBoth = !!(primary && secondary)
+                  const isOrg = c.contact_kind === 'organisation'
+                  const KindIcon = isOrg ? Building2 : User
+                  const kindColor = isOrg ? '#0369a1' : '#7c3aed'
                   return (
                     <div
                       key={c.id}
@@ -1087,6 +1090,15 @@ export default function DirectoryPage() {
                       {/* Left: identity with color separation */}
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{
+                            width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                            display: 'inline-grid', placeItems: 'center',
+                            background: isOrg ? '#e0f2fe' : '#f3e8ff',
+                            color: kindColor,
+                            alignSelf: 'center',
+                          }}>
+                            <KindIcon size={12} />
+                          </span>
                           <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.25 }}>
                             {c.name}
                           </p>
@@ -1104,8 +1116,8 @@ export default function DirectoryPage() {
                         {(c.organization || c.address) && (
                           <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
                             {c.organization && (
-                              <span style={{ fontSize: 11, color: '#0369a1', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4, lineHeight: 1.3 }}>
-                                <Building2 size={10} /> {c.organization}
+                              <span style={{ fontSize: 11, color: kindColor, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4, lineHeight: 1.3 }}>
+                                <KindIcon size={10} /> {c.organization}
                               </span>
                             )}
                             {c.address && (
