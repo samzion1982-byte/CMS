@@ -516,7 +516,6 @@ export default function DirectoryPage() {
                     ? masterDisplayName(catRow, categories)
                     : (c.category?.name || '')
                   const phoneLink = telHref(c.phone)
-                  const waLink = waHref(c.whatsapp || c.phone)
                   return (
                     <div
                       key={c.id}
