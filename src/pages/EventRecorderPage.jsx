@@ -133,18 +133,22 @@ function isValidCalendarDate(year, month, day) {
 }
 
 /**
- * Optional free-text dates (Baptism / Confirmation / Burial).
- * Empty is OK; if filled, expect DD-MM-YYYY or DD/MM/YYYY.
+ * Optional free-text dates (Baptism / Confirmation / Burial / Wedding extras).
+ * Empty is OK; if filled, accept DD-MM-YYYY, DD/MM/YYYY, or YYYY-MM-DD.
  * Returns an error message string, or null when valid.
  */
 function optionalDateTextError(value, label) {
   if (value == null || !String(value).trim()) return null
   const s = String(value).trim()
-  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
-  if (!m) return `${label} must be DD-MM-YYYY`
-  const day = Number(m[1])
-  const month = Number(m[2])
-  const year = Number(m[3])
+  let day, month, year
+  let m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (m) {
+    day = Number(m[1]); month = Number(m[2]); year = Number(m[3])
+  } else {
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (!m) return `${label} must be DD-MM-YYYY`
+    year = Number(m[1]); month = Number(m[2]); day = Number(m[3])
+  }
   if (!isValidCalendarDate(year, month, day)) return `${label} is not a valid date`
   return null
 }
