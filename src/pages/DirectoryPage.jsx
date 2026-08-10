@@ -296,8 +296,27 @@ function ContactModal({ editing, categories, onSave, onClose }) {
   const [saving, setSaving] = useState(false)
   const toast = useToast()
   const catOpts = flattenMasterOptions(categories.filter(c => c.is_active !== false))
+  // Ignore accidental backdrop closes (keyboard open / scroll / focus jump to Notes)
+  const ignoreBackdropRef = useRef(false)
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  function armBackdropGuard() {
+    ignoreBackdropRef.current = true
+    setTimeout(() => { ignoreBackdropRef.current = false }, 500)
+  }
+  function onBackdropPointerDown(e) {
+    if (e.target !== e.currentTarget) return
+    if (ignoreBackdropRef.current) return
+    e.currentTarget.dataset.backdropDown = '1'
+  }
+  function onBackdropClick(e) {
+    if (e.target !== e.currentTarget) return
+    if (ignoreBackdropRef.current) return
+    if (e.currentTarget.dataset.backdropDown !== '1') return
+    e.currentTarget.dataset.backdropDown = ''
+    onClose()
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -342,11 +361,14 @@ function ContactModal({ editing, categories, onSave, onClose }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
       }}
-      onClick={onClose}
+      onPointerDown={onBackdropPointerDown}
+      onClick={onBackdropClick}
     >
       <form
         className="card"
+        onPointerDown={e => e.stopPropagation()}
         onClick={e => e.stopPropagation()}
+        onFocusCapture={armBackdropGuard}
         onSubmit={handleSubmit}
         style={{
           width: '100%', maxWidth: 520, padding: 0, overflow: 'hidden',
