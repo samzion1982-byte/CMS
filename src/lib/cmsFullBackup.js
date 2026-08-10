@@ -381,13 +381,13 @@ export async function diagnoseBackupSetup() {
     out.hints.push(
       `cms-full-backup version ${out.backupFn.data?.version || '?'} is complete but NOT chunked — redeploy latest to avoid timeout after a few photos.`,
     )
-  } else if (!(out.backupFn.data?.supports || []).includes('storage_sync') || Number(out.backupFn.data?.version) < 5) {
+  } else if (!(out.backupFn.data?.supports || []).includes('storage_sync') || Number(out.backupFn.data?.version) < 6) {
     out.hints.push(
-      `cms-full-backup version ${out.backupFn.data?.version || '?'} lacks all-bucket storage sync — redeploy latest (version 5+) so every storage bucket syncs incrementally.`,
+      `cms-full-backup version ${out.backupFn.data?.version || '?'} — redeploy latest (version 6+) for Drive filename/count sync verify.`,
     )
   } else {
     out.hints.push(
-      `cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked, all storage sync)`,
+      `cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked, all storage sync + verify)`,
     )
   }
   out.hints.push('For restore truncate: run SQL 20260809_cms_complete_backup.sql')

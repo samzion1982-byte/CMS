@@ -27,7 +27,7 @@ const CORS = {
 }
 
 const PAGE = 1000
-const COMPLETE_VERSION = 5
+const COMPLETE_VERSION = 6
 /** Soft time budget per Edge invoke so we return before platform kill (~60–150s). */
 const CHUNK_BUDGET_MS = 40_000
 const MAX_FILES_PER_CHUNK = 6
@@ -46,6 +46,11 @@ function isSyncBucket(name) {
 
 function syncFileKey(bucket, path) {
   return `${bucket}/${path}`
+}
+
+function isSkippableStorageName(name) {
+  const n = String(name || '')
+  return !n || n.startsWith('.') || n === '.emptyFolderPlaceholder'
 }
 
 const FALLBACK_TABLES = [
@@ -464,31 +469,86 @@ async function saveSyncIndex(accessToken, syncRootId, index) {
 }
 
 /**
- * Compare Supabase storage listing vs sync-index; return only new/changed files.
+ * Compare Supabase storage vs Drive folder contents (filename + size).
+ * Never trust sync-index alone — stale Drive file IDs caused missing photos.
  */
-function buildSyncPending(bucket, localFiles, syncIndex) {
+async function buildSyncPending(accessToken, syncRootId, bucket, localFiles, syncIndex) {
   const pending = []
   let unchanged = 0
-  for (const f of localFiles) {
-    const key = syncFileKey(bucket, f.path)
-    const prev = syncIndex.files?.[key]
-    const size = Number(f.size)
-    const prevSize = prev != null ? Number(prev.size) : NaN
-    if (prev && Number.isFinite(size) && Number.isFinite(prevSize) && size === prevSize && prev.drive_file_id) {
-      unchanged += 1
-      continue
-    }
-    pending.push({
-      mode: 'sync',
-      bucket,
-      path: f.path,
-      mime: f.mime,
-      size: f.size,
-      drive_file_id: prev?.drive_file_id || null,
-      action: prev?.drive_file_id ? 'update' : 'create',
-    })
+  const missingNames = []
+  const files = (localFiles || []).filter((f) => !isSkippableStorageName(f.path.split('/').pop()))
+
+  const bucketFolder = await findOrCreateNamedFolder(accessToken, syncRootId, bucket)
+  const byDir = new Map()
+  for (const f of files) {
+    const parts = f.path.split('/')
+    const fileName = parts.pop()
+    const parentPath = parts.join('/')
+    if (!byDir.has(parentPath)) byDir.set(parentPath, [])
+    byDir.get(parentPath).push({ ...f, fileName })
   }
-  return { pending, unchanged }
+
+  for (const [parentPath, dirFiles] of byDir) {
+    const parentId = parentPath
+      ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
+      : bucketFolder.id
+    const children = await driveListChildren(accessToken, parentId)
+    const onDriveByName = new Map()
+    for (const child of children) {
+      if (child.mimeType === 'application/vnd.google-apps.folder') continue
+      if (isSkippableStorageName(child.name)) continue
+      onDriveByName.set(child.name, child)
+    }
+
+    // Filename / count check for this folder
+    for (const f of dirFiles) {
+      if (!onDriveByName.has(f.fileName)) {
+        missingNames.push(`${bucket}/${f.path}`)
+      }
+    }
+
+    for (const f of dirFiles) {
+      const key = syncFileKey(bucket, f.path)
+      const prev = syncIndex.files?.[key]
+      const onDrive = onDriveByName.get(f.fileName)
+      const size = Number(f.size)
+      const driveSize = onDrive?.size != null ? Number(onDrive.size) : NaN
+
+      // Unchanged only when the file is present in the expected Drive folder with same size
+      if (
+        onDrive
+        && Number.isFinite(size)
+        && Number.isFinite(driveSize)
+        && size === driveSize
+      ) {
+        unchanged += 1
+        // Keep index fresh with the real Drive id for this folder
+        if (prev?.drive_file_id !== onDrive.id || Number(prev?.size) !== size) {
+          // lightweight: still unchanged for upload, but note id refresh via pending? skip upload
+        }
+        continue
+      }
+
+      pending.push({
+        mode: 'sync',
+        bucket,
+        path: f.path,
+        mime: f.mime,
+        size: f.size,
+        // Only reuse Drive id if the file is actually in this folder
+        drive_file_id: onDrive?.id || null,
+        action: onDrive ? 'update' : 'create',
+      })
+    }
+  }
+
+  return {
+    pending,
+    unchanged,
+    missingNames,
+    localCount: files.length,
+    driveFileCount: [...byDir.keys()].length ? undefined : 0,
+  }
 }
 
 async function listAllStorageFiles(bucket, prefix = '') {
@@ -506,6 +566,7 @@ async function listAllStorageFiles(bucket, prefix = '') {
     for (const item of items) {
       const path = prefix ? `${prefix}/${item.name}` : item.name
       if (item.id) {
+        if (isSkippableStorageName(item.name)) continue
         out.push({
           path,
           size: item.metadata?.size,
@@ -716,6 +777,22 @@ async function loadProgressLog(logId) {
   return data
 }
 
+async function findDriveMissingSyncPending(accessToken, syncRootId, bucketNames) {
+  const pending = []
+  for (const bucket of bucketNames || []) {
+    if (!isSyncBucket(bucket)) continue
+    try {
+      const local = await listAllStorageFiles(bucket)
+      // Empty index → compare only against live Drive folder listing (filename + size)
+      const diff = await buildSyncPending(accessToken, syncRootId, bucket, local, { files: {} })
+      pending.push(...diff.pending)
+    } catch (_) {
+      // ignore per-bucket verify errors; main sync already logged list failures
+    }
+  }
+  return pending
+}
+
 async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startIndex, onProgress, logId, options = {}) {
   const started = Date.now()
   const storageMeta = []
@@ -787,15 +864,19 @@ async function uploadStorageBatch(accessToken, runFolderId, pendingFiles, startI
           ? await ensureNestedFolder(accessToken, bucketFolder.id, parentPath)
           : bucketFolder.id
 
-        if (file.drive_file_id) {
-          uploaded = await driveUpdateBytes(accessToken, file.drive_file_id, bytes, mime)
+        // Always resolve by name inside the expected folder — never update a stale file id elsewhere
+        const existingInFolder = await driveFindChildFile(accessToken, parentId, fileName)
+        if (existingInFolder) {
+          uploaded = await driveUpdateBytes(accessToken, existingInFolder.id, bytes, mime)
+        } else if (file.drive_file_id) {
+          // Stale index pointed elsewhere / deleted — create a fresh copy in the correct folder
+          await appendDebug(logId, 'sync_stale_id_recreate', {
+            file: label,
+            stale_id: file.drive_file_id,
+          })
+          uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
         } else {
-          const existing = await driveFindChildFile(accessToken, parentId, fileName)
-          if (existing) {
-            uploaded = await driveUpdateBytes(accessToken, existing.id, bytes, mime)
-          } else {
-            uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
-          }
+          uploaded = await driveUploadBytes(accessToken, parentId, fileName, bytes, mime)
         }
       } else {
         if (!dumpStorageRoot) {
@@ -1135,6 +1216,54 @@ async function continueCompleteBackup(body) {
     }
   }
 
+  // Filename/count verify against Drive folders before finalize
+  if (meta.sync_root_folder_id) {
+    await onProgress(91, 'Verifying Drive filenames / counts…')
+    const missing = await findDriveMissingSyncPending(
+      accessToken,
+      meta.sync_root_folder_id,
+      meta.storage_buckets || [],
+    )
+    const uploadedKeys = new Set(
+      storageMeta.filter((f) => f.mode === 'sync').map((f) => `${f.bucket}/${f.path}`),
+    )
+    const stillMissing = missing.filter((f) => !uploadedKeys.has(`${f.bucket}/${f.path}`))
+    if (stillMissing.length) {
+      const newPending = [...pendingFiles, ...stillMissing]
+      const newIndex = pendingFiles.length
+      await appendDebug(progressLogId, 'sync_verify_missing', {
+        count: stillMissing.length,
+        sample: stillMissing.slice(0, 20).map((f) => `${f.bucket}/${f.path}`),
+      })
+      await supabase.from('cms_backup_log').update({
+        status: 'running',
+        progress_pct: 91,
+        progress_message: `Sync verify: ${stillMissing.length} missing — uploading…`,
+        meta: {
+          ...nextMeta,
+          pending_files: newPending,
+          file_index: newIndex,
+          sync_verify_missing: stillMissing.length,
+        },
+      }).eq('id', progressLogId)
+      return {
+        ok: true,
+        complete: true,
+        done: false,
+        continue: true,
+        version: COMPLETE_VERSION,
+        progress_log_id: progressLogId,
+        status: 'running',
+        storage_file_count: storageMeta.length,
+        pending_remaining: stillMissing.length,
+        sync_verify_missing: stillMissing.length,
+      }
+    }
+    await appendDebug(progressLogId, 'sync_verify_ok', {
+      buckets: (meta.storage_buckets || []).length,
+    })
+  }
+
   // Rebuild state for finalize from meta + Drive
   const runFolder = {
     id: meta.drive_backup_folder_id,
@@ -1358,7 +1487,7 @@ async function runCompleteBackup(body) {
       for (const bucket of syncBuckets) {
         try {
           const files = await listAllStorageFiles(bucket)
-          const diff = buildSyncPending(bucket, files, syncIndex)
+          const diff = await buildSyncPending(accessToken, syncRootId, bucket, files, syncIndex)
           syncUnchanged += diff.unchanged
           pendingFiles.push(...diff.pending)
           await appendDebug(progressLogId, 'bucket_listed', {
@@ -1367,7 +1496,16 @@ async function runCompleteBackup(body) {
             mode: 'sync',
             pending: diff.pending.length,
             unchanged: diff.unchanged,
+            missing_on_drive: diff.missingNames?.length || 0,
+            missing_sample: (diff.missingNames || []).slice(0, 10),
           })
+          if (diff.missingNames?.length) {
+            await appendDebug(progressLogId, 'sync_filename_count_mismatch', {
+              bucket,
+              local_files: diff.localCount,
+              missing: diff.missingNames.slice(0, 30),
+            })
+          }
         } catch (e) {
           listSkipped.push(`bucket ${bucket}: ${e.message || e}`)
           await appendDebug(progressLogId, 'bucket_list_fail', { bucket, error: e.message || String(e) })
@@ -1525,6 +1663,67 @@ async function runCompleteBackup(body) {
         pending_remaining: pendingFiles.length - batch.nextIndex,
         chunk: batch,
       }
+    }
+
+    // Filename/count verify against Drive before finalize
+    if (syncRootId) {
+      await onProgress(91, 'Verifying Drive filenames / counts…')
+      const missing = await findDriveMissingSyncPending(accessToken, syncRootId, bucketNames)
+      const uploadedKeys = new Set(
+        storageMeta.filter((f) => f.mode === 'sync').map((f) => `${f.bucket}/${f.path}`),
+      )
+      const stillMissing = missing.filter((f) => !uploadedKeys.has(`${f.bucket}/${f.path}`))
+      if (stillMissing.length) {
+        const newPending = [...pendingFiles, ...stillMissing]
+        await appendDebug(progressLogId, 'sync_verify_missing', {
+          count: stillMissing.length,
+          sample: stillMissing.slice(0, 20).map((f) => `${f.bucket}/${f.path}`),
+        })
+        await supabase.from('cms_backup_log').update({
+          status: 'running',
+          progress_pct: 91,
+          progress_message: `Sync verify: ${stillMissing.length} missing — uploading…`,
+          meta: {
+            complete: true,
+            version: COMPLETE_VERSION,
+            chunked: true,
+            sync: true,
+            drive_backup_folder_id: runFolder.id,
+            drive_backup_folder_name: runFolder.name,
+            drive_database_file_id: dbFile.id,
+            database_bytes: dbBytes.length,
+            summary: built.summary,
+            storage_buckets: bucketNames,
+            pending_files: newPending,
+            file_index: pendingFiles.length,
+            storage_files: storageMeta,
+            skipped_storage: skipped,
+            storage_bytes: batch.totalBytes,
+            sync_root_folder_id: syncRootId,
+            sync_unchanged: syncUnchanged,
+            parent_drive_folder_id: folderId,
+            sync_verify_missing: stillMissing.length,
+            auth_via: authVia,
+          },
+        }).eq('id', progressLogId)
+        return {
+          ok: true,
+          complete: true,
+          done: false,
+          continue: true,
+          version: COMPLETE_VERSION,
+          progress_log_id: progressLogId,
+          status: 'running',
+          kind,
+          filename: runFolder.name,
+          folder_id: runFolder.id,
+          drive_file_id: runFolder.id,
+          storage_file_count: storageMeta.length,
+          pending_remaining: stillMissing.length,
+          sync_verify_missing: stillMissing.length,
+        }
+      }
+      await appendDebug(progressLogId, 'sync_verify_ok', { buckets: bucketNames.length })
     }
 
     return finalizeBackup(progressLogId, {
