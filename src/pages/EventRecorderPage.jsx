@@ -181,30 +181,50 @@ export default function EventRecorderPage() {
 
   return (
     <div style={{ padding: '32px 28px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-        <BookMarked size={22} style={{ color: 'var(--accent, #2563eb)' }} />
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Event Recorder</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10,
+          background: 'linear-gradient(145deg, #1e293b 0%, #334155 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(15,23,42,0.18)',
+        }}>
+          <BookMarked size={20} color="#fff" />
+        </div>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: '#0f172a' }}>
+            Event Recorder
+          </h1>
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
+            Baptism, Confirmation, Wedding &amp; Burial registers
+          </p>
+        </div>
       </div>
       <div style={{
-        display: 'flex', gap: 4,
-        borderBottom: '2px solid var(--border, #e2e8f0)',
-        marginBottom: 28,
+        display: 'inline-flex', gap: 4, padding: 4, marginBottom: 22,
+        background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+        border: '1px solid #e2e8f0', borderRadius: 12,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8)',
       }}>
-        {TABS.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-            padding: '9px 22px', fontSize: 14,
-            fontWeight: activeTab === tab.id ? 700 : 500,
-            border: 'none',
-            borderBottom: activeTab === tab.id
-              ? '2px solid var(--sidebar-bg, #1e293b)' : '2px solid transparent',
-            marginBottom: -2,
-            background: activeTab === tab.id ? 'var(--sidebar-bg, #1e293b)' : 'transparent',
-            color: activeTab === tab.id ? '#ffffff' : 'var(--text-muted, #64748b)',
-            cursor: 'pointer', borderRadius: '6px 6px 0 0', transition: 'all 0.15s',
-          }}>
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const on = activeTab === tab.id
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+              padding: '9px 20px', fontSize: 13,
+              fontWeight: on ? 700 : 550,
+              border: 'none',
+              background: on
+                ? 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)'
+                : 'transparent',
+              color: on ? '#ffffff' : '#64748b',
+              cursor: 'pointer', borderRadius: 9,
+              transition: 'all 0.18s ease',
+              boxShadow: on ? '0 4px 10px rgba(15,23,42,0.22)' : 'none',
+              letterSpacing: on ? '0.01em' : 0,
+            }}>
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
       {activeTab === 'baptism'      && <BaptismTab />}
       {activeTab === 'confirmation' && <ConfirmationTab />}
@@ -402,34 +422,14 @@ function BaptismTab() {
     <div style={{ maxWidth: 1100 }}>
 
       {/* ── Action buttons ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: searchResults.length ? 6 : 18, flexWrap:'wrap' }}>
-        <ActionBtn icon={Plus}      label="New"    onClick={handleReset} color="#475569" disabled={saving} />
-        <ActionBtn icon={saving ? Loader2 : Save} label={saving ? 'Saving…' : 'Save'} onClick={handleSave} color="#2563eb" disabled={saving} />
-        <ActionBtn icon={Edit2}     label={editId ? 'Editing' : 'Edit'} color={editId ? '#0369a1' : '#64748b'} disabled />
-        <ActionBtn icon={RotateCcw} label="Reset"  onClick={handleReset} color="#7c3aed" disabled={saving} />
-        <ActionBtn icon={Trash2}    label="Delete" onClick={handleDelete} color="#dc2626" disabled={saving || !editId} />
-        <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'flex-end' }}>
-          <div>
-            <div style={lbl()}>Search By</div>
-            <select value={searchBy} onChange={e => setSearchBy(e.target.value)} style={{ ...iS, width:140 }}>
-              <option value="slNo">Serial No.</option>
-              <option value="name">Name</option>
-              <option value="year">Year</option>
-            </select>
-          </div>
-          <input value={searchVal} onChange={e => setSearchVal(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder={searchBy === 'slNo' ? '0001/2026' : searchBy === 'year' ? '2026' : 'Name…'}
-            style={{ ...iS, width:140 }} />
-          <button onClick={handleSearch} disabled={searching} style={{
-            ...iS, width:'auto', padding:'0 16px', background:'#2563eb', color:'#fff',
-            border:'none', cursor:'pointer', fontWeight:600, display:'flex', alignItems:'center', gap:6,
-            opacity: searching ? 0.7 : 1,
-          }}>
-            {searching ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }} /> : <Search size={13} />} View
-          </button>
-        </div>
-      </div>
+      <EventActionBar
+        saving={saving} editId={editId} slNoDisplay={slNoDisplay}
+        onNew={handleReset} onSave={handleSave} onReset={handleReset} onDelete={handleDelete}
+        searchBy={searchBy} setSearchBy={setSearchBy}
+        searchVal={searchVal} setSearchVal={setSearchVal}
+        onSearch={handleSearch} searching={searching}
+        compactMargin={searchResults.length > 0}
+      />
 
       {/* ── Search results ── */}
       {searchResults.length > 0 && (
@@ -589,12 +589,9 @@ function BaptismTab() {
       </Card>
 
       {/* ── Reports ── */}
-      <Card>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:11, fontWeight:800, color:'#ef4444', letterSpacing:'0.1em', textTransform:'uppercase' }}>Reports</span>
-          <ReportBtn label="Baptism Extract" onClick={() => setShowCert(true)} color="#800020" />
-        </div>
-      </Card>
+      <EventReportsBar onSave={handleSave} saving={saving}>
+        <ReportBtn label="Baptism Extract" onClick={() => setShowCert(true)} color="#800020" />
+      </EventReportsBar>
 
       {/* ── Modals ── */}
       {viewRecord && (
@@ -1021,34 +1018,14 @@ function ConfirmationTab() {
     <div style={{ maxWidth: 1100 }}>
 
       {/* ── Action buttons ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: searchResults.length ? 6 : 18, flexWrap:'wrap' }}>
-        <ActionBtn icon={Plus}      label="New"    onClick={handleReset} color="#475569" disabled={saving} />
-        <ActionBtn icon={saving ? Loader2 : Save} label={saving ? 'Saving…' : 'Save'} onClick={handleSave} color="#2563eb" disabled={saving} />
-        <ActionBtn icon={Edit2}     label={editId ? 'Editing' : 'Edit'} color={editId ? '#0369a1' : '#64748b'} disabled />
-        <ActionBtn icon={RotateCcw} label="Reset"  onClick={handleReset} color="#7c3aed" disabled={saving} />
-        <ActionBtn icon={Trash2}    label="Delete" onClick={handleDelete} color="#dc2626" disabled={saving || !editId} />
-        <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'flex-end' }}>
-          <div>
-            <div style={lbl()}>Search By</div>
-            <select value={searchBy} onChange={e => setSearchBy(e.target.value)} style={{ ...iS, width:140 }}>
-              <option value="slNo">Serial No.</option>
-              <option value="name">Name</option>
-              <option value="year">Year</option>
-            </select>
-          </div>
-          <input value={searchVal} onChange={e => setSearchVal(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder={searchBy === 'slNo' ? '0001/2026' : searchBy === 'year' ? '2026' : 'Name…'}
-            style={{ ...iS, width:140 }} />
-          <button onClick={handleSearch} disabled={searching} style={{
-            ...iS, width:'auto', padding:'0 16px', background:'#2563eb', color:'#fff',
-            border:'none', cursor:'pointer', fontWeight:600, display:'flex', alignItems:'center', gap:6,
-            opacity: searching ? 0.7 : 1,
-          }}>
-            {searching ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }} /> : <Search size={13} />} View
-          </button>
-        </div>
-      </div>
+      <EventActionBar
+        saving={saving} editId={editId} slNoDisplay={slNoDisplay}
+        onNew={handleReset} onSave={handleSave} onReset={handleReset} onDelete={handleDelete}
+        searchBy={searchBy} setSearchBy={setSearchBy}
+        searchVal={searchVal} setSearchVal={setSearchVal}
+        onSearch={handleSearch} searching={searching}
+        compactMargin={searchResults.length > 0}
+      />
 
       {/* ── Search results ── */}
       {searchResults.length > 0 && (
@@ -1203,12 +1180,9 @@ function ConfirmationTab() {
       </Card>
 
       {/* ── Reports ── */}
-      <Card>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:11, fontWeight:800, color:'#ef4444', letterSpacing:'0.1em', textTransform:'uppercase' }}>Reports</span>
-          <ReportBtn label="Confirmation Extract" onClick={() => setShowCert(true)} color="#800020" />
-        </div>
-      </Card>
+      <EventReportsBar onSave={handleSave} saving={saving}>
+        <ReportBtn label="Confirmation Extract" onClick={() => setShowCert(true)} color="#800020" />
+      </EventReportsBar>
 
       {/* ── Modals ── */}
       {viewRecord && (
@@ -1675,34 +1649,14 @@ function BurialTab() {
     <div style={{ maxWidth: 1100 }}>
 
       {/* ── Action buttons ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: searchResults.length ? 6 : 18, flexWrap:'wrap' }}>
-        <ActionBtn icon={Plus}      label="New"    onClick={handleReset} color="#475569" disabled={saving} />
-        <ActionBtn icon={saving ? Loader2 : Save} label={saving ? 'Saving…' : 'Save'} onClick={handleSave} color="#2563eb" disabled={saving} />
-        <ActionBtn icon={Edit2}     label={editId ? 'Editing' : 'Edit'} color={editId ? '#0369a1' : '#64748b'} disabled />
-        <ActionBtn icon={RotateCcw} label="Reset"  onClick={handleReset} color="#7c3aed" disabled={saving} />
-        <ActionBtn icon={Trash2}    label="Delete" onClick={handleDelete} color="#dc2626" disabled={saving || !editId} />
-        <div style={{ marginLeft:'auto', display:'flex', gap:8, alignItems:'flex-end' }}>
-          <div>
-            <div style={lbl()}>Search By</div>
-            <select value={searchBy} onChange={e => setSearchBy(e.target.value)} style={{ ...iS, width:140 }}>
-              <option value="slNo">Serial No.</option>
-              <option value="name">Name</option>
-              <option value="year">Year</option>
-            </select>
-          </div>
-          <input value={searchVal} onChange={e => setSearchVal(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder={searchBy === 'slNo' ? '0001/2026' : searchBy === 'year' ? '2026' : 'Name…'}
-            style={{ ...iS, width:140 }} />
-          <button onClick={handleSearch} disabled={searching} style={{
-            ...iS, width:'auto', padding:'0 16px', background:'#2563eb', color:'#fff',
-            border:'none', cursor:'pointer', fontWeight:600, display:'flex', alignItems:'center', gap:6,
-            opacity: searching ? 0.7 : 1,
-          }}>
-            {searching ? <Loader2 size={13} style={{ animation:'spin 1s linear infinite' }} /> : <Search size={13} />} View
-          </button>
-        </div>
-      </div>
+      <EventActionBar
+        saving={saving} editId={editId} slNoDisplay={slNoDisplay}
+        onNew={handleReset} onSave={handleSave} onReset={handleReset} onDelete={handleDelete}
+        searchBy={searchBy} setSearchBy={setSearchBy}
+        searchVal={searchVal} setSearchVal={setSearchVal}
+        onSearch={handleSearch} searching={searching}
+        compactMargin={searchResults.length > 0}
+      />
 
       {/* ── Search results ── */}
       {searchResults.length > 0 && (
@@ -1917,12 +1871,9 @@ function BurialTab() {
       </Card>
 
       {/* ── Reports ── */}
-      <Card>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:11, fontWeight:800, color:'#ef4444', letterSpacing:'0.1em', textTransform:'uppercase' }}>Reports</span>
-          <ReportBtn label="Burial Extract" onClick={() => setShowCert(true)} color="#800020" />
-        </div>
-      </Card>
+      <EventReportsBar onSave={handleSave} saving={saving}>
+        <ReportBtn label="Burial Extract" onClick={() => setShowCert(true)} color="#800020" />
+      </EventReportsBar>
 
       {/* ── Modals ── */}
       {viewRecord && (
@@ -2462,37 +2413,14 @@ function WeddingTab() {
     <div style={{ maxWidth: 1300 }}>
 
       {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: searchResults.length ? 6 : 18, flexWrap: 'wrap' }}>
-        <ActionBtn icon={Plus}      label="New"    onClick={handleReset} color="#475569" disabled={saving} />
-        <ActionBtn icon={saving ? Loader2 : Save} label={saving ? 'Saving…' : 'Save'} onClick={handleSave} color="#2563eb" disabled={saving} />
-        <ActionBtn icon={Edit2}     label={editId ? 'Editing' : 'Edit'} color={editId ? '#0369a1' : '#64748b'} disabled />
-        <ActionBtn icon={RotateCcw} label="Reset"  onClick={handleReset} color="#7c3aed" disabled={saving} />
-        <ActionBtn icon={Trash2}    label="Delete" onClick={handleDelete} color="#dc2626" disabled={saving || !editId} />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          <div>
-            <div style={lbl()}>Search By</div>
-            <select value={searchBy} onChange={e => setSearchBy(e.target.value)} style={{ ...iS, width: 140 }}>
-              <option value="slNo">Serial No.</option>
-              <option value="name">Name</option>
-              <option value="year">Year</option>
-            </select>
-          </div>
-          <input value={searchVal} onChange={e => setSearchVal(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder={searchBy === 'slNo' ? '0001/2026' : searchBy === 'year' ? '2026' : 'Name…'}
-            style={{ ...iS, width: 140 }} />
-          <button onClick={handleSearch} disabled={searching} style={{
-            ...iS, width: 'auto', padding: '0 16px',
-            background: '#2563eb', color: '#fff',
-            border: 'none', cursor: 'pointer', fontWeight: 600,
-            display: 'flex', alignItems: 'center', gap: 6,
-            opacity: searching ? 0.7 : 1,
-          }}>
-            {searching ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={13} />}
-            View
-          </button>
-        </div>
-      </div>
+      <EventActionBar
+        saving={saving} editId={editId} slNoDisplay={slNoDisplay}
+        onNew={handleReset} onSave={handleSave} onReset={handleReset} onDelete={handleDelete}
+        searchBy={searchBy} setSearchBy={setSearchBy}
+        searchVal={searchVal} setSearchVal={setSearchVal}
+        onSearch={handleSearch} searching={searching}
+        compactMargin={searchResults.length > 0}
+      />
 
       {/* ── Search results ── */}
       {searchResults.length > 0 && (
@@ -2728,16 +2656,10 @@ function WeddingTab() {
       </Card>
 
       {/* ── Reports ── */}
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#ef4444',
-            letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            Reports
-          </span>
-          <ReportBtn label="Marriage Reg. Sch. IV Form" onClick={() => setShowIV(true)} color="#800020" />
-          <ReportBtn label="Marriage Register" color="#1e40af" onClick={() => setShowRegister(true)} />
-        </div>
-      </Card>
+      <EventReportsBar onSave={handleSave} saving={saving}>
+        <ReportBtn label="Marriage Reg. Sch. IV Form" onClick={() => setShowIV(true)} color="#800020" />
+        <ReportBtn label="Marriage Register" color="#1e40af" onClick={() => setShowRegister(true)} />
+      </EventReportsBar>
 
       {/* ── Schedule IV Modal ── */}
       {showIV && (
@@ -3604,6 +3526,8 @@ ${el.innerHTML}
 }
 
 /* ─── Shared primitives ──────────────────────────────────────────── */
+const SAVE_GREEN = '#166534'
+
 const iS = {
   height: 34, padding: '0 10px',
   border: '1px solid #e2e8f0', borderRadius: 6,
@@ -3678,48 +3602,188 @@ function PathHint({ children }) {
   )
 }
 
-function ActionBtn({ icon: Icon, label, onClick, color = '#475569', disabled }) {
+function ActionBtn({ icon: Icon, label, onClick, color = '#475569', disabled, emphasis }) {
   const [hov, setHov] = useState(false)
+  const spinning = label === 'Saving…'
   return (
-    <button onClick={onClick} disabled={disabled}
+    <button type="button" onClick={onClick} disabled={disabled}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '7px 16px', borderRadius: 7,
-        border: 'none',
-        background: disabled ? '#94a3b8' : color,
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: emphasis ? '9px 18px' : '8px 14px',
+        borderRadius: 9,
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: disabled
+          ? '#94a3b8'
+          : `linear-gradient(180deg, ${lighten(color, 12)} 0%, ${color} 100%)`,
         color: '#fff',
-        fontSize: 13, fontWeight: 600,
+        fontSize: emphasis ? 13.5 : 13,
+        fontWeight: 700,
+        letterSpacing: '0.01em',
         cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'all 0.15s',
-        filter: !disabled && hov ? 'brightness(0.85)' : 'brightness(1)',
-        boxShadow: !disabled && hov
-          ? '0 4px 10px rgba(0,0,0,0.22)'
-          : '0 2px 4px rgba(0,0,0,0.15)',
-        opacity: disabled ? 0.65 : 1,
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease',
+        transform: !disabled && hov ? 'translateY(-1px)' : 'none',
+        filter: !disabled && hov ? 'brightness(1.05)' : 'brightness(1)',
+        boxShadow: disabled
+          ? 'none'
+          : (!disabled && hov
+            ? `0 6px 16px ${color}44, 0 1px 0 rgba(255,255,255,0.2) inset`
+            : `0 2px 8px ${color}33, 0 1px 0 rgba(255,255,255,0.18) inset`),
+        opacity: disabled ? 0.6 : 1,
+        whiteSpace: 'nowrap',
       }}>
-      <Icon size={14} style={label === 'Saving…' ? { animation: 'spin 1s linear infinite' } : {}} />
+      <Icon size={emphasis ? 15 : 14} style={spinning ? { animation: 'spin 1s linear infinite' } : {}} />
       {label}
     </button>
   )
 }
 
+function lighten(hex, pct = 10) {
+  try {
+    const h = String(hex).replace('#', '')
+    if (h.length !== 6) return hex
+    const n = parseInt(h, 16)
+    const r = Math.min(255, ((n >> 16) & 255) + Math.round(255 * (pct / 100)))
+    const g = Math.min(255, ((n >> 8) & 255) + Math.round(255 * (pct / 100)))
+    const b = Math.min(255, (n & 255) + Math.round(255 * (pct / 100)))
+    return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
+  } catch {
+    return hex
+  }
+}
+
 function ReportBtn({ label, onClick, color = '#1e40af' }) {
   const [hov, setHov] = useState(false)
   return (
-    <button onClick={onClick}
+    <button type="button" onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '7px 16px', borderRadius: 7,
-        border: 'none',
-        background: color,
-        color: '#fff', fontSize: 12, fontWeight: 600,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '8px 14px', borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.12)',
+        background: `linear-gradient(180deg, ${lighten(color, 10)} 0%, ${color} 100%)`,
+        color: '#fff', fontSize: 12, fontWeight: 700,
         cursor: 'pointer', transition: 'all 0.15s',
-        filter: hov ? 'brightness(0.85)' : 'brightness(1)',
-        boxShadow: hov ? '0 4px 10px rgba(0,0,0,0.22)' : '0 2px 4px rgba(0,0,0,0.15)',
+        transform: hov ? 'translateY(-1px)' : 'none',
+        boxShadow: hov ? `0 5px 14px ${color}40` : `0 2px 6px ${color}28`,
       }}>
       <FileText size={13} /> {label}
     </button>
+  )
+}
+
+/** Shared top toolbar for all Event Recorder tabs. */
+function EventActionBar({
+  saving, editId, slNoDisplay,
+  onNew, onSave, onReset, onDelete,
+  searchBy, setSearchBy, searchVal, setSearchVal, onSearch, searching,
+  compactMargin,
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+      marginBottom: compactMargin ? 8 : 18,
+      padding: '12px 14px',
+      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #f1f5f9 100%)',
+      border: '1px solid #e2e8f0',
+      borderRadius: 14,
+      boxShadow: '0 8px 24px rgba(15,23,42,0.05), inset 0 1px 0 rgba(255,255,255,0.9)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <ActionBtn icon={Plus} label="New" onClick={onNew} color="#334155" disabled={saving} />
+        <ActionBtn
+          icon={saving ? Loader2 : Save}
+          label={saving ? 'Saving…' : 'Save'}
+          onClick={onSave}
+          color={SAVE_GREEN}
+          disabled={saving}
+          emphasis
+        />
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '7px 12px', borderRadius: 9,
+          background: editId ? '#ecfdf5' : '#f1f5f9',
+          border: `1px solid ${editId ? '#a7f3d0' : '#e2e8f0'}`,
+          color: editId ? '#065f46' : '#64748b',
+          fontSize: 12, fontWeight: 700,
+        }}>
+          <Edit2 size={13} />
+          {editId ? `Editing ${slNoDisplay}` : 'New record'}
+        </span>
+        <ActionBtn icon={RotateCcw} label="Reset" onClick={onReset} color="#6d28d9" disabled={saving} />
+        <ActionBtn icon={Trash2} label="Delete" onClick={onDelete} color="#b91c1c" disabled={saving || !editId} />
+      </div>
+
+      <div style={{
+        marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap',
+        padding: '6px 8px', borderRadius: 10,
+        background: 'rgba(255,255,255,0.75)',
+        border: '1px solid #e2e8f0',
+      }}>
+        <div>
+          <div style={lbl()}>Search By</div>
+          <select value={searchBy} onChange={e => setSearchBy(e.target.value)} style={{ ...iS, width: 140 }}>
+            <option value="slNo">Serial No.</option>
+            <option value="name">Name</option>
+            <option value="year">Year</option>
+          </select>
+        </div>
+        <div>
+          <div style={lbl()}>Find</div>
+          <input
+            value={searchVal}
+            onChange={e => setSearchVal(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onSearch()}
+            placeholder={searchBy === 'slNo' ? '0001/2026' : searchBy === 'year' ? '2026' : 'Name…'}
+            style={{ ...iS, width: 140 }}
+          />
+        </div>
+        <button type="button" onClick={onSearch} disabled={searching} style={{
+          ...iS, width: 'auto', height: 34, padding: '0 16px',
+          background: searching ? '#64748b' : 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
+          color: '#fff', border: 'none', cursor: searching ? 'wait' : 'pointer',
+          fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+          borderRadius: 8, boxShadow: '0 2px 8px rgba(37,99,235,0.28)',
+        }}>
+          {searching ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={13} />}
+          View
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Reports row with dark-green Save on the right. */
+function EventReportsBar({ children, onSave, saving }) {
+  return (
+    <Card style={{
+      background: 'linear-gradient(135deg, #fff 0%, #fafafa 100%)',
+      boxShadow: '0 4px 14px rgba(15,23,42,0.04)',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{
+            fontSize: 11, fontWeight: 800, color: '#9f1239',
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            padding: '5px 10px', borderRadius: 7,
+            background: '#fff1f2', border: '1px solid #fecdd3',
+          }}>
+            Reports
+          </span>
+          {children}
+        </div>
+        <ActionBtn
+          icon={saving ? Loader2 : Save}
+          label={saving ? 'Saving…' : 'Save'}
+          onClick={onSave}
+          color={SAVE_GREEN}
+          disabled={saving}
+          emphasis
+        />
+      </div>
+    </Card>
   )
 }
