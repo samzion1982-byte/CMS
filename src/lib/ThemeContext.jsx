@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, adminSupabase } from './supabase'
 
 const ThemeContext = createContext()
@@ -44,8 +44,13 @@ export function ThemeProvider({ children }) {
     return (saved && FONTS[saved]) ? saved : 'outfit'
   })
 
-  const setTheme = async (t) => {
+  // Prevent profile reloads from clobbering a theme/font the user just picked
+  const userThemeLockRef = useRef(0)
+  const userFontLockRef = useRef(0)
+
+  const setTheme = useCallback(async (t) => {
     if (!THEMES[t]) return
+    userThemeLockRef.current = Date.now()
     setThemeState(t)
     applyToDOM(t)
     try {
@@ -56,10 +61,11 @@ export function ThemeProvider({ children }) {
     } catch (err) {
       console.warn('[ThemeContext] Could not save theme to profile:', err.message)
     }
-  }
+  }, [])
 
-  const setFont = async (f) => {
+  const setFont = useCallback(async (f) => {
     if (!FONTS[f]) return
+    userFontLockRef.current = Date.now()
     setFontState(f)
     applyFontToDOM(f)
     try {
@@ -70,19 +76,28 @@ export function ThemeProvider({ children }) {
     } catch (err) {
       console.warn('[ThemeContext] Could not save font to profile:', err.message)
     }
-  }
+  }, [])
 
-  const applyProfileTheme = (t) => {
+  const applyProfileTheme = useCallback((t) => {
     if (!t || !THEMES[t]) return
+    // Ignore stale DB theme for a few seconds after the user picks one
+    if (Date.now() - userThemeLockRef.current < 8000) {
+      const local = localStorage.getItem('cms_theme')
+      if (local && local !== t) return
+    }
     setThemeState(t)
     applyToDOM(t)
-  }
+  }, [])
 
-  const applyProfileFont = (f) => {
+  const applyProfileFont = useCallback((f) => {
     if (!f || !FONTS[f]) return
+    if (Date.now() - userFontLockRef.current < 8000) {
+      const local = localStorage.getItem('cms_font')
+      if (local && local !== f) return
+    }
     setFontState(f)
     applyFontToDOM(f)
-  }
+  }, [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -90,7 +105,7 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     applyFontToDOM(font)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, applyProfileTheme, THEMES, font, setFont, applyProfileFont, FONTS }}>

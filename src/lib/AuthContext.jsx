@@ -15,6 +15,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const profileLoadingRef = useRef(false)
   const { applyProfileTheme, applyProfileFont } = useTheme()
+  const applyProfileThemeRef = useRef(applyProfileTheme)
+  const applyProfileFontRef = useRef(applyProfileFont)
+  applyProfileThemeRef.current = applyProfileTheme
+  applyProfileFontRef.current = applyProfileFont
 
   const reloadPageGrants = useCallback(async (role) => {
     if (!role) {
@@ -75,9 +79,10 @@ export function AuthProvider({ children }) {
       reloadPageGrants(data?.role).catch(() => {})
 
       // Theme: DB wins if set; otherwise push localStorage value up to DB so
-      // it survives future cache clears.
+      // it survives future cache clears. applyProfileTheme ignores stale DB
+      // values right after the user picks a theme in the UI.
       if (data?.theme) {
-        applyProfileTheme(data.theme)
+        applyProfileThemeRef.current(data.theme)
       } else {
         const localTheme = localStorage.getItem('cms_theme')
         if (localTheme) {
@@ -87,7 +92,7 @@ export function AuthProvider({ children }) {
 
       // Font: same logic
       if (data?.font) {
-        applyProfileFont(data.font)
+        applyProfileFontRef.current(data.font)
       } else {
         const localFont = localStorage.getItem('cms_font')
         if (localFont) {
@@ -103,9 +108,12 @@ export function AuthProvider({ children }) {
     } finally {
       profileLoadingRef.current = false
     }
-  }, [applyProfileTheme, applyProfileFont, reloadPageGrants])
+  }, [reloadPageGrants])
 
-  // Initialize auth state
+  const loadProfileRef = useRef(loadProfile)
+  loadProfileRef.current = loadProfile
+
+  // Initialize auth state once — do not re-run when theme helpers change
   useEffect(() => {
     let mounted = true
     
@@ -133,7 +141,7 @@ export function AuthProvider({ children }) {
           
           if (currentSession?.user) {
             console.log('⏳ Loading profile...')
-            await loadProfile(currentSession.user)
+            await loadProfileRef.current(currentSession.user)
           }
           setLoading(false)
         }
@@ -160,11 +168,11 @@ export function AuthProvider({ children }) {
         // Only load profile on INITIAL_SESSION to avoid race conditions on SIGNED_IN
         if (event === 'INITIAL_SESSION' && newSession?.user) {
           console.log('⏳ Loading profile on initial session...')
-          await loadProfile(newSession.user)
+          await loadProfileRef.current(newSession.user)
         } else if (event === 'SIGNED_IN' && newSession?.user) {
           // For SIGNED_IN events (during login), load profile asynchronously
           console.log('⏳ Loading profile on sign in...')
-          loadProfile(newSession.user).catch(console.error)
+          loadProfileRef.current(newSession.user).catch(console.error)
         } else if (!newSession) {
           setProfile(null)
           setPageGrants(null)
@@ -178,7 +186,7 @@ export function AuthProvider({ children }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [loadProfile])
+  }, [])
 
   const signIn = async (email, password) => {
     console.log('🔐 AuthContext.signIn called for:', email)
