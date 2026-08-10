@@ -19,6 +19,17 @@ export const RECYCLE_MODULES = [
 
 export const QUARANTINE_ROOT = '_quarantine'
 
+/** Active recycle-bin snapshots older than this are auto-purged (Auto Flush + hourly job). */
+export const RECYCLE_BIN_RETENTION_DAYS = 45
+
+/** Buckets that may hold `_quarantine/{snapshotId}/…` media for recycle-bin items. */
+export const QUARANTINE_BUCKETS = [
+  'event-media',
+  'asset-photos',
+  'receipt-pdfs',
+  'fixed-asset-docs',
+]
+
 /** List all file object paths under a storage folder (recursive, one bucket). */
 async function listStorageFilePaths(bucket, folderPrefix) {
   const paths = []
@@ -444,4 +455,77 @@ export async function purgeAllRecycleBin(actor = null) {
     actor,
   })
   return data?.length || 0
+}
+
+/**
+ * Permanently purge recycle-bin snapshots older than `maxAgeDays` (status=deleted).
+ * Removes quarantined media, then marks rows purged. Used by Auto Flush / Run Now.
+ *
+ * @returns {Promise<{ purged: number, keptFresh: number, error?: string }>}
+ */
+export async function purgeExpiredRecycleBinItems(
+  maxAgeDays = RECYCLE_BIN_RETENTION_DAYS,
+  actor = null,
+) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
+
+  const { count: totalDeleted, error: totalErr } = await adminSupabase
+    .from('cms_recycle_bin')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'deleted')
+  if (totalErr) return { purged: 0, keptFresh: 0, error: totalErr.message }
+
+  const stale = []
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error } = await adminSupabase
+      .from('cms_recycle_bin')
+      .select('id, payload, table_name, record_label, record_id, module')
+      .eq('status', 'deleted')
+      .lt('deleted_at', cutoff)
+      .range(from, from + 999)
+    if (error) return { purged: 0, keptFresh: totalDeleted || 0, error: error.message }
+    const rows = page || []
+    stale.push(...rows)
+    if (rows.length < 1000) break
+  }
+
+  const keptFresh = Math.max(0, (totalDeleted || 0) - stale.length)
+  if (!stale.length) return { purged: 0, keptFresh }
+
+  const now = new Date().toISOString()
+  let purged = 0
+  for (const item of stale) {
+    const payload = {
+      ...(item.payload || {}),
+      quarantine: { ...(item.payload?.quarantine || {}), snapshotId: item.id },
+    }
+    // Ensure we wipe quarantine even when payload.bucket is missing
+    if (!payload.quarantine.bucket) {
+      for (const bucket of QUARANTINE_BUCKETS) {
+        await purgeQuarantinedFiles({
+          quarantine: { bucket, snapshotId: item.id, paths: payload.quarantine.paths },
+        })
+      }
+    } else {
+      await purgeQuarantinedFiles(payload)
+    }
+
+    const { error: updErr } = await adminSupabase
+      .from('cms_recycle_bin')
+      .update({ status: 'purged', purged_at: now })
+      .eq('id', item.id)
+      .eq('status', 'deleted')
+    if (updErr) return { purged, keptFresh, error: updErr.message }
+    purged++
+  }
+
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'other',
+    entityType: 'recycle_bin',
+    summary: `Auto-purged ${purged} recycle-bin snapshot(s) older than ${maxAgeDays} days`,
+    actor,
+  })
+
+  return { purged, keptFresh }
 }
