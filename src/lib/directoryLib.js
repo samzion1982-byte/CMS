@@ -132,7 +132,9 @@ export async function getDirectoryContacts({
 }
 
 export async function saveDirectoryContact(row, profileName = '') {
+  const kind = row.contact_kind === 'organisation' ? 'organisation' : 'person'
   const payload = {
+    contact_kind: kind,
     category_id: row.category_id || null,
     name: (row.name || '').trim(),
     organization: (row.organization || '').trim() || null,
@@ -146,7 +148,9 @@ export async function saveDirectoryContact(row, profileName = '') {
     is_active: row.is_active ?? true,
     updated_by: profileName || null,
   }
-  if (!payload.name) throw new Error('Name is required.')
+  if (!payload.name) {
+    throw new Error(kind === 'organisation' ? 'Organisation name is required.' : 'Name is required.')
+  }
 
   if (row.id) {
     const { data, error } = await supabase

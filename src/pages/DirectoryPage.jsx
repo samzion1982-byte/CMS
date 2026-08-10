@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BookUser, Settings, Plus, Search, Mail,
+  BookUser, Settings, Plus, Search, Mail, User,
   Loader2, Pencil, Trash2, X, Building2, MapPin, ChevronRight,
   FileSpreadsheet, Lock, Eye, EyeOff,
 } from 'lucide-react'
@@ -31,6 +31,7 @@ const MASTER_PASSWORD = 'Master007))&'
 
 const EMPTY = {
   id: null,
+  contact_kind: 'person',
   name: '',
   organization: '',
   title: '',
@@ -282,6 +283,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
   const [form, setForm] = useState(() => editing
     ? {
         id: editing.id,
+        contact_kind: editing.contact_kind === 'organisation' ? 'organisation' : 'person',
         name: editing.name || '',
         organization: editing.organization || '',
         title: editing.title || '',
@@ -296,8 +298,8 @@ function ContactModal({ editing, categories, onSave, onClose }) {
   const [saving, setSaving] = useState(false)
   const toast = useToast()
   const catOpts = flattenMasterOptions(categories.filter(c => c.is_active !== false))
-  // Ignore accidental backdrop closes (keyboard open / scroll / focus jump to Notes)
   const ignoreBackdropRef = useRef(false)
+  const isOrg = form.contact_kind === 'organisation'
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
 
@@ -321,7 +323,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.name.trim()) {
-      toast('Name is required.', 'error')
+      toast(isOrg ? 'Organisation name is required.' : 'Name is required.', 'error')
       return
     }
     const primary = normalizeMemberPhone(form.whatsapp, { label: 'Primary number' })
@@ -342,6 +344,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
     try {
       await onSave({
         ...form,
+        contact_kind: isOrg ? 'organisation' : 'person',
         whatsapp: primary.value,
         phone: secondary.value,
       })
@@ -394,37 +397,124 @@ function ContactModal({ editing, categories, onSave, onClose }) {
         </div>
 
         <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>Title / Role</label>
-            <input
-              style={INPUT}
-              value={form.title}
-              onChange={e => set('title', e.target.value)}
-              placeholder="e.g. Bishop, Contractor"
-              autoFocus
-              tabIndex={1}
-            />
+          {/* Person / Organisation toggle */}
+          <div
+            role="group"
+            aria-label="Contact type"
+            style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6,
+              padding: 4, borderRadius: 10,
+              background: 'var(--sidebar-item-active-bg, #f1f5f9)',
+              border: '1px solid var(--card-border)',
+            }}
+          >
+            {[
+              { id: 'person', label: 'Person', Icon: User, color: '#7c3aed' },
+              { id: 'organisation', label: 'Organisation', Icon: Building2, color: '#0369a1' },
+            ].map(({ id, label, Icon, color }) => {
+              const on = form.contact_kind === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => set('contact_kind', id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    background: on ? '#fff' : 'transparent',
+                    color: on ? color : 'var(--text-3)',
+                    fontSize: 13, fontWeight: 800,
+                    boxShadow: on ? '0 1px 3px rgba(15,23,42,0.12)' : 'none',
+                  }}
+                >
+                  <Icon size={15} /> {label}
+                </button>
+              )
+            })}
           </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>Name *</label>
-            <input
-              style={INPUT}
-              value={form.name}
-              onChange={e => set('name', e.target.value)}
-              placeholder="Person or contact name"
-              tabIndex={2}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>Organisation</label>
-            <input
-              style={INPUT}
-              value={form.organization}
-              onChange={e => set('organization', e.target.value)}
-              placeholder="Office / firm"
-              tabIndex={3}
-            />
-          </div>
+
+          {isOrg ? (
+            <>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>
+                  Organisation name *
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  placeholder="e.g. AAA Systems"
+                  autoFocus
+                  tabIndex={1}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>
+                  Type
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.organization}
+                  onChange={e => set('organization', e.target.value)}
+                  placeholder="e.g. Firm, Vendor, Office"
+                  tabIndex={2}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>
+                  Title / Role
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.title}
+                  onChange={e => set('title', e.target.value)}
+                  placeholder="Optional contact person / role"
+                  tabIndex={3}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>
+                  Title / Role
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.title}
+                  onChange={e => set('title', e.target.value)}
+                  placeholder="e.g. Bishop, Contractor"
+                  autoFocus
+                  tabIndex={1}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>
+                  Name *
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.name}
+                  onChange={e => set('name', e.target.value)}
+                  placeholder="Person name"
+                  tabIndex={2}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>
+                  Organisation
+                </label>
+                <input
+                  style={INPUT}
+                  value={form.organization}
+                  onChange={e => set('organization', e.target.value)}
+                  placeholder="Office / firm"
+                  tabIndex={3}
+                />
+              </div>
+            </>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#128C7E', marginBottom: 5 }}>
@@ -605,6 +695,7 @@ function CategoryNav({ tree, selectedId, counts, onSelect }) {
 }
 
 const EXPORT_COLUMNS = [
+  { header: 'Kind', key: 'kind', align: 'center' },
   { header: 'Name', key: 'name', align: 'left' },
   { header: 'Organization', key: 'organization', align: 'left' },
   { header: 'Title / Role', key: 'title', align: 'left' },
@@ -619,6 +710,7 @@ const EXPORT_COLUMNS = [
 function contactExportRow(c, categories) {
   const catRow = c.category_id ? categories.find(x => x.id === c.category_id) : null
   return {
+    kind: c.contact_kind === 'organisation' ? 'Organisation' : 'Person',
     name: c.name || '',
     organization: c.organization || '',
     title: c.title || '',
