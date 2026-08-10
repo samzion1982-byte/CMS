@@ -2145,8 +2145,6 @@ function WeddingTab() {
     e.target.value = ''
   }
 
-  function handleReset() { setForm(EMPTY_FORM); setFiles(EMPTY_FILES); setEditId(null); setSearchResults([]) }
-
   async function uploadFile(key, fileObj, slNoPath) {
     const ext = fileObj.name.split('.').pop()
     const path = `wedding/${slNoPath}/${key}.${ext}`
@@ -2676,7 +2674,7 @@ function MediaRow({ photoKey, photoRef, docs, files, slNoPath, side }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
           {docs.map(({ key, label, fileRef }) => (
             <DocSlot key={key} label={label} fileData={files[key]} fileRef={fileRef}
-              pathHint={`Events/Wedding/${slNoPath}/${side}/${label.replace(/[\s.]/g, '_')}`} />
+              pathHint={`event-media/wedding/${slNoPath}/${key}`} />
           ))}
         </div>
       </div>
