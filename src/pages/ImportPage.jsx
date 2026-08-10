@@ -1676,6 +1676,7 @@ const CLEANUP_RULES = [
   { bucket: 'announcement-cards',   label: 'Announcement Cards',   maxAgeHours: 48,  note: 'Root-level files only — templates/ subfolder is never touched.' },
   { bucket: 'announcement-reports', label: 'Announcement Reports', maxAgeHours: 48,  note: 'Files with "template" in the name are kept forever.' },
   { bucket: 'family-records',       label: 'Family Records',       maxAgeHours: 168, note: 'Files with "template" in the name are kept forever.' },
+  { bucket: 'payment-pages',        label: 'Payment Pages',        maxAgeHours: 168, note: 'HTML/PDF payment pages older than 7 days are removed.' },
 ]
 
 const DB_CLEANUP_RULES = [
@@ -1689,18 +1690,63 @@ function fmtAge(hours) {
   return hours >= 24 ? `${hours / 24} day${hours / 24 !== 1 ? 's' : ''}` : `${hours}h`
 }
 
+/** Count files in a storage bucket (root + one-level subfolders; folders themselves excluded). */
+async function countBucketFiles(bucket) {
+  const { data: rootItems, error } = await adminSupabase.storage
+    .from(bucket).list('', { limit: 10_000 })
+  if (error) return { count: null, error: error.message }
+  let count = 0
+  for (const item of (rootItems || [])) {
+    if (item.metadata) {
+      count++
+      continue
+    }
+    if (item.name.toLowerCase().includes('template')) continue
+    const { data: subItems } = await adminSupabase.storage
+      .from(bucket).list(item.name, { limit: 10_000 })
+    for (const f of (subItems || [])) {
+      if (f.metadata) count++
+    }
+  }
+  return { count, error: null }
+}
+
 function AutoFlushTab() {
   const toast = useToast()
   const [running,  setRunning]  = useState(false)
   const [results,  setResults]  = useState(null)
+  const [counts,   setCounts]   = useState({})   // key → number | null
+  const [countsLoading, setCountsLoading] = useState(true)
   const [lastRun,  setLastRun]  = useState(() => {
     try { return localStorage.getItem('storage_cleanup_last_run') } catch { return null }
   })
+
+  const loadCounts = useCallback(async () => {
+    setCountsLoading(true)
+    const next = {}
+    await Promise.all([
+      ...CLEANUP_RULES.map(async (rule) => {
+        const { count } = await countBucketFiles(rule.bucket)
+        next[rule.bucket] = count
+      }),
+      ...DB_CLEANUP_RULES.map(async (rule) => {
+        const { count, error } = await adminSupabase
+          .from(rule.table)
+          .select('*', { count: 'exact', head: true })
+        next[rule.table] = error ? null : (count ?? 0)
+      }),
+    ])
+    setCounts(next)
+    setCountsLoading(false)
+  }, [])
+
+  useEffect(() => { loadCounts() }, [loadCounts])
 
   async function runCleanup() {
     setRunning(true)
     setResults(null)
     const out = []
+    const now = Date.now()
 
     for (const rule of CLEANUP_RULES) {
       // List root to discover both files and subfolders
@@ -1708,18 +1754,21 @@ function AutoFlushTab() {
         .from(rule.bucket).list('', { limit: 10_000 })
 
       if (listErr) {
-        out.push({ label: rule.label, deleted: 0, kept: 0, error: listErr.message })
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: 0, error: listErr.message })
         continue
       }
 
+      const threshold = new Date(now - rule.maxAgeHours * 3_600_000)
       const toDelete = []
-      let kept = 0
+      let keptTemplates = 0
+      let keptFresh = 0
 
       for (const item of (rootItems || [])) {
         if (item.metadata) {
-          // Root-level file
-          if (isTemplateFile(item)) { kept++; continue }
-          toDelete.push(item.name)
+          // Root-level file — only delete when older than retention
+          if (isTemplateFile(item)) { keptTemplates++; continue }
+          if (new Date(item.created_at) < threshold) toDelete.push(item.name)
+          else keptFresh++
         } else {
           // Subfolder — skip anything named template*
           if (item.name.toLowerCase().includes('template')) continue
@@ -1727,29 +1776,83 @@ function AutoFlushTab() {
             .from(rule.bucket).list(item.name, { limit: 10_000 })
           for (const f of (subItems || [])) {
             if (!f.metadata) continue
-            if (isTemplateFile(f)) { kept++; continue }
-            toDelete.push(`${item.name}/${f.name}`)
+            if (isTemplateFile(f)) { keptTemplates++; continue }
+            if (new Date(f.created_at) < threshold) toDelete.push(`${item.name}/${f.name}`)
+            else keptFresh++
           }
         }
       }
 
       if (!toDelete.length) {
-        out.push({ label: rule.label, deleted: 0, kept, error: null })
+        out.push({ label: rule.label, deleted: 0, kept: keptTemplates, keptFresh, error: null })
         continue
       }
 
-      const { error: delErr } = await adminSupabase.storage.from(rule.bucket).remove(toDelete)
-      out.push({ label: rule.label, deleted: toDelete.length, kept, error: delErr?.message ?? null })
+      // Storage remove is capped; chunk large batches
+      let delErrMsg = null
+      for (let i = 0; i < toDelete.length; i += 100) {
+        const chunk = toDelete.slice(i, i + 100)
+        const { error: delErr } = await adminSupabase.storage.from(rule.bucket).remove(chunk)
+        if (delErr) { delErrMsg = delErr.message; break }
+      }
+      out.push({ label: rule.label, deleted: delErrMsg ? 0 : toDelete.length, kept: keptTemplates, keptFresh, error: delErrMsg })
     }
 
-    // DB table cleanup
+    // DB table cleanup — select matching ids first so kept/removed counts are accurate
     for (const rule of DB_CLEANUP_RULES) {
       const cutoff = new Date(Date.now() - rule.maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
-      const { error: delErr, count } = await adminSupabase
+      const { count: totalCount, error: totalErr } = await adminSupabase
         .from(rule.table)
-        .delete({ count: 'exact' })
-        .lt(rule.dateColumn, cutoff)
-      out.push({ label: rule.label, deleted: count || 0, kept: 0, error: delErr?.message ?? null, isDb: true })
+        .select('*', { count: 'exact', head: true })
+      if (totalErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: 0, error: totalErr.message, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+
+      // Page through stale ids — PostgREST defaults to 1000 rows per request
+      const ids = []
+      let pageErr = null
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error: staleErr } = await adminSupabase
+          .from(rule.table)
+          .select('id')
+          .lt(rule.dateColumn, cutoff)
+          .range(from, from + 999)
+        if (staleErr) { pageErr = staleErr; break }
+        const rows = page || []
+        ids.push(...rows.map(r => r.id))
+        if (rows.length < 1000) break
+      }
+      if (pageErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: totalCount || 0, error: pageErr.message, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+      const keptFresh = (totalCount || 0) - ids.length
+      if (!ids.length) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh, error: null, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+
+      let deleted = 0
+      let delErrMsg = null
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200)
+        const { error: delErr, count } = await adminSupabase
+          .from(rule.table)
+          .delete({ count: 'exact' })
+          .in('id', chunk)
+        if (delErr) { delErrMsg = delErr.message; break }
+        deleted += count || chunk.length
+      }
+      out.push({
+        label: rule.label,
+        deleted: delErrMsg ? 0 : deleted,
+        kept: 0,
+        keptFresh: delErrMsg ? (totalCount || 0) : keptFresh,
+        error: delErrMsg,
+        isDb: true,
+        retentionDays: rule.maxAgeDays,
+      })
     }
 
     const ts = new Date().toISOString()
@@ -1757,9 +1860,33 @@ function AutoFlushTab() {
     setLastRun(ts)
     setResults(out)
     setRunning(false)
+    loadCounts()
 
     const total = out.reduce((s, r) => s + r.deleted, 0)
-    toast(total > 0 ? `Cleanup done — ${total} item${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing to remove.', 'success')
+    toast(total > 0 ? `Cleanup done — ${total} item${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing past retention.', 'success')
+  }
+
+  function itemCountBadge(key) {
+    if (countsLoading && counts[key] === undefined) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 500 }}>
+          …
+        </span>
+      )
+    }
+    const n = counts[key]
+    if (n == null) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef2f2', color: '#b91c1c', fontWeight: 500 }}>
+          —
+        </span>
+      )
+    }
+    return (
+      <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>
+        {n} item{n !== 1 ? 's' : ''}
+      </span>
+    )
   }
 
   return (
@@ -1798,7 +1925,10 @@ function AutoFlushTab() {
                 <Camera size={15} style={{ color: '#3b82f6' }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.bucket)}
+                </p>
                 <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rule.bucket}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -1822,7 +1952,10 @@ function AutoFlushTab() {
                 <Database size={15} style={{ color: '#a855f7' }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.table)}
+                </p>
                 <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>{rule.table} · {rule.dateColumn}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -1865,10 +1998,15 @@ function AutoFlushTab() {
                 {r.error ? (
                   <span style={{ fontSize: 11, color: '#dc2626' }}>{r.error}</span>
                 ) : (
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <span style={{ fontSize: 12, fontWeight: r.deleted > 0 ? 700 : 400, color: r.deleted > 0 ? '#15803d' : '#94a3b8' }}>
-                      {r.deleted > 0 ? `${r.deleted} removed` : 'Nothing to remove'}
+                      {r.deleted > 0 ? `${r.deleted} removed` : '0 removed'}
                     </span>
+                    {r.keptFresh > 0 && (
+                      <span style={{ fontSize: 11, color: '#64748b', padding: '2px 7px', borderRadius: 12, background: '#f1f5f9' }}>
+                        {r.keptFresh} within {r.isDb ? `${r.retentionDays} days` : 'retention'}
+                      </span>
+                    )}
                     {r.kept > 0 && (
                       <span style={{ fontSize: 11, color: '#64748b', padding: '2px 7px', borderRadius: 12, background: '#f0fdf4' }}>
                         {r.kept} template{r.kept !== 1 ? 's' : ''} kept
