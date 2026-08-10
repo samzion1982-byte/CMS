@@ -31,13 +31,13 @@ function initials(name = '') {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-/** Soft static column palette — Admin follows theme dark; others are matching companions. */
+/** Soft static column palette — companion colors for each role. */
 const ROLE_COL = {
   admin1: {
-    ink: 'var(--sidebar-bg)',
-    bar: 'var(--sidebar-bg)',
-    soft: 'color-mix(in srgb, var(--sidebar-bg) 12%, #ffffff)',
-    wash: 'color-mix(in srgb, var(--sidebar-bg) 4.5%, transparent)',
+    ink: '#3730a3',
+    bar: '#4f46e5',
+    soft: 'color-mix(in srgb, #4f46e5 11%, #ffffff)',
+    wash: 'color-mix(in srgb, #4f46e5 4%, transparent)',
   },
   admin: {
     ink: '#1e40af',
