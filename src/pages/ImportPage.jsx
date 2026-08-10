@@ -571,7 +571,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           const meta = flushMetaForTable(tbl)
           discovered.push({
             id: `table::${tbl}`,
-            label: tbl,
+            label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)' : tbl,
             type: 'table',
             count: count || 0,
             checked: false,
@@ -776,10 +776,43 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
             </div>
           ) : (
             <>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: '#f8fafc', marginBottom: 14, cursor: 'pointer', fontSize: 12, fontWeight: 500, color: '#64748b' }}>
-                <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
-                Select all
-              </label>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                padding: '8px 10px', borderRadius: 8, background: '#f8fafc', marginBottom: 14,
+                border: '1px solid #e2e8f0',
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>
+                  {anyChecked
+                    ? `${items.filter(i => i.checked).length} of ${items.length} selected`
+                    : `${items.length} items`}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleAll(true)}
+                    disabled={allChecked}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 7,
+                      border: '1px solid #bfdbfe', background: allChecked ? '#eff6ff' : '#fff',
+                      color: '#1d4ed8', cursor: allChecked ? 'default' : 'pointer', opacity: allChecked ? 0.6 : 1,
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleAll(false)}
+                    disabled={!anyChecked}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 7,
+                      border: '1px solid #e2e8f0', background: !anyChecked ? '#f8fafc' : '#fff',
+                      color: '#475569', cursor: !anyChecked ? 'default' : 'pointer', opacity: !anyChecked ? 0.6 : 1,
+                    }}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              </div>
 
               {categoryGroups.map(group => {
                 const allCatChecked = group.items.every(i => i.checked)
@@ -1946,7 +1979,10 @@ const CLEANUP_RULES = [
 ]
 
 const DB_CLEANUP_RULES = [
-  { table: 'login_logs', label: 'Login Logs', maxAgeDays: 15, dateColumn: 'login_at', note: 'Login sessions older than 15 days are automatically removed.' },
+  { table: 'login_logs',            label: 'Login Logs',            maxAgeDays: 15, dateColumn: 'login_at', note: 'Login sessions older than 15 days are automatically removed.' },
+  { table: 'whatsapp_receipt_logs', label: 'WhatsApp Receipt Log',  maxAgeDays: 15, dateColumn: 'sent_at',  note: 'WhatsApp receipt send logs older than 15 days are removed.' },
+  { table: 'announcements_log',     label: 'Announcement Log',      maxAgeDays: 15, dateColumn: 'sent_at',  note: 'Announcement send logs older than 15 days are removed.' },
+  { table: 'payment_request_logs',  label: 'Payment Request Log',   maxAgeDays: 15, dateColumn: 'sent_at',  note: 'Payment request send logs older than 15 days are removed.' },
 ]
 
 // A file is a template if it has no metadata (folder) or name contains "template"

@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    cleanup-old-storage — FIFO auto-flush for transient storage
-   buckets + login_logs. Template files and folders are never touched.
+   buckets + DB log tables. Template files/folders are never touched.
    ═══════════════════════════════════════════════════════════════ */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -18,7 +18,10 @@ const RULES = [
 ]
 
 const DB_RULES = [
-  { table: 'login_logs', maxAgeDays: 15, dateColumn: 'login_at' },
+  { table: 'login_logs',            maxAgeDays: 15, dateColumn: 'login_at' },
+  { table: 'whatsapp_receipt_logs', maxAgeDays: 15, dateColumn: 'sent_at' },
+  { table: 'announcements_log',     maxAgeDays: 15, dateColumn: 'sent_at' },
+  { table: 'payment_request_logs',  maxAgeDays: 15, dateColumn: 'sent_at' },
 ]
 
 const isTemplate = (f) =>
