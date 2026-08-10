@@ -147,6 +147,7 @@ export const AUDIT_MODULES = [
   { value: 'members', label: 'Members' },
   { value: 'events', label: 'Events' },
   { value: 'assets', label: 'Asset Management' },
+  { value: 'directory', label: 'Phone Directory' },
   { value: 'finance', label: 'Finance' },
 ]
 

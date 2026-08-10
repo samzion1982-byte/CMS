@@ -28,6 +28,7 @@ export const CMS_PERMISSION_TREE = [
     children: [
       { key: 'dashboard',     label: 'Dashboard',         kind: 'page', match: '/dashboard', alwaysOn: true },
       { key: 'members',       label: 'Members',           kind: 'page', match: '/members' },
+      { key: 'directory',     label: 'Phone Directory',   kind: 'page', match: '/directory' },
       { key: 'announcements', label: 'Announcements',     kind: 'page', match: '/announcements', exclude: ['/announcements-log'] },
       {
         key: 'folder-events',

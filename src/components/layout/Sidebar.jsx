@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
   PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package, Shield, History,
-  Database, ArchiveRestore,
+  Database, ArchiveRestore, BookUser,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
@@ -15,8 +15,9 @@ import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
 const NAV = [
   { group: 'MAIN', items: [
     { label: 'Dashboard',     path: '/dashboard',     icon: LayoutDashboard },
-    { label: 'Members',       path: '/members',       icon: Users           },
-    { label: 'Announcements', path: '/announcements', icon: Megaphone       },
+    { label: 'Members',         path: '/members',       icon: Users           },
+    { label: 'Phone Directory', path: '/directory',     icon: BookUser        },
+    { label: 'Announcements',   path: '/announcements', icon: Megaphone       },
     { label: 'Events', icon: Calendar, children: [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },

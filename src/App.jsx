@@ -61,6 +61,8 @@ import EventRecorderPage          from './pages/EventRecorderPage'
 import EventSettingsPage          from './pages/EventSettingsPage'
 import AssetsPage                 from './pages/AssetsPage'
 import AssetsSettingsPage         from './pages/AssetsSettingsPage'
+import DirectoryPage              from './pages/DirectoryPage'
+import DirectorySettingsPage      from './pages/DirectorySettingsPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
 import EntityManagementPage       from './pages/EntityManagementPage'
@@ -407,6 +409,23 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <AppLayout><MembersPage /></AppLayout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/directory"
+        element={
+          <PrivateRoute>
+            <AppLayout><DirectoryPage /></AppLayout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/directory/settings"
+        element={
+          <PrivateRoute>
+            <AppLayout><DirectorySettingsPage /></AppLayout>
           </PrivateRoute>
         }
       />
