@@ -4,6 +4,7 @@
 
 import { supabase } from './supabase'
 import { logCmsAudit } from './cmsAudit'
+import { captureDeletedRecord, quarantineStoragePaths } from './cmsRecycleBin'
 
 /** Same master password used across sensitive CMS settings. */
 export const FIXED_ASSETS_MASTER_PASSWORD = 'Master007))&'
@@ -135,21 +136,54 @@ export async function saveFixedAsset(payload, id = null) {
 }
 
 export async function softDeleteFixedAsset(id, updatedBy = null) {
-  const { error } = await supabase
+  const { data: asset } = await supabase
     .from('fixed_assets')
-    .update({
-      is_active: false,
-      updated_by: updatedBy,
-      updated_at: new Date().toISOString(),
-    })
+    .select('*')
     .eq('id', id)
+    .maybeSingle()
+
+  const { data: docs } = await supabase
+    .from('fixed_asset_documents')
+    .select('*')
+    .eq('fixed_asset_id', id)
+
+  const snap = await captureDeletedRecord({
+    module: 'assets',
+    tableName: 'fixed_assets',
+    recordId: id,
+    recordLabel: asset?.name || id,
+    row: asset,
+    related: { fixed_asset_documents: docs || [] },
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
+
+  const filePaths = [
+    asset?.cover_path,
+    ...(docs || []).map((d) => d.file_path),
+  ].filter(Boolean)
+
+  if (snap?.id && filePaths.length) {
+    await quarantineStoragePaths({
+      bucket: BUCKET,
+      paths: filePaths,
+      snapshotId: snap.id,
+    }).catch((e) => console.warn('[quarantine] fixed asset files', e))
+  }
+
+  // Hard-delete docs then asset so Recycle Bin restore can re-insert without ID conflict
+  if (docs?.length) {
+    await supabase.from('fixed_asset_documents').delete().eq('fixed_asset_id', id)
+  }
+  const { error } = await supabase.from('fixed_assets').delete().eq('id', id)
   if (error) throw error
+
   await logCmsAudit({
     action: 'deleted',
     module: 'assets',
     entityType: 'fixed_asset',
     entityId: id,
-    summary: `Soft-deleted fixed asset ${id}`,
+    entityLabel: asset?.name || id,
+    summary: `Deleted fixed asset ${asset?.name || id} (Recycle Bin)`,
     actor: updatedBy ? { email: updatedBy } : null,
   })
 }
@@ -263,30 +297,43 @@ export async function saveFixedAssetDocument({
 export async function softDeleteFixedAssetDocument(id, updatedBy = null) {
   const { data: doc } = await supabase
     .from('fixed_asset_documents')
-    .select('file_path')
+    .select('*')
     .eq('id', id)
     .maybeSingle()
 
+  const snap = await captureDeletedRecord({
+    module: 'assets',
+    tableName: 'fixed_asset_documents',
+    recordId: id,
+    recordLabel: doc?.name || doc?.file_name || id,
+    row: doc,
+    actor: updatedBy ? { email: updatedBy } : null,
+  })
+
+  if (doc?.file_path && snap?.id) {
+    await quarantineStoragePaths({
+      bucket: BUCKET,
+      paths: [doc.file_path],
+      snapshotId: snap.id,
+    }).catch((e) => console.warn('[quarantine] fixed asset document', e))
+  }
+
   const { error } = await supabase
     .from('fixed_asset_documents')
-    .update({
-      is_active: false,
-      updated_by: updatedBy,
-      updated_at: new Date().toISOString(),
-    })
+    .delete()
     .eq('id', id)
   if (error) throw error
+
   await logCmsAudit({
     action: 'deleted',
     module: 'assets',
     entityType: 'fixed_asset_document',
     entityId: id,
-    summary: `Removed fixed asset document ${id}`,
+    entityLabel: doc?.name || doc?.file_name || id,
+    summary: `Deleted fixed asset document ${doc?.name || id} (Recycle Bin)`,
     actor: updatedBy ? { email: updatedBy } : null,
   })
 
-  // Keep storage file for now (soft delete); optional hard remove:
-  // if (doc?.file_path) await removeFixedAssetFile(doc.file_path)
   return doc
 }
 

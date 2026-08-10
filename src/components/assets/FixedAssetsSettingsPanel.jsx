@@ -269,11 +269,11 @@ export default function FixedAssetsSettingsPanel() {
   }
 
   async function handleDelete(row) {
-    if (!confirm(`Remove “${row.name}” from Fixed Assets? Documents stay in storage but the tile is hidden.`)) return
+    if (!confirm(`Remove “${row.name}” from Fixed Assets?\n\nIt goes to Recycle Bin with cover photo and documents.`)) return
     setBusy(row.id)
     try {
       await softDeleteFixedAsset(row.id, profile?.full_name || profile?.email || null)
-      toast('Fixed asset removed.', 'success')
+      toast('Fixed asset moved to Recycle Bin.', 'success')
       await load()
     } catch (e) {
       toast(e.message, 'error')

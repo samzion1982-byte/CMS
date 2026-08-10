@@ -494,7 +494,7 @@ function AssetDetail({ asset, onBack }) {
     setBusy(doc.id)
     try {
       await softDeleteFixedAssetDocument(doc.id, profile?.full_name || profile?.email || null)
-      toast('Document removed.', 'success')
+      toast('Document moved to Recycle Bin.', 'success')
       setDeleteTarget(null)
       const next = docs.filter(d => d.id !== doc.id)
       const nextId = selectedId === doc.id ? (next[0]?.id || null) : selectedId
@@ -706,7 +706,7 @@ function AssetDetail({ asset, onBack }) {
       {deleteTarget && (
         <MasterPasswordModal
           title="Delete document"
-          message={`Enter the master password to permanently remove “${deleteTarget.title}” from this vault.`}
+          message={`Enter the master password to remove “${deleteTarget.title}”. It will be saved to Recycle Bin (with the file) so you can restore it.`}
           confirmLabel="Delete document"
           onClose={() => setDeleteTarget(null)}
           onConfirm={confirmDeleteDoc}
