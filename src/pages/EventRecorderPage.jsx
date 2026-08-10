@@ -69,6 +69,58 @@ const DB_FILE_MAP = {
   brideConfirm: 'bride_confirm_url',
 }
 
+/** Extract storage object path from a public/signed event-media URL. */
+function eventMediaPathFromUrl(url) {
+  if (!url || typeof url !== 'string') return null
+  const markers = ['/object/public/event-media/', '/object/sign/event-media/', '/event-media/']
+  for (const marker of markers) {
+    const idx = url.indexOf(marker)
+    if (idx < 0) continue
+    let path = url.substring(idx + marker.length).split('?')[0]
+    try { path = decodeURIComponent(path) } catch (_) { /* keep raw */ }
+    return path || null
+  }
+  return null
+}
+
+/** Delete every file under event-media/{prefix}/ (including placeholders). */
+async function flushEventMediaFolder(prefix) {
+  if (!prefix) return 0
+  const paths = []
+  async function walk(dir) {
+    const { data, error } = await supabase.storage.from('event-media').list(dir, { limit: 1000 })
+    if (error || !data?.length) return
+    for (const item of data) {
+      const full = `${dir}/${item.name}`
+      if (item.id) paths.push(full)
+      else await walk(full)
+    }
+  }
+  await walk(prefix)
+  for (let i = 0; i < paths.length; i += 100) {
+    const chunk = paths.slice(i, i + 100)
+    const { error } = await supabase.storage.from('event-media').remove(chunk)
+    if (error) throw new Error(`Storage flush failed (${prefix}): ${error.message}`)
+  }
+  return paths.length
+}
+
+/** Remove explicit URL paths, then wipe the record folder so nothing is left behind. */
+async function flushEventMediaUrlsAndFolder(urls, folderPrefix) {
+  const fromUrls = [...new Set((urls || []).map(eventMediaPathFromUrl).filter(Boolean))]
+  if (fromUrls.length) {
+    const { error } = await supabase.storage.from('event-media').remove(fromUrls)
+    if (error) console.warn('[event-media] remove by url failed', error.message)
+  }
+  return flushEventMediaFolder(folderPrefix)
+}
+
+function eventFolderPrefix(kind, seqNum, year) {
+  const padded = String(seqNum ?? '').padStart(4, '0')
+  if (!seqNum || !year) return null
+  return `${kind}/${padded}-${year}`
+}
+
 /* ─── Root page ──────────────────────────────────────────────────── */
 export default function EventRecorderPage() {
   const [activeTab, setActiveTab] = useState('wedding')
@@ -248,14 +300,13 @@ function BaptismTab() {
     if (!window.confirm(`Delete baptism record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      const { data: row } = await supabase.from('baptism_records').select('*').eq('id', editId).maybeSingle()
       await captureDeletedRecord({
         module: 'events', tableName: 'baptism_records', recordId: editId,
         recordLabel: `Baptism ${slNoDisplay}`,
       })
-      if (photo.url) {
-        const idx = photo.url.indexOf('/event-media/'); if (idx >= 0)
-          await supabase.storage.from('event-media').remove([photo.url.substring(idx + '/event-media/'.length)])
-      }
+      const folder = eventFolderPrefix('baptism', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
+      await flushEventMediaUrlsAndFolder([row?.photo_url, photo.url], folder)
       const { error } = await supabase.from('baptism_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -862,14 +913,13 @@ function ConfirmationTab() {
     if (!window.confirm(`Delete confirmation record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      const { data: row } = await supabase.from('confirmation_records').select('*').eq('id', editId).maybeSingle()
       await captureDeletedRecord({
         module: 'events', tableName: 'confirmation_records', recordId: editId,
         recordLabel: `Confirmation ${slNoDisplay}`,
       })
-      if (photo.url) {
-        const idx = photo.url.indexOf('/event-media/'); if (idx >= 0)
-          await supabase.storage.from('event-media').remove([photo.url.substring(idx + '/event-media/'.length)])
-      }
+      const folder = eventFolderPrefix('confirmation', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
+      await flushEventMediaUrlsAndFolder([row?.photo_url, photo.url], folder)
       const { error } = await supabase.from('confirmation_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -1511,14 +1561,16 @@ function BurialTab() {
     if (!window.confirm(`Delete burial record ${slNoDisplay}?`)) return
     setSaving(true)
     try {
+      const { data: row } = await supabase.from('burial_records').select('*').eq('id', editId).maybeSingle()
       await captureDeletedRecord({
         module: 'events', tableName: 'burial_records', recordId: editId,
         recordLabel: `Burial ${slNoDisplay}`,
       })
-      const toRemove = [photo.url, docs[0].url, docs[1].url, docs[2].url].filter(Boolean)
-        .map(u => { const i = u.indexOf('/event-media/'); return i >= 0 ? u.substring(i + '/event-media/'.length) : null })
-        .filter(Boolean)
-      if (toRemove.length) await supabase.storage.from('event-media').remove(toRemove)
+      const folder = eventFolderPrefix('burial', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
+      await flushEventMediaUrlsAndFolder([
+        row?.photo_url, row?.doc1_url, row?.doc2_url, row?.doc3_url,
+        photo.url, docs[0]?.url, docs[1]?.url, docs[2]?.url,
+      ], folder)
       const { error } = await supabase.from('burial_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -2276,16 +2328,15 @@ function WeddingTab() {
     if (!window.confirm(`Delete wedding record ${slNoDisplay}? This cannot be undone.`)) return
     setSaving(true)
     try {
+      const { data: row } = await supabase.from('wedding_records').select('*').eq('id', editId).maybeSingle()
       await captureDeletedRecord({
         module: 'events', tableName: 'wedding_records', recordId: editId,
         recordLabel: `Wedding ${slNoDisplay}`,
       })
-      const paths = FILE_KEYS.filter(k => files[k].url).map(k => {
-        const url = files[k].url
-        const idx = url.indexOf('/event-media/')
-        return idx >= 0 ? url.substring(idx + '/event-media/'.length) : null
-      }).filter(Boolean)
-      if (paths.length) await supabase.storage.from('event-media').remove(paths)
+      const urlCols = Object.values(DB_FILE_MAP).map((col) => row?.[col])
+      const stateUrls = FILE_KEYS.map((k) => files[k]?.url)
+      const folder = eventFolderPrefix('wedding', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
+      await flushEventMediaUrlsAndFolder([...urlCols, ...stateUrls], folder)
       const { error } = await supabase.from('wedding_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
