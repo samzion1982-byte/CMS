@@ -18,7 +18,7 @@ import FixedAssetsVault from '../components/assets/FixedAssetsVault'
 import { canAccessAssetTab } from '../lib/cmsPermissions'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
-  getAssets, saveAsset, softDeleteAsset, moveStockOut, moveStockIn, returnStockToHand,
+  getAssets, saveAsset, hardDeleteAsset, moveStockOut, moveStockIn, returnStockToHand,
   getAssetLocations, getAssetItemTypes, getAssetConditions,
   uploadAssetPhoto, removeAssetPhoto,
   masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
@@ -1647,13 +1647,13 @@ export default function AssetsPage() {
 
   async function handleDelete(asset) {
     const msg = asset.stock_out_date
-      ? `Remove “${asset.description}” from the register?\n\nThis hides a moved-out history line. Prefer leaving it for audit, or use Return to Stock if it was a mistake.`
-      : `Remove “${asset.description}” from the register?\n\nFor disposals/transfers use Stock Movement → Move Out so history stays. Delete only for true mistakes.`
+      ? `Remove “${asset.description}” from the register?\n\nIt goes to Recycle Bin (with photo). Prefer Return to Stock if this was a mistake.`
+      : `Remove “${asset.description}” from the register?\n\nIt goes to Recycle Bin (with photo). For disposals/transfers use Stock Movement → Move Out.`
     if (!confirm(msg)) return
     setDeleting(asset.id)
     try {
-      await softDeleteAsset(asset.id, profile?.full_name || profile?.email || null)
-      toast('Asset removed.', 'success')
+      await hardDeleteAsset(asset.id)
+      toast('Asset moved to Recycle Bin.', 'success')
       setAssets(list => list.filter(a => a.id !== asset.id))
     } catch (e) {
       toast(e.message, 'error')

@@ -494,7 +494,7 @@ function AssetDetail({ asset, onBack }) {
     setBusy(doc.id)
     try {
       await softDeleteFixedAssetDocument(doc.id, profile?.full_name || profile?.email || null)
-      toast('Document removed.', 'success')
+      toast('Document moved to Recycle Bin.', 'success')
       setDeleteTarget(null)
       const next = docs.filter(d => d.id !== doc.id)
       const nextId = selectedId === doc.id ? (next[0]?.id || null) : selectedId
