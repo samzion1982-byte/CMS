@@ -820,7 +820,7 @@ export default function DashboardPage() {
           overflow: hidden;
           border-radius: 16px;
           margin-bottom: 22px;
-          padding: 22px 24px;
+          padding: 26px 24px;
           background:
             radial-gradient(ellipse at 12% 30%, color-mix(in srgb, var(--accent) 28%, transparent) 0%, transparent 52%),
             radial-gradient(ellipse at 90% 80%, rgba(255,255,255,0.1) 0%, transparent 45%),
@@ -829,21 +829,30 @@ export default function DashboardPage() {
           color: #fff;
           animation: dashFadeUp 0.3s ease both;
         }
-        .dash-hero::before {
-          content: '';
+        .dash-hero-content { position: relative; z-index: 2; }
+        .dash-snow {
           position: absolute;
           inset: 0;
-          background-image:
-            radial-gradient(circle at 18% 22%, rgba(255,255,255,0.14) 0 2px, transparent 3px),
-            radial-gradient(circle at 42% 68%, rgba(255,255,255,0.1) 0 1.5px, transparent 2.5px),
-            radial-gradient(circle at 70% 28%, rgba(255,255,255,0.12) 0 2px, transparent 3px),
-            radial-gradient(circle at 86% 74%, rgba(255,255,255,0.09) 0 1.5px, transparent 2.5px),
-            radial-gradient(circle at 58% 48%, rgba(255,255,255,0.08) 0 1px, transparent 2px),
-            linear-gradient(160deg, transparent 0%, rgba(255,255,255,0.06) 42%, transparent 68%);
-          background-size: 120px 120px, 90px 90px, 140px 140px, 100px 100px, 70px 70px, auto;
           pointer-events: none;
+          z-index: 1;
+          overflow: hidden;
         }
-        .dash-hero > * { position: relative; z-index: 1; }
+        .dash-snow span {
+          position: absolute;
+          top: -12px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.85);
+          box-shadow: 0 0 6px rgba(255,255,255,0.35);
+          animation-name: dashSnowFall;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        @keyframes dashSnowFall {
+          0%   { transform: translate3d(0, -12px, 0); opacity: 0; }
+          12%  { opacity: 0.9; }
+          85%  { opacity: 0.65; }
+          100% { transform: translate3d(var(--drift, 14px), 240px, 0); opacity: 0; }
+        }
         .dash-ministry-row {
           transition: background 0.15s ease, transform 0.15s ease;
         }
@@ -860,27 +869,33 @@ export default function DashboardPage() {
 
       {/* ── Welcome hero ── */}
       <div className="dash-hero">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-          <div>
-            <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>
-              {greetingForNow()}, {firstName}
-            </p>
-            <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{
-                width: 40, height: 40, borderRadius: 11,
-                background: 'color-mix(in srgb, var(--accent) 55%, transparent)',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid color-mix(in srgb, var(--accent) 70%, #fff)',
-                boxShadow: '0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent)',
-              }}>
-                <Home size={18} color="#fff" />
-              </span>
-              Congregation Overview
-            </h2>
-            <p style={{ margin: '10px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.78)', lineHeight: 1.5, maxWidth: 520 }}>
-              Live membership stats, age groups, zones, and recent additions.
-            </p>
-          </div>
+        <div className="dash-snow" aria-hidden="true">
+          {Array.from({ length: 36 }).map((_, i) => {
+            const size = 2 + (i % 4)
+            const left = ((i * 37) % 100)
+            const delay = ((i * 0.37) % 6).toFixed(2)
+            const dur = (7 + (i % 8) * 0.7).toFixed(1)
+            const drift = (i % 2 === 0 ? 1 : -1) * (8 + (i % 5) * 4)
+            return (
+              <span
+                key={i}
+                style={{
+                  left: `${left}%`,
+                  width: size,
+                  height: size,
+                  opacity: 0.55 + (i % 5) * 0.08,
+                  animationDelay: `${delay}s`,
+                  animationDuration: `${dur}s`,
+                  ['--drift']: `${drift}px`,
+                }}
+              />
+            )
+          })}
+        </div>
+        <div className="dash-hero-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
+            {greetingForNow()}, {firstName}
+          </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <StatusBadge />
             <button
