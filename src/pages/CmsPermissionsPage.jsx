@@ -31,6 +31,44 @@ function initials(name = '') {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
+/** Soft static column palette — Admin follows theme dark; others are matching companions. */
+const ROLE_COL = {
+  admin1: {
+    ink: 'var(--sidebar-bg)',
+    bar: 'var(--sidebar-bg)',
+    soft: 'color-mix(in srgb, var(--sidebar-bg) 12%, #ffffff)',
+    wash: 'color-mix(in srgb, var(--sidebar-bg) 4.5%, transparent)',
+  },
+  admin: {
+    ink: '#1e40af',
+    bar: '#2563eb',
+    soft: 'color-mix(in srgb, #2563eb 11%, #ffffff)',
+    wash: 'color-mix(in srgb, #2563eb 4%, transparent)',
+  },
+  user: {
+    ink: '#0f766e',
+    bar: '#0d9488',
+    soft: 'color-mix(in srgb, #0d9488 11%, #ffffff)',
+    wash: 'color-mix(in srgb, #0d9488 4%, transparent)',
+  },
+  demo: {
+    ink: '#6d28d9',
+    bar: '#7c3aed',
+    soft: 'color-mix(in srgb, #7c3aed 11%, #ffffff)',
+    wash: 'color-mix(in srgb, #7c3aed 4%, transparent)',
+  },
+  user4: {
+    ink: '#9a3412',
+    bar: '#c2410c',
+    soft: 'color-mix(in srgb, #c2410c 11%, #ffffff)',
+    wash: 'color-mix(in srgb, #c2410c 4%, transparent)',
+  },
+}
+
+function roleCol(role) {
+  return ROLE_COL[role] || ROLE_COL.admin1
+}
+
 export default function CmsPermissionsPage() {
   const { profile, reloadPageGrants } = useAuth()
   const toast = useToast()
@@ -41,7 +79,6 @@ export default function CmsPermissionsPage() {
   const [expanded, setExpanded] = useState(() => new Set(CMS_PERMISSION_TREE.map(c => c.key)))
   /** role value → [{ full_name, email, is_active }] */
   const [rolePeople, setRolePeople] = useState({})
-  const [hoverRole, setHoverRole] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -182,11 +219,17 @@ export default function CmsPermissionsPage() {
           from { opacity: 0; transform: translateY(4px) scale(0.96); }
           to { opacity: 1; transform: none; }
         }
-        .cms-perm-row:hover td {
-          background: color-mix(in srgb, var(--accent) 5%, transparent) !important;
+        @keyframes cmsPermBarShine {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
         }
-        .cms-perm-all:hover { filter: brightness(1.08); transform: translateY(-1px); }
-        .cms-perm-none:hover { filter: brightness(1.05); transform: translateY(-1px); }
+        .cms-perm-col-bar {
+          height: 4px;
+          border-radius: 4px 4px 0 0;
+          margin: -14px -12px 10px;
+          background-size: 200% 100%;
+          animation: cmsPermBarShine 4.5s linear infinite;
+        }
       `}</style>
 
       <div
@@ -284,23 +327,26 @@ export default function CmsPermissionsPage() {
                       }),
                       ...inactive.map(p => `${personLabel(p)} (inactive)`),
                     ].filter(Boolean).join('\n')
-                    const colHot = hoverRole === r.value
+                    const col = roleCol(r.value)
                     return (
                       <th
                         key={r.value}
                         style={{
                           ...thStyle(false),
-                          background: colHot
-                            ? 'color-mix(in srgb, var(--accent) 10%, var(--card-bg))'
-                            : 'transparent',
-                          transition: 'background 0.18s ease',
+                          background: `linear-gradient(180deg, ${col.soft} 0%, color-mix(in srgb, ${col.soft} 40%, #fff) 100%)`,
                           verticalAlign: 'bottom',
-                          minWidth: 128,
+                          minWidth: 132,
+                          borderLeft: '1px solid color-mix(in srgb, var(--card-border) 80%, transparent)',
+                          boxShadow: `inset 0 -1px 0 color-mix(in srgb, ${col.bar} 18%, transparent)`,
                         }}
                         title={title || undefined}
-                        onMouseEnter={() => setHoverRole(r.value)}
-                        onMouseLeave={() => setHoverRole(null)}
                       >
+                        <div
+                          className="cms-perm-col-bar"
+                          style={{
+                            backgroundImage: `linear-gradient(90deg, ${col.bar} 0%, color-mix(in srgb, ${col.bar} 55%, #fff) 45%, ${col.bar} 100%)`,
+                          }}
+                        />
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                           {/* Names ABOVE role */}
                           <div style={{
@@ -318,20 +364,21 @@ export default function CmsPermissionsPage() {
                                     maxWidth: '100%',
                                     padding: '3px 8px 3px 3px',
                                     borderRadius: 99,
-                                    background: 'color-mix(in srgb, var(--sidebar-bg) 10%, #fff)',
-                                    border: '1px solid color-mix(in srgb, var(--sidebar-bg) 22%, transparent)',
-                                    color: 'var(--sidebar-bg)',
+                                    background: '#fff',
+                                    border: `1px solid color-mix(in srgb, ${col.bar} 28%, transparent)`,
+                                    color: col.ink,
                                     fontSize: 11,
                                     fontWeight: 700,
                                     textTransform: 'none',
                                     letterSpacing: 0,
                                     lineHeight: 1.2,
+                                    boxShadow: `0 2px 6px color-mix(in srgb, ${col.bar} 14%, transparent)`,
                                     animation: `cmsPermChipIn 0.28s ease ${Math.min(i, 4) * 0.04}s both`,
                                   }}
                                 >
                                   <span style={{
                                     width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                                    background: 'var(--sidebar-bg)', color: '#fff',
+                                    background: col.bar, color: '#fff',
                                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                     fontSize: 8, fontWeight: 800,
                                   }}>
@@ -357,10 +404,11 @@ export default function CmsPermissionsPage() {
 
                           <span style={{
                             fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
-                            color: 'var(--text-2)',
-                            padding: '3px 10px',
+                            color: '#fff',
+                            padding: '4px 11px',
                             borderRadius: 7,
-                            background: 'color-mix(in srgb, var(--text-3) 12%, transparent)',
+                            background: col.bar,
+                            boxShadow: `0 3px 8px color-mix(in srgb, ${col.bar} 28%, transparent)`,
                           }}>
                             {r.label}
                           </span>
@@ -368,19 +416,26 @@ export default function CmsPermissionsPage() {
                           <div style={{ display: 'flex', gap: 5 }}>
                             <button
                               type="button"
-                              className="cms-perm-all"
                               title={`Allow all for ${r.label}`}
                               onClick={() => setRoleAll(r.value, true)}
-                              style={allBtn}
+                              style={{
+                                ...allBtn,
+                                background: col.bar,
+                                boxShadow: `0 2px 6px color-mix(in srgb, ${col.bar} 30%, transparent)`,
+                              }}
                             >
                               <CheckSquare size={11} /> All
                             </button>
                             <button
                               type="button"
-                              className="cms-perm-none"
                               title={`Clear ${r.label}`}
                               onClick={() => setRoleAll(r.value, false)}
-                              style={noneBtn}
+                              style={{
+                                ...noneBtn,
+                                border: `1px solid color-mix(in srgb, ${col.bar} 40%, transparent)`,
+                                background: '#fff',
+                                color: col.ink,
+                              }}
                             >
                               <Square size={11} /> None
                             </button>
@@ -403,7 +458,6 @@ export default function CmsPermissionsPage() {
                         onToggleOpen={() => toggleExpand(cat.key)}
                         matrix={matrix}
                         onToggleBranch={toggleBranch}
-                        hoverRole={hoverRole}
                       />
                       {open && (cat.children || []).map(child => {
                         if (child.kind === 'folder') {
@@ -417,7 +471,6 @@ export default function CmsPermissionsPage() {
                                 onToggleOpen={() => toggleExpand(child.key)}
                                 matrix={matrix}
                                 onToggleBranch={toggleBranch}
-                                hoverRole={hoverRole}
                               />
                               {folderOpen && (child.children || []).map(leaf => (
                                 <PageRow
@@ -426,7 +479,6 @@ export default function CmsPermissionsPage() {
                                   depth={2}
                                   matrix={matrix}
                                   onToggle={togglePage}
-                                  hoverRole={hoverRole}
                                 />
                               ))}
                             </Fragment>
@@ -439,7 +491,6 @@ export default function CmsPermissionsPage() {
                             depth={1}
                             matrix={matrix}
                             onToggle={togglePage}
-                            hoverRole={hoverRole}
                           />
                         )
                       })}
@@ -455,17 +506,15 @@ export default function CmsPermissionsPage() {
   )
 }
 
-function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch, hoverRole }) {
+function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch }) {
   const isCategory = node.kind === 'category'
   return (
     <tr
-      className="cms-perm-row"
       style={{
         borderTop: '1px solid var(--card-border)',
         background: isCategory
           ? 'color-mix(in srgb, var(--sidebar-bg) 5%, var(--page-bg))'
           : 'var(--card-header-bg, rgba(0,0,0,0.02))',
-        transition: 'background 0.15s ease',
       }}
     >
       <td style={{ padding: '10px 16px', paddingLeft: 16 + depth * 18 }}>
@@ -496,29 +545,33 @@ function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch, ho
           </span>
         </button>
       </td>
-      {CMS_CONFIG_ROLES.map(r => (
-        <td
-          key={r.value}
-          style={{
-            padding: '8px', textAlign: 'center',
-            background: hoverRole === r.value ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined,
-            transition: 'background 0.15s ease',
-          }}
-        >
-          <TriCheckbox
-            state={aggregateState(node, matrix[r.value])}
-            onChange={() => onToggleBranch(r.value, node)}
-            label={`${node.label} for ${r.label}`}
-          />
-        </td>
-      ))}
+      {CMS_CONFIG_ROLES.map(r => {
+        const col = roleCol(r.value)
+        return (
+          <td
+            key={r.value}
+            style={{
+              padding: '8px', textAlign: 'center',
+              background: col.wash,
+              borderLeft: '1px solid color-mix(in srgb, var(--card-border) 70%, transparent)',
+            }}
+          >
+            <TriCheckbox
+              state={aggregateState(node, matrix[r.value])}
+              onChange={() => onToggleBranch(r.value, node)}
+              label={`${node.label} for ${r.label}`}
+              accent={col.bar}
+            />
+          </td>
+        )
+      })}
     </tr>
   )
 }
 
-function PageRow({ page, depth, matrix, onToggle, hoverRole }) {
+function PageRow({ page, depth, matrix, onToggle }) {
   return (
-    <tr className="cms-perm-row" style={{ borderTop: '1px solid var(--card-border)', transition: 'background 0.15s ease' }}>
+    <tr style={{ borderTop: '1px solid var(--card-border)' }}>
       <td style={{
         padding: '11px 16px',
         paddingLeft: 16 + depth * 18 + 22,
@@ -547,13 +600,14 @@ function PageRow({ page, depth, matrix, onToggle, hoverRole }) {
       </td>
       {CMS_CONFIG_ROLES.map(r => {
         const on = !!matrix[r.value]?.[page.key]
+        const col = roleCol(r.value)
         return (
           <td
             key={r.value}
             style={{
               padding: '8px', textAlign: 'center',
-              background: hoverRole === r.value ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined,
-              transition: 'background 0.15s ease',
+              background: col.wash,
+              borderLeft: '1px solid color-mix(in srgb, var(--card-border) 70%, transparent)',
             }}
           >
             <input
@@ -564,7 +618,7 @@ function PageRow({ page, depth, matrix, onToggle, hoverRole }) {
               style={{
                 width: 16, height: 16,
                 cursor: page.alwaysOn ? 'not-allowed' : 'pointer',
-                accentColor: 'var(--sidebar-bg)',
+                accentColor: col.bar,
               }}
               aria-label={`${page.label} for ${r.label}`}
             />
@@ -575,7 +629,7 @@ function PageRow({ page, depth, matrix, onToggle, hoverRole }) {
   )
 }
 
-function TriCheckbox({ state, onChange, label }) {
+function TriCheckbox({ state, onChange, label, accent = 'var(--sidebar-bg)' }) {
   const ref = useRef(null)
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = state === 'some'
@@ -587,7 +641,7 @@ function TriCheckbox({ state, onChange, label }) {
       checked={state === 'all'}
       onChange={onChange}
       aria-label={label}
-      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--sidebar-bg)' }}
+      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: accent }}
     />
   )
 }
