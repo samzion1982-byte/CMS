@@ -21,10 +21,91 @@ const EXCLUDED_TABLES = [
   'cms_user_passwords',
   'cms_role_page_access',
   'cms_audit_log',
+  'cms_backup_settings',
+  'cms_backup_log',
   'announcement_settings',
   'bible_verses',
+  'accounting_entities',
+  'user_devices',
   // Add more here as needed ↓
 ]
+
+/** Flush modal categories — aligned with CMS modules (Members, Events, Accounts…). */
+const FLUSH_CATEGORIES = [
+  { key: 'members',          label: 'Members',          color: '#2563eb' },
+  { key: 'events',           label: 'Events',           color: '#7c3aed' },
+  { key: 'assets',           label: 'Assets',           color: '#0891b2' },
+  { key: 'receipts',         label: 'Receipts',         color: '#d97706' },
+  { key: 'accounts',         label: 'Accounts',         color: '#4f46e5' },
+  { key: 'simple-accounts',  label: 'Simple Accounts',  color: '#0d9488' },
+  { key: 'declaration',      label: 'Declaration',      color: '#db2777' },
+  { key: 'announcements',    label: 'Announcements',    color: '#ea580c' },
+  { key: 'logs',             label: 'Logs',             color: '#64748b' },
+  { key: 'other',            label: 'Other',            color: '#94a3b8' },
+]
+
+const TABLE_FLUSH_CATEGORY = {
+  members: 'members',
+  deleted_members: 'members',
+  member_payment_schedules: 'receipts',
+  member_report_history: 'members',
+  church_zones: 'members',
+
+  baptism_records: 'events',
+  confirmation_records: 'events',
+  wedding_records: 'events',
+  burial_records: 'events',
+  event_plans: 'events',
+  event_tasks: 'events',
+  event_task_buckets: 'events',
+  event_volunteers: 'events',
+  task_library: 'events',
+
+  assets: 'assets',
+  asset_locations: 'assets',
+  asset_conditions: 'assets',
+  asset_item_types: 'assets',
+  fixed_assets: 'assets',
+  fixed_asset_documents: 'assets',
+
+  receipts: 'receipts',
+  receipt_items: 'receipts',
+  receipt_transfer_batches: 'receipts',
+  receipt_financial_years: 'receipts',
+  payment_categories: 'receipts',
+  payment_requests: 'receipts',
+  auction_tracker: 'receipts',
+
+  chart_of_accounts: 'accounts',
+  journal_entries: 'accounts',
+  journal_entry_lines: 'accounts',
+  journal_templates: 'accounts',
+  account_balances: 'accounts',
+  budgets: 'accounts',
+  bank_accounts: 'accounts',
+  funds: 'accounts',
+
+  simple_accounts: 'simple-accounts',
+  simple_categories: 'simple-accounts',
+  simple_transactions: 'simple-accounts',
+
+  declarations: 'declaration',
+  declaration_items: 'declaration',
+  decl_financial_years: 'declaration',
+
+  announcements_log: 'announcements',
+  announcement_exclusions: 'announcements',
+
+  login_logs: 'logs',
+  payment_request_logs: 'logs',
+  whatsapp_receipt_logs: 'logs',
+  accounting_audit_log: 'logs',
+  cms_recycle_bin: 'other',
+}
+
+function flushCategoryForTable(tbl) {
+  return TABLE_FLUSH_CATEGORY[tbl] || 'other'
+}
 
 // ── COLUMN MAPPING — exact Excel column order, position-only, no name parsing ─
 // Col:  A          B           C       D             E          F
@@ -384,21 +465,37 @@ function PasswordModal({ open, onClose }) {
 
 // ── Flush All Modal — queries live tables & buckets, checkbox selection ───────
 function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast }) {
-  const [items, setItems]       = useState([])   // { id, label, type, checked, count }
+  const [items, setItems]       = useState([])   // { id, label, type, checked, count, category }
   const [loading, setLoading]   = useState(false)
   const [flushing, setFlushing] = useState(false)
   const [progress, setProgress] = useState('')
 
   useEffect(() => { if (open) loadItems() }, [open])
 
+  async function countStorageFiles(bucket, folder) {
+    // folder null/'' = root; also walks one level of subfolders (e.g. event-media)
+    const rootPath = folder || ''
+    const { data: rootItems, error } = await adminSupabase.storage
+      .from(bucket).list(rootPath, { limit: 10000 })
+    if (error) return { count: null, error }
+    let count = 0
+    for (const item of (rootItems || [])) {
+      if (item.metadata) { count++; continue }
+      const subPath = rootPath ? `${rootPath}/${item.name}` : item.name
+      const { data: subItems } = await adminSupabase.storage
+        .from(bucket).list(subPath, { limit: 10000 })
+      for (const f of (subItems || [])) {
+        if (f.metadata) count++
+      }
+    }
+    return { count, error: null }
+  }
+
   async function loadItems() {
     setLoading(true)
     const discovered = []
 
-    const PRIMARY_TABLES   = new Set(['members', 'deleted_members'])
-    const PRIMARY_STORAGE  = new Set(['storage::member-photos::active', 'storage::member-photos::deleted'])
-
-    // ── 1. Tables: try RPC; fallback = only 'members' ────────────────────────
+    // ── 1. Tables ────────────────────────────────────────────────────────────
     let knownTables = ['members']
     try {
       const { data: tables } = await supabase.rpc('get_user_tables')
@@ -407,34 +504,51 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       }
     } catch (_) {}
 
-    for (const tbl of knownTables) {
+    await Promise.all(knownTables.map(async (tbl) => {
       try {
-        const { count, error } = await supabase.from(tbl).select('*', { count:'exact', head:true })
+        const { count, error } = await adminSupabase.from(tbl).select('*', { count: 'exact', head: true })
         if (!error) discovered.push({
-          id: `table::${tbl}`, label: tbl, type: 'table', count: count||0, checked: false,
-          tier: PRIMARY_TABLES.has(tbl) ? 'primary' : 'secondary',
+          id: `table::${tbl}`,
+          label: tbl,
+          type: 'table',
+          count: count || 0,
+          checked: false,
+          category: flushCategoryForTable(tbl),
         })
       } catch (_) {}
-    }
+    }))
 
-    // ── 2. Storage: include photo folders for cleanup ─────────────────
+    // ── 2. Storage buckets / folders ─────────────────────────────────────────
     const KNOWN_STORAGE = [
-      { bucket: 'member-photos', folder: 'active',  label: 'Photos - Active Members'  },
-      { bucket: 'member-photos', folder: 'deleted', label: 'Photos - Deleted Members' },
+      { bucket: 'member-photos',       folder: 'active',  label: 'Photos — Active Members',  category: 'members' },
+      { bucket: 'member-photos',       folder: 'deleted', label: 'Photos — Deleted Members', category: 'members' },
+      { bucket: 'event-media',         folder: '',        label: 'Event Media',              category: 'events' },
+      { bucket: 'asset-photos',        folder: '',        label: 'Asset Photos',             category: 'assets' },
+      { bucket: 'receipt-pdfs',        folder: '',        label: 'Receipt PDFs',             category: 'receipts' },
+      { bucket: 'payment-pages',       folder: '',        label: 'Payment Pages',            category: 'receipts' },
+      { bucket: 'announcement-cards',  folder: '',        label: 'Announcement Cards',       category: 'announcements' },
+      { bucket: 'announcement-reports',folder: '',        label: 'Announcement Reports',     category: 'announcements' },
+      { bucket: 'family-records',      folder: '',        label: 'Family Records',           category: 'members' },
     ]
-    for (const { bucket, folder, label } of KNOWN_STORAGE) {
+    await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category }) => {
       try {
-        const { data: files, error } = await supabase.storage.from(bucket).list(folder, { limit: 10000 })
-        if (!error) {
-          const fileCount = (files||[]).filter(f => f.metadata).length
-          const id = `storage::${bucket}::${folder}`
-          discovered.push({
-            id, label, type: 'storage', count: fileCount, checked: false,
-            tier: PRIMARY_STORAGE.has(id) ? 'primary' : 'secondary',
-          })
-        }
+        const { count, error } = await countStorageFiles(bucket, folder)
+        if (error) return
+        const id = folder ? `storage::${bucket}::${folder}` : `storage::${bucket}::`
+        discovered.push({
+          id, label, type: 'storage', count: count || 0, checked: false, category,
+        })
       } catch (_) {}
-    }
+    }))
+
+    // Stable order: category order, then label
+    const catOrder = Object.fromEntries(FLUSH_CATEGORIES.map((c, i) => [c.key, i]))
+    discovered.sort((a, b) => {
+      const ca = catOrder[a.category] ?? 999
+      const cb = catOrder[b.category] ?? 999
+      if (ca !== cb) return ca - cb
+      return a.label.localeCompare(b.label)
+    })
 
     setItems(discovered)
     setLoading(false)
@@ -446,8 +560,33 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   function toggleAll(val) {
     setItems(prev => prev.map(it => ({ ...it, checked: val })))
   }
-  function toggleTier(tier, val) {
-    setItems(prev => prev.map(it => it.tier === tier ? { ...it, checked: val } : it))
+  function toggleCategory(category, val) {
+    setItems(prev => prev.map(it => it.category === category ? { ...it, checked: val } : it))
+  }
+
+  async function flushStorageItem(item) {
+    const parts = item.id.split('::')
+    const bucket = parts[1]
+    const folder = parts[2] || ''
+    const rootPath = folder
+    const { data: rootItems } = await adminSupabase.storage.from(bucket).list(rootPath, { limit: 10000 })
+    const toDelete = []
+    for (const itemRow of (rootItems || [])) {
+      if (itemRow.metadata) {
+        toDelete.push(rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name)
+        continue
+      }
+      const subPath = rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name
+      const { data: subItems } = await adminSupabase.storage.from(bucket).list(subPath, { limit: 10000 })
+      for (const f of (subItems || [])) {
+        if (f.metadata) toDelete.push(`${subPath}/${f.name}`)
+      }
+    }
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const chunk = toDelete.slice(i, i + 100)
+      const { error } = await adminSupabase.storage.from(bucket).remove(chunk)
+      if (error) throw new Error(`${item.label}: ${error.message}`)
+    }
   }
 
   async function doFlush() {
@@ -465,7 +604,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         if (item.type === 'table') {
           const tbl = item.id.replace('table::', '')
           // Use adminSupabase (service role) to bypass RLS on all tables.
-          // .not('id','is',null) works universally for any table with a UUID id column.
           const { error } = await adminSupabase.from(tbl).delete().not('id', 'is', null)
           if (error) {
             console.error(`[flush] error on ${tbl}:`, error)
@@ -480,25 +618,18 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
             }
           }
         } else {
-          const [, bucket, folder] = item.id.split('::')
-          const prefix = folder ? `${folder}/` : ''
-          const { data: files } = await supabase.storage.from(bucket).list(folder || '', { limit: 10000 })
-          const toDelete = (files || []).filter(f => f.metadata).map(f => `${prefix}${f.name}`)
-          if (toDelete.length) {
-            const { error } = await supabase.storage.from(bucket).remove(toDelete)
-            if (error) throw new Error(`${item.label}: ${error.message}`)
-          }
+          await flushStorageItem(item)
         }
       }
       await supabase.from('migration_history')
-        .update({ status:'flushed', flushed_at: new Date().toISOString() })
+        .update({ status: 'flushed', flushed_at: new Date().toISOString() })
         .neq('status', 'flushed')
 
       const done = selected.length - skipped.length
       if (skipped.length > 0) {
-        toast(`${done} item${done!==1?'s':''} flushed. Skipped: ${skipped.join(', ')} (table not found in database).`, 'warning')
+        toast(`${done} item${done !== 1 ? 's' : ''} flushed. Skipped: ${skipped.join(', ')} (table not found in database).`, 'warning')
       } else {
-        toast(`${done} item${done!==1?'s':''} flushed successfully.`, 'success')
+        toast(`${done} item${done !== 1 ? 's' : ''} flushed successfully.`, 'success')
       }
       onDone()
       onClose()
@@ -511,27 +642,33 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
 
   if (!open) return null
 
-  const allChecked      = items.length > 0 && items.every(i => i.checked)
-  const anyChecked      = items.some(i => i.checked)
-  const primaryItems    = items.filter(i => i.tier === 'primary')
-  const secondaryItems  = items.filter(i => i.tier === 'secondary')
-  const allPrimChecked  = primaryItems.length > 0 && primaryItems.every(i => i.checked)
-  const allSecChecked   = secondaryItems.length > 0 && secondaryItems.every(i => i.checked)
+  const allChecked = items.length > 0 && items.every(i => i.checked)
+  const anyChecked = items.some(i => i.checked)
+  const categoryGroups = FLUSH_CATEGORIES
+    .map(cat => ({
+      ...cat,
+      items: items.filter(i => i.category === cat.key),
+    }))
+    .filter(g => g.items.length > 0)
 
-  function FlushItem({ item }) {
-    const isPrimary = item.tier === 'primary'
+  function FlushItem({ item, accent }) {
     const isStorage = item.type === 'storage'
+    const checkedBorder = accent || '#bfdbfe'
+    const checkedBg = accent ? `${accent}14` : '#eff6ff'
     return (
-      <label style={{display:'flex',alignItems:'center',gap:10,padding:'9px 10px',borderRadius:8,
-        border:`1px solid ${item.checked ? (isPrimary ? '#bfdbfe' : '#e2e8f0') : '#e2e8f0'}`,
-        marginBottom:6,cursor:'pointer',
-        background: item.checked ? (isPrimary ? '#eff6ff' : '#f8fafc') : '#ffffff'}}>
-        <input type="checkbox" checked={item.checked} onChange={()=>toggle(item.id)} style={{width:14,height:14,accentColor:'#2563eb',flexShrink:0}}/>
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
+        border: `1px solid ${item.checked ? checkedBorder : '#e2e8f0'}`,
+        marginBottom: 6, cursor: 'pointer',
+        background: item.checked ? checkedBg : '#ffffff',
+      }}>
+        <input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)}
+          style={{ width: 14, height: 14, accentColor: accent || '#2563eb', flexShrink: 0 }} />
         {isStorage
-          ? <Camera size={13} style={{color:'#64748b',flexShrink:0}}/>
-          : <Database size={13} style={{color:'#64748b',flexShrink:0}}/>}
-        <span style={{flex:1,fontSize:13,color:'#0f172a',fontFamily:'var(--font-mono)'}}>{item.label}</span>
-        <span style={{fontSize:11,color:'#64748b',flexShrink:0}}>
+          ? <Camera size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+          : <Database size={13} style={{ color: '#64748b', flexShrink: 0 }} />}
+        <span style={{ flex: 1, fontSize: 13, color: '#0f172a', fontFamily: 'var(--font-mono)' }}>{item.label}</span>
+        <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>
           {item.count.toLocaleString()} {isStorage ? 'files' : 'rows'}
         </span>
       </label>
@@ -540,90 +677,89 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
 
   return ReactDOM.createPortal(
     <>
-      <div style={{position:'fixed',inset:0,backgroundColor:'rgba(15,23,42,0.7)',backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)',zIndex:2999}} onClick={!flushing ? onClose : undefined}/>
-      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'calc(100% - 48px)',maxWidth:520,maxHeight:'80vh',display:'flex',flexDirection:'column',backgroundColor:'#ffffff',borderRadius:12,border:'1px solid #e2e8f0',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.5)',zIndex:3000,overflow:'hidden'}}>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 2999 }} onClick={!flushing ? onClose : undefined} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'calc(100% - 48px)', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 3000, overflow: 'hidden' }}>
 
         {/* Header */}
-        <div style={{padding:'20px 20px 14px',borderBottom:'1px solid #e2e8f0'}}>
-          <p style={{margin:'0 0 2px',fontSize:15,fontWeight:500,color:'#0f172a'}}>Flush data</p>
-          <p style={{margin:0,fontSize:12,color:'#64748b'}}>
+        <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid #e2e8f0' }}>
+          <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 500, color: '#0f172a' }}>Flush data</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
             Records only — table structures and folder containers are preserved.
           </p>
         </div>
 
         {/* Body */}
-        <div style={{flex:1,overflowY:'auto',padding:'14px 20px'}}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
           {loading ? (
-            <div style={{display:'flex',alignItems:'center',gap:8,padding:'20px 0',color:'#64748b',fontSize:13}}>
-              <Loader2 size={15} style={{animation:'spin 1s linear infinite'}}/> Scanning tables and storage…
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 0', color: '#64748b', fontSize: 13 }}>
+              <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Scanning tables and storage…
             </div>
           ) : (
             <>
-              {/* Select all */}
-              <label style={{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,background:'#f8fafc',marginBottom:14,cursor:'pointer',fontSize:12,fontWeight:500,color:'#64748b'}}>
-                <input type="checkbox" checked={allChecked} onChange={e=>toggleAll(e.target.checked)} style={{width:14,height:14,accentColor:'#2563eb'}}/>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: '#f8fafc', marginBottom: 14, cursor: 'pointer', fontSize: 12, fontWeight: 500, color: '#64748b' }}>
+                <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
                 Select all
               </label>
 
-              {/* ── PRIMARY ──────────────────────────────────────── */}
-              {primaryItems.length > 0 && (
-                <div style={{marginBottom:16}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{display:'flex',alignItems:'center',gap:7}}>
-                      <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#2563eb'}}/>
-                      <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#1e40af'}}>Primary</span>
+              {categoryGroups.map(group => {
+                const allCatChecked = group.items.every(i => i.checked)
+                return (
+                  <div key={group.key} style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: group.color }} />
+                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: group.color }}>
+                          {group.label}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>
+                          {group.items.length}
+                        </span>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#64748b' }}>
+                        <input
+                          type="checkbox"
+                          checked={allCatChecked}
+                          onChange={e => toggleCategory(group.key, e.target.checked)}
+                          style={{ width: 12, height: 12, accentColor: group.color }}
+                        />
+                        Select all
+                      </label>
                     </div>
-                    <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:11,color:'#64748b'}}>
-                      <input type="checkbox" checked={allPrimChecked} onChange={e=>toggleTier('primary',e.target.checked)} style={{width:12,height:12,accentColor:'#2563eb'}}/>
-                      Select all
-                    </label>
-                  </div>
-                  <div style={{borderRadius:10,border:'1px solid #bfdbfe',padding:'4px 6px',background:'#f8fbff'}}>
-                    {primaryItems.map(item => <FlushItem key={item.id} item={item}/>)}
-                  </div>
-                </div>
-              )}
-
-              {/* ── SECONDARY ────────────────────────────────────── */}
-              {secondaryItems.length > 0 && (
-                <div>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{display:'flex',alignItems:'center',gap:7}}>
-                      <span style={{display:'inline-block',width:8,height:8,borderRadius:'50%',background:'#94a3b8'}}/>
-                      <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',color:'#64748b'}}>Secondary</span>
+                    <div style={{
+                      borderRadius: 10,
+                      border: `1px solid ${group.color}40`,
+                      padding: '4px 6px',
+                      background: `${group.color}08`,
+                    }}>
+                      {group.items.map(item => (
+                        <FlushItem key={item.id} item={item} accent={group.color} />
+                      ))}
                     </div>
-                    <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:11,color:'#64748b'}}>
-                      <input type="checkbox" checked={allSecChecked} onChange={e=>toggleTier('secondary',e.target.checked)} style={{width:12,height:12,accentColor:'#94a3b8'}}/>
-                      Select all
-                    </label>
                   </div>
-                  <div style={{borderRadius:10,border:'1px solid #e2e8f0',padding:'4px 6px',background:'#fafafa'}}>
-                    {secondaryItems.map(item => <FlushItem key={item.id} item={item}/>)}
-                  </div>
-                </div>
-              )}
+                )
+              })}
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div style={{padding:'12px 20px',borderTop:'1px solid #e2e8f0',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           {flushing
-            ? <p style={{margin:0,fontSize:12,color:'#64748b',display:'flex',alignItems:'center',gap:6}}>
-                <Loader2 size={12} style={{animation:'spin 1s linear infinite'}}/>{progress}
+            ? <p style={{ margin: 0, fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />{progress}
               </p>
-            : <p style={{margin:0,fontSize:12,color:'#64748b'}}>
-                {anyChecked ? `${items.filter(i=>i.checked).length} item${items.filter(i=>i.checked).length>1?'s':''} selected` : 'Nothing selected'}
+            : <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+                {anyChecked ? `${items.filter(i => i.checked).length} item${items.filter(i => i.checked).length > 1 ? 's' : ''} selected` : 'Nothing selected'}
               </p>
           }
-          <div style={{display:'flex',gap:8}}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onClose} disabled={flushing}
-              style={{fontSize:12,padding:'6px 14px',border:'1px solid #e2e8f0',borderRadius:8,background:'none',color:'#64748b',cursor:'pointer'}}>
+              style={{ fontSize: 12, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: 'none', color: '#64748b', cursor: 'pointer' }}>
               Cancel
             </button>
-            <button onClick={doFlush} disabled={!anyChecked||flushing||loading}
-              style={{fontSize:12,padding:'6px 14px',border:'none',borderRadius:8,background: anyChecked&&!flushing ? '#dc2626':'#dc262680',color:'#fff',cursor: anyChecked&&!flushing ?'pointer':'default',display:'flex',alignItems:'center',gap:6}}>
-              {flushing ? <Loader2 size={12} style={{animation:'spin 1s linear infinite'}}/> : <Trash2 size={12}/>}
+            <button onClick={doFlush} disabled={!anyChecked || flushing || loading}
+              style={{ fontSize: 12, padding: '6px 14px', border: 'none', borderRadius: 8, background: anyChecked && !flushing ? '#dc2626' : '#dc262680', color: '#fff', cursor: anyChecked && !flushing ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {flushing ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={12} />}
               {flushing ? 'Flushing…' : 'Flush selected'}
             </button>
           </div>
