@@ -5,14 +5,17 @@ const ToastContext = createContext(null)
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
   const toast = useCallback((msg, type='success') => {
-    const id = Date.now()
+    const id = Date.now() + Math.random()
     setToasts(t => [...t, { id, msg, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500)
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500)
   }, [])
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+      <div
+        className="fixed bottom-6 right-6 flex flex-col gap-2"
+        style={{ zIndex: 10050 }}
+      >
         {toasts.map(t => (
           <div key={t.id} className={'animate-slide-up toast toast-'+t.type}>{t.msg}</div>
         ))}

@@ -121,6 +121,34 @@ function eventFolderPrefix(kind, seqNum, year) {
   return `${kind}/${padded}-${year}`
 }
 
+/** True when year/month/day form a real calendar date. */
+function isValidCalendarDate(year, month, day) {
+  const y = Number(year)
+  const m = Number(month)
+  const d = Number(day)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return false
+  if (y < 1800 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false
+  const dt = new Date(y, m - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d
+}
+
+/**
+ * Optional free-text dates (Baptism / Confirmation / Burial).
+ * Empty is OK; if filled, expect DD-MM-YYYY or DD/MM/YYYY.
+ * Returns an error message string, or null when valid.
+ */
+function optionalDateTextError(value, label) {
+  if (value == null || !String(value).trim()) return null
+  const s = String(value).trim()
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (!m) return `${label} must be DD-MM-YYYY`
+  const day = Number(m[1])
+  const month = Number(m[2])
+  const year = Number(m[3])
+  if (!isValidCalendarDate(year, month, day)) return `${label} is not a valid date`
+  return null
+}
+
 /* ─── Root page ──────────────────────────────────────────────────── */
 export default function EventRecorderPage() {
   const [activeTab, setActiveTab] = useState('wedding')
@@ -172,7 +200,7 @@ const EMPTY_BAPTISM = {
 }
 
 function BaptismTab() {
-  const { toast } = useToast()
+  const toast = useToast()
   const [form,    setForm]    = useState(EMPTY_BAPTISM)
   const [photo,   setPhoto]   = useState(EMPTY_FILE)
   const [editId,  setEditId]  = useState(null)
@@ -227,6 +255,10 @@ function BaptismTab() {
     if (!form.seqNum) { toast('Enter a Serial Number', 'error'); return }
     if (seqNumTaken) { toast(`Serial No. ${slNoDisplay} already exists`, 'error'); return }
     if (!form.name)  { toast('Enter the name', 'error'); return }
+    const baptismDateErr = optionalDateTextError(form.dateOfBaptism, 'Date of Baptism')
+    if (baptismDateErr) { toast(baptismDateErr, 'error'); return }
+    const birthDateErr = optionalDateTextError(form.dateOfBirth, 'Date of Birth')
+    if (birthDateErr) { toast(birthDateErr, 'error'); return }
     if (!editId) {
       const { data: ex } = await supabase.from('baptism_records').select('id')
         .eq('seq_num', parseInt(form.seqNum)).eq('year', parseInt(form.year)).maybeSingle()
@@ -262,14 +294,14 @@ function BaptismTab() {
         error = insErr; newId = data?.id
       }
       if (error) throw error
-      if (newId) setEditId(newId)
-      if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
+      const savedLabel = slNoDisplay
       await logCmsAudit({
         action: editId ? 'updated' : 'created', module: 'events', entityType: 'baptism_record',
-        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
-        summary: `${editId ? 'Updated' : 'Created'} baptism record ${slNoDisplay} — ${form.name || ''}`,
+        entityId: editId || newId, entityLabel: form.name || savedLabel,
+        summary: `${editId ? 'Updated' : 'Created'} baptism record ${savedLabel} — ${form.name || ''}`,
       })
-      toast(`Baptism record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
+      toast(`Record saved successfully — ${savedLabel}`, 'success')
+      await handleReset()
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
   }
@@ -314,7 +346,7 @@ function BaptismTab() {
         entityId: editId, entityLabel: slNoDisplay,
         summary: `Deleted baptism record ${slNoDisplay}`,
       })
-      toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
+      toast('Record deleted successfully', 'success'); await handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
   }
@@ -775,7 +807,7 @@ const EMPTY_CONFIRMATION = {
 }
 
 function ConfirmationTab() {
-  const { toast } = useToast()
+  const toast = useToast()
   const [form,    setForm]    = useState(EMPTY_CONFIRMATION)
   const [photo,   setPhoto]   = useState(EMPTY_FILE)
   const [editId,  setEditId]  = useState(null)
@@ -830,6 +862,12 @@ function ConfirmationTab() {
     if (!form.seqNum) { toast('Enter a Serial Number', 'error'); return }
     if (seqNumTaken) { toast(`Serial No. ${slNoDisplay} already exists`, 'error'); return }
     if (!form.name)  { toast('Enter the name', 'error'); return }
+    const confDateErr = optionalDateTextError(form.dateOfConfirmation, 'Date of Confirmation')
+    if (confDateErr) { toast(confDateErr, 'error'); return }
+    const birthDateErr = optionalDateTextError(form.dateOfBirth, 'Date of Birth')
+    if (birthDateErr) { toast(birthDateErr, 'error'); return }
+    const baptDateErr = optionalDateTextError(form.dateOfBaptism, 'Date of Baptism')
+    if (baptDateErr) { toast(baptDateErr, 'error'); return }
     if (!editId) {
       const { data: ex } = await supabase.from('confirmation_records').select('id')
         .eq('seq_num', parseInt(form.seqNum)).eq('year', parseInt(form.year)).maybeSingle()
@@ -870,14 +908,14 @@ function ConfirmationTab() {
         error = insErr; newId = data?.id
       }
       if (error) throw error
-      if (newId) setEditId(newId)
-      if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
+      const savedLabel = slNoDisplay
       await logCmsAudit({
         action: editId ? 'updated' : 'created', module: 'events', entityType: 'confirmation_record',
-        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
-        summary: `${editId ? 'Updated' : 'Created'} confirmation record ${slNoDisplay} — ${form.name || ''}`,
+        entityId: editId || newId, entityLabel: form.name || savedLabel,
+        summary: `${editId ? 'Updated' : 'Created'} confirmation record ${savedLabel} — ${form.name || ''}`,
       })
-      toast(`Confirmation record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
+      toast(`Record saved successfully — ${savedLabel}`, 'success')
+      await handleReset()
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
   }
@@ -927,7 +965,7 @@ function ConfirmationTab() {
         entityId: editId, entityLabel: slNoDisplay,
         summary: `Deleted confirmation record ${slNoDisplay}`,
       })
-      toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
+      toast('Record deleted successfully', 'success'); await handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
   }
@@ -1392,7 +1430,7 @@ const EMPTY_BURIAL = {
 }
 
 function BurialTab() {
-  const { toast } = useToast()
+  const toast = useToast()
   const [form,    setForm]    = useState(EMPTY_BURIAL)
   const [photo,   setPhoto]   = useState(EMPTY_FILE)
   const [docs,    setDocs]    = useState(EMPTY_DOCS.map(d => ({ ...d })))
@@ -1461,6 +1499,10 @@ function BurialTab() {
     if (!form.seqNum) { toast('Enter a Serial Number', 'error'); return }
     if (seqNumTaken) { toast(`Serial No. ${slNoDisplay} already exists`, 'error'); return }
     if (!form.name)  { toast('Enter the name', 'error'); return }
+    const diedErr = optionalDateTextError(form.whenDied, 'When Died')
+    if (diedErr) { toast(diedErr, 'error'); return }
+    const buriedErr = optionalDateTextError(form.whenBuried, 'When Buried')
+    if (buriedErr) { toast(buriedErr, 'error'); return }
     if (!editId) {
       const { data: ex } = await supabase.from('burial_records').select('id')
         .eq('seq_num', parseInt(form.seqNum)).eq('year', parseInt(form.year)).maybeSingle()
@@ -1514,15 +1556,14 @@ function BurialTab() {
         error = insErr; newId = data?.id
       }
       if (error) throw error
-      if (newId) setEditId(newId)
-      if (photoUrl) setPhoto(p => ({ ...p, url: photoUrl, fileObj: null }))
-      setDocs(savedDocs)
+      const savedLabel = slNoDisplay
       await logCmsAudit({
         action: editId ? 'updated' : 'created', module: 'events', entityType: 'burial_record',
-        entityId: editId || newId, entityLabel: form.name || slNoDisplay,
-        summary: `${editId ? 'Updated' : 'Created'} burial record ${slNoDisplay} — ${form.name || ''}`,
+        entityId: editId || newId, entityLabel: form.name || savedLabel,
+        summary: `${editId ? 'Updated' : 'Created'} burial record ${savedLabel} — ${form.name || ''}`,
       })
-      toast(`Burial record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
+      toast(`Record saved successfully — ${savedLabel}`, 'success')
+      await handleReset()
     } catch (err) { toast(err.message || 'Save failed', 'error') }
     finally { setSaving(false) }
   }
@@ -1578,7 +1619,7 @@ function BurialTab() {
         entityId: editId, entityLabel: slNoDisplay,
         summary: `Deleted burial record ${slNoDisplay}`,
       })
-      toast(`Record ${slNoDisplay} deleted`, 'success'); handleReset()
+      toast('Record deleted successfully', 'success'); await handleReset()
     } catch (err) { toast(err.message || 'Delete failed', 'error') }
     finally { setSaving(false) }
   }
@@ -2113,7 +2154,7 @@ function BurialCertModal({ form, onClose }) {
 
 /* ─── Wedding Tab ────────────────────────────────────────────────── */
 function WeddingTab() {
-  const { toast } = useToast()
+  const toast = useToast()
   const [form,    setForm]    = useState(EMPTY_FORM)
   const [files,   setFiles]   = useState(EMPTY_FILES)
   const [showIV,  setShowIV]  = useState(false)
@@ -2209,7 +2250,18 @@ function WeddingTab() {
   async function handleSave() {
     if (!form.seqNum) { toast('Enter a Serial Number', 'error'); return }
     if (seqNumTaken) { toast(`Serial No. ${slNoDisplay} already exists`, 'error'); return }
-    if (!form.month || !form.day) { toast('Enter the marriage date (month + day)', 'error'); return }
+    if (!form.year) { toast('Enter the marriage year', 'error'); return }
+    if (!form.month) { toast('Select the marriage month', 'error'); return }
+    if (!form.day) { toast('Enter the marriage day', 'error'); return }
+    if (!isValidCalendarDate(form.year, form.month, form.day)) {
+      toast('Marriage date is not a valid calendar date', 'error'); return
+    }
+    const appDateErr = optionalDateTextError(form.dateOfApplication, 'Date of Application')
+    if (appDateErr) { toast(appDateErr, 'error'); return }
+    const dobGroomErr = optionalDateTextError(form.dobGroom, 'Groom date of birth')
+    if (dobGroomErr) { toast(dobGroomErr, 'error'); return }
+    const dobBrideErr = optionalDateTextError(form.dobBride, 'Bride date of birth')
+    if (dobBrideErr) { toast(dobBrideErr, 'error'); return }
     // Duplicate check — only for new records or if seq_num/year changed
     if (!editId) {
       const { data: existing } = await supabase
@@ -2267,20 +2319,14 @@ function WeddingTab() {
         error = insErr; newId = data?.id
       }
       if (error) throw error
-      if (newId) setEditId(newId)
-      setFiles(prev => {
-        const updated = { ...prev }
-        for (const key of FILE_KEYS) {
-          if (urls[key]) updated[key] = { ...updated[key], url: urls[key], fileObj: null }
-        }
-        return updated
-      })
+      const savedLabel = slNoDisplay
       await logCmsAudit({
         action: editId ? 'updated' : 'created', module: 'events', entityType: 'wedding_record',
-        entityId: editId || newId, entityLabel: slNoDisplay,
-        summary: `${editId ? 'Updated' : 'Created'} wedding record ${slNoDisplay}`,
+        entityId: editId || newId, entityLabel: savedLabel,
+        summary: `${editId ? 'Updated' : 'Created'} wedding record ${savedLabel}`,
       })
-      toast(`Wedding record ${editId ? 'updated' : 'saved'} — ${slNoDisplay}`, 'success')
+      toast(`Record saved successfully — ${savedLabel}`, 'success')
+      await handleReset()
     } catch (err) {
       toast(err.message || 'Save failed', 'error')
     } finally {
@@ -2344,8 +2390,8 @@ function WeddingTab() {
         entityId: editId, entityLabel: slNoDisplay,
         summary: `Deleted wedding record ${slNoDisplay}`,
       })
-      toast(`Record ${slNoDisplay} deleted`, 'success')
-      handleReset()
+      toast('Record deleted successfully', 'success')
+      await handleReset()
     } catch (err) {
       toast(err.message || 'Delete failed', 'error')
     } finally {
