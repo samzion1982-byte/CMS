@@ -985,7 +985,7 @@ export default function DirectoryPage() {
                       className="directory-row"
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1.2fr) minmax(150px, auto) auto',
+                        gridTemplateColumns: 'minmax(0, 1.1fr) minmax(120px, 1fr) minmax(150px, auto) auto',
                         gap: 12,
                         padding: '10px 14px',
                         borderBottom: i < filtered.length - 1 ? '1px solid var(--card-border)' : 'none',
@@ -1023,28 +1023,39 @@ export default function DirectoryPage() {
                             )}
                           </div>
                         )}
-                        {(c.email || c.notes) && (
-                          <div style={{ marginTop: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            {c.email && (
-                              <a href={`mailto:${c.email}`} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content',
-                                padding: '2px 7px', borderRadius: 5, textDecoration: 'none',
-                                background: '#fffbeb', color: '#b45309', fontSize: 11, fontWeight: 600,
-                                border: '1px solid #fde68a', lineHeight: 1.3,
-                              }}>
-                                <Mail size={11} /> {c.email}
-                              </a>
-                            )}
-                            {c.notes && (
-                              <p style={{ margin: 0, fontSize: 11, color: '#94a3b8', lineHeight: 1.3 }}>
-                                {c.notes}
-                              </p>
-                            )}
+                        {c.email && (
+                          <div style={{ marginTop: 3 }}>
+                            <a href={`mailto:${c.email}`} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content',
+                              padding: '2px 7px', borderRadius: 5, textDecoration: 'none',
+                              background: '#fffbeb', color: '#b45309', fontSize: 11, fontWeight: 600,
+                              border: '1px solid #fde68a', lineHeight: 1.3,
+                            }}>
+                              <Mail size={11} /> {c.email}
+                            </a>
                           </div>
                         )}
                       </div>
 
-                      {/* Middle: numbers top/bottom */}
+                      {/* Middle: notes — medium-big font */}
+                      <div style={{ minWidth: 0, padding: '0 4px' }}>
+                        {c.notes ? (
+                          <p style={{
+                            margin: 0,
+                            fontSize: 15,
+                            fontWeight: 600,
+                            color: '#334155',
+                            lineHeight: 1.35,
+                            wordBreak: 'break-word',
+                          }}>
+                            {c.notes}
+                          </p>
+                        ) : (
+                          <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>
+                        )}
+                      </div>
+
+                      {/* Numbers top/bottom */}
                       <div style={{
                         display: 'flex', flexDirection: 'column', gap: 4,
                         alignItems: 'flex-start', justifyContent: 'center',
@@ -1132,8 +1143,12 @@ export default function DirectoryPage() {
             grid-row: 2;
           }
           .directory-row > div:nth-child(3) {
+            grid-column: 1 / 2;
+            grid-row: 3;
+          }
+          .directory-row > div:nth-child(4) {
             grid-column: 2 / 3;
-            grid-row: 1 / 3;
+            grid-row: 1 / 4;
             align-self: start;
           }
         }
