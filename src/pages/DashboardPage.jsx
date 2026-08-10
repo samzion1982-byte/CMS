@@ -5,9 +5,9 @@ import { useTheme, THEMES } from '../lib/ThemeContext'
 import { formatDate as formatDateLib } from '../lib/date'
 import {
   Users, Home, Calendar, MapPin, Activity, UserPlus,
-  Users2, AlertCircle, RefreshCw,
-  Wifi, WifiOff, Settings, Info, BarChart3, Heart, Lock, Unlock,
-  Mars, Venus, BadgeCheck,
+  Users2, AlertCircle, RefreshCw, User, UserRound,
+  Wifi, WifiOff, Settings, Info, BarChart3, Droplets, Lock, Unlock,
+  BadgeCheck,
 } from 'lucide-react'
 import Highcharts from 'highcharts'
 import 'highcharts/highcharts-3d'
@@ -28,6 +28,12 @@ function greetingForNow() {
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
+}
+
+function firstNameOf(profile, user) {
+  const raw = String(profile?.full_name || profile?.name || user?.email?.split('@')[0] || '').trim()
+  if (!raw) return 'there'
+  return raw.split(/\s+/)[0]
 }
 
 function isBaptisedMember(m) {
@@ -120,7 +126,7 @@ function GenderCard({ male, female, total, loading }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 4px 12px rgba(37,99,235,0.18)',
         }} title="Men">
-          <Mars size={24} color="#1d4ed8" strokeWidth={2.25} />
+          <User size={24} color="#1d4ed8" strokeWidth={2.25} />
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -149,7 +155,7 @@ function GenderCard({ male, female, total, loading }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 4px 12px rgba(225,29,72,0.18)',
         }} title="Women">
-          <Venus size={24} color="#be123c" strokeWidth={2.25} />
+          <UserRound size={24} color="#be123c" strokeWidth={2.25} />
         </div>
       </div>
 
@@ -160,7 +166,7 @@ function GenderCard({ male, female, total, loading }) {
           background: 'linear-gradient(135deg,#eff6ff,#dbeafe88)',
           border: '1px solid #bfdbfe',
         }}>
-          <Mars size={14} color="#1d4ed8" />
+          <User size={14} color="#1d4ed8" />
           <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Men</span>
           <span style={{ fontSize: 17, fontWeight: 800, color: '#1d4ed8', marginLeft: 2 }}>{loading ? '—' : male.toLocaleString()}</span>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({mPct}%)</span>
@@ -174,7 +180,7 @@ function GenderCard({ male, female, total, loading }) {
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({fPct}%)</span>
           <span style={{ fontSize: 17, fontWeight: 800, color: '#be123c', marginRight: 2 }}>{loading ? '—' : female.toLocaleString()}</span>
           <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600 }}>Women</span>
-          <Venus size={14} color="#be123c" />
+          <UserRound size={14} color="#be123c" />
         </div>
       </div>
     </div>
@@ -683,7 +689,7 @@ export default function DashboardPage() {
     )
   }
 
-  const displayName = profile?.full_name || profile?.name || user?.email?.split('@')[0] || 'there'
+  const firstName = firstNameOf(profile, user)
   const ministryMax = Math.max(...activities.map(a => a.count), 1)
 
   const STAT_CARDS = [
@@ -724,7 +730,7 @@ export default function DashboardPage() {
       },
     },
     {
-      icon: Heart, label: 'Baptised',
+      icon: Droplets, label: 'Baptised',
       value: stats?.baptised?.toLocaleString() ?? '—',
       sub: stats?.total
         ? `${Math.round(((stats.baptised || 0) / stats.total) * 100)}% of active members`
@@ -827,10 +833,14 @@ export default function DashboardPage() {
           content: '';
           position: absolute;
           inset: 0;
-          background-image: repeating-linear-gradient(
-            115deg, transparent, transparent 10px,
-            rgba(255,255,255,0.035) 10px, rgba(255,255,255,0.035) 11px
-          );
+          background-image:
+            radial-gradient(circle at 18% 22%, rgba(255,255,255,0.14) 0 2px, transparent 3px),
+            radial-gradient(circle at 42% 68%, rgba(255,255,255,0.1) 0 1.5px, transparent 2.5px),
+            radial-gradient(circle at 70% 28%, rgba(255,255,255,0.12) 0 2px, transparent 3px),
+            radial-gradient(circle at 86% 74%, rgba(255,255,255,0.09) 0 1.5px, transparent 2.5px),
+            radial-gradient(circle at 58% 48%, rgba(255,255,255,0.08) 0 1px, transparent 2px),
+            linear-gradient(160deg, transparent 0%, rgba(255,255,255,0.06) 42%, transparent 68%);
+          background-size: 120px 120px, 90px 90px, 140px 140px, 100px 100px, 70px 70px, auto;
           pointer-events: none;
         }
         .dash-hero > * { position: relative; z-index: 1; }
@@ -852,8 +862,8 @@ export default function DashboardPage() {
       <div className="dash-hero">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
           <div>
-            <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.7)' }}>
-              {greetingForNow()}, {displayName}
+            <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>
+              {greetingForNow()}, {firstName}
             </p>
             <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{
