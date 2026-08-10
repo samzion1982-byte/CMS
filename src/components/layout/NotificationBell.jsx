@@ -358,36 +358,35 @@ export default function NotificationBell({ g }) {
                             </p>
                           )}
                         </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                        {snoozed ? (
-                          <button
-                            type="button"
-                            onClick={() => handleClearSnooze(a.id)}
-                            style={{
-                              fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7,
-                              border: `1px solid ${g.drop.border}`, background: 'transparent',
-                              color: g.drop.text, cursor: 'pointer',
-                            }}
-                          >
-                            Unsnooze
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setSnoozeFor(snoozeFor === a.id ? null : a.id)}
-                            style={{
-                              fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7,
-                              border: `1px solid ${snoozeFor === a.id ? sev.icon : g.drop.border}`,
-                              background: snoozeFor === a.id ? 'rgba(15,23,42,0.04)' : 'transparent',
-                              color: g.drop.text, cursor: 'pointer',
-                              display: 'inline-flex', alignItems: 'center', gap: 4,
-                            }}
-                          >
-                            <Clock size={11} /> Snooze
-                          </button>
-                        )}
+                        <div style={{ flexShrink: 0, alignSelf: 'center' }}>
+                          {snoozed ? (
+                            <button
+                              type="button"
+                              onClick={() => handleClearSnooze(a.id)}
+                              style={{
+                                fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7,
+                                border: `1px solid ${g.drop.border}`, background: 'transparent',
+                                color: g.drop.text, cursor: 'pointer', whiteSpace: 'nowrap',
+                              }}
+                            >
+                              Unsnooze
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setSnoozeFor(snoozeFor === a.id ? null : a.id)}
+                              style={{
+                                fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7,
+                                border: `1px solid ${snoozeFor === a.id ? sev.icon : g.drop.border}`,
+                                background: snoozeFor === a.id ? 'rgba(15,23,42,0.04)' : 'transparent',
+                                color: g.drop.text, cursor: 'pointer', whiteSpace: 'nowrap',
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                              }}
+                            >
+                              <Clock size={11} /> Snooze
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {snoozeFor === a.id && !snoozed && (
