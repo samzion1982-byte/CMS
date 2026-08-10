@@ -4,6 +4,7 @@ import { useTheme, THEMES, FONTS } from '../../lib/ThemeContext'
 import { getChurch, LICENSE_CSV, VENDOR } from '../../lib/supabase'
 import { initials, ROLE_LABELS } from '../../lib/auth'
 import { ChevronDown, LogOut, Edit } from 'lucide-react'
+import NotificationBell from './NotificationBell'
 
 export const HEADER_H = 88
 
@@ -593,7 +594,9 @@ export default function Header({ onEditDevice }) {
         {/* ── Right side ── */}
         <div style={{ display: 'flex', alignItems: 'center', animation: 'hdrSlideR 0.5s 0.12s ease both' }}>
           <LiveClock g={g} />
-          <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 16px' }} />
+          <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 14px' }} />
+          <NotificationBell g={g} />
+          <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 14px' }} />
 
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
             <UserBadge
