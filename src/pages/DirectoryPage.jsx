@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BookUser, Settings, Plus, Search, MessageCircle, Mail,
+  BookUser, Settings, Plus, Search, Mail,
   Loader2, Pencil, Trash2, X, Building2, MapPin, ChevronRight,
   FileSpreadsheet, Lock, Eye, EyeOff,
 } from 'lucide-react'
@@ -53,65 +53,96 @@ function digitsOnly(v) {
   return String(v || '').replace(/\D/g, '')
 }
 
-/** Display 919994073545 → 91-99940 73545 (and similar Indian patterns). */
-function formatDisplayNumber(v) {
-  const raw = String(v || '').trim()
-  const d = digitsOnly(raw)
-  if (!d) return raw
-  if (d.length === 12 && d.startsWith('91')) {
-    return `91-${d.slice(2, 7)} ${d.slice(7)}`
+/**
+ * Members-style Indian mobile: store as +91-XXXXXXXXXX.
+ * Accepts 10-digit, 0XXXXXXXXXX, 91XXXXXXXXXX, +91-… inputs.
+ */
+function normalizeMemberPhone(raw, { required = false, label = 'Number' } = {}) {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) {
+    return required
+      ? { ok: false, value: '', error: `${label} is required` }
+      : { ok: true, value: '', error: null }
   }
-  if (d.length === 10) {
-    return `${d.slice(0, 5)} ${d.slice(5)}`
+  let digits = trimmed.replace(/\D/g, '')
+  if (digits.startsWith('91') && digits.length >= 12) digits = digits.slice(-10)
+  else if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1)
+
+  if (digits.length !== 10) {
+    return { ok: false, value: '', error: `${label}: enter a valid 10-digit Indian mobile` }
   }
-  if (d.length === 11 && d.startsWith('0')) {
-    return `${d.slice(0, 1)}-${d.slice(1, 6)} ${d.slice(6)}`
+  if (!/^[6-9]/.test(digits)) {
+    return { ok: false, value: '', error: `${label}: mobile must start with 6–9` }
   }
-  if (d.length > 10 && d.startsWith('91')) {
-    const rest = d.slice(2)
-    if (rest.length === 10) return `91-${rest.slice(0, 5)} ${rest.slice(5)}`
-  }
-  return raw
+  return { ok: true, value: `+91-${digits}`, error: null }
 }
 
-/** Opens WhatsApp app when available; otherwise WhatsApp Web / Desktop. */
+/** Display +91-9994073545 → +91-99940 73545 for readability. */
+function formatDisplayNumber(v) {
+  const raw = String(v || '').trim()
+  if (!raw) return ''
+  const normalized = normalizeMemberPhone(raw)
+  const stored = normalized.ok && normalized.value ? normalized.value : raw
+  const d = digitsOnly(stored)
+  if (d.length === 12 && d.startsWith('91')) {
+    return `+91-${d.slice(2, 7)} ${d.slice(7)}`
+  }
+  if (d.length === 10) {
+    return `+91-${d.slice(0, 5)} ${d.slice(5)}`
+  }
+  return stored
+}
+
+function WhatsAppIcon({ size = 16, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+    </svg>
+  )
+}
+
+/** Prefer WhatsApp app / Desktop; fall back to WhatsApp Web only if app does not open. */
 function openWhatsApp(e, value) {
   e?.preventDefault?.()
   e?.stopPropagation?.()
-  const d = digitsOnly(value)
+  const normalized = normalizeMemberPhone(value)
+  let d = digitsOnly(normalized.ok && normalized.value ? normalized.value : value)
   if (!d) return
-  const webUrl = `https://wa.me/${d}`
-  const appUrl = `whatsapp://send?phone=${d}`
-  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')
+  if (d.length === 10) d = `91${d}`
 
-  if (mobile) {
-    const started = Date.now()
-    let fellBack = false
-    const fallback = () => {
-      if (fellBack) return
-      if (document.visibilityState === 'visible' && Date.now() - started >= 500) {
-        fellBack = true
+  const appUrl = `whatsapp://send?phone=${d}`
+  const webUrl = `https://wa.me/${d}`
+  const ua = navigator.userAgent || ''
+  const isAndroid = /Android/i.test(ua)
+
+  let appOpened = false
+  const markOpened = () => { appOpened = true }
+  window.addEventListener('blur', markOpened, { once: true })
+  const onVis = () => {
+    if (document.visibilityState === 'hidden') appOpened = true
+  }
+  document.addEventListener('visibilitychange', onVis)
+
+  if (isAndroid) {
+    // Android Intent: opens WhatsApp app, falls back to wa.me if not installed
+    const intent = `intent://send?phone=${d}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`
+    window.location.href = intent
+  } else {
+    // iOS / Desktop: custom protocol opens app or WhatsApp Desktop
+    window.location.href = appUrl
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', onVis)
+      if (!appOpened && document.visibilityState === 'visible') {
         window.open(webUrl, '_blank', 'noopener,noreferrer')
       }
-    }
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') {
-        document.removeEventListener('visibilitychange', onVis)
-        clearTimeout(timer)
-      }
-    }
-    const timer = setTimeout(fallback, 900)
-    document.addEventListener('visibilitychange', onVis)
-    window.location.href = appUrl
-    return
+    }, 1400)
   }
-
-  window.open(webUrl, '_blank', 'noopener,noreferrer')
 }
 
-/** Primary (green) / Secondary (blue). Both open WhatsApp. Digits formatted for readability. */
+/** Primary (green) / Secondary (blue). Both open WhatsApp. */
 function NumberChip({ kind, value }) {
   const isPrimary = kind === 'primary'
+  const brand = isPrimary ? '#25D366' : '#1d4ed8'
   const style = {
     display: 'inline-flex',
     alignItems: 'center',
@@ -121,7 +152,7 @@ function NumberChip({ kind, value }) {
     textDecoration: 'none',
     lineHeight: 1.1,
     background: isPrimary ? '#ecfdf5' : '#eff6ff',
-    color: isPrimary ? '#047857' : '#1d4ed8',
+    color: isPrimary ? '#128C7E' : '#1d4ed8',
     border: `1px solid ${isPrimary ? '#a7f3d0' : '#bfdbfe'}`,
     whiteSpace: 'nowrap',
     cursor: 'pointer',
@@ -133,7 +164,7 @@ function NumberChip({ kind, value }) {
       onClick={(e) => openWhatsApp(e, value)}
       style={{ ...style, font: 'inherit' }}
     >
-      <MessageCircle size={14} strokeWidth={2.4} />
+      <WhatsAppIcon size={15} color={brand} />
       <span style={{
         fontSize: 18, fontWeight: 800, letterSpacing: 0.2,
         fontVariantNumeric: 'tabular-nums',
@@ -274,9 +305,27 @@ function ContactModal({ editing, categories, onSave, onClose }) {
       toast('Name is required.', 'error')
       return
     }
+    const primary = normalizeMemberPhone(form.whatsapp, { label: 'Primary number' })
+    if (!primary.ok) {
+      toast(primary.error, 'error')
+      return
+    }
+    const secondary = normalizeMemberPhone(form.phone, { label: 'Secondary number' })
+    if (!secondary.ok) {
+      toast(secondary.error, 'error')
+      return
+    }
+    if (!primary.value && !secondary.value) {
+      toast('Enter at least one phone number.', 'error')
+      return
+    }
     setSaving(true)
     try {
-      await onSave(form)
+      await onSave({
+        ...form,
+        whatsapp: primary.value,
+        phone: secondary.value,
+      })
     } catch (err) {
       toast(err.message || 'Save failed.', 'error')
       setSaving(false)
@@ -313,7 +362,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
               {editing ? 'Edit Contact' : 'Add Contact'}
             </p>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-              Phone directory entry
+              Numbers saved as +91-XXXXXXXXXX (same as Members)
             </p>
           </div>
           <button type="button" onClick={onClose}
@@ -324,29 +373,50 @@ function ContactModal({ editing, categories, onSave, onClose }) {
 
         <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>Title / Role</label>
+            <input
+              style={INPUT}
+              value={form.title}
+              onChange={e => set('title', e.target.value)}
+              placeholder="e.g. Bishop, Contractor"
+              autoFocus
+              tabIndex={1}
+            />
+          </div>
+          <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>Name *</label>
             <input
               style={INPUT}
               value={form.name}
               onChange={e => set('name', e.target.value)}
               placeholder="Person or contact name"
-              autoFocus
-              tabIndex={1}
+              tabIndex={2}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>Organisation</label>
+            <input
+              style={INPUT}
+              value={form.organization}
+              onChange={e => set('organization', e.target.value)}
+              placeholder="Office / firm"
+              tabIndex={3}
             />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#047857', marginBottom: 5 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#128C7E', marginBottom: 5 }}>
                 Primary number
               </label>
               <input
                 style={{ ...INPUT, borderColor: '#a7f3d0' }}
                 value={form.whatsapp}
                 onChange={e => set('whatsapp', e.target.value)}
-                placeholder="e.g. 919994073545"
-                tabIndex={2}
+                placeholder="10-digit mobile"
+                tabIndex={4}
+                inputMode="tel"
               />
-              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#047857' }}>Opens WhatsApp · can be WhatsApp number</p>
+              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#128C7E' }}>Saved as +91-… · opens WhatsApp</p>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1d4ed8', marginBottom: 5 }}>
@@ -356,49 +426,12 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                 style={{ ...INPUT, borderColor: '#bfdbfe' }}
                 value={form.phone}
                 onChange={e => set('phone', e.target.value)}
-                placeholder="e.g. 919876543210"
-                tabIndex={3}
-              />
-              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#1d4ed8' }}>Opens WhatsApp · can be WhatsApp number</p>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>Organization</label>
-              <input
-                style={INPUT}
-                value={form.organization}
-                onChange={e => set('organization', e.target.value)}
-                placeholder="Office / firm"
-                tabIndex={4}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>Title / Role</label>
-              <input
-                style={INPUT}
-                value={form.title}
-                onChange={e => set('title', e.target.value)}
-                placeholder="e.g. Bishop, Contractor"
+                placeholder="10-digit mobile"
                 tabIndex={5}
+                inputMode="tel"
               />
+              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#1d4ed8' }}>Saved as +91-… · opens WhatsApp</p>
             </div>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 5 }}>Category</label>
-            <select
-              style={{ ...INPUT, appearance: 'none' }}
-              value={form.category_id}
-              onChange={e => set('category_id', e.target.value)}
-              tabIndex={6}
-            >
-              <option value="">— Select —</option>
-              {catOpts.map(c => (
-                <option key={c.id} value={c.id}>
-                  {'\u00A0'.repeat(c.depth * 2)}{c.name}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#b45309', marginBottom: 5 }}>Email</label>
@@ -408,8 +441,24 @@ function ContactModal({ editing, categories, onSave, onClose }) {
               value={form.email}
               onChange={e => set('email', e.target.value)}
               placeholder="email@example.com"
-              tabIndex={7}
+              tabIndex={6}
             />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 5 }}>Category</label>
+            <select
+              style={{ ...INPUT, appearance: 'none' }}
+              value={form.category_id}
+              onChange={e => set('category_id', e.target.value)}
+              tabIndex={7}
+            >
+              <option value="">— Select —</option>
+              {catOpts.map(c => (
+                <option key={c.id} value={c.id}>
+                  {'\u00A0'.repeat(c.depth * 2)}{c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 5 }}>Address</label>
@@ -606,6 +655,22 @@ export default function DirectoryPage() {
 
   useEffect(() => { loadCategories() }, [loadCategories])
   useEffect(() => { loadContacts() }, [loadContacts])
+
+  // "+" key opens Add Contact (ignore when typing in fields / when a modal is open)
+  useEffect(() => {
+    function onKey(e) {
+      if (modal || deleteTarget) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const tag = (e.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return
+      if (e.key === '+' || (e.key === '=' && e.shiftKey) || e.code === 'NumpadAdd') {
+        e.preventDefault()
+        setModal({ mode: 'add' })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [modal, deleteTarget])
 
   useEffect(() => {
     clearTimeout(searchTimer.current)
