@@ -160,7 +160,7 @@ function BackupProgressBar({ active, pct, message, kind }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 8, alignItems: 'center' }}>
         <strong style={{ fontSize: 12, color: '#115e59' }}>
-          {kind === 'snapshot' ? 'Snapshot' : 'Full Backup'} progress — {value}%
+          {kind === 'full' ? 'Full Backup' : 'Backup'} progress — {value}%
         </strong>
         <Loader2 size={14} className="spin" color="#0f766e" />
       </div>
@@ -246,7 +246,7 @@ function BackupChooserModal({
   const tableCount = selectedTables.size
   const bucketCount = selectedBuckets.size
   const canGo = tableCount > 0 || bucketCount > 0
-  const title = kind === 'snapshot' ? 'Choose Snapshot items' : 'Choose Full Backup items'
+  const title = 'Choose Full Backup items'
 
   return (
     <div
@@ -376,7 +376,7 @@ function BackupChooserModal({
               onClick={onConfirm}
             >
               {confirming ? <Loader2 size={14} className="spin" /> : <HardDrive size={14} />}
-              {confirming ? 'Backing up…' : (kind === 'snapshot' ? 'Take Snapshot' : 'Run Backup')}
+              {confirming ? 'Backing up…' : 'Run Backup'}
             </button>
           </div>
         </div>
@@ -659,13 +659,11 @@ export default function BackupPage() {
   const [savingAuto, setSavingAuto] = useState(false)
 
   const [fullLogs, setFullLogs] = useState([])
-  const [snapLogs, setSnapLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(true)
   const [runningFull, setRunningFull] = useState(false)
-  const [runningSnap, setRunningSnap] = useState(false)
   const [backupProgress, setBackupProgress] = useState({ kind: null, pct: 0, message: '' })
   const [restoringId, setRestoringId] = useState(null)
-  const [backupModal, setBackupModal] = useState(null) // { kind }
+  const [backupModal, setBackupModal] = useState(null) // { kind: 'full' }
   const [backupSourcesLoading, setBackupSourcesLoading] = useState(false)
   const [backupTables, setBackupTables] = useState([])
   const [backupBuckets, setBackupBuckets] = useState([])
@@ -720,12 +718,8 @@ export default function BackupPage() {
   const loadLogs = useCallback(async () => {
     setLoadingLogs(true)
     try {
-      const [f, s] = await Promise.all([
-        listBackupLogs({ kind: 'full', pageSize: 25 }),
-        listBackupLogs({ kind: 'snapshot', pageSize: 25 }),
-      ])
+      const f = await listBackupLogs({ kind: 'full', pageSize: 25 })
       setFullLogs(f.rows)
-      setSnapLogs(s.rows)
     } catch (e) {
       toast(e.message || 'Failed to load backup history', 'error')
     } finally {
@@ -867,8 +861,7 @@ export default function BackupPage() {
     }
 
     setBackupModal(null)
-    const setBusy = kind === 'full' ? setRunningFull : setRunningSnap
-    setBusy(true)
+    setRunningFull(true)
     setBackupProgress({ kind, pct: 0, message: 'Starting…' })
     try {
       const r = await runDriveBackup({
@@ -882,13 +875,13 @@ export default function BackupPage() {
         },
       })
       if (r.via === 'local_download') {
-        toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
+        toast(r.message || 'Full Backup downloaded locally.', 'success')
       } else {
         const files = r.storage_file_count != null ? `, ${r.storage_file_count} storage files` : ''
         const pruned = r.sync_pruned ? `, ${r.sync_pruned} pruned from Drive` : ''
         const label = r.status === 'partial' ? 'Partial' : 'Complete'
         toast(
-          `${label} ${kind === 'full' ? 'Full Backup' : 'Snapshot'} — ${r.tables_count} tables, ${r.rows_count} rows${files}${pruned} (${formatBytes(r.file_size_bytes)}).`,
+          `${label} Full Backup — ${r.tables_count} tables, ${r.rows_count} rows${files}${pruned} (${formatBytes(r.file_size_bytes)}).`,
           r.status === 'partial' ? 'error' : 'success',
         )
       }
@@ -900,7 +893,7 @@ export default function BackupPage() {
       console.error('[backup-ui] run failed', e)
       toast(msg, 'error')
     } finally {
-      setBusy(false)
+      setRunningFull(false)
       setBackupProgress({ kind: null, pct: 0, message: '' })
     }
   }
@@ -1023,7 +1016,7 @@ export default function BackupPage() {
   }
 
   async function handleClearHistory(kind) {
-    const label = kind === 'full' ? 'Full Backup' : kind === 'snapshot' ? 'Snapshot' : 'all backup'
+    const label = kind === 'full' ? 'Full Backup' : 'backup'
     if (!window.confirm(`Clear ${label} history from this list? This does not delete files already in Google Drive.`)) {
       return
     }
@@ -1291,68 +1284,7 @@ export default function BackupPage() {
         </p>
       </Section>
 
-      {/* 3. Snapshot */}
-      <Section
-        title="Snapshot"
-        icon={RotateCcw}
-        subtitle="Same complete copy (DB + storage) as Full Backup, kept as dated restore points so you can roll back (e.g. to yesterday)."
-      >
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="no-lift"
-            style={primaryBtn}
-            disabled={runningSnap || !backupReady || !!backupModal}
-            onClick={() => openBackupChooser('snapshot')}
-          >
-            {runningSnap ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
-            {runningSnap ? 'Snapshot in progress…' : 'Take Complete Snapshot'}
-          </button>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-2)' }}>
-            <input
-              type="checkbox"
-              checked={!!settings?.snapshot_auto_enabled}
-              disabled={savingAuto || !settings}
-              onChange={(e) => handleSaveAuto({ snapshot_auto_enabled: e.target.checked })}
-            />
-            Automatic nightly (default 1:00 AM IST)
-          </label>
-        </div>
-        <BackupProgressBar
-          active={runningSnap && backupProgress.kind === 'snapshot'}
-          pct={backupProgress.pct}
-          message={backupProgress.message}
-          kind="snapshot"
-        />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <History size={14} color="var(--text-3)" />
-            <strong style={{ fontSize: 12 }}>Snapshot restore points</strong>
-          </div>
-          <button
-            type="button"
-            className="no-lift"
-            style={{ ...secondaryBtn, color: '#b91c1c', borderColor: '#fecaca' }}
-            disabled={clearingKind === 'snapshot' || !snapLogs.length}
-            onClick={() => handleClearHistory('snapshot')}
-          >
-            {clearingKind === 'snapshot' ? <Loader2 size={13} className="spin" /> : <Trash2 size={13} />}
-            Clear history
-          </button>
-        </div>
-        <LogTable
-          rows={snapLogs}
-          loading={loadingLogs}
-          empty="No snapshots yet"
-          restoringId={restoringId}
-          onRestore={openRestoreChooser}
-        />
-        <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
-          Restoring a snapshot replaces current database rows and storage files with that day’s complete copy. Keep automatic snapshots on for treasurer “back to yesterday” recovery.
-        </p>
-      </Section>
-
-      {/* 4. New Setup / Upgrade */}
+      {/* 3. New Setup / Upgrade */}
       <Section
         title="New Setup / Upgrade"
         icon={Settings2}
@@ -1487,8 +1419,8 @@ export default function BackupPage() {
         selectedBuckets={backupSelectedBuckets}
         saveAsDefault={backupSaveAsDefault}
         onSaveAsDefaultChange={setBackupSaveAsDefault}
-        confirming={runningFull || runningSnap}
-        onClose={() => { if (!runningFull && !runningSnap) setBackupModal(null) }}
+        confirming={runningFull}
+        onClose={() => { if (!runningFull) setBackupModal(null) }}
         onSelectAll={() => {
           setBackupSelectedTables(new Set(backupTables.map((t) => t.name)))
           setBackupSelectedBuckets(new Set(backupBuckets.map((b) => b.name)))

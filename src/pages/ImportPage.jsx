@@ -2834,11 +2834,11 @@ export default function ImportPage() {
           position: relative;
           overflow: hidden;
           background:
-            radial-gradient(ellipse at 12% 50%, rgba(59,130,246,0.14) 0%, transparent 55%),
-            radial-gradient(ellipse at 88% 40%, rgba(16,185,129,0.12) 0%, transparent 50%),
-            linear-gradient(135deg, #e8eef7 0%, #eef2f7 45%, #e8f5f0 100%);
-          border: 1px solid #dbe3ee;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(15,23,42,0.04);
+            radial-gradient(ellipse at 18% 40%, rgba(255,255,255,0.1) 0%, transparent 48%),
+            radial-gradient(ellipse at 86% 70%, rgba(56,189,248,0.12) 0%, transparent 45%),
+            linear-gradient(135deg, var(--sidebar-bg, #0d2244) 0%, #122c55 52%, #0a1a36 100%);
+          border: 1px solid #081428;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 14px rgba(8,20,40,0.28);
         }
         .imp-tab-bar::before {
           content: '';
@@ -2848,26 +2848,28 @@ export default function ImportPage() {
             115deg,
             transparent,
             transparent 8px,
-            rgba(255,255,255,0.35) 8px,
-            rgba(255,255,255,0.35) 9px
+            rgba(255,255,255,0.04) 8px,
+            rgba(255,255,255,0.04) 9px
           );
           pointer-events: none;
           border-radius: inherit;
-          opacity: 0.55;
+          opacity: 1;
         }
         .imp-tab-btn {
           position: relative;
           z-index: 1;
           transition: all 0.18s ease;
+          color: rgba(255,255,255,0.72);
+          background: transparent;
         }
         .imp-tab-btn:hover:not(.imp-tab-active) {
-          color: #334155 !important;
-          background: rgba(255,255,255,0.45) !important;
+          color: #fff !important;
+          background: rgba(255,255,255,0.1) !important;
         }
         .imp-tab-active {
-          background: linear-gradient(180deg, #ffffff 0%, #f0f7ff 100%) !important;
-          color: #1d4ed8 !important;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.16), inset 0 0 0 1px rgba(147,197,253,0.65) !important;
+          background: #fff !important;
+          color: var(--sidebar-bg, #0d2244) !important;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.28) !important;
         }
         .board-row { transition: background 0.12s ease; }
         .board-row:hover { background: #f8fafc; }
@@ -2999,10 +3001,10 @@ export default function ImportPage() {
                   className={'imp-tab-btn' + (tab === id ? ' imp-tab-active' : '')}
                   style={{
                     display:'flex', alignItems:'center', gap:7,
-                    padding:'8px 16px', fontSize:13, fontWeight: tab===id ? 600 : 500,
+                    padding:'8px 16px', fontSize:13, fontWeight: tab===id ? 700 : 500,
                     borderRadius:8, border:'none', cursor:'pointer',
                     background: 'transparent',
-                    color: tab===id ? '#1d4ed8' : '#64748b',
+                    color: tab===id ? 'var(--sidebar-bg, #0d2244)' : 'rgba(255,255,255,0.72)',
                   }}>
                   <Icon size={14}/>{label}
                 </button>
