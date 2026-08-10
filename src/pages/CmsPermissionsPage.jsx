@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
-import { Shield, Save, Loader2, RotateCcw, CheckSquare, Square, ChevronRight } from 'lucide-react'
+import { Shield, Save, Loader2, RotateCcw, CheckSquare, Square, ChevronRight, Users } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
@@ -20,6 +20,17 @@ function emptyMatrix() {
   return m
 }
 
+function personLabel(p) {
+  return (p.full_name || '').trim() || p.email || 'User'
+}
+
+function initials(name = '') {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 export default function CmsPermissionsPage() {
   const { profile, reloadPageGrants } = useAuth()
   const toast = useToast()
@@ -30,6 +41,7 @@ export default function CmsPermissionsPage() {
   const [expanded, setExpanded] = useState(() => new Set(CMS_PERMISSION_TREE.map(c => c.key)))
   /** role value → [{ full_name, email, is_active }] */
   const [rolePeople, setRolePeople] = useState({})
+  const [hoverRole, setHoverRole] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -160,17 +172,62 @@ export default function CmsPermissionsPage() {
   }
 
   return (
-    <div className="page-container">
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Shield size={20} style={{ color: 'var(--accent)' }} />
-            CMS Permissions
-          </h1>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
-            Choose which pages each role can open. Admin, User1–User4 start at the same level
-            (MAIN pages). Grant Finance, Logs, Fixed Assets, etc. here. Super Admin always has full access.
-          </p>
+    <div className="page-container" style={{ animation: 'cmsPermFadeIn 0.35s ease' }}>
+      <style>{`
+        @keyframes cmsPermFadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: none; }
+        }
+        @keyframes cmsPermChipIn {
+          from { opacity: 0; transform: translateY(4px) scale(0.96); }
+          to { opacity: 1; transform: none; }
+        }
+        .cms-perm-row:hover td {
+          background: color-mix(in srgb, var(--accent) 5%, transparent) !important;
+        }
+        .cms-perm-all:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        .cms-perm-none:hover { filter: brightness(1.05); transform: translateY(-1px); }
+      `}</style>
+
+      <div
+        className="page-header"
+        style={{
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
+          marginBottom: 18,
+          padding: '16px 18px',
+          borderRadius: 14,
+          border: '1px solid var(--card-border)',
+          background: 'linear-gradient(135deg, var(--card-bg) 0%, color-mix(in srgb, var(--sidebar-bg) 6%, var(--card-bg)) 100%)',
+          boxShadow: '0 10px 28px rgba(15,23,42,0.06)',
+        }}
+      >
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 11, flexShrink: 0,
+            background: 'var(--sidebar-bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 6px 16px color-mix(in srgb, var(--sidebar-bg) 35%, transparent)',
+          }}>
+            <Shield size={20} color="#fff" />
+          </div>
+          <div>
+            <h1 className="page-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              CMS Permissions
+              {dirty && (
+                <span style={{
+                  fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+                  color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
+                  borderRadius: 99, padding: '3px 8px',
+                }}>
+                  Unsaved
+                </span>
+              )}
+            </h1>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45, maxWidth: 560 }}>
+              Choose which pages each role can open. Multiple people can share a role
+              (e.g. User1). Names appear above each role column. Super Admin always has full access.
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={resetDefaults} disabled={loading || saving} style={secondaryBtn}>
@@ -183,9 +240,11 @@ export default function CmsPermissionsPage() {
             style={{
               ...secondaryBtn,
               border: 'none',
-              background: dirty ? 'var(--accent)' : '#e5e7eb',
+              background: dirty ? 'var(--sidebar-bg)' : '#e5e7eb',
               color: dirty ? '#fff' : '#9ca3af',
               cursor: dirty && !saving ? 'pointer' : 'not-allowed',
+              boxShadow: dirty ? '0 6px 16px color-mix(in srgb, var(--sidebar-bg) 30%, transparent)' : 'none',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
             }}
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -194,52 +253,136 @@ export default function CmsPermissionsPage() {
         </div>
       </div>
 
-      <div className="card" style={{ overflow: 'hidden' }}>
+      <div className="card" style={{
+        overflow: 'hidden',
+        borderRadius: 14,
+        border: '1px solid var(--card-border)',
+        boxShadow: '0 12px 32px rgba(15,23,42,0.06)',
+      }}>
         {loading ? (
-          <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
+          <div style={{ padding: 56, textAlign: 'center', color: 'var(--text-3)' }}>
             <Loader2 size={22} className="animate-spin" style={{ margin: '0 auto 10px' }} />
             Loading permissions…
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
               <thead>
-                <tr style={{ background: 'var(--table-header-bg, var(--card-header-bg))' }}>
-                  <th style={thStyle(true)}>Category / Page</th>
+                <tr style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--sidebar-bg) 8%, #fff) 0%, var(--card-bg) 100%)' }}>
+                  <th style={thStyle(true)}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <Users size={13} /> Category / Page
+                    </span>
+                  </th>
                   {CMS_CONFIG_ROLES.map(r => {
                     const people = (rolePeople[r.value] || []).filter(p => p.is_active !== false)
                     const inactive = (rolePeople[r.value] || []).filter(p => p.is_active === false)
-                    const names = people
-                      .map(p => p.full_name || p.email)
-                      .filter(Boolean)
                     const title = [
-                      ...people.map(p => p.full_name ? `${p.full_name}${p.email ? ` <${p.email}>` : ''}` : p.email),
-                      ...inactive.map(p => `${p.full_name || p.email || 'User'} (inactive)`),
+                      ...people.map(p => {
+                        const n = personLabel(p)
+                        return p.email && p.full_name ? `${n} <${p.email}>` : n
+                      }),
+                      ...inactive.map(p => `${personLabel(p)} (inactive)`),
                     ].filter(Boolean).join('\n')
+                    const colHot = hoverRole === r.value
                     return (
-                      <th key={r.value} style={thStyle(false)} title={title || undefined}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                          <span>{r.label}</span>
-                          <span style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            textTransform: 'none',
-                            letterSpacing: 0,
-                            color: names.length ? 'var(--text-1)' : 'var(--text-3)',
-                            lineHeight: 1.25,
-                            maxWidth: 120,
-                            textAlign: 'center',
+                      <th
+                        key={r.value}
+                        style={{
+                          ...thStyle(false),
+                          background: colHot
+                            ? 'color-mix(in srgb, var(--accent) 10%, var(--card-bg))'
+                            : 'transparent',
+                          transition: 'background 0.18s ease',
+                          verticalAlign: 'bottom',
+                          minWidth: 128,
+                        }}
+                        title={title || undefined}
+                        onMouseEnter={() => setHoverRole(r.value)}
+                        onMouseLeave={() => setHoverRole(null)}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                          {/* Names ABOVE role */}
+                          <div style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                            minHeight: 44, justifyContent: 'flex-end', width: '100%',
                           }}>
-                            {names.length
-                              ? names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '')
-                              : '— unassigned —'}
+                            {people.length ? people.map((p, i) => {
+                              const label = personLabel(p)
+                              return (
+                                <span
+                                  key={`${r.value}-${p.email || label}-${i}`}
+                                  title={p.email || label}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    maxWidth: '100%',
+                                    padding: '3px 8px 3px 3px',
+                                    borderRadius: 99,
+                                    background: 'color-mix(in srgb, var(--sidebar-bg) 10%, #fff)',
+                                    border: '1px solid color-mix(in srgb, var(--sidebar-bg) 22%, transparent)',
+                                    color: 'var(--sidebar-bg)',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    letterSpacing: 0,
+                                    lineHeight: 1.2,
+                                    animation: `cmsPermChipIn 0.28s ease ${Math.min(i, 4) * 0.04}s both`,
+                                  }}
+                                >
+                                  <span style={{
+                                    width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                                    background: 'var(--sidebar-bg)', color: '#fff',
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 8, fontWeight: 800,
+                                  }}>
+                                    {initials(label)}
+                                  </span>
+                                  <span style={{
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    maxWidth: 96,
+                                  }}>
+                                    {label}
+                                  </span>
+                                </span>
+                              )
+                            }) : (
+                              <span style={{
+                                fontSize: 10, fontWeight: 600, color: 'var(--text-3)',
+                                textTransform: 'none', letterSpacing: 0, fontStyle: 'italic',
+                              }}>
+                                — unassigned —
+                              </span>
+                            )}
+                          </div>
+
+                          <span style={{
+                            fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
+                            color: 'var(--text-2)',
+                            padding: '3px 10px',
+                            borderRadius: 7,
+                            background: 'color-mix(in srgb, var(--text-3) 12%, transparent)',
+                          }}>
+                            {r.label}
                           </span>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button type="button" title={`Allow all for ${r.label}`} onClick={() => setRoleAll(r.value, true)} style={miniBtn}>
-                              <CheckSquare size={12} /> All
+
+                          <div style={{ display: 'flex', gap: 5 }}>
+                            <button
+                              type="button"
+                              className="cms-perm-all"
+                              title={`Allow all for ${r.label}`}
+                              onClick={() => setRoleAll(r.value, true)}
+                              style={allBtn}
+                            >
+                              <CheckSquare size={11} /> All
                             </button>
-                            <button type="button" title={`Clear ${r.label}`} onClick={() => setRoleAll(r.value, false)} style={miniBtn}>
-                              <Square size={12} /> None
+                            <button
+                              type="button"
+                              className="cms-perm-none"
+                              title={`Clear ${r.label}`}
+                              onClick={() => setRoleAll(r.value, false)}
+                              style={noneBtn}
+                            >
+                              <Square size={11} /> None
                             </button>
                           </div>
                         </div>
@@ -260,6 +403,7 @@ export default function CmsPermissionsPage() {
                         onToggleOpen={() => toggleExpand(cat.key)}
                         matrix={matrix}
                         onToggleBranch={toggleBranch}
+                        hoverRole={hoverRole}
                       />
                       {open && (cat.children || []).map(child => {
                         if (child.kind === 'folder') {
@@ -273,6 +417,7 @@ export default function CmsPermissionsPage() {
                                 onToggleOpen={() => toggleExpand(child.key)}
                                 matrix={matrix}
                                 onToggleBranch={toggleBranch}
+                                hoverRole={hoverRole}
                               />
                               {folderOpen && (child.children || []).map(leaf => (
                                 <PageRow
@@ -281,6 +426,7 @@ export default function CmsPermissionsPage() {
                                   depth={2}
                                   matrix={matrix}
                                   onToggle={togglePage}
+                                  hoverRole={hoverRole}
                                 />
                               ))}
                             </Fragment>
@@ -293,6 +439,7 @@ export default function CmsPermissionsPage() {
                             depth={1}
                             matrix={matrix}
                             onToggle={togglePage}
+                            hoverRole={hoverRole}
                           />
                         )
                       })}
@@ -308,13 +455,19 @@ export default function CmsPermissionsPage() {
   )
 }
 
-function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch }) {
+function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch, hoverRole }) {
   const isCategory = node.kind === 'category'
   return (
-    <tr style={{
-      borderTop: '1px solid var(--card-border)',
-      background: isCategory ? 'var(--page-bg)' : 'var(--card-header-bg, rgba(0,0,0,0.02))',
-    }}>
+    <tr
+      className="cms-perm-row"
+      style={{
+        borderTop: '1px solid var(--card-border)',
+        background: isCategory
+          ? 'color-mix(in srgb, var(--sidebar-bg) 5%, var(--page-bg))'
+          : 'var(--card-header-bg, rgba(0,0,0,0.02))',
+        transition: 'background 0.15s ease',
+      }}
+    >
       <td style={{ padding: '10px 16px', paddingLeft: 16 + depth * 18 }}>
         <button
           type="button"
@@ -332,8 +485,8 @@ function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch }) 
             size={14}
             style={{
               transform: open ? 'rotate(90deg)' : 'none',
-              transition: 'transform 0.15s',
-              color: 'var(--text-3)',
+              transition: 'transform 0.18s ease',
+              color: 'var(--sidebar-bg)',
               flexShrink: 0,
             }}
           />
@@ -344,7 +497,14 @@ function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch }) 
         </button>
       </td>
       {CMS_CONFIG_ROLES.map(r => (
-        <td key={r.value} style={{ padding: '8px', textAlign: 'center' }}>
+        <td
+          key={r.value}
+          style={{
+            padding: '8px', textAlign: 'center',
+            background: hoverRole === r.value ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined,
+            transition: 'background 0.15s ease',
+          }}
+        >
           <TriCheckbox
             state={aggregateState(node, matrix[r.value])}
             onChange={() => onToggleBranch(r.value, node)}
@@ -356,9 +516,9 @@ function BranchRow({ node, depth, open, onToggleOpen, matrix, onToggleBranch }) 
   )
 }
 
-function PageRow({ page, depth, matrix, onToggle }) {
+function PageRow({ page, depth, matrix, onToggle, hoverRole }) {
   return (
-    <tr style={{ borderTop: '1px solid var(--card-border)' }}>
+    <tr className="cms-perm-row" style={{ borderTop: '1px solid var(--card-border)', transition: 'background 0.15s ease' }}>
       <td style={{
         padding: '11px 16px',
         paddingLeft: 16 + depth * 18 + 22,
@@ -366,29 +526,36 @@ function PageRow({ page, depth, matrix, onToggle }) {
         fontWeight: 500,
         color: 'var(--text-1)',
       }}>
-                        {page.label}
-                        {page.alwaysOn && (
-                          <span style={{
-                            marginLeft: 8, fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
-                            textTransform: 'uppercase', letterSpacing: '0.06em',
-                          }}>
-                            always on
-                          </span>
-                        )}
-                        {page.sensitive && (
-                          <span style={{
-                            marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#b45309',
-                            background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 99,
-                            padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
-                          }}>
-                            sensitive
-                          </span>
-                        )}
+        {page.label}
+        {page.alwaysOn && (
+          <span style={{
+            marginLeft: 8, fontSize: 10, fontWeight: 700, color: 'var(--text-3)',
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>
+            always on
+          </span>
+        )}
+        {page.sensitive && (
+          <span style={{
+            marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#b45309',
+            background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 99,
+            padding: '1px 7px', textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            sensitive
+          </span>
+        )}
       </td>
       {CMS_CONFIG_ROLES.map(r => {
         const on = !!matrix[r.value]?.[page.key]
         return (
-          <td key={r.value} style={{ padding: '8px', textAlign: 'center' }}>
+          <td
+            key={r.value}
+            style={{
+              padding: '8px', textAlign: 'center',
+              background: hoverRole === r.value ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : undefined,
+              transition: 'background 0.15s ease',
+            }}
+          >
             <input
               type="checkbox"
               checked={on}
@@ -397,7 +564,7 @@ function PageRow({ page, depth, matrix, onToggle }) {
               style={{
                 width: 16, height: 16,
                 cursor: page.alwaysOn ? 'not-allowed' : 'pointer',
-                accentColor: 'var(--accent)',
+                accentColor: 'var(--sidebar-bg)',
               }}
               aria-label={`${page.label} for ${r.label}`}
             />
@@ -420,13 +587,13 @@ function TriCheckbox({ state, onChange, label }) {
       checked={state === 'all'}
       onChange={onChange}
       aria-label={label}
-      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }}
+      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--sidebar-bg)' }}
     />
   )
 }
 
 const thStyle = (left) => ({
-  padding: '12px 16px',
+  padding: '14px 12px',
   fontSize: 11,
   fontWeight: 800,
   letterSpacing: '0.08em',
@@ -437,14 +604,30 @@ const thStyle = (left) => ({
   position: 'sticky',
   top: 0,
   background: 'var(--table-header-bg, var(--card-header-bg))',
-  zIndex: 1,
+  zIndex: 2,
 })
 
-const miniBtn = {
+const allBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 3,
-  padding: '2px 6px', fontSize: 10, fontWeight: 700,
-  borderRadius: 5, border: '1px solid var(--card-border)',
-  background: 'var(--card-bg)', color: 'var(--text-3)', cursor: 'pointer',
+  padding: '4px 8px', fontSize: 10, fontWeight: 800,
+  borderRadius: 6,
+  border: 'none',
+  background: 'var(--sidebar-bg)',
+  color: '#fff',
+  cursor: 'pointer',
+  boxShadow: '0 2px 6px color-mix(in srgb, var(--sidebar-bg) 28%, transparent)',
+  transition: 'transform 0.12s ease, filter 0.12s ease',
+}
+
+const noneBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: 3,
+  padding: '4px 8px', fontSize: 10, fontWeight: 800,
+  borderRadius: 6,
+  border: '1px solid color-mix(in srgb, var(--sidebar-bg) 35%, transparent)',
+  background: 'color-mix(in srgb, var(--sidebar-bg) 12%, #fff)',
+  color: 'var(--sidebar-bg)',
+  cursor: 'pointer',
+  transition: 'transform 0.12s ease, filter 0.12s ease',
 }
 
 const secondaryBtn = {
