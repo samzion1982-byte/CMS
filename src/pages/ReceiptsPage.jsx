@@ -18,10 +18,28 @@ import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
 import TransferToAccountsModal                     from '../components/receipts/TransferToAccountsModal'
 import { logCmsAudit } from '../lib/cmsAudit'
-import { captureDeletedRecord } from '../lib/cmsRecycleBin'
+import { captureDeletedRecord, quarantineStoragePaths } from '../lib/cmsRecycleBin'
 
 // ── helpers ─────────────────────────────────────────────────────
 
+function receiptPdfPath(row) {
+  const fy = row?.financial_year || 'unknown'
+  const fileName = `${row?.receipt_number || 'receipt'}.pdf`
+  return `${fy}/${fileName}`
+}
+
+async function quarantineReceiptPdf(row, snapshotId) {
+  if (!row || !snapshotId) return
+  try {
+    await quarantineStoragePaths({
+      bucket: 'receipt-pdfs',
+      paths: [receiptPdfPath(row)],
+      snapshotId,
+    })
+  } catch (e) {
+    console.warn('[quarantine] receipt pdf', e)
+  }
+}
 function getFY(dateStr) {
   const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
   const m = d.getMonth() + 1
@@ -210,7 +228,7 @@ export default function ReceiptsPage() {
     setPwGate({ label: `Delete receipt ${row.receipt_number}`, onConfirmed: async () => {
       const { data: items } = await supabase
         .from('receipt_items').select('*').eq('receipt_id', row.id)
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'finance',
         tableName: 'receipts',
         recordId: row.id,
@@ -219,6 +237,7 @@ export default function ReceiptsPage() {
         related: { receipt_items: items || [] },
         actor: profile,
       })
+      await quarantineReceiptPdf(row, snap?.id)
       await supabase.from('receipt_items').delete().eq('receipt_id', row.id)
       const { error } = await supabase.from('receipts').delete().eq('id', row.id)
       if (error) { toast(error.message, 'error'); return }
@@ -1983,7 +2002,7 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
       itemsByReceipt[it.receipt_id].push(it)
     }
     for (const r of receiptRows || []) {
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'finance',
         tableName: 'receipts',
         recordId: r.id,
@@ -1991,6 +2010,7 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
         row: r,
         related: { receipt_items: itemsByReceipt[r.id] || [] },
       })
+      await quarantineReceiptPdf(r, snap?.id)
     }
     await supabase.from('receipt_items').delete().in('receipt_id', ids)
     const { error } = await supabase.from('receipts').delete().in('id', ids)
