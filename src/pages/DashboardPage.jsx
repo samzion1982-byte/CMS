@@ -22,24 +22,40 @@ function resolveDefault(mod) {
 
 const HighchartsReact = resolveDefault(HighchartsReactModule)
 
-/* ── Stat Card — clean white with colored icon badge ─────────── */
-function StatCard({ icon: Icon, label, value, sub, iconBg, iconColor, loading }) {
+function greetingForNow() {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+/* ── Stat Card — tinted tile with texture + accent bar ───────── */
+function StatCard({ icon: Icon, label, value, sub, accent, loading, delay = 0 }) {
   return (
-    <div className="card" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-      {/* Icon badge */}
+    <div
+      className="dash-stat-tile"
+      style={{
+        background: accent.bg,
+        border: `1px solid ${accent.border}`,
+        boxShadow: accent.shadow,
+        ['--tile-accent']: accent.bar,
+        ['--tile-shadow-hover']: accent.shadowHover,
+        animation: `dashFadeUp 0.35s ease ${delay}s both`,
+      }}
+    >
       <div style={{
-        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
-        background: iconBg,
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+        background: accent.iconBg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 2px 8px rgba(15,23,42,0.12)',
       }}>
-        <Icon size={22} color={iconColor} />
+        <Icon size={20} color="#fff" />
       </div>
-      {/* Text */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', margin: '0 0 4px' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: accent.text, margin: '0 0 4px', opacity: 0.85 }}>
           {label}
         </p>
-        <p style={{ fontSize: 30, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1, margin: '0 0 3px' }}>
+        <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1, margin: '0 0 3px' }}>
           {loading
             ? <span className="loading-skeleton" style={{ display: 'inline-block', width: 64, height: 28, borderRadius: 6 }} />
             : (value ?? '—')}
@@ -59,36 +75,64 @@ function GenderCard({ male, female, total, loading }) {
   const mPct = total > 0 ? Math.round((male / total) * 100) : 0
   const fPct = total > 0 ? Math.round((female / total) * 100) : 0
   return (
-    <div className="card" style={{ padding: '20px 24px' }}>
+    <div className="dash-panel" style={{ padding: '20px 24px', animation: 'dashFadeUp 0.35s ease 0.18s both' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#a855f7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 11,
+          background: 'linear-gradient(135deg, var(--sidebar-bg, #0d2244), #1e3a5f)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(13,34,68,0.25)',
+        }}>
           <Users2 size={18} color="#fff" />
         </div>
         <div>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Gender Distribution</p>
-          <p style={{ fontSize: 11, color: 'var(--text-3)' }}>Male vs Female membership</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Gender Distribution</p>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Male vs Female membership</p>
         </div>
         <div style={{ marginLeft: 'auto', fontSize: 20, fontWeight: 800, color: 'var(--text-1)' }}>
           {loading ? '—' : total.toLocaleString()}
           <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, marginLeft: 4 }}>total</span>
         </div>
       </div>
-      <div style={{ height: 12, borderRadius: 99, overflow: 'hidden', background: 'var(--page-bg)', marginBottom: 12 }}>
-        <div style={{ height: '100%', width: `${mPct}%`, background: 'linear-gradient(90deg,#3b82f6,#2563eb)', float: 'left', transition: 'width .6s ease' }} />
-        <div style={{ height: '100%', width: `${fPct}%`, background: 'linear-gradient(90deg,#f97316,#ea580c)', float: 'left', transition: 'width .6s ease' }} />
+      <div style={{
+        height: 14, borderRadius: 99, overflow: 'hidden',
+        background: 'color-mix(in srgb, var(--sidebar-bg, #0d2244) 6%, #f1f5f9)',
+        marginBottom: 14,
+        boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)',
+      }}>
+        <div style={{
+          height: '100%', width: `${mPct}%`,
+          background: 'linear-gradient(90deg,#60a5fa,#2563eb)',
+          float: 'left', transition: 'width .7s ease',
+        }} />
+        <div style={{
+          height: '100%', width: `${fPct}%`,
+          background: 'linear-gradient(90deg,#fb7185,#e11d48)',
+          float: 'left', transition: 'width .7s ease',
+        }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#3b82f6' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', borderRadius: 10,
+          background: 'linear-gradient(135deg,#eff6ff,#dbeafe88)',
+          border: '1px solid #bfdbfe',
+        }}>
+          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#2563eb' }} />
           <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Male</span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: '#2563eb', marginLeft: 4 }}>{loading ? '—' : male.toLocaleString()}</span>
+          <span style={{ fontSize: 17, fontWeight: 800, color: '#1d4ed8', marginLeft: 2 }}>{loading ? '—' : male.toLocaleString()}</span>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({mPct}%)</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', borderRadius: 10,
+          background: 'linear-gradient(135deg,#fff1f2,#ffe4e688)',
+          border: '1px solid #fecdd3',
+        }}>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>({fPct}%)</span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: '#ea580c', marginRight: 4 }}>{loading ? '—' : female.toLocaleString()}</span>
+          <span style={{ fontSize: 17, fontWeight: 800, color: '#be123c', marginRight: 2 }}>{loading ? '—' : female.toLocaleString()}</span>
           <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Female</span>
-          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#f97316' }} />
+          <div style={{ width: 9, height: 9, borderRadius: 3, background: '#e11d48' }} />
         </div>
       </div>
     </div>
@@ -411,27 +455,41 @@ function ZonePieChart({ zones, profile }) {
 }
 
 /* ── Section Card wrapper ────────────────────────────────────── */
-function SectionCard({ accentColor, icon: Icon, title, subtitle, children }) {
+function SectionCard({ accentColor, accentBar = '#2563eb', headerTint, icon: Icon, title, subtitle, children, delay = 0 }) {
   return (
-    <div className="card">
+    <div
+      className="dash-panel"
+      style={{
+        ['--panel-accent']: accentBar,
+        animation: `dashFadeUp 0.35s ease ${delay}s both`,
+      }}
+    >
       <div style={{
         padding: '14px 20px',
         borderBottom: '1px solid var(--card-border)',
-        background: 'var(--card-header-bg)',
+        background: headerTint || 'linear-gradient(135deg, color-mix(in srgb, var(--sidebar-bg, #0d2244) 5%, #fff) 0%, var(--card-header-bg) 100%)',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
+        position: 'relative',
+        overflow: 'hidden',
       }}>
         <div style={{
-          width: 34, height: 34, borderRadius: 9,
+          position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.45,
+          backgroundImage: 'repeating-linear-gradient(115deg, transparent, transparent 8px, rgba(255,255,255,0.35) 8px, rgba(255,255,255,0.35) 9px)',
+        }} />
+        <div style={{
+          width: 36, height: 36, borderRadius: 10,
           background: accentColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(15,23,42,0.14)',
+          position: 'relative', zIndex: 1,
         }}>
           <Icon size={16} color="#fff" />
         </div>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{title}</p>
-          <p style={{ fontSize: 11, color: 'var(--text-3)' }}>{subtitle}</p>
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>{title}</p>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{subtitle}</p>
         </div>
       </div>
       <div style={{ padding: '16px 20px' }}>{children}</div>
@@ -558,10 +616,10 @@ export default function DashboardPage() {
 
   const StatusBadge = () => {
     if (connectionStatus === 'connected')
-      return <span style={{ fontSize: 11, background: 'var(--success-subtle)', color: 'var(--success)', padding: '3px 10px', borderRadius: 99, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--success-border)' }}><Wifi size={11} /> Live</span>
+      return <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.18)', color: '#86efac', padding: '4px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid rgba(134,239,172,0.35)', fontWeight: 600 }}><Wifi size={11} /> Live</span>
     if (connectionStatus === 'error')
-      return <span style={{ fontSize: 11, background: 'var(--danger-subtle)', color: 'var(--danger)', padding: '3px 10px', borderRadius: 99, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--danger-border)' }}><WifiOff size={11} /> Offline</span>
-    return <span style={{ fontSize: 11, background: 'var(--page-bg)', color: 'var(--text-3)', padding: '3px 10px', borderRadius: 99, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--card-border)' }}><Settings size={11} /> Connecting…</span>
+      return <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.18)', color: '#fca5a5', padding: '4px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid rgba(252,165,165,0.4)', fontWeight: 600 }}><WifiOff size={11} /> Offline</span>
+    return <span style={{ fontSize: 11, background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)', padding: '4px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4, border: '1px solid rgba(255,255,255,0.2)', fontWeight: 600 }}><Settings size={11} /> Connecting…</span>
   }
 
   if (authLoading || (loading && !stats)) {
@@ -581,42 +639,194 @@ export default function DashboardPage() {
     )
   }
 
+  const displayName = profile?.full_name || profile?.name || user?.email?.split('@')[0] || 'there'
+  const ministryMax = Math.max(...activities.map(a => a.count), 1)
+
   const STAT_CARDS = [
-    { icon: Users,    label: 'Active Members', value: stats?.total?.toLocaleString(),    sub: `Out of ${totalMembersCount} total`,     iconBg: '#dbeafe', iconColor: '#1d4ed8' },
-    { icon: Home,     label: 'Families',       value: stats?.families?.toLocaleString(), sub: 'Family units registered',              iconBg: '#dcfce7', iconColor: '#15803d' },
-    { icon: Calendar, label: 'Married',         value: stats?.married?.toLocaleString(), sub: `${stats?.single || 0} single members`, iconBg: '#ede9fe', iconColor: '#6d28d9' },
-    { icon: Heart,    label: 'Baptised',        value: stats?.total ? Math.round(stats.total * 0.9).toLocaleString() : '—', sub: 'Est. 90% baptised', iconBg: '#fef3c7', iconColor: '#b45309' },
+    {
+      icon: Users, label: 'Active Members',
+      value: stats?.total?.toLocaleString(),
+      sub: `Out of ${totalMembersCount} total`,
+      accent: {
+        bg: 'linear-gradient(155deg, #eff6ff 0%, #dbeafe 48%, #bfdbfe55 100%)',
+        border: '#93c5fd', text: '#1e40af', bar: '#3b82f6',
+        iconBg: 'linear-gradient(135deg,#60a5fa,#2563eb)',
+        shadow: '0 4px 16px rgba(37,99,235,0.12)',
+        shadowHover: '0 12px 28px rgba(37,99,235,0.2)',
+      },
+    },
+    {
+      icon: Home, label: 'Families',
+      value: stats?.families?.toLocaleString(),
+      sub: 'Family units registered',
+      accent: {
+        bg: 'linear-gradient(155deg, #ecfdf5 0%, #d1fae5 48%, #a7f3d055 100%)',
+        border: '#6ee7b7', text: '#065f46', bar: '#10b981',
+        iconBg: 'linear-gradient(135deg,#34d399,#059669)',
+        shadow: '0 4px 16px rgba(16,185,129,0.12)',
+        shadowHover: '0 12px 28px rgba(16,185,129,0.2)',
+      },
+    },
+    {
+      icon: Calendar, label: 'Married',
+      value: stats?.married?.toLocaleString(),
+      sub: `${stats?.single || 0} single members`,
+      accent: {
+        bg: 'linear-gradient(155deg, #ecfeff 0%, #cffafe 48%, #a5f3fc55 100%)',
+        border: '#67e8f9', text: '#155e75', bar: '#0891b2',
+        iconBg: 'linear-gradient(135deg,#22d3ee,#0891b2)',
+        shadow: '0 4px 16px rgba(8,145,178,0.12)',
+        shadowHover: '0 12px 28px rgba(8,145,178,0.2)',
+      },
+    },
+    {
+      icon: Heart, label: 'Baptised',
+      value: stats?.total ? Math.round(stats.total * 0.9).toLocaleString() : '—',
+      sub: 'Est. 90% baptised',
+      accent: {
+        bg: 'linear-gradient(155deg, #fffbeb 0%, #fef3c7 48%, #fde68a55 100%)',
+        border: '#f6d58a', text: '#92400e', bar: '#f59e0b',
+        iconBg: 'linear-gradient(135deg,#fbbf24,#d97706)',
+        shadow: '0 4px 16px rgba(245,158,11,0.14)',
+        shadowHover: '0 12px 28px rgba(245,158,11,0.22)',
+      },
+    },
   ]
 
   return (
     <div className="animate-fade-in" style={{ paddingBottom: 32 }}>
+      <style>{`
+        @keyframes dashFadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .dash-stat-tile {
+          position: relative;
+          overflow: hidden;
+          border-radius: 14px;
+          padding: 18px 18px 18px 20px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+        .dash-stat-tile::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image:
+            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.7) 0%, transparent 42%),
+            repeating-linear-gradient(-32deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 6px);
+          pointer-events: none;
+          border-radius: inherit;
+        }
+        .dash-stat-tile::after {
+          content: '';
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          width: 4px;
+          background: var(--tile-accent, #3b82f6);
+          border-radius: 14px 0 0 14px;
+        }
+        .dash-stat-tile:hover {
+          transform: translateY(-3px);
+          box-shadow: var(--tile-shadow-hover, 0 12px 28px rgba(15,23,42,0.12));
+        }
+        .dash-stat-tile > * { position: relative; z-index: 1; }
+        .dash-panel {
+          position: relative;
+          overflow: hidden;
+          background: var(--card-bg, #fff);
+          border: 1px solid var(--card-border);
+          border-radius: 14px;
+          box-shadow: 0 2px 10px rgba(15,23,42,0.04);
+        }
+        .dash-panel::after {
+          content: '';
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          width: 4px;
+          background: var(--panel-accent, var(--sidebar-bg, #0d2244));
+          border-radius: 14px 0 0 14px;
+        }
+        .dash-hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 16px;
+          margin-bottom: 22px;
+          padding: 22px 24px;
+          background:
+            radial-gradient(ellipse at 12% 30%, rgba(255,255,255,0.12) 0%, transparent 50%),
+            radial-gradient(ellipse at 90% 80%, rgba(56,189,248,0.16) 0%, transparent 45%),
+            linear-gradient(135deg, var(--sidebar-bg, #0d2244) 0%, #143057 55%, #0a1a36 100%);
+          box-shadow: 0 8px 28px rgba(8,20,40,0.28);
+          color: #fff;
+          animation: dashFadeUp 0.3s ease both;
+        }
+        .dash-hero::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: repeating-linear-gradient(
+            115deg, transparent, transparent 10px,
+            rgba(255,255,255,0.035) 10px, rgba(255,255,255,0.035) 11px
+          );
+          pointer-events: none;
+        }
+        .dash-hero > * { position: relative; z-index: 1; }
+        .dash-ministry-row {
+          transition: background 0.15s ease, transform 0.15s ease;
+        }
+        .dash-ministry-row:hover {
+          transform: translateX(2px);
+        }
+        .dash-recent-row {
+          transition: background 0.15s ease;
+        }
+        @media (max-width: 900px) {
+          .dash-age-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
 
-      {/* ── Page header ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 12,
-        marginBottom: 24,
-        paddingBottom: 20,
-        borderBottom: '1px solid var(--card-border)',
-      }}>
-        <div>
-          <h2 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, lineHeight: 1.2 }}>
-            <Home size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Dashboard
-          </h2>
-          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '3px 0 0' }}>
-            Overview &amp; congregation statistics
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <StatusBadge />
-          <button onClick={handleRefresh} disabled={loading} className="btn btn-secondary btn-sm">
-            <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-            Refresh
-          </button>
+      {/* ── Welcome hero ── */}
+      <div className="dash-hero">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.65)' }}>
+              Congregation overview
+            </p>
+            <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: 'rgba(255,255,255,0.12)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                border: '1px solid rgba(255,255,255,0.18)',
+              }}>
+                <Home size={18} color="#fff" />
+              </span>
+              {greetingForNow()}, {displayName}
+            </h2>
+            <p style={{ margin: '8px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.45 }}>
+              Live membership stats, age groups, zones, and recent additions.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <StatusBadge />
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', fontSize: 12, fontWeight: 700,
+                borderRadius: 9, border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(255,255,255,0.12)', color: '#fff',
+                cursor: loading ? 'default' : 'pointer',
+              }}
+            >
+              <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -624,10 +834,10 @@ export default function DashboardPage() {
       {totalMembersCount > 0 && stats && stats.total < totalMembersCount && (
         <div style={{
           marginBottom: 20, background: 'var(--info-subtle)', border: '1px solid var(--info-border)',
-          borderRadius: 10, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          borderRadius: 12, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <Info size={16} color="var(--info)" />
-          <p style={{ flex: 1, fontSize: 12, color: 'var(--info)' }}>
+          <p style={{ flex: 1, fontSize: 12, color: 'var(--info)', margin: 0 }}>
             Total: <strong>{totalMembersCount}</strong> · Active: <strong>{stats.total}</strong> · Inactive: <strong>{inactiveMembersCount}</strong>
           </p>
           <button onClick={() => window.location.href = '/members'}
@@ -641,17 +851,19 @@ export default function DashboardPage() {
       {error && (
         <div style={{
           marginBottom: 20, background: 'var(--danger-subtle)', border: '1px solid var(--danger-border)',
-          borderRadius: 10, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10,
+          borderRadius: 12, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <AlertCircle size={16} color="var(--danger)" />
-          <p style={{ flex: 1, fontSize: 12, color: 'var(--danger)' }}>{error}</p>
+          <p style={{ flex: 1, fontSize: 12, color: 'var(--danger)', margin: 0 }}>{error}</p>
           <button onClick={handleRefresh} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Retry</button>
         </div>
       )}
 
       {/* ── Stat Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 16, marginBottom: 20 }}>
-        {STAT_CARDS.map(c => <StatCard key={c.label} {...c} loading={loading} />)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 14, marginBottom: 20 }}>
+        {STAT_CARDS.map((c, i) => (
+          <StatCard key={c.label} {...c} loading={loading} delay={0.04 + i * 0.05} />
+        ))}
       </div>
 
       {/* ── Gender Card ── */}
@@ -660,32 +872,80 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Age & Gender + Ministries ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginBottom: 20 }}>
-        <SectionCard accentColor="linear-gradient(135deg,#3b82f6,#1d4ed8)" icon={BarChart3} title="Age & Gender Categorization" subtitle="Member distribution by age group and gender">
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginBottom: 20 }} className="dash-age-grid">
+        <SectionCard
+          accentColor="linear-gradient(135deg,#3b82f6,#1d4ed8)"
+          accentBar="#2563eb"
+          headerTint="linear-gradient(135deg,#eff6ff 0%, #f8fafc 100%)"
+          icon={BarChart3}
+          title="Age & Gender Categorization"
+          subtitle="Member distribution by age group and gender"
+          delay={0.22}
+        >
           <AgeGroupChart ageGroups={ageGroups} loading={loading} />
         </SectionCard>
 
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--card-border)', background: 'var(--card-header-bg)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg,#a855f7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div
+          className="dash-panel"
+          style={{ overflow: 'hidden', ['--panel-accent']: '#0f766e', animation: 'dashFadeUp 0.35s ease 0.26s both' }}
+        >
+          <div style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--card-border)',
+            background: 'linear-gradient(135deg,#ecfdf5 0%, #f8fafc 100%)',
+            display: 'flex', alignItems: 'center', gap: 10, position: 'relative', overflow: 'hidden',
+          }}>
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.4,
+              backgroundImage: 'repeating-linear-gradient(115deg, transparent, transparent 8px, rgba(255,255,255,0.4) 8px, rgba(255,255,255,0.4) 9px)',
+            }} />
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'linear-gradient(135deg,#14b8a6,#0f766e)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(15,118,110,0.25)', position: 'relative', zIndex: 1,
+            }}>
               <Activity size={16} color="#fff" />
             </div>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Church Ministries</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)' }}>Participation by activity</p>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Church Ministries</p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Participation by activity</p>
             </div>
           </div>
-          {activities.length > 0 ? activities.map(act => (
-            <div key={act.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid var(--table-border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 9, height: 9, borderRadius: 3, background: act.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 500 }}>{act.label}</span>
+          {activities.length > 0 ? activities.map((act, idx) => {
+            const pct = Math.max(6, Math.round((act.count / ministryMax) * 100))
+            return (
+              <div
+                key={act.label}
+                className="dash-ministry-row"
+                style={{
+                  padding: '11px 18px',
+                  borderBottom: '1px solid var(--table-border)',
+                  background: idx % 2 === 0
+                    ? `color-mix(in srgb, ${act.color} 7%, transparent)`
+                    : `color-mix(in srgb, ${act.color} 12%, transparent)`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: 3, background: act.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.label}</span>
+                  </div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, color: '#fff', background: act.color,
+                    padding: '2px 9px', borderRadius: 8, minWidth: 30, textAlign: 'center', flexShrink: 0,
+                  }}>
+                    {act.count}
+                  </span>
+                </div>
+                <div style={{ height: 5, borderRadius: 99, background: 'rgba(15,23,42,0.06)', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', width: `${pct}%`, borderRadius: 99,
+                    background: act.color, transition: 'width .6s ease', opacity: 0.85,
+                  }} />
+                </div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: act.color, padding: '2px 9px', borderRadius: 99, minWidth: 30, textAlign: 'center' }}>
-                {act.count}
-              </span>
-            </div>
-          )) : (
+            )
+          }) : (
             <p style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '32px 0' }}>No activity data</p>
           )}
         </div>
@@ -693,45 +953,89 @@ export default function DashboardPage() {
 
       {/* ── Area Wise Distribution ── */}
       <div style={{ marginBottom: 20 }}>
-        <SectionCard accentColor="linear-gradient(135deg,#10b981,#059669)" icon={MapPin} title="Area Wise Distribution" subtitle="Members by locality / zone">
+        <SectionCard
+          accentColor="linear-gradient(135deg,#10b981,#059669)"
+          accentBar="#059669"
+          headerTint="linear-gradient(135deg,#ecfdf5 0%, #f8fafc 100%)"
+          icon={MapPin}
+          title="Area Wise Distribution"
+          subtitle="Members by locality / zone"
+          delay={0.3}
+        >
           <ZonePieChart zones={zones} profile={profile} />
         </SectionCard>
       </div>
 
       {/* ── Recent Members ── */}
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--card-border)', background: 'var(--card-header-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg,#14b8a6,#0d9488)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        className="dash-panel"
+        style={{ overflow: 'hidden', ['--panel-accent']: '#0d9488', animation: 'dashFadeUp 0.35s ease 0.34s both' }}
+      >
+        <div style={{
+          padding: '14px 20px', borderBottom: '1px solid var(--card-border)',
+          background: 'linear-gradient(135deg,#f0fdfa 0%, #f8fafc 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          position: 'relative', overflow: 'hidden',
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.4,
+            backgroundImage: 'repeating-linear-gradient(115deg, transparent, transparent 8px, rgba(255,255,255,0.4) 8px, rgba(255,255,255,0.4) 9px)',
+          }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative', zIndex: 1 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'linear-gradient(135deg,#14b8a6,#0d9488)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(13,148,136,0.25)',
+            }}>
               <UserPlus size={16} color="#fff" />
             </div>
             <div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>Recently Added Members</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)' }}>Last 8 additions</p>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Recently Added Members</p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Last 8 additions</p>
             </div>
           </div>
-          <a href="/members" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>View all →</a>
+          <a href="/members" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, textDecoration: 'none', position: 'relative', zIndex: 1 }}>View all →</a>
         </div>
         {recent.length > 0 ? recent.map((m, idx) => (
-          <div key={m.member_id || idx} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 20px', borderBottom: '1px solid var(--table-border)' }}>
+          <div
+            key={m.member_id || idx}
+            className="dash-recent-row"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px',
+              borderBottom: '1px solid var(--table-border)',
+              background: idx % 2 === 0
+                ? 'transparent'
+                : 'color-mix(in srgb, var(--sidebar-bg, #0d2244) 3.5%, transparent)',
+            }}
+          >
             <div style={{
-              width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
-              background: 'var(--accent-subtle)',
+              width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg,#ecfeff,#cffafe)',
+              border: '2px solid #22d3ee',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 800, color: 'var(--accent)',
+              fontSize: 12, fontWeight: 800, color: '#0e7490',
+              boxShadow: '0 0 0 3px rgba(34,211,238,0.18)',
             }}>
               {getInitials(m.member_name)}
             </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
                 {m.title ? `${m.title} ` : ''}{m.member_name}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0' }}>
                 ID: {m.member_id || 'N/A'} · Added {formatDate(m.created_at?.slice(0, 10))}
               </p>
             </div>
             {m.zonal_area && (
-              <span style={{ fontSize: 11, background: 'var(--page-bg)', color: 'var(--text-2)', padding: '3px 9px', borderRadius: 99, fontWeight: 500, border: '1px solid var(--card-border)' }}>
+              <span style={{
+                fontSize: 11, fontWeight: 600,
+                background: 'linear-gradient(135deg,#eff6ff,#dbeafe)',
+                color: '#1e40af',
+                padding: '4px 10px', borderRadius: 8,
+                border: '1px solid #bfdbfe',
+                whiteSpace: 'nowrap',
+              }}>
                 {m.zonal_area}
               </span>
             )}
