@@ -54,7 +54,7 @@ function digitsOnly(v) {
 }
 
 /**
- * Members-style Indian mobile: store as +91-XXXXXXXXXX.
+ * CMS Indian mobile: store as 91XXXXXXXXXX (no + / hyphen).
  * Accepts 10-digit, 0XXXXXXXXXX, 91XXXXXXXXXX, +91-… inputs.
  */
 function normalizeMemberPhone(raw, { required = false, label = 'Number' } = {}) {
@@ -74,10 +74,10 @@ function normalizeMemberPhone(raw, { required = false, label = 'Number' } = {}) 
   if (!/^[6-9]/.test(digits)) {
     return { ok: false, value: '', error: `${label}: mobile must start with 6–9` }
   }
-  return { ok: true, value: `+91-${digits}`, error: null }
+  return { ok: true, value: `91${digits}`, error: null }
 }
 
-/** Display +91-9994073545 → +91-99940 73545 for readability. */
+/** Display 919994073545 → 91-99940 73545 for readability. */
 function formatDisplayNumber(v) {
   const raw = String(v || '').trim()
   if (!raw) return ''
@@ -85,10 +85,10 @@ function formatDisplayNumber(v) {
   const stored = normalized.ok && normalized.value ? normalized.value : raw
   const d = digitsOnly(stored)
   if (d.length === 12 && d.startsWith('91')) {
-    return `+91-${d.slice(2, 7)} ${d.slice(7)}`
+    return `91-${d.slice(2, 7)} ${d.slice(7)}`
   }
   if (d.length === 10) {
-    return `+91-${d.slice(0, 5)} ${d.slice(5)}`
+    return `91-${d.slice(0, 5)} ${d.slice(5)}`
   }
   return stored
 }
@@ -362,7 +362,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
               {editing ? 'Edit Contact' : 'Add Contact'}
             </p>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-              Numbers saved as +91-XXXXXXXXXX (same as Members)
+              Phone directory entry
             </p>
           </div>
           <button type="button" onClick={onClose}
@@ -416,7 +416,6 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                 tabIndex={4}
                 inputMode="tel"
               />
-              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#128C7E' }}>Saved as +91-… · opens WhatsApp</p>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1d4ed8', marginBottom: 5 }}>
@@ -430,7 +429,6 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                 tabIndex={5}
                 inputMode="tel"
               />
-              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#1d4ed8' }}>Saved as +91-… · opens WhatsApp</p>
             </div>
           </div>
           <div>
