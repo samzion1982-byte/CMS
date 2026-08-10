@@ -6,7 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { logCmsAudit } from '../lib/cmsAudit'
-import { captureDeletedRecord } from '../lib/cmsRecycleBin'
+import { captureDeletedRecord, quarantineStorageFolder } from '../lib/cmsRecycleBin'
 
 /* ─── Constants ──────────────────────────────────────────────────── */
 const TABS = [
@@ -69,20 +69,6 @@ const DB_FILE_MAP = {
   brideConfirm: 'bride_confirm_url',
 }
 
-/** Extract storage object path from a public/signed event-media URL. */
-function eventMediaPathFromUrl(url) {
-  if (!url || typeof url !== 'string') return null
-  const markers = ['/object/public/event-media/', '/object/sign/event-media/', '/event-media/']
-  for (const marker of markers) {
-    const idx = url.indexOf(marker)
-    if (idx < 0) continue
-    let path = url.substring(idx + marker.length).split('?')[0]
-    try { path = decodeURIComponent(path) } catch (_) { /* keep raw */ }
-    return path || null
-  }
-  return null
-}
-
 /** Record folder must be kind/####-YYYY — never a bucket root or event-type root. */
 const EVENT_MEDIA_FOLDER_RE = /^(baptism|confirmation|wedding|burial)\/\d{4}-\d{4}$/
 
@@ -96,51 +82,24 @@ function eventFolderPrefix(kind, seqNum, year) {
 }
 
 /**
- * Delete every file under event-media/{recordFolder}/ only.
- * Refuses shallow prefixes (e.g. "wedding") so one delete cannot wipe the whole type folder.
+ * Move every file under event-media/{recordFolder}/ into recycle-bin quarantine.
+ * Prefer this over hard delete so Restore can bring photos/docs back.
  */
-async function flushEventMediaFolder(prefix) {
-  if (!prefix || !EVENT_MEDIA_FOLDER_RE.test(prefix)) {
-    console.warn('[event-media] refused flush — invalid record folder:', prefix)
-    return 0
+async function quarantineEventMediaFolder(folderPrefix, snapshotId) {
+  if (!snapshotId) {
+    console.warn('[event-media] no snapshot id — skipping quarantine')
+    return null
   }
-  const paths = []
-  async function walk(dir) {
-    // Never walk above the record folder
-    if (dir !== prefix && !dir.startsWith(`${prefix}/`)) return
-    const { data, error } = await supabase.storage.from('event-media').list(dir, { limit: 1000 })
-    if (error || !data?.length) return
-    for (const item of data) {
-      const full = `${dir}/${item.name}`
-      if (!full.startsWith(`${prefix}/`)) continue
-      if (item.id) paths.push(full)
-      else await walk(full)
-    }
-  }
-  await walk(prefix)
-  // Extra safety: only remove paths that remain under the record folder
-  const safe = paths.filter((p) => p.startsWith(`${prefix}/`))
-  for (let i = 0; i < safe.length; i += 100) {
-    const chunk = safe.slice(i, i + 100)
-    const { error } = await supabase.storage.from('event-media').remove(chunk)
-    if (error) throw new Error(`Storage flush failed (${prefix}): ${error.message}`)
-  }
-  return safe.length
-}
-
-/** Remove explicit URL paths (must be under record folder), then wipe that folder only. */
-async function flushEventMediaUrlsAndFolder(urls, folderPrefix) {
   if (!folderPrefix || !EVENT_MEDIA_FOLDER_RE.test(folderPrefix)) {
-    console.warn('[event-media] skip flush — missing/invalid folderPrefix', folderPrefix)
-    return 0
+    console.warn('[event-media] skip quarantine — missing/invalid folderPrefix', folderPrefix)
+    return null
   }
-  const fromUrls = [...new Set((urls || []).map(eventMediaPathFromUrl).filter(Boolean))]
-    .filter((p) => p === folderPrefix || p.startsWith(`${folderPrefix}/`))
-  if (fromUrls.length) {
-    const { error } = await supabase.storage.from('event-media').remove(fromUrls)
-    if (error) console.warn('[event-media] remove by url failed', error.message)
-  }
-  return flushEventMediaFolder(folderPrefix)
+  return quarantineStorageFolder({
+    bucket: 'event-media',
+    folderPrefix,
+    snapshotId,
+    validatePrefix: EVENT_MEDIA_FOLDER_RE,
+  })
 }
 
 /** True when year/month/day form a real calendar date. */
@@ -375,16 +334,16 @@ function BaptismTab() {
 
   async function handleDelete() {
     if (!editId) { toast('No record loaded', 'error'); return }
-    if (!window.confirm(`Delete baptism record ${slNoDisplay}?`)) return
+    if (!window.confirm(`Delete baptism record ${slNoDisplay}? You can restore it (with photos) from Recycle Bin.`)) return
     setSaving(true)
     try {
       const { data: row } = await supabase.from('baptism_records').select('*').eq('id', editId).maybeSingle()
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'events', tableName: 'baptism_records', recordId: editId,
-        recordLabel: `Baptism ${slNoDisplay}`,
+        recordLabel: `Baptism ${slNoDisplay}`, row,
       })
       const folder = eventFolderPrefix('baptism', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
-      await flushEventMediaUrlsAndFolder([row?.photo_url, photo.url], folder)
+      await quarantineEventMediaFolder(folder, snap?.id)
       const { error } = await supabase.from('baptism_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -971,16 +930,16 @@ function ConfirmationTab() {
 
   async function handleDelete() {
     if (!editId) { toast('No record loaded', 'error'); return }
-    if (!window.confirm(`Delete confirmation record ${slNoDisplay}?`)) return
+    if (!window.confirm(`Delete confirmation record ${slNoDisplay}? You can restore it (with photos) from Recycle Bin.`)) return
     setSaving(true)
     try {
       const { data: row } = await supabase.from('confirmation_records').select('*').eq('id', editId).maybeSingle()
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'events', tableName: 'confirmation_records', recordId: editId,
-        recordLabel: `Confirmation ${slNoDisplay}`,
+        recordLabel: `Confirmation ${slNoDisplay}`, row,
       })
       const folder = eventFolderPrefix('confirmation', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
-      await flushEventMediaUrlsAndFolder([row?.photo_url, photo.url], folder)
+      await quarantineEventMediaFolder(folder, snap?.id)
       const { error } = await supabase.from('confirmation_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -1599,19 +1558,16 @@ function BurialTab() {
 
   async function handleDelete() {
     if (!editId) { toast('No record loaded', 'error'); return }
-    if (!window.confirm(`Delete burial record ${slNoDisplay}?`)) return
+    if (!window.confirm(`Delete burial record ${slNoDisplay}? You can restore it (with photos) from Recycle Bin.`)) return
     setSaving(true)
     try {
       const { data: row } = await supabase.from('burial_records').select('*').eq('id', editId).maybeSingle()
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'events', tableName: 'burial_records', recordId: editId,
-        recordLabel: `Burial ${slNoDisplay}`,
+        recordLabel: `Burial ${slNoDisplay}`, row,
       })
       const folder = eventFolderPrefix('burial', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
-      await flushEventMediaUrlsAndFolder([
-        row?.photo_url, row?.doc1_url, row?.doc2_url, row?.doc3_url,
-        photo.url, docs[0]?.url, docs[1]?.url, docs[2]?.url,
-      ], folder)
+      await quarantineEventMediaFolder(folder, snap?.id)
       const { error } = await supabase.from('burial_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({
@@ -2348,18 +2304,16 @@ function WeddingTab() {
 
   async function handleDelete() {
     if (!editId) { toast('No record loaded to delete', 'error'); return }
-    if (!window.confirm(`Delete wedding record ${slNoDisplay}? This cannot be undone.`)) return
+    if (!window.confirm(`Delete wedding record ${slNoDisplay}? You can restore it (with photos) from Recycle Bin.`)) return
     setSaving(true)
     try {
       const { data: row } = await supabase.from('wedding_records').select('*').eq('id', editId).maybeSingle()
-      await captureDeletedRecord({
+      const snap = await captureDeletedRecord({
         module: 'events', tableName: 'wedding_records', recordId: editId,
-        recordLabel: `Wedding ${slNoDisplay}`,
+        recordLabel: `Wedding ${slNoDisplay}`, row,
       })
-      const urlCols = Object.values(DB_FILE_MAP).map((col) => row?.[col])
-      const stateUrls = FILE_KEYS.map((k) => files[k]?.url)
       const folder = eventFolderPrefix('wedding', row?.seq_num ?? form.seqNum, row?.year ?? form.year)
-      await flushEventMediaUrlsAndFolder([...urlCols, ...stateUrls], folder)
+      await quarantineEventMediaFolder(folder, snap?.id)
       const { error } = await supabase.from('wedding_records').delete().eq('id', editId)
       if (error) throw error
       await logCmsAudit({

@@ -188,7 +188,7 @@ export default function RecycleBinPage() {
             Recycle Bin
           </h1>
           <p className="page-subtitle" style={{ margin: '4px 0 0', fontSize: 12 }}>
-            Soft-deleted records from Events, Assets, and Finance — restore or permanently discard.
+            Soft-deleted records from Events, Assets, and Finance. Photos/files are held in quarantine until you Restore or Purge.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

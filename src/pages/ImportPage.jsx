@@ -541,11 +541,14 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     if (error) return { count: null, error }
     let count = 0
     for (const item of (rootItems || [])) {
+      // Never count recycle-bin quarantine media as flushable inventory
+      if (item.name === '_quarantine') continue
       if (item.metadata) { count++; continue }
       const subPath = rootPath ? `${rootPath}/${item.name}` : item.name
       const { data: subItems } = await adminSupabase.storage
         .from(bucket).list(subPath, { limit: 10000 })
       for (const f of (subItems || [])) {
+        if (f.name === '_quarantine') continue
         if (f.metadata) count++
       }
     }

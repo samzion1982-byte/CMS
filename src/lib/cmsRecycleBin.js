@@ -1,9 +1,12 @@
 /**
  * Snapshot / Recycle Bin — capture deleted records so they can be restored.
  * Members already use deleted_members; this covers other CMS hard deletes.
+ *
+ * Storage files are moved into `_quarantine/{snapshotId}/…` on delete (not
+ * permanently removed). Restore moves them back; purge deletes them for good.
  */
 
-import { supabase } from './supabase'
+import { supabase, adminSupabase } from './supabase'
 import { logCmsAudit } from './cmsAudit'
 
 export const RECYCLE_MODULES = [
@@ -14,19 +17,172 @@ export const RECYCLE_MODULES = [
   { value: 'other', label: 'Other' },
 ]
 
+export const QUARANTINE_ROOT = '_quarantine'
+
+/** List all file object paths under a storage folder (recursive, one bucket). */
+async function listStorageFilePaths(bucket, folderPrefix) {
+  const paths = []
+  async function walk(dir) {
+    if (dir && folderPrefix && dir !== folderPrefix && !dir.startsWith(`${folderPrefix}/`)) return
+    const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 1000 })
+    if (error || !data?.length) return
+    for (const item of data) {
+      if (item.name === '.emptyFolderPlaceholder') continue
+      const full = dir ? `${dir}/${item.name}` : item.name
+      if (folderPrefix && full !== folderPrefix && !full.startsWith(`${folderPrefix}/`)) continue
+      // Files have metadata / id; folder placeholders usually don't
+      if (item.id || item.metadata) paths.push(full)
+      else await walk(full)
+    }
+  }
+  await walk(folderPrefix || '')
+  return paths
+}
+
+/**
+ * Move every file under folderPrefix into quarantine for this snapshot.
+ * Updates the snapshot payload with quarantine metadata.
+ *
+ * @returns {Promise<{ bucket: string, folderPrefix: string, paths: {from:string,to:string}[] }|null>}
+ */
+export async function quarantineStorageFolder({
+  bucket,
+  folderPrefix,
+  snapshotId,
+  validatePrefix = null,
+}) {
+  if (!bucket || !snapshotId || !folderPrefix) return null
+  if (validatePrefix && !validatePrefix.test(folderPrefix)) {
+    console.warn('[quarantine] refused — invalid folder prefix:', folderPrefix)
+    return null
+  }
+
+  const filePaths = await listStorageFilePaths(bucket, folderPrefix)
+  const moved = []
+  for (const from of filePaths) {
+    const to = `${QUARANTINE_ROOT}/${snapshotId}/${from}`
+    const { error } = await adminSupabase.storage.from(bucket).move(from, to)
+    if (error) {
+      // Fallback: download + upload + remove
+      const { data: blob, error: dlErr } = await adminSupabase.storage.from(bucket).download(from)
+      if (dlErr || !blob) throw new Error(`Quarantine failed (${from}): ${error.message}`)
+      const { error: upErr } = await adminSupabase.storage.from(bucket).upload(to, blob, { upsert: true })
+      if (upErr) throw new Error(`Quarantine upload failed (${to}): ${upErr.message}`)
+      await adminSupabase.storage.from(bucket).remove([from])
+    }
+    moved.push({ from, to })
+  }
+
+  const quarantine = { bucket, folderPrefix, paths: moved }
+  const { data: item } = await adminSupabase
+    .from('cms_recycle_bin')
+    .select('payload')
+    .eq('id', snapshotId)
+    .maybeSingle()
+
+  await adminSupabase
+    .from('cms_recycle_bin')
+    .update({
+      payload: { ...(item?.payload || {}), quarantine },
+    })
+    .eq('id', snapshotId)
+
+  return quarantine
+}
+
+/** Move a single storage object into quarantine (e.g. asset photo). */
+export async function quarantineStoragePaths({ bucket, paths, snapshotId }) {
+  if (!bucket || !snapshotId || !paths?.length) return null
+  const unique = [...new Set(paths.filter(Boolean))]
+  const moved = []
+  for (const from of unique) {
+    const to = `${QUARANTINE_ROOT}/${snapshotId}/${from}`
+    const { error } = await adminSupabase.storage.from(bucket).move(from, to)
+    if (error) {
+      const { data: blob, error: dlErr } = await adminSupabase.storage.from(bucket).download(from)
+      if (dlErr || !blob) {
+        console.warn('[quarantine] skip missing file', from, error.message)
+        continue
+      }
+      const { error: upErr } = await adminSupabase.storage.from(bucket).upload(to, blob, { upsert: true })
+      if (upErr) throw new Error(`Quarantine upload failed (${to}): ${upErr.message}`)
+      await adminSupabase.storage.from(bucket).remove([from])
+    }
+    moved.push({ from, to })
+  }
+  if (!moved.length) return null
+
+  const quarantine = { bucket, paths: moved }
+  const { data: item } = await adminSupabase
+    .from('cms_recycle_bin')
+    .select('payload')
+    .eq('id', snapshotId)
+    .maybeSingle()
+
+  await adminSupabase
+    .from('cms_recycle_bin')
+    .update({
+      payload: { ...(item?.payload || {}), quarantine },
+    })
+    .eq('id', snapshotId)
+
+  return quarantine
+}
+
+async function restoreQuarantinedFiles(payload) {
+  const q = payload?.quarantine
+  if (!q?.bucket || !q.paths?.length) return 0
+  let restored = 0
+  for (const { from, to } of q.paths) {
+    // Currently at `to` (quarantine); move back to original `from`
+    const { error } = await adminSupabase.storage.from(q.bucket).move(to, from)
+    if (error) {
+      const { data: blob, error: dlErr } = await adminSupabase.storage.from(q.bucket).download(to)
+      if (dlErr || !blob) {
+        console.warn('[quarantine] restore missing file', to, error.message)
+        continue
+      }
+      const { error: upErr } = await adminSupabase.storage.from(q.bucket).upload(from, blob, { upsert: true })
+      if (upErr) throw new Error(`Restore media failed (${from}): ${upErr.message}`)
+      await adminSupabase.storage.from(q.bucket).remove([to])
+    }
+    restored++
+  }
+  return restored
+}
+
+async function purgeQuarantinedFiles(payload) {
+  const q = payload?.quarantine
+  if (!q?.bucket) return 0
+
+  // Prefer recorded paths; also wipe the snapshot quarantine folder if present
+  const toRemove = []
+  if (q.paths?.length) {
+    for (const p of q.paths) if (p?.to) toRemove.push(p.to)
+  }
+
+  // Discover any leftover files under _quarantine/{snapshotId}
+  // (payload may not have every path if quarantine was partial)
+  // Caller may pass snapshotId via q.snapshotId — optional
+  if (q.snapshotId) {
+    const folder = `${QUARANTINE_ROOT}/${q.snapshotId}`
+    const found = await listStorageFilePaths(q.bucket, folder)
+    for (const f of found) toRemove.push(f)
+  }
+
+  const unique = [...new Set(toRemove)]
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100)
+    const { error } = await adminSupabase.storage.from(q.bucket).remove(chunk)
+    if (error) console.warn('[quarantine] purge remove failed', error.message)
+  }
+  return unique.length
+}
+
 /**
  * Capture a record (and optional related rows) into the recycle bin before hard delete.
  * Never throws — delete flows must continue even if snapshot fails.
  *
- * @param {object} opts
- * @param {string} opts.module
- * @param {string} opts.tableName
- * @param {string|number} opts.recordId
- * @param {string} [opts.recordLabel]
- * @param {object} [opts.row] — full row; fetched if omitted
- * @param {Record<string, object[]>} [opts.related] — related table → rows
- * @param {object} [opts.actor]
- * @param {string} [opts.notes]
  * @returns {Promise<{ id: string }|null>}
  */
 export async function captureDeletedRecord({
@@ -155,7 +311,7 @@ export async function listRecycleBin({
 }
 
 /**
- * Restore a snapshotted record back into its table (+ related rows).
+ * Restore a snapshotted record back into its table (+ related rows + quarantined media).
  */
 export async function restoreRecycleBinItem(id, actor = null) {
   const { data: item, error: fetchErr } = await supabase
@@ -182,6 +338,9 @@ export async function restoreRecycleBinItem(id, actor = null) {
       `A record with this ID already exists in ${item.table_name}. Restore aborted.`,
     )
   }
+
+  // Restore media first so URLs in the row resolve after insert
+  await restoreQuarantinedFiles(payload)
 
   const { error: insErr } = await supabase.from(item.table_name).insert(row)
   if (insErr) throw insErr
@@ -236,6 +395,9 @@ export async function purgeRecycleBinItem(id, actor = null) {
   if (!item) throw new Error('Snapshot not found')
   if (item.status !== 'deleted') throw new Error('Only active snapshots can be purged')
 
+  const payload = { ...(item.payload || {}), quarantine: { ...(item.payload?.quarantine || {}), snapshotId: id } }
+  await purgeQuarantinedFiles(payload)
+
   await supabase
     .from('cms_recycle_bin')
     .update({
@@ -256,6 +418,17 @@ export async function purgeRecycleBinItem(id, actor = null) {
 }
 
 export async function purgeAllRecycleBin(actor = null) {
+  const { data: items, error: listErr } = await supabase
+    .from('cms_recycle_bin')
+    .select('id, payload')
+    .eq('status', 'deleted')
+  if (listErr) throw listErr
+
+  for (const item of (items || [])) {
+    const payload = { ...(item.payload || {}), quarantine: { ...(item.payload?.quarantine || {}), snapshotId: item.id } }
+    await purgeQuarantinedFiles(payload)
+  }
+
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('cms_recycle_bin')

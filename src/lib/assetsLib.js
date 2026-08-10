@@ -4,7 +4,7 @@
 
 import { supabase } from './supabase'
 import { logCmsAudit } from './cmsAudit'
-import { captureDeletedRecord } from './cmsRecycleBin'
+import { captureDeletedRecord, quarantineStoragePaths } from './cmsRecycleBin'
 
 const ASSET_SELECT = `
   *,
@@ -699,15 +699,19 @@ export async function restoreAsset(id, updatedBy = null) {
 
 export async function hardDeleteAsset(id) {
   const { data: asset } = await supabase.from('assets').select('*').eq('id', id).maybeSingle()
-  await captureDeletedRecord({
+  const snap = await captureDeletedRecord({
     module: 'assets',
     tableName: 'assets',
     recordId: id,
     recordLabel: asset?.description || id,
     row: asset,
   })
-  if (asset?.photo_path) {
-    await supabase.storage.from('asset-photos').remove([asset.photo_path]).catch(() => {})
+  if (asset?.photo_path && snap?.id) {
+    await quarantineStoragePaths({
+      bucket: 'asset-photos',
+      paths: [asset.photo_path],
+      snapshotId: snap.id,
+    }).catch((e) => console.warn('[quarantine] asset photo', e))
   }
   const { error } = await supabase.from('assets').delete().eq('id', id)
   if (error) throw error
