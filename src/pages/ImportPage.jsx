@@ -647,6 +647,8 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     const { data: rootItems } = await adminSupabase.storage.from(bucket).list(rootPath, { limit: 10000 })
     const toDelete = []
     for (const itemRow of (rootItems || [])) {
+      // Protect recycle-bin quarantine media from Flush Data
+      if (itemRow.name === '_quarantine') continue
       if (itemRow.metadata) {
         toDelete.push(rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name)
         continue
@@ -654,6 +656,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       const subPath = rootPath ? `${rootPath}/${itemRow.name}` : itemRow.name
       const { data: subItems } = await adminSupabase.storage.from(bucket).list(subPath, { limit: 10000 })
       for (const f of (subItems || [])) {
+        if (f.name === '_quarantine') continue
         if (f.metadata) toDelete.push(`${subPath}/${f.name}`)
       }
     }
