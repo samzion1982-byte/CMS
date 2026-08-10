@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BookUser, Settings, Plus, Search, Phone, MessageCircle, Mail,
+  BookUser, Settings, Plus, Search, MessageCircle, Mail,
   Loader2, Pencil, Trash2, X, Building2, MapPin, ChevronRight,
   FileSpreadsheet, Lock, Eye, EyeOff,
 } from 'lucide-react'
@@ -53,18 +53,64 @@ function digitsOnly(v) {
   return String(v || '').replace(/\D/g, '')
 }
 
-function telHref(v) {
-  const d = digitsOnly(v)
-  return d ? `tel:${d}` : null
+/** Display 919994073545 → 91-99940 73545 (and similar Indian patterns). */
+function formatDisplayNumber(v) {
+  const raw = String(v || '').trim()
+  const d = digitsOnly(raw)
+  if (!d) return raw
+  if (d.length === 12 && d.startsWith('91')) {
+    return `91-${d.slice(2, 7)} ${d.slice(7)}`
+  }
+  if (d.length === 10) {
+    return `${d.slice(0, 5)} ${d.slice(5)}`
+  }
+  if (d.length === 11 && d.startsWith('0')) {
+    return `${d.slice(0, 1)}-${d.slice(1, 6)} ${d.slice(6)}`
+  }
+  if (d.length > 10 && d.startsWith('91')) {
+    const rest = d.slice(2)
+    if (rest.length === 10) return `91-${rest.slice(0, 5)} ${rest.slice(5)}`
+  }
+  return raw
 }
 
-function waHref(v) {
-  const d = digitsOnly(v)
-  return d ? `https://wa.me/${d}` : null
+/** Opens WhatsApp app when available; otherwise WhatsApp Web / Desktop. */
+function openWhatsApp(e, value) {
+  e?.preventDefault?.()
+  e?.stopPropagation?.()
+  const d = digitsOnly(value)
+  if (!d) return
+  const webUrl = `https://wa.me/${d}`
+  const appUrl = `whatsapp://send?phone=${d}`
+  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')
+
+  if (mobile) {
+    const started = Date.now()
+    let fellBack = false
+    const fallback = () => {
+      if (fellBack) return
+      if (document.visibilityState === 'visible' && Date.now() - started >= 500) {
+        fellBack = true
+        window.open(webUrl, '_blank', 'noopener,noreferrer')
+      }
+    }
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        document.removeEventListener('visibilitychange', onVis)
+        clearTimeout(timer)
+      }
+    }
+    const timer = setTimeout(fallback, 900)
+    document.addEventListener('visibilitychange', onVis)
+    window.location.href = appUrl
+    return
+  }
+
+  window.open(webUrl, '_blank', 'noopener,noreferrer')
 }
 
-/** Primary = whatsapp (green), Secondary = phone (blue). Number only — no WA/Ph text. */
-function NumberChip({ kind, value, href }) {
+/** Primary (green) / Secondary (blue). Both open WhatsApp. Digits formatted for readability. */
+function NumberChip({ kind, value }) {
   const isPrimary = kind === 'primary'
   const style = {
     display: 'inline-flex',
@@ -78,33 +124,24 @@ function NumberChip({ kind, value, href }) {
     color: isPrimary ? '#047857' : '#1d4ed8',
     border: `1px solid ${isPrimary ? '#a7f3d0' : '#bfdbfe'}`,
     whiteSpace: 'nowrap',
+    cursor: 'pointer',
   }
-  const inner = (
-    <>
-      {isPrimary
-        ? <MessageCircle size={14} strokeWidth={2.4} />
-        : <Phone size={14} strokeWidth={2.4} />}
+  return (
+    <button
+      type="button"
+      title="Open in WhatsApp"
+      onClick={(e) => openWhatsApp(e, value)}
+      style={{ ...style, font: 'inherit' }}
+    >
+      <MessageCircle size={14} strokeWidth={2.4} />
       <span style={{
         fontSize: 18, fontWeight: 800, letterSpacing: 0.2,
         fontVariantNumeric: 'tabular-nums',
       }}>
-        {value}
+        {formatDisplayNumber(value)}
       </span>
-    </>
+    </button>
   )
-  if (href) {
-    return (
-      <a
-        href={href}
-        target={isPrimary ? '_blank' : undefined}
-        rel={isPrimary ? 'noreferrer' : undefined}
-        style={style}
-      >
-        {inner}
-      </a>
-    )
-  }
-  return <span style={style}>{inner}</span>
 }
 
 function DeleteContactModal({ contact, onConfirm, onClose }) {
@@ -288,44 +325,28 @@ function ContactModal({ editing, categories, onSave, onClose }) {
         <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>Name *</label>
-            <input style={INPUT} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Person or contact name" autoFocus />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>Organization</label>
-              <input style={INPUT} value={form.organization} onChange={e => set('organization', e.target.value)} placeholder="Office / firm" />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>Title / Role</label>
-              <input style={INPUT} value={form.title} onChange={e => set('title', e.target.value)} placeholder="e.g. Bishop, Contractor" />
-            </div>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 5 }}>Category</label>
-            <select
-              style={{ ...INPUT, appearance: 'none' }}
-              value={form.category_id}
-              onChange={e => set('category_id', e.target.value)}
-            >
-              <option value="">— Select —</option>
-              {catOpts.map(c => (
-                <option key={c.id} value={c.id}>
-                  {'\u00A0'.repeat(c.depth * 2)}{c.name}
-                </option>
-              ))}
-            </select>
+            <input
+              style={INPUT}
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="Person or contact name"
+              autoFocus
+              tabIndex={1}
+            />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#047857', marginBottom: 5 }}>
-                Primary (WhatsApp)
+                Primary number
               </label>
               <input
                 style={{ ...INPUT, borderColor: '#a7f3d0' }}
                 value={form.whatsapp}
                 onChange={e => set('whatsapp', e.target.value)}
-                placeholder="Primary / WhatsApp number"
+                placeholder="e.g. 919994073545"
+                tabIndex={2}
               />
+              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#047857' }}>Opens WhatsApp · can be WhatsApp number</p>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1d4ed8', marginBottom: 5 }}>
@@ -335,13 +356,60 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                 style={{ ...INPUT, borderColor: '#bfdbfe' }}
                 value={form.phone}
                 onChange={e => set('phone', e.target.value)}
-                placeholder="Secondary / alternate number"
+                placeholder="e.g. 919876543210"
+                tabIndex={3}
+              />
+              <p style={{ margin: '4px 0 0', fontSize: 10, color: '#1d4ed8' }}>Opens WhatsApp · can be WhatsApp number</p>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>Organization</label>
+              <input
+                style={INPUT}
+                value={form.organization}
+                onChange={e => set('organization', e.target.value)}
+                placeholder="Office / firm"
+                tabIndex={4}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>Title / Role</label>
+              <input
+                style={INPUT}
+                value={form.title}
+                onChange={e => set('title', e.target.value)}
+                placeholder="e.g. Bishop, Contractor"
+                tabIndex={5}
               />
             </div>
           </div>
           <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 5 }}>Category</label>
+            <select
+              style={{ ...INPUT, appearance: 'none' }}
+              value={form.category_id}
+              onChange={e => set('category_id', e.target.value)}
+              tabIndex={6}
+            >
+              <option value="">— Select —</option>
+              {catOpts.map(c => (
+                <option key={c.id} value={c.id}>
+                  {'\u00A0'.repeat(c.depth * 2)}{c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#b45309', marginBottom: 5 }}>Email</label>
-            <input style={INPUT} type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="email@example.com" />
+            <input
+              style={INPUT}
+              type="email"
+              value={form.email}
+              onChange={e => set('email', e.target.value)}
+              placeholder="email@example.com"
+              tabIndex={7}
+            />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 5 }}>Address</label>
@@ -349,6 +417,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
               value={form.address}
               onChange={e => set('address', e.target.value)}
               rows={2}
+              tabIndex={8}
               style={{ ...INPUT, height: 'auto', padding: '8px 12px', resize: 'vertical', fontFamily: 'inherit' }}
               placeholder="Optional address"
             />
@@ -359,6 +428,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
               value={form.notes}
               onChange={e => set('notes', e.target.value)}
               rows={2}
+              tabIndex={9}
               style={{ ...INPUT, height: 'auto', padding: '8px 12px', resize: 'vertical', fontFamily: 'inherit' }}
               placeholder="Optional notes"
             />
@@ -369,11 +439,11 @@ function ContactModal({ editing, categories, onSave, onClose }) {
           padding: '12px 18px', borderTop: '1px solid var(--card-border)',
           display: 'flex', justifyContent: 'flex-end', gap: 8,
         }}>
-          <button type="button" onClick={onClose}
+          <button type="button" onClick={onClose} tabIndex={10}
             style={{ padding: '8px 14px', borderRadius: 8, border: '1.5px solid var(--card-border)', background: 'transparent', color: 'var(--text-2)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
-          <button type="submit" disabled={saving}
+          <button type="submit" disabled={saving} tabIndex={11}
             style={{
               padding: '8px 16px', borderRadius: 8, border: 'none',
               background: 'var(--sidebar-bg, #1e293b)', color: '#fff',
@@ -470,8 +540,8 @@ const EXPORT_COLUMNS = [
   { header: 'Organization', key: 'organization', align: 'left' },
   { header: 'Title / Role', key: 'title', align: 'left' },
   { header: 'Category', key: 'category', align: 'left' },
-  { header: 'Primary (WhatsApp)', key: 'primary', align: 'center' },
-  { header: 'Secondary', key: 'secondary', align: 'center' },
+  { header: 'Primary number', key: 'primary', align: 'center' },
+  { header: 'Secondary number', key: 'secondary', align: 'center' },
   { header: 'Email', key: 'email', align: 'left' },
   { header: 'Address', key: 'address', align: 'left' },
   { header: 'Notes', key: 'notes', align: 'left' },
@@ -484,8 +554,8 @@ function contactExportRow(c, categories) {
     organization: c.organization || '',
     title: c.title || '',
     category: catRow ? masterDisplayName(catRow, categories) : (c.category?.name || ''),
-    primary: c.whatsapp || '',
-    secondary: c.phone || '',
+    primary: formatDisplayNumber(c.whatsapp || ''),
+    secondary: formatDisplayNumber(c.phone || ''),
     email: c.email || '',
     address: c.address || '',
     notes: c.notes || '',
@@ -701,7 +771,8 @@ export default function DirectoryPage() {
             Export
           </button>
           <button
-            onClick={() => setModal({})}
+            type="button"
+            onClick={() => setModal({ mode: 'add' })}
             style={{
               display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px',
               background: 'var(--sidebar-bg, #1e293b)', color: '#fff', border: 'none', borderRadius: 8,
@@ -792,9 +863,24 @@ export default function DirectoryPage() {
               </div>
             ) : filtered.length === 0 ? (
               <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-                {contacts.length === 0
-                  ? 'No contacts yet. Add your first phone directory entry.'
-                  : 'No contacts match this filter.'}
+                <p style={{ margin: '0 0 14px' }}>
+                  {contacts.length === 0
+                    ? 'No contacts yet. Add your first phone directory entry.'
+                    : 'No contacts match this filter.'}
+                </p>
+                {contacts.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setModal({ mode: 'add' })}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px',
+                      background: 'var(--sidebar-bg, #1e293b)', color: '#fff', border: 'none', borderRadius: 8,
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    <Plus size={14} /> Add Contact
+                  </button>
+                )}
               </div>
             ) : (
               <div>
@@ -807,8 +893,6 @@ export default function DirectoryPage() {
                     : (c.category?.name || '')
                   const primary = c.whatsapp || ''
                   const secondary = c.phone || ''
-                  const primaryHref = primary ? waHref(primary) || telHref(primary) : null
-                  const secondaryHref = secondary ? telHref(secondary) : null
                   const hasBoth = !!(primary && secondary)
                   return (
                     <div
@@ -882,10 +966,10 @@ export default function DirectoryPage() {
                         minWidth: 0,
                       }}>
                         {primary && (
-                          <NumberChip kind="primary" value={primary} href={primaryHref} />
+                          <NumberChip kind="primary" value={primary} />
                         )}
                         {secondary && (
-                          <NumberChip kind="secondary" value={secondary} href={secondaryHref} />
+                          <NumberChip kind="secondary" value={secondary} />
                         )}
                         {!primary && !secondary && (
                           <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
@@ -904,7 +988,7 @@ export default function DirectoryPage() {
                         <button
                           type="button"
                           title="Edit"
-                          onClick={() => setModal(c)}
+                          onClick={() => setModal({ mode: 'edit', ...c })}
                           style={{
                             width: 28, height: 28, borderRadius: 7, border: '1px solid var(--card-border)',
                             background: '#dbeafe', color: '#2563eb', cursor: 'pointer', display: 'grid', placeItems: 'center',
@@ -935,7 +1019,7 @@ export default function DirectoryPage() {
 
       {modal && (
         <ContactModal
-          editing={modal.id ? modal : null}
+          editing={modal.mode === 'edit' || modal.id ? modal : null}
           categories={categories}
           onSave={handleSave}
           onClose={() => setModal(null)}
