@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   Bell, BellOff, Clock, CreditCard, HardDrive, Loader2,
   ShieldAlert, Volume2, VolumeX, X,
@@ -142,7 +141,6 @@ const ALERT_ICON = {
 }
 
 export default function NotificationBell({ g }) {
-  const navigate = useNavigate()
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -282,7 +280,7 @@ export default function NotificationBell({ g }) {
               <button
                 type="button"
                 onClick={toggleSilent}
-                title={silent ? 'Turn sound/alerts on' : 'Silent — hide badge'}
+                title={silent ? 'Turn notifications on' : 'Turn notifications off — hide badge'}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
@@ -293,7 +291,7 @@ export default function NotificationBell({ g }) {
                 }}
               >
                 {silent ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                {silent ? 'Silent' : 'Sound on'}
+                {silent ? 'Notification Off' : 'Notification On'}
               </button>
               <button
                 type="button"
@@ -363,17 +361,6 @@ export default function NotificationBell({ g }) {
                       </div>
 
                       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => { setOpen(false); navigate(a.href) }}
-                          style={{
-                            fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 7,
-                            border: 'none', cursor: 'pointer',
-                            background: sev.icon, color: '#fff',
-                          }}
-                        >
-                          Open
-                        </button>
                         {snoozed ? (
                           <button
                             type="button"
