@@ -12,10 +12,10 @@ export const ALERT_IDS = {
 }
 
 export const SNOOZE_OPTIONS = [
-  { id: '1h', label: '1 hour', ms: 60 * 60 * 1000 },
-  { id: '4h', label: '4 hours', ms: 4 * 60 * 60 * 1000 },
-  { id: 'tomorrow', label: 'Until tomorrow', ms: null }, // computed
   { id: '1d', label: '1 day', ms: 24 * 60 * 60 * 1000 },
+  { id: '2d', label: '2 days', ms: 2 * 24 * 60 * 60 * 1000 },
+  { id: '3d', label: '3 days', ms: 3 * 24 * 60 * 60 * 1000 },
+  { id: '1w', label: '1 week', ms: 7 * 24 * 60 * 60 * 1000 },
 ]
 
 function readJson(key, fallback) {
@@ -55,15 +55,8 @@ export function isAlertSnoozed(alertId, now = Date.now()) {
 
 export function snoozeAlert(alertId, optionId) {
   const opt = SNOOZE_OPTIONS.find((o) => o.id === optionId)
-  if (!opt) return
-  let until
-  if (optionId === 'tomorrow') {
-    const d = new Date()
-    d.setHours(24, 0, 0, 0)
-    until = d.getTime()
-  } else {
-    until = Date.now() + (opt.ms || 0)
-  }
+  if (!opt || !opt.ms) return
+  const until = Date.now() + opt.ms
   const next = { ...getSnoozeMap(), [alertId]: until }
   try {
     localStorage.setItem(SNOOZE_KEY, JSON.stringify(next))
