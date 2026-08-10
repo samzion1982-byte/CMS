@@ -1690,13 +1690,57 @@ function fmtAge(hours) {
   return hours >= 24 ? `${hours / 24} day${hours / 24 !== 1 ? 's' : ''}` : `${hours}h`
 }
 
+/** Count files in a storage bucket (root + one-level subfolders; folders themselves excluded). */
+async function countBucketFiles(bucket) {
+  const { data: rootItems, error } = await adminSupabase.storage
+    .from(bucket).list('', { limit: 10_000 })
+  if (error) return { count: null, error: error.message }
+  let count = 0
+  for (const item of (rootItems || [])) {
+    if (item.metadata) {
+      count++
+      continue
+    }
+    if (item.name.toLowerCase().includes('template')) continue
+    const { data: subItems } = await adminSupabase.storage
+      .from(bucket).list(item.name, { limit: 10_000 })
+    for (const f of (subItems || [])) {
+      if (f.metadata) count++
+    }
+  }
+  return { count, error: null }
+}
+
 function AutoFlushTab() {
   const toast = useToast()
   const [running,  setRunning]  = useState(false)
   const [results,  setResults]  = useState(null)
+  const [counts,   setCounts]   = useState({})   // key → number | null
+  const [countsLoading, setCountsLoading] = useState(true)
   const [lastRun,  setLastRun]  = useState(() => {
     try { return localStorage.getItem('storage_cleanup_last_run') } catch { return null }
   })
+
+  const loadCounts = useCallback(async () => {
+    setCountsLoading(true)
+    const next = {}
+    await Promise.all([
+      ...CLEANUP_RULES.map(async (rule) => {
+        const { count } = await countBucketFiles(rule.bucket)
+        next[rule.bucket] = count
+      }),
+      ...DB_CLEANUP_RULES.map(async (rule) => {
+        const { count, error } = await adminSupabase
+          .from(rule.table)
+          .select('*', { count: 'exact', head: true })
+        next[rule.table] = error ? null : (count ?? 0)
+      }),
+    ])
+    setCounts(next)
+    setCountsLoading(false)
+  }, [])
+
+  useEffect(() => { loadCounts() }, [loadCounts])
 
   async function runCleanup() {
     setRunning(true)
@@ -1816,9 +1860,33 @@ function AutoFlushTab() {
     setLastRun(ts)
     setResults(out)
     setRunning(false)
+    loadCounts()
 
     const total = out.reduce((s, r) => s + r.deleted, 0)
     toast(total > 0 ? `Cleanup done — ${total} item${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing past retention.', 'success')
+  }
+
+  function itemCountBadge(key) {
+    if (countsLoading && counts[key] === undefined) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 500 }}>
+          …
+        </span>
+      )
+    }
+    const n = counts[key]
+    if (n == null) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef2f2', color: '#b91c1c', fontWeight: 500 }}>
+          —
+        </span>
+      )
+    }
+    return (
+      <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>
+        {n} item{n !== 1 ? 's' : ''}
+      </span>
+    )
   }
 
   return (
@@ -1857,7 +1925,10 @@ function AutoFlushTab() {
                 <Camera size={15} style={{ color: '#3b82f6' }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.bucket)}
+                </p>
                 <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rule.bucket}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -1881,7 +1952,10 @@ function AutoFlushTab() {
                 <Database size={15} style={{ color: '#a855f7' }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{rule.label}</p>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.table)}
+                </p>
                 <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>{rule.table} · {rule.dateColumn}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
