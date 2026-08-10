@@ -199,7 +199,7 @@ function DeleteContactModal({ contact, onConfirm, onClose }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
+      position: 'fixed', inset: 0, zIndex: 2100,
       background: 'rgba(0,0,0,0.55)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }} onClick={onClose}>
@@ -337,7 +337,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, zIndex: 80,
+        position: 'fixed', inset: 0, zIndex: 2000,
         background: 'rgba(15,23,42,0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
