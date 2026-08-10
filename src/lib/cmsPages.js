@@ -83,6 +83,7 @@ export const CMS_PERMISSION_TREE = [
     children: [
       { key: 'church-setup', label: 'Church Setup', kind: 'page', match: '/church-setup' },
       { key: 'audit-trail',  label: 'Audit Trail',  kind: 'page', match: '/audit-trail' },
+      { key: 'recycle-bin',  label: 'Recycle Bin',  kind: 'page', match: '/recycle-bin' },
     ],
   },
   {

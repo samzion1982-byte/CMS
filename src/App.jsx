@@ -18,6 +18,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage'
 import AnnouncementsLogPage from './pages/AnnouncementsLogPage'
 import LoginLogsPage from './pages/LoginLogsPage'
 import AuditTrailPage from './pages/AuditTrailPage'
+import RecycleBinPage from './pages/RecycleBinPage'
 import BackupPage from './pages/BackupPage'
 import GoogleDriveCallbackPage from './pages/GoogleDriveCallbackPage'
 import DeclarationPage from './pages/DeclarationPage'
@@ -494,6 +495,10 @@ function AppRoutes() {
       <Route
         path="/audit-trail"
         element={<PrivateRoute><AppLayout><AuditTrailPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/recycle-bin"
+        element={<PrivateRoute><AppLayout><RecycleBinPage /></AppLayout></PrivateRoute>}
       />
       <Route
         path="/backup"
