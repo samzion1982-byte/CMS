@@ -706,7 +706,7 @@ function AssetDetail({ asset, onBack }) {
       {deleteTarget && (
         <MasterPasswordModal
           title="Delete document"
-          message={`Enter the master password to permanently remove “${deleteTarget.title}” from this vault.`}
+          message={`Enter the master password to remove “${deleteTarget.title}”. It will be saved to Recycle Bin (with the file) so you can restore it.`}
           confirmLabel="Delete document"
           onClose={() => setDeleteTarget(null)}
           onConfirm={confirmDeleteDoc}
