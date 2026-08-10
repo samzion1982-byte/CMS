@@ -2802,9 +2802,73 @@ export default function ImportPage() {
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         @keyframes fadeSlideUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         .imp-page { font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif; }
-        .stat-tile { transition: transform 0.15s ease, box-shadow 0.15s ease; }
-        .stat-tile:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-        .imp-tab-btn { transition: all 0.15s ease; }
+        .stat-tile {
+          position: relative;
+          overflow: hidden;
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+        .stat-tile::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image:
+            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.75) 0%, transparent 42%),
+            repeating-linear-gradient(-32deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 6px);
+          pointer-events: none;
+          border-radius: inherit;
+        }
+        .stat-tile::after {
+          content: '';
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          width: 4px;
+          background: var(--tile-accent, #3b82f6);
+          border-radius: 12px 0 0 12px;
+        }
+        .stat-tile:hover {
+          transform: translateY(-3px);
+          box-shadow: var(--tile-shadow-hover, 0 10px 28px rgba(15,23,42,0.1));
+        }
+        .stat-tile > * { position: relative; z-index: 1; }
+        .imp-tab-bar {
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(ellipse at 12% 50%, rgba(59,130,246,0.14) 0%, transparent 55%),
+            radial-gradient(ellipse at 88% 40%, rgba(16,185,129,0.12) 0%, transparent 50%),
+            linear-gradient(135deg, #e8eef7 0%, #eef2f7 45%, #e8f5f0 100%);
+          border: 1px solid #dbe3ee;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(15,23,42,0.04);
+        }
+        .imp-tab-bar::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: repeating-linear-gradient(
+            115deg,
+            transparent,
+            transparent 8px,
+            rgba(255,255,255,0.35) 8px,
+            rgba(255,255,255,0.35) 9px
+          );
+          pointer-events: none;
+          border-radius: inherit;
+          opacity: 0.55;
+        }
+        .imp-tab-btn {
+          position: relative;
+          z-index: 1;
+          transition: all 0.18s ease;
+        }
+        .imp-tab-btn:hover:not(.imp-tab-active) {
+          color: #334155 !important;
+          background: rgba(255,255,255,0.45) !important;
+        }
+        .imp-tab-active {
+          background: linear-gradient(180deg, #ffffff 0%, #f0f7ff 100%) !important;
+          color: #1d4ed8 !important;
+          box-shadow: 0 2px 8px rgba(37,99,235,0.16), inset 0 0 0 1px rgba(147,197,253,0.65) !important;
+        }
         .board-row { transition: background 0.12s ease; }
         .board-row:hover { background: #f8fafc; }
         .flush-btn-row { transition: all 0.15s ease; }
@@ -2837,28 +2901,85 @@ export default function ImportPage() {
             const isTable   = !s.type || s.type === 'table'
             const isDeleted = s.label.toLowerCase().includes('deleted')
             const accent    = isTable
-              ? (isDeleted ? { light:'#fffbeb', border:'#fde68a', text:'#92400e', icon:'#d97706' }
-                           : { light:'#eff6ff', border:'#bfdbfe', text:'#1e40af', icon:'#3b82f6' })
-              : (isDeleted ? { light:'#fdf2f8', border:'#f0abfc', text:'#86198f', icon:'#c026d3' }
-                           : { light:'#f0fdf4', border:'#bbf7d0', text:'#166534', icon:'#22c55e' })
+              ? (isDeleted
+                ? {
+                    bg: 'linear-gradient(155deg, #fffbeb 0%, #fef3c7 48%, #fde68a55 100%)',
+                    border: '#f6d58a',
+                    text: '#92400e',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#fbbf24,#d97706)',
+                    bar: '#f59e0b',
+                    shadow: '0 4px 16px rgba(245,158,11,0.14)',
+                    shadowHover: '0 12px 28px rgba(245,158,11,0.22)',
+                  }
+                : {
+                    bg: 'linear-gradient(155deg, #eff6ff 0%, #dbeafe 48%, #bfdbfe55 100%)',
+                    border: '#93c5fd',
+                    text: '#1e40af',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#60a5fa,#2563eb)',
+                    bar: '#3b82f6',
+                    shadow: '0 4px 16px rgba(37,99,235,0.12)',
+                    shadowHover: '0 12px 28px rgba(37,99,235,0.2)',
+                  })
+              : (isDeleted
+                ? {
+                    bg: 'linear-gradient(155deg, #fff1f2 0%, #ffe4e6 48%, #fecdd355 100%)',
+                    border: '#fda4af',
+                    text: '#9f1239',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#fb7185,#e11d48)',
+                    bar: '#e11d48',
+                    shadow: '0 4px 16px rgba(225,29,72,0.12)',
+                    shadowHover: '0 12px 28px rgba(225,29,72,0.2)',
+                  }
+                : {
+                    bg: 'linear-gradient(155deg, #ecfdf5 0%, #d1fae5 48%, #a7f3d055 100%)',
+                    border: '#6ee7b7',
+                    text: '#065f46',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#34d399,#059669)',
+                    bar: '#10b981',
+                    shadow: '0 4px 16px rgba(16,185,129,0.12)',
+                    shadowHover: '0 12px 28px rgba(16,185,129,0.2)',
+                  })
             return (
               <div key={s.label} className="stat-tile" style={{
-                background:'#fff', border:`1px solid ${accent.border}`,
-                borderRadius:12, padding:'16px 18px',
-                animation:`fadeSlideUp 0.3s ease ${i * 0.05}s both`
+                background: accent.bg,
+                border: `1px solid ${accent.border}`,
+                borderRadius: 12,
+                padding: '16px 18px 16px 20px',
+                boxShadow: accent.shadow,
+                ['--tile-accent']: accent.bar,
+                ['--tile-shadow-hover']: accent.shadowHover,
+                animation: `fadeSlideUp 0.3s ease ${i * 0.05}s both`,
               }}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-                  <div style={{width:28,height:28,borderRadius:7,background:accent.light,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    {isTable ? <Database size={13} style={{color:accent.icon}}/> : <Camera size={13} style={{color:accent.icon}}/>}
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: accent.iconBg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(15,23,42,0.12)',
+                  }}>
+                    {isTable
+                      ? <Database size={13} style={{color: accent.icon}}/>
+                      : <Camera size={13} style={{color: accent.icon}}/>}
                   </div>
                 </div>
                 <p style={{margin:'0 0 3px',fontSize:22,fontWeight:700,color:'#0f172a',lineHeight:1}}>{s.count.toLocaleString()}</p>
-                <p style={{margin:0,fontSize:11,color:accent.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label}</p>
+                <p style={{margin:0,fontSize:11,color:accent.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label}</p>
               </div>
             )
           })}
           {stats.length === 0 && [1,2,3,4].map(i => (
-            <div key={i} className="stat-tile" style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:12,padding:'16px 18px',opacity:0.5}}>
+            <div key={i} className="stat-tile" style={{
+              background: 'linear-gradient(155deg,#f8fafc,#eef2f7)',
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              padding: '16px 18px',
+              opacity: 0.55,
+              ['--tile-accent']: '#cbd5e1',
+            }}>
               <div style={{width:28,height:28,borderRadius:7,background:'#e2e8f0',marginBottom:10}}/>
               <div style={{height:22,width:'60%',background:'#e2e8f0',borderRadius:4,marginBottom:6}}/>
               <div style={{height:11,width:'80%',background:'#e2e8f0',borderRadius:4}}/>
@@ -2872,13 +2993,17 @@ export default function ImportPage() {
           {/* LEFT: import tools */}
           <div>
             {/* Tab bar */}
-            <div style={{display:'flex',gap:4,marginBottom:20,background:'#f1f5f9',padding:4,borderRadius:10,width:'fit-content'}}>
+            <div className="imp-tab-bar" style={{display:'flex',gap:4,marginBottom:20,padding:5,borderRadius:12,width:'fit-content',maxWidth:'100%',flexWrap:'wrap'}}>
               {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap],['coa','Import COA',BookOpen]].map(([id,label,Icon])=>(
-                <button key={id} onClick={()=>setTab(id)} className="imp-tab-btn"
-                  style={{display:'flex',alignItems:'center',gap:7,padding:'7px 16px',fontSize:13,fontWeight:500,borderRadius:7,border:'none',cursor:'pointer',
-                    background: tab===id ? '#fff' : 'transparent',
-                    color:       tab===id ? '#2563eb' : '#64748b',
-                    boxShadow:   tab===id ? '0 1px 4px rgba(0,0,0,0.1)' : 'none'}}>
+                <button key={id} onClick={()=>setTab(id)}
+                  className={'imp-tab-btn' + (tab === id ? ' imp-tab-active' : '')}
+                  style={{
+                    display:'flex', alignItems:'center', gap:7,
+                    padding:'8px 16px', fontSize:13, fontWeight: tab===id ? 600 : 500,
+                    borderRadius:8, border:'none', cursor:'pointer',
+                    background: 'transparent',
+                    color: tab===id ? '#1d4ed8' : '#64748b',
+                  }}>
                   <Icon size={14}/>{label}
                 </button>
               ))}
