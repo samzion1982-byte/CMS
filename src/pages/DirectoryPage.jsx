@@ -57,6 +57,45 @@ function waHref(v) {
   return d ? `https://wa.me/${d}` : null
 }
 
+function NumberChip({ kind, value, href }) {
+  const isWa = kind === 'whatsapp'
+  const icon = isWa
+    ? <MessageCircle size={14} strokeWidth={2.4} />
+    : <Phone size={14} strokeWidth={2.4} />
+  const style = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 10px',
+    borderRadius: 8,
+    textDecoration: 'none',
+    lineHeight: 1.1,
+    background: isWa ? '#ecfdf5' : '#eff6ff',
+    color: isWa ? '#047857' : '#1d4ed8',
+    border: `1px solid ${isWa ? '#a7f3d0' : '#bfdbfe'}`,
+    whiteSpace: 'nowrap',
+  }
+  const inner = (
+    <>
+      {icon}
+      <span style={{
+        fontSize: 9, fontWeight: 800, letterSpacing: 0.35,
+        textTransform: 'uppercase', opacity: 0.72,
+      }}>
+        {isWa ? 'WA' : 'Ph'}
+      </span>
+      <span style={{
+        fontSize: 18, fontWeight: 800, letterSpacing: 0.2,
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {value}
+      </span>
+    </>
+  )
+  if (href) return <a href={href} target={isWa ? '_blank' : undefined} rel={isWa ? 'noreferrer' : undefined} style={style}>{inner}</a>
+  return <span style={style}>{inner}</span>
+}
+
 function ContactModal({ editing, categories, onSave, onClose }) {
   const [form, setForm] = useState(() => editing
     ? {
@@ -516,157 +555,109 @@ export default function DirectoryPage() {
                     ? masterDisplayName(catRow, categories)
                     : (c.category?.name || '')
                   const phoneLink = telHref(c.phone)
+                  const waLink = c.whatsapp ? waHref(c.whatsapp) : null
                   return (
                     <div
                       key={c.id}
+                      className="directory-row"
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '1fr auto',
+                        gridTemplateColumns: 'minmax(0, 1.2fr) minmax(160px, auto) auto',
                         gap: 12,
-                        padding: '14px 16px',
+                        padding: '10px 14px',
                         borderBottom: i < filtered.length - 1 ? '1px solid var(--card-border)' : 'none',
                         alignItems: 'center',
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--text-1)' }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1.25 }}>
                             {c.name}
                           </p>
                           {c.title && (
-                            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{c.title}</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.2 }}>{c.title}</span>
                           )}
                           {catLabel && (
                             <span style={{
-                              fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6,
+                              fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 5,
                               background: 'var(--sidebar-item-active-bg)', color: 'var(--accent)',
+                              lineHeight: 1.3,
                             }}>{catLabel}</span>
                           )}
                         </div>
                         {(c.organization || c.address) && (
-                          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div style={{ marginTop: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
                             {c.organization && (
-                              <span style={{ fontSize: 12, color: 'var(--text-2)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <Building2 size={11} /> {c.organization}
+                              <span style={{ fontSize: 11, color: 'var(--text-2)', display: 'inline-flex', alignItems: 'center', gap: 4, lineHeight: 1.3 }}>
+                                <Building2 size={10} /> {c.organization}
                               </span>
                             )}
                             {c.address && (
-                              <span style={{ fontSize: 12, color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <MapPin size={11} /> {c.address}
+                              <span style={{ fontSize: 11, color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', gap: 4, lineHeight: 1.3 }}>
+                                <MapPin size={10} /> {c.address}
                               </span>
                             )}
                           </div>
                         )}
-
-                        {(c.phone || c.whatsapp) && (
-                          <div style={{
-                            marginTop: 10,
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: 10,
-                            alignItems: 'stretch',
-                          }}>
-                            {c.phone && (
-                              phoneLink ? (
-                                <a href={phoneLink} style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                                  padding: '8px 14px', borderRadius: 10, textDecoration: 'none',
-                                  background: '#eff6ff', color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                }}>
-                                  <Phone size={16} strokeWidth={2.4} />
-                                  <span>
-                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>Phone</span>
-                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.phone}</span>
-                                  </span>
-                                </a>
-                              ) : (
-                                <span style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                                  padding: '8px 14px', borderRadius: 10,
-                                  background: '#eff6ff', color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                }}>
-                                  <Phone size={16} strokeWidth={2.4} />
-                                  <span>
-                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>Phone</span>
-                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.phone}</span>
-                                  </span>
-                                </span>
-                              )
+                        {(c.email || c.notes) && (
+                          <div style={{ marginTop: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {c.email && (
+                              <a href={`mailto:${c.email}`} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content',
+                                padding: '2px 7px', borderRadius: 5, textDecoration: 'none',
+                                background: '#f8fafc', color: 'var(--text-2)', fontSize: 11, fontWeight: 600,
+                                border: '1px solid var(--card-border)', lineHeight: 1.3,
+                              }}>
+                                <Mail size={11} /> {c.email}
+                              </a>
                             )}
-                            {c.whatsapp && (
-                              waHref(c.whatsapp) ? (
-                                <a href={waHref(c.whatsapp)} target="_blank" rel="noreferrer" style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                                  padding: '8px 14px', borderRadius: 10, textDecoration: 'none',
-                                  background: '#ecfdf5', color: '#047857',
-                                  border: '1px solid #a7f3d0',
-                                }}>
-                                  <MessageCircle size={16} strokeWidth={2.4} />
-                                  <span>
-                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>WhatsApp</span>
-                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.whatsapp}</span>
-                                  </span>
-                                </a>
-                              ) : (
-                                <span style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                                  padding: '8px 14px', borderRadius: 10,
-                                  background: '#ecfdf5', color: '#047857',
-                                  border: '1px solid #a7f3d0',
-                                }}>
-                                  <MessageCircle size={16} strokeWidth={2.4} />
-                                  <span>
-                                    <span style={{ display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: 0.4, opacity: 0.75, textTransform: 'uppercase' }}>WhatsApp</span>
-                                    <span style={{ display: 'block', fontSize: 20, fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{c.whatsapp}</span>
-                                  </span>
-                                </span>
-                              )
+                            {c.notes && (
+                              <p style={{ margin: 0, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.3 }}>
+                                {c.notes}
+                              </p>
                             )}
                           </div>
-                        )}
-
-                        {c.email && (
-                          <div style={{ marginTop: 8 }}>
-                            <a href={`mailto:${c.email}`} style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 5,
-                              padding: '5px 10px', borderRadius: 7, textDecoration: 'none',
-                              background: '#f8fafc', color: 'var(--text-2)', fontSize: 12, fontWeight: 600,
-                              border: '1px solid var(--card-border)',
-                            }}>
-                              <Mail size={12} /> {c.email}
-                            </a>
-                          </div>
-                        )}
-                        {c.notes && (
-                          <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.4 }}>
-                            {c.notes}
-                          </p>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignSelf: 'flex-start' }}>
+
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: 4,
+                        alignItems: 'flex-start', justifyContent: 'center',
+                        minWidth: 0,
+                      }}>
+                        {c.phone && (
+                          <NumberChip kind="phone" value={c.phone} href={phoneLink} />
+                        )}
+                        {c.whatsapp && (
+                          <NumberChip kind="whatsapp" value={c.whatsapp} href={waLink} />
+                        )}
+                        {!c.phone && !c.whatsapp && (
+                          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>—</span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 5, flexShrink: 0, alignSelf: 'center' }}>
                         <button
                           type="button"
                           title="Edit"
                           onClick={() => setModal(c)}
                           style={{
-                            width: 32, height: 32, borderRadius: 8, border: '1px solid var(--card-border)',
+                            width: 28, height: 28, borderRadius: 7, border: '1px solid var(--card-border)',
                             background: '#dbeafe', color: '#2563eb', cursor: 'pointer', display: 'grid', placeItems: 'center',
                           }}
                         >
-                          <Pencil size={13} />
+                          <Pencil size={12} />
                         </button>
                         <button
                           type="button"
                           title="Delete"
                           onClick={() => handleDelete(c)}
                           style={{
-                            width: 32, height: 32, borderRadius: 8, border: '1px solid var(--card-border)',
+                            width: 28, height: 28, borderRadius: 7, border: '1px solid var(--card-border)',
                             background: '#fee2e2', color: '#b91c1c', cursor: 'pointer', display: 'grid', placeItems: 'center',
                           }}
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
@@ -691,6 +682,18 @@ export default function DirectoryPage() {
         @media (max-width: 780px) {
           .directory-layout {
             grid-template-columns: 1fr !important;
+          }
+          .directory-row {
+            grid-template-columns: 1fr auto !important;
+          }
+          .directory-row > div:nth-child(2) {
+            grid-column: 1 / 2;
+            grid-row: 2;
+          }
+          .directory-row > div:nth-child(3) {
+            grid-column: 2 / 3;
+            grid-row: 1 / 3;
+            align-self: start;
           }
         }
       `}</style>
