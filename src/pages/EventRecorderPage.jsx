@@ -184,9 +184,9 @@ export default function EventRecorderPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
         <div style={{
           width: 40, height: 40, borderRadius: 10,
-          background: 'linear-gradient(145deg, #1e293b 0%, #334155 100%)',
+          background: 'var(--sidebar-bg, #0d2244)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 12px rgba(15,23,42,0.18)',
+          boxShadow: '0 4px 12px color-mix(in srgb, var(--sidebar-bg, #0d2244) 35%, transparent)',
         }}>
           <BookMarked size={20} color="#fff" />
         </div>
@@ -212,13 +212,13 @@ export default function EventRecorderPage() {
               padding: '9px 20px', fontSize: 13,
               fontWeight: on ? 700 : 550,
               border: 'none',
-              background: on
-                ? 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)'
-                : 'transparent',
+              background: on ? 'var(--sidebar-bg, #0d2244)' : 'transparent',
               color: on ? '#ffffff' : '#64748b',
               cursor: 'pointer', borderRadius: 9,
               transition: 'all 0.18s ease',
-              boxShadow: on ? '0 4px 10px rgba(15,23,42,0.22)' : 'none',
+              boxShadow: on
+                ? '0 4px 10px color-mix(in srgb, var(--sidebar-bg, #0d2244) 30%, transparent)'
+                : 'none',
               letterSpacing: on ? '0.01em' : 0,
             }}>
               {tab.label}
@@ -3690,7 +3690,7 @@ function EventActionBar({
       boxShadow: '0 8px 24px rgba(15,23,42,0.05), inset 0 1px 0 rgba(255,255,255,0.9)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <ActionBtn icon={Plus} label="New" onClick={onNew} color="#334155" disabled={saving} />
+        <ActionBtn icon={Plus} label="New" onClick={onNew} color="#1e3a8a" disabled={saving} />
         <ActionBtn
           icon={saving ? Loader2 : Save}
           label={saving ? 'Saving…' : 'Save'}
