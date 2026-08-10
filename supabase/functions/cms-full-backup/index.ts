@@ -2411,10 +2411,12 @@ serve(async (req) => {
         complete_backup: true,
         version: COMPLETE_VERSION,
         chunked: true,
-        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug', 'list_sources', 'storage_sync'],
+        supports: ['backup', 'backup_continue', 'inspect', 'restore', 'progress', 'debug', 'list_sources', 'storage_sync', 'storage_sync_prune'],
         sync_buckets: 'all',
         sync_all_storage: true,
         sync_root: SYNC_ROOT_NAME,
+        sync_mirror: true,
+        min_prune_version: 7,
       })
     }
 

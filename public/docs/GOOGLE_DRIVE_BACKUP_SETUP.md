@@ -134,7 +134,7 @@ In the **church’s** Supabase project (Dashboard → Edge Functions):
 - Storage: incremental sync under parent folder `cms-storage-sync/<bucket>/…`  
 - Restore, inspect, chunked continue, list_sources, version probe  
 
-**Expected version after deploy:** `5` with `storage_sync` / all-storage sync.
+**Expected version after deploy:** `7` with `storage_sync` / `storage_sync_prune` (Drive is an **exact mirror** of selected Supabase storage buckets: upload new/changed files and **prune** files deleted from Supabase).
 
 ---
 

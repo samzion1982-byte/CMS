@@ -334,6 +334,61 @@ export async function invokeEdgeFunction(name, body = {}) {
   }
 }
 
+/** Probe live Edge Function version (Backup page / preflight). */
+export async function getBackupFunctionVersion() {
+  const invoked = await invokeEdgeFunction('cms-full-backup', { action: 'version' })
+  if (invoked.missing) {
+    return { ok: false, missing: true, version: 0, message: 'cms-full-backup is not deployed' }
+  }
+  if (!invoked.ok) {
+    return {
+      ok: false,
+      missing: false,
+      version: Number(invoked.data?.version) || 0,
+      message: invoked.errorMessage || 'Could not read cms-full-backup version',
+      data: invoked.data,
+    }
+  }
+  const version = Number(invoked.data?.version) || 0
+  const supports = invoked.data?.supports || []
+  // v7+ has prune; also accept explicit storage_sync_prune once deployed
+  const canPrune = version >= 7
+    || supports.includes('storage_sync_prune')
+  return {
+    ok: true,
+    missing: false,
+    version,
+    canPrune,
+    syncMirror: !!invoked.data?.sync_mirror || canPrune,
+    data: invoked.data,
+    message: canPrune
+      ? `cms-full-backup v${version} (Drive mirror + prune OK)`
+      : `cms-full-backup v${version || '?'} cannot prune Drive orphans — redeploy v7+ from repo`,
+  }
+}
+
+/**
+ * When storage buckets are included, require Edge Function v7+ so Drive stays
+ * an exact replica (upload new/changed + prune deleted).
+ */
+export async function assertStorageMirrorReady(storageBuckets) {
+  const wantsStorage = storageBuckets === null
+    || (Array.isArray(storageBuckets) && storageBuckets.length > 0)
+  if (!wantsStorage) return null
+  const info = await getBackupFunctionVersion()
+  if (info.missing) {
+    throw new Error('Edge Function cms-full-backup is not deployed. Deploy it from the repo, then sync again.')
+  }
+  if (!info.canPrune) {
+    throw new Error(
+      `Drive cannot mirror Supabase yet — live cms-full-backup is version ${info.version || '?'}. ` +
+      'Open Supabase → Edge Functions → cms-full-backup, paste supabase/functions/cms-full-backup/index.ts (v7+), Deploy, then run sync again. ' +
+      'Until then deleted storage files stay on Google Drive.',
+    )
+  }
+  return info
+}
+
 /** Quick diagnostics for the Backup page Debug panel. */
 export async function diagnoseBackupSetup() {
   const out = {
@@ -381,13 +436,13 @@ export async function diagnoseBackupSetup() {
     out.hints.push(
       `cms-full-backup version ${out.backupFn.data?.version || '?'} is complete but NOT chunked — redeploy latest to avoid timeout after a few photos.`,
     )
-  } else if (!(out.backupFn.data?.supports || []).includes('storage_sync') || Number(out.backupFn.data?.version) < 7) {
+  } else if (!(out.backupFn.data?.supports || []).includes('storage_sync_prune') || Number(out.backupFn.data?.version) < 7) {
     out.hints.push(
-      `cms-full-backup version ${out.backupFn.data?.version || '?'} — redeploy latest (version 7+) for Drive sync prune of deleted files.`,
+      `cms-full-backup version ${out.backupFn.data?.version || '?'} — redeploy latest (version 7+) so Drive stays an exact mirror (prunes deleted files).`,
     )
   } else {
     out.hints.push(
-      `cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked, all storage sync + prune + verify)`,
+      `cms-full-backup OK (version ${out.backupFn.data?.version || '?'}, chunked, storage mirror sync + prune + verify)`,
     )
   }
   out.hints.push('For restore truncate: run SQL 20260809_cms_complete_backup.sql')
@@ -442,6 +497,9 @@ export async function runDriveBackup({
   if (!settings.google_connected_email) {
     throw new Error('Connect Google first (Backup page → Connect Google).')
   }
+
+  // Storage sync must be able to prune Drive orphans (exact mirror of Supabase)
+  await assertStorageMirrorReady(storageBuckets)
 
   let driveErrorMsg = null
   let progressLogId = null

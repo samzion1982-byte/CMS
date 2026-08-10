@@ -24,6 +24,7 @@ import {
   saveBackupSettings,
   startGoogleOAuthConnect,
   disconnectGoogleOAuth,
+  getBackupFunctionVersion,
 } from '../lib/cmsFullBackup'
 
 const secondaryBtn = {
@@ -690,6 +691,7 @@ export default function BackupPage() {
   })
   const [provRunning, setProvRunning] = useState(false)
   const [provResult, setProvResult] = useState(null)
+  const [fnVersion, setFnVersion] = useState(null)
 
   const loadSettings = useCallback(async () => {
     try {
@@ -700,6 +702,20 @@ export default function BackupPage() {
       toast(e.message || 'Failed to load backup settings', 'error')
     }
   }, [toast])
+
+  const loadFnVersion = useCallback(async () => {
+    try {
+      const info = await getBackupFunctionVersion()
+      setFnVersion(info)
+    } catch (e) {
+      setFnVersion({
+        ok: false,
+        canPrune: false,
+        version: 0,
+        message: e.message || 'Could not read Edge Function version',
+      })
+    }
+  }, [])
 
   const loadLogs = useCallback(async () => {
     setLoadingLogs(true)
@@ -721,7 +737,8 @@ export default function BackupPage() {
     if (!isSuper) return
     loadSettings()
     loadLogs()
-  }, [isSuper, loadSettings, loadLogs])
+    loadFnVersion()
+  }, [isSuper, loadSettings, loadLogs, loadFnVersion])
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
@@ -868,14 +885,16 @@ export default function BackupPage() {
         toast(r.message || `${kind === 'full' ? 'Full Backup' : 'Snapshot'} downloaded locally.`, 'success')
       } else {
         const files = r.storage_file_count != null ? `, ${r.storage_file_count} storage files` : ''
+        const pruned = r.sync_pruned ? `, ${r.sync_pruned} pruned from Drive` : ''
         const label = r.status === 'partial' ? 'Partial' : 'Complete'
         toast(
-          `${label} ${kind === 'full' ? 'Full Backup' : 'Snapshot'} — ${r.tables_count} tables, ${r.rows_count} rows${files} (${formatBytes(r.file_size_bytes)}).`,
+          `${label} ${kind === 'full' ? 'Full Backup' : 'Snapshot'} — ${r.tables_count} tables, ${r.rows_count} rows${files}${pruned} (${formatBytes(r.file_size_bytes)}).`,
           r.status === 'partial' ? 'error' : 'success',
         )
       }
       await loadLogs()
       await loadSettings()
+      await loadFnVersion()
     } catch (e) {
       const msg = e.message || 'Backup failed'
       console.error('[backup-ui] run failed', e)
@@ -1095,6 +1114,33 @@ export default function BackupPage() {
           </a>
         </p>
       </div>
+
+      {fnVersion && !fnVersion.canPrune && (
+        <div style={{
+          marginBottom: 16, padding: '12px 14px', borderRadius: 10,
+          border: '1px solid #fca5a5', background: '#fef2f2', color: '#991b1b',
+          fontSize: 13, lineHeight: 1.5,
+        }}>
+          <strong style={{ display: 'block', marginBottom: 4 }}>
+            Google Drive is not mirroring Supabase yet
+          </strong>
+          Live Edge Function <code>cms-full-backup</code> is version{' '}
+          <strong>{fnVersion.version || '?'}</strong>. Version <strong>7+</strong> is required so sync
+          deletes Drive files that were removed from Supabase (exact replica of all storage buckets).
+          <div style={{ marginTop: 8 }}>
+            Supabase Dashboard → Edge Functions → <code>cms-full-backup</code> → paste repo file{' '}
+            <code>supabase/functions/cms-full-backup/index.ts</code> → Deploy → run storage sync again.
+          </div>
+          <button
+            type="button"
+            className="no-lift"
+            style={{ ...secondaryBtn, marginTop: 10, borderColor: '#fca5a5' }}
+            onClick={loadFnVersion}
+          >
+            <RefreshCw size={13} /> Recheck version
+          </button>
+        </div>
+      )}
 
       {/* 1. Google Drive */}
       <Section
