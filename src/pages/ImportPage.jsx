@@ -30,81 +30,143 @@ const EXCLUDED_TABLES = [
   // Add more here as needed ↓
 ]
 
-/** Flush modal categories — aligned with CMS modules (Members, Events, Accounts…). */
+/** Flush modal categories with optional sub-groups (e.g. Events → Planner / Recorder). */
 const FLUSH_CATEGORIES = [
-  { key: 'members',          label: 'Members',          color: '#2563eb' },
-  { key: 'events',           label: 'Events',           color: '#7c3aed' },
-  { key: 'assets',           label: 'Assets',           color: '#0891b2' },
-  { key: 'receipts',         label: 'Receipts',         color: '#d97706' },
-  { key: 'accounts',         label: 'Accounts',         color: '#4f46e5' },
-  { key: 'simple-accounts',  label: 'Simple Accounts',  color: '#0d9488' },
-  { key: 'declaration',      label: 'Declaration',      color: '#db2777' },
-  { key: 'announcements',    label: 'Announcements',    color: '#ea580c' },
-  { key: 'logs',             label: 'Logs',             color: '#64748b' },
-  { key: 'other',            label: 'Other',            color: '#94a3b8' },
+  {
+    key: 'members', label: 'Members', color: '#2563eb',
+    subs: [
+      { key: 'roster',  label: 'Member Roster',  color: '#3b82f6' },
+      { key: 'photos',  label: 'Member Photos',  color: '#60a5fa' },
+      { key: 'zones',   label: 'Zones & Setup',  color: '#93c5fd' },
+    ],
+  },
+  {
+    key: 'events', label: 'Events', color: '#7c3aed',
+    subs: [
+      { key: 'planner',  label: 'Event Planner',  color: '#8b5cf6' },
+      { key: 'recorder', label: 'Event Recorder', color: '#a78bfa' },
+    ],
+  },
+  {
+    key: 'assets', label: 'Assets', color: '#0891b2',
+    subs: [
+      { key: 'movable', label: 'Movable Assets', color: '#06b6d4' },
+      { key: 'fixed',   label: 'Fixed Assets',   color: '#22d3ee' },
+    ],
+  },
+  {
+    key: 'receipts', label: 'Receipts', color: '#d97706',
+    subs: [
+      { key: 'entry',    label: 'Receipt Entry',    color: '#f59e0b' },
+      { key: 'payments', label: 'Payments & Pages', color: '#fbbf24' },
+      { key: 'files',    label: 'Receipt Files',    color: '#fcd34d' },
+    ],
+  },
+  {
+    key: 'accounts', label: 'Accounts', color: '#4f46e5',
+    subs: [
+      { key: 'coa',     label: 'Chart of Accounts', color: '#6366f1' },
+      { key: 'journal', label: 'Journals & Books',  color: '#818cf8' },
+    ],
+  },
+  {
+    key: 'simple-accounts', label: 'Simple Accounts', color: '#0d9488',
+    subs: [
+      { key: 'data', label: 'Transactions', color: '#14b8a6' },
+    ],
+  },
+  {
+    key: 'declaration', label: 'Declaration', color: '#db2777',
+    subs: [
+      { key: 'data', label: 'Declarations', color: '#ec4899' },
+    ],
+  },
+  {
+    key: 'announcements', label: 'Announcements', color: '#ea580c',
+    subs: [
+      { key: 'data',  label: 'Announcement Data',  color: '#f97316' },
+      { key: 'files', label: 'Announcement Files', color: '#fb923c' },
+    ],
+  },
+  {
+    key: 'logs', label: 'Logs', color: '#64748b',
+    subs: [
+      { key: 'login',    label: 'Login Details',       color: '#78829a' },
+      { key: 'whatsapp', label: 'WhatsApp Receipts',   color: '#8b95a8' },
+      { key: 'payment',  label: 'Payment Req. Log',    color: '#9ea7b6' },
+      { key: 'audit',    label: 'Accounting Audit',    color: '#b0b8c4' },
+    ],
+  },
+  {
+    key: 'other', label: 'Other', color: '#94a3b8',
+    subs: [
+      { key: 'misc', label: 'Miscellaneous', color: '#a8b3c1' },
+    ],
+  },
 ]
 
-const TABLE_FLUSH_CATEGORY = {
-  members: 'members',
-  deleted_members: 'members',
-  member_payment_schedules: 'receipts',
-  member_report_history: 'members',
-  church_zones: 'members',
+/** table → { category, sub } */
+const TABLE_FLUSH_META = {
+  members:                 { category: 'members', sub: 'roster' },
+  deleted_members:         { category: 'members', sub: 'roster' },
+  member_report_history:   { category: 'members', sub: 'roster' },
+  church_zones:            { category: 'members', sub: 'zones' },
 
-  baptism_records: 'events',
-  confirmation_records: 'events',
-  wedding_records: 'events',
-  burial_records: 'events',
-  event_plans: 'events',
-  event_tasks: 'events',
-  event_task_buckets: 'events',
-  event_volunteers: 'events',
-  task_library: 'events',
+  baptism_records:         { category: 'events', sub: 'recorder' },
+  confirmation_records:    { category: 'events', sub: 'recorder' },
+  wedding_records:         { category: 'events', sub: 'recorder' },
+  burial_records:          { category: 'events', sub: 'recorder' },
+  event_plans:             { category: 'events', sub: 'planner' },
+  event_tasks:             { category: 'events', sub: 'planner' },
+  event_task_buckets:      { category: 'events', sub: 'planner' },
+  event_volunteers:        { category: 'events', sub: 'planner' },
+  task_library:            { category: 'events', sub: 'planner' },
 
-  assets: 'assets',
-  asset_locations: 'assets',
-  asset_conditions: 'assets',
-  asset_item_types: 'assets',
-  fixed_assets: 'assets',
-  fixed_asset_documents: 'assets',
+  assets:                  { category: 'assets', sub: 'movable' },
+  asset_locations:         { category: 'assets', sub: 'movable' },
+  asset_conditions:        { category: 'assets', sub: 'movable' },
+  asset_item_types:        { category: 'assets', sub: 'movable' },
+  fixed_assets:            { category: 'assets', sub: 'fixed' },
+  fixed_asset_documents:   { category: 'assets', sub: 'fixed' },
 
-  receipts: 'receipts',
-  receipt_items: 'receipts',
-  receipt_transfer_batches: 'receipts',
-  receipt_financial_years: 'receipts',
-  payment_categories: 'receipts',
-  payment_requests: 'receipts',
-  auction_tracker: 'receipts',
+  receipts:                { category: 'receipts', sub: 'entry' },
+  receipt_items:           { category: 'receipts', sub: 'entry' },
+  receipt_transfer_batches:{ category: 'receipts', sub: 'entry' },
+  receipt_financial_years: { category: 'receipts', sub: 'entry' },
+  payment_categories:      { category: 'receipts', sub: 'entry' },
+  auction_tracker:         { category: 'receipts', sub: 'entry' },
+  member_payment_schedules:{ category: 'receipts', sub: 'payments' },
+  payment_requests:        { category: 'receipts', sub: 'payments' },
 
-  chart_of_accounts: 'accounts',
-  journal_entries: 'accounts',
-  journal_entry_lines: 'accounts',
-  journal_templates: 'accounts',
-  account_balances: 'accounts',
-  budgets: 'accounts',
-  bank_accounts: 'accounts',
-  funds: 'accounts',
+  chart_of_accounts:       { category: 'accounts', sub: 'coa' },
+  funds:                   { category: 'accounts', sub: 'coa' },
+  bank_accounts:           { category: 'accounts', sub: 'coa' },
+  budgets:                 { category: 'accounts', sub: 'coa' },
+  journal_entries:         { category: 'accounts', sub: 'journal' },
+  journal_entry_lines:     { category: 'accounts', sub: 'journal' },
+  journal_templates:       { category: 'accounts', sub: 'journal' },
+  account_balances:        { category: 'accounts', sub: 'journal' },
 
-  simple_accounts: 'simple-accounts',
-  simple_categories: 'simple-accounts',
-  simple_transactions: 'simple-accounts',
+  simple_accounts:         { category: 'simple-accounts', sub: 'data' },
+  simple_categories:       { category: 'simple-accounts', sub: 'data' },
+  simple_transactions:     { category: 'simple-accounts', sub: 'data' },
 
-  declarations: 'declaration',
-  declaration_items: 'declaration',
-  decl_financial_years: 'declaration',
+  declarations:            { category: 'declaration', sub: 'data' },
+  declaration_items:       { category: 'declaration', sub: 'data' },
+  decl_financial_years:    { category: 'declaration', sub: 'data' },
 
-  announcements_log: 'announcements',
-  announcement_exclusions: 'announcements',
+  announcements_log:       { category: 'announcements', sub: 'data' },
+  announcement_exclusions: { category: 'announcements', sub: 'data' },
 
-  login_logs: 'logs',
-  payment_request_logs: 'logs',
-  whatsapp_receipt_logs: 'logs',
-  accounting_audit_log: 'logs',
-  cms_recycle_bin: 'other',
+  login_logs:              { category: 'logs', sub: 'login' },
+  whatsapp_receipt_logs:   { category: 'logs', sub: 'whatsapp' },
+  payment_request_logs:    { category: 'logs', sub: 'payment' },
+  accounting_audit_log:    { category: 'logs', sub: 'audit' },
+  cms_recycle_bin:         { category: 'other', sub: 'misc' },
 }
 
-function flushCategoryForTable(tbl) {
-  return TABLE_FLUSH_CATEGORY[tbl] || 'other'
+function flushMetaForTable(tbl) {
+  return TABLE_FLUSH_META[tbl] || { category: 'other', sub: 'misc' }
 }
 
 // ── COLUMN MAPPING — exact Excel column order, position-only, no name parsing ─
@@ -465,7 +527,7 @@ function PasswordModal({ open, onClose }) {
 
 // ── Flush All Modal — queries live tables & buckets, checkbox selection ───────
 function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast }) {
-  const [items, setItems]       = useState([])   // { id, label, type, checked, count, category }
+  const [items, setItems]       = useState([])   // { id, label, type, checked, count, category, sub }
   const [loading, setLoading]   = useState(false)
   const [flushing, setFlushing] = useState(false)
   const [progress, setProgress] = useState('')
@@ -473,7 +535,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   useEffect(() => { if (open) loadItems() }, [open])
 
   async function countStorageFiles(bucket, folder) {
-    // folder null/'' = root; also walks one level of subfolders (e.g. event-media)
     const rootPath = folder || ''
     const { data: rootItems, error } = await adminSupabase.storage
       .from(bucket).list(rootPath, { limit: 10000 })
@@ -495,7 +556,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     setLoading(true)
     const discovered = []
 
-    // ── 1. Tables ────────────────────────────────────────────────────────────
     let knownTables = ['members']
     try {
       const { data: tables } = await supabase.rpc('get_user_tables')
@@ -507,46 +567,55 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
     await Promise.all(knownTables.map(async (tbl) => {
       try {
         const { count, error } = await adminSupabase.from(tbl).select('*', { count: 'exact', head: true })
-        if (!error) discovered.push({
-          id: `table::${tbl}`,
-          label: tbl,
-          type: 'table',
-          count: count || 0,
-          checked: false,
-          category: flushCategoryForTable(tbl),
-        })
+        if (!error) {
+          const meta = flushMetaForTable(tbl)
+          discovered.push({
+            id: `table::${tbl}`,
+            label: tbl,
+            type: 'table',
+            count: count || 0,
+            checked: false,
+            category: meta.category,
+            sub: meta.sub,
+          })
+        }
       } catch (_) {}
     }))
 
-    // ── 2. Storage buckets / folders ─────────────────────────────────────────
     const KNOWN_STORAGE = [
-      { bucket: 'member-photos',       folder: 'active',  label: 'Photos — Active Members',  category: 'members' },
-      { bucket: 'member-photos',       folder: 'deleted', label: 'Photos — Deleted Members', category: 'members' },
-      { bucket: 'event-media',         folder: '',        label: 'Event Media',              category: 'events' },
-      { bucket: 'asset-photos',        folder: '',        label: 'Asset Photos',             category: 'assets' },
-      { bucket: 'receipt-pdfs',        folder: '',        label: 'Receipt PDFs',             category: 'receipts' },
-      { bucket: 'payment-pages',       folder: '',        label: 'Payment Pages',            category: 'receipts' },
-      { bucket: 'announcement-cards',  folder: '',        label: 'Announcement Cards',       category: 'announcements' },
-      { bucket: 'announcement-reports',folder: '',        label: 'Announcement Reports',     category: 'announcements' },
-      { bucket: 'family-records',      folder: '',        label: 'Family Records',           category: 'members' },
+      { bucket: 'member-photos',        folder: 'active',  label: 'Photos — Active Members',  category: 'members',       sub: 'photos' },
+      { bucket: 'member-photos',        folder: 'deleted', label: 'Photos — Deleted Members', category: 'members',       sub: 'photos' },
+      { bucket: 'family-records',       folder: '',        label: 'Family Records',           category: 'members',       sub: 'roster' },
+      { bucket: 'event-media',          folder: '',        label: 'Event Media',              category: 'events',        sub: 'recorder' },
+      { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos',             category: 'assets',        sub: 'movable' },
+      { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs',             category: 'receipts',      sub: 'files' },
+      { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
+      { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
+      { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
     ]
-    await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category }) => {
+    await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category, sub }) => {
       try {
         const { count, error } = await countStorageFiles(bucket, folder)
         if (error) return
         const id = folder ? `storage::${bucket}::${folder}` : `storage::${bucket}::`
         discovered.push({
-          id, label, type: 'storage', count: count || 0, checked: false, category,
+          id, label, type: 'storage', count: count || 0, checked: false, category, sub,
         })
       } catch (_) {}
     }))
 
-    // Stable order: category order, then label
     const catOrder = Object.fromEntries(FLUSH_CATEGORIES.map((c, i) => [c.key, i]))
+    const subOrder = {}
+    for (const c of FLUSH_CATEGORIES) {
+      ;(c.subs || []).forEach((s, i) => { subOrder[`${c.key}::${s.key}`] = i })
+    }
     discovered.sort((a, b) => {
       const ca = catOrder[a.category] ?? 999
       const cb = catOrder[b.category] ?? 999
       if (ca !== cb) return ca - cb
+      const sa = subOrder[`${a.category}::${a.sub}`] ?? 999
+      const sb = subOrder[`${b.category}::${b.sub}`] ?? 999
+      if (sa !== sb) return sa - sb
       return a.label.localeCompare(b.label)
     })
 
@@ -562,6 +631,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   }
   function toggleCategory(category, val) {
     setItems(prev => prev.map(it => it.category === category ? { ...it, checked: val } : it))
+  }
+  function toggleSub(category, sub, val) {
+    setItems(prev => prev.map(it => (it.category === category && it.sub === sub) ? { ...it, checked: val } : it))
   }
 
   async function flushStorageItem(item) {
@@ -603,7 +675,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         setProgress(`Flushing ${item.label}…`)
         if (item.type === 'table') {
           const tbl = item.id.replace('table::', '')
-          // Use adminSupabase (service role) to bypass RLS on all tables.
           const { error } = await adminSupabase.from(tbl).delete().not('id', 'is', null)
           if (error) {
             console.error(`[flush] error on ${tbl}:`, error)
@@ -645,29 +716,40 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   const allChecked = items.length > 0 && items.every(i => i.checked)
   const anyChecked = items.some(i => i.checked)
   const categoryGroups = FLUSH_CATEGORIES
-    .map(cat => ({
-      ...cat,
-      items: items.filter(i => i.category === cat.key),
-    }))
+    .map(cat => {
+      const catItems = items.filter(i => i.category === cat.key)
+      const subs = (cat.subs || [])
+        .map(sub => ({
+          ...sub,
+          items: catItems.filter(i => i.sub === sub.key),
+        }))
+        .filter(s => s.items.length > 0)
+      const knownSubs = new Set((cat.subs || []).map(s => s.key))
+      const orphans = catItems.filter(i => !knownSubs.has(i.sub))
+      if (orphans.length) {
+        subs.push({ key: '_other', label: 'Other', color: cat.color, items: orphans })
+      }
+      return { ...cat, items: catItems, subs }
+    })
     .filter(g => g.items.length > 0)
 
   function FlushItem({ item, accent }) {
     const isStorage = item.type === 'storage'
     const checkedBorder = accent || '#bfdbfe'
-    const checkedBg = accent ? `${accent}14` : '#eff6ff'
+    const checkedBg = accent ? `${accent}18` : '#eff6ff'
     return (
       <label style={{
-        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
+        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
         border: `1px solid ${item.checked ? checkedBorder : '#e2e8f0'}`,
-        marginBottom: 6, cursor: 'pointer',
+        marginBottom: 5, cursor: 'pointer',
         background: item.checked ? checkedBg : '#ffffff',
       }}>
         <input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)}
           style={{ width: 14, height: 14, accentColor: accent || '#2563eb', flexShrink: 0 }} />
         {isStorage
-          ? <Camera size={13} style={{ color: '#64748b', flexShrink: 0 }} />
-          : <Database size={13} style={{ color: '#64748b', flexShrink: 0 }} />}
-        <span style={{ flex: 1, fontSize: 13, color: '#0f172a', fontFamily: 'var(--font-mono)' }}>{item.label}</span>
+          ? <Camera size={13} style={{ color: accent || '#64748b', flexShrink: 0 }} />
+          : <Database size={13} style={{ color: accent || '#64748b', flexShrink: 0 }} />}
+        <span style={{ flex: 1, fontSize: 12.5, color: '#0f172a', fontFamily: 'var(--font-mono)' }}>{item.label}</span>
         <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>
           {item.count.toLocaleString()} {isStorage ? 'files' : 'rows'}
         </span>
@@ -678,9 +760,8 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
   return ReactDOM.createPortal(
     <>
       <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 2999 }} onClick={!flushing ? onClose : undefined} />
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'calc(100% - 48px)', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 3000, overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'calc(100% - 48px)', maxWidth: 540, maxHeight: '82vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 3000, overflow: 'hidden' }}>
 
-        {/* Header */}
         <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid #e2e8f0' }}>
           <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 500, color: '#0f172a' }}>Flush data</p>
           <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
@@ -688,7 +769,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           </p>
         </div>
 
-        {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
           {loading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 0', color: '#64748b', fontSize: 13 }}>
@@ -704,36 +784,87 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
               {categoryGroups.map(group => {
                 const allCatChecked = group.items.every(i => i.checked)
                 return (
-                  <div key={group.key} style={{ marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: group.color }} />
-                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: group.color }}>
+                  <div
+                    key={group.key}
+                    style={{
+                      marginBottom: 18,
+                      borderRadius: 12,
+                      border: `1.5px solid ${group.color}55`,
+                      background: `linear-gradient(180deg, ${group.color}12 0%, ${group.color}06 40%, #fff 100%)`,
+                      overflow: 'hidden',
+                      boxShadow: `0 1px 0 ${group.color}22`,
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      background: group.color,
+                      color: '#fff',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em' }}>
                           {group.label}
                         </span>
-                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
+                          background: 'rgba(255,255,255,0.22)',
+                        }}>
                           {group.items.length}
                         </span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#64748b' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.92)' }}>
                         <input
                           type="checkbox"
                           checked={allCatChecked}
                           onChange={e => toggleCategory(group.key, e.target.checked)}
-                          style={{ width: 12, height: 12, accentColor: group.color }}
+                          style={{ width: 12, height: 12, accentColor: '#fff' }}
                         />
                         Select all
                       </label>
                     </div>
-                    <div style={{
-                      borderRadius: 10,
-                      border: `1px solid ${group.color}40`,
-                      padding: '4px 6px',
-                      background: `${group.color}08`,
-                    }}>
-                      {group.items.map(item => (
-                        <FlushItem key={item.id} item={item} accent={group.color} />
-                      ))}
+
+                    <div style={{ padding: '10px 10px 8px' }}>
+                      {group.subs.map((sub, idx) => {
+                        const allSubChecked = sub.items.every(i => i.checked)
+                        return (
+                          <div
+                            key={sub.key}
+                            style={{
+                              marginBottom: idx === group.subs.length - 1 ? 0 : 12,
+                              paddingLeft: 10,
+                              borderLeft: `3px solid ${sub.color}`,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: sub.color }}>
+                                  {sub.label}
+                                </span>
+                                <span style={{ fontSize: 10, color: '#94a3b8' }}>{sub.items.length}</span>
+                              </div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10, color: '#64748b' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allSubChecked}
+                                  onChange={e => toggleSub(group.key, sub.key, e.target.checked)}
+                                  style={{ width: 11, height: 11, accentColor: sub.color }}
+                                />
+                                Select all
+                              </label>
+                            </div>
+                            <div style={{
+                              borderRadius: 9,
+                              border: `1px solid ${sub.color}35`,
+                              padding: '4px 5px',
+                              background: `${sub.color}0d`,
+                            }}>
+                              {sub.items.map(item => (
+                                <FlushItem key={item.id} item={item} accent={sub.color} />
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -742,7 +873,6 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           )}
         </div>
 
-        {/* Footer */}
         <div style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           {flushing
             ? <p style={{ margin: 0, fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
