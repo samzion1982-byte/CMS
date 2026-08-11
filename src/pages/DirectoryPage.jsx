@@ -529,7 +529,7 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                   style={INPUT}
                   value={form.organization}
                   onChange={e => set('organization', e.target.value)}
-                  placeholder="Office / firm"
+                  placeholder="Zion Solutions"
                   tabIndex={3}
                 />
               </div>
