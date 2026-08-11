@@ -43,6 +43,19 @@ const EMPTY = {
   notes: '',
 }
 
+const ORG_TYPES = [
+  'Firm',
+  'Office',
+  'Vendor',
+  'Agency',
+  'Diocese',
+  'Government',
+  'School',
+  'Hospital',
+  'Bank',
+  'Others',
+]
+
 const INPUT = {
   width: '100%', height: 36, padding: '0 12px',
   border: '1.5px solid var(--card-border)', borderRadius: 8,
@@ -404,14 +417,14 @@ function ContactModal({ editing, categories, onSave, onClose }) {
             style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6,
               padding: 4, borderRadius: 10,
-              background: 'var(--sidebar-item-active-bg, #f1f5f9)',
+              background: 'color-mix(in srgb, var(--sidebar-bg, #1e293b) 8%, #fff)',
               border: '1px solid var(--card-border)',
             }}
           >
             {[
-              { id: 'person', label: 'Person', Icon: User, color: '#7c3aed' },
-              { id: 'organisation', label: 'Organisation', Icon: Building2, color: '#0369a1' },
-            ].map(({ id, label, Icon, color }) => {
+              { id: 'person', label: 'Person', Icon: User },
+              { id: 'organisation', label: 'Organisation', Icon: Building2 },
+            ].map(({ id, label, Icon }) => {
               const on = form.contact_kind === id
               return (
                 <button
@@ -421,10 +434,10 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                     padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                    background: on ? '#fff' : 'transparent',
-                    color: on ? color : 'var(--text-3)',
+                    background: on ? 'var(--sidebar-bg, #1e293b)' : 'transparent',
+                    color: on ? '#fff' : 'var(--text-2)',
                     fontSize: 13, fontWeight: 800,
-                    boxShadow: on ? '0 1px 3px rgba(15,23,42,0.12)' : 'none',
+                    boxShadow: on ? '0 1px 4px rgba(15,23,42,0.2)' : 'none',
                   }}
                 >
                   <Icon size={15} /> {label}
@@ -452,23 +465,31 @@ function ContactModal({ editing, categories, onSave, onClose }) {
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 5 }}>
                   Type
                 </label>
-                <input
-                  style={INPUT}
+                <select
+                  style={{ ...INPUT, appearance: 'none' }}
                   value={form.organization}
                   onChange={e => set('organization', e.target.value)}
-                  placeholder="e.g. Firm, Vendor, Office"
                   tabIndex={2}
-                />
+                >
+                  <option value="">— Select —</option>
+                  {ORG_TYPES.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                  {/* Keep custom legacy values selectable if not in list */}
+                  {form.organization && !ORG_TYPES.includes(form.organization) && (
+                    <option value={form.organization}>{form.organization}</option>
+                  )}
+                </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 5 }}>
-                  Title / Role
+                  Contact Name
                 </label>
                 <input
                   style={INPUT}
                   value={form.title}
                   onChange={e => set('title', e.target.value)}
-                  placeholder="Optional contact person / role"
+                  placeholder="Person to contact"
                   tabIndex={3}
                 />
               </div>
@@ -1141,7 +1162,7 @@ export default function DirectoryPage() {
                         )}
                       </div>
 
-                      {/* Middle: notes — medium-big font */}
+                      {/* Middle: notes — medium-big font; blank when empty */}
                       <div style={{ minWidth: 0, padding: '0 4px' }}>
                         {c.notes ? (
                           <p style={{
@@ -1154,9 +1175,7 @@ export default function DirectoryPage() {
                           }}>
                             {c.notes}
                           </p>
-                        ) : (
-                          <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Numbers top/bottom */}
