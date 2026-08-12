@@ -35,19 +35,7 @@ create table if not exists public.cms_schema_migrations (
   applied_at timestamptz not null default now()
 );
 
-create or replace function public.is_super_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid() and p.role = 'super_admin'
-  );
-$$;
-
+-- Tables first (is_super_admin references profiles)
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
@@ -67,6 +55,19 @@ create table if not exists public.churches (
   name text,
   created_at timestamptz default now()
 );
+
+create or replace function public.is_super_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'super_admin'
+  );
+$$;
 
 create table if not exists public.cms_backup_settings (
   id int primary key default 1 check (id = 1),
@@ -151,19 +152,53 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // 1) Schema bootstrap via direct Postgres
-    const connStr = `postgresql://postgres:${encodeURIComponent(dbPassword)}@db.${ref}.supabase.co:5432/postgres`
-    const sql = postgres(connStr, { ssl: 'require', max: 1 })
-    try {
-      await sql.unsafe(BOOTSTRAP_SQL)
-      steps.push('Bootstrap schema applied (profiles, churches, backup tables, is_super_admin)')
-      // Optional extra SQL from client (concatenated migrations)
-      if (body.extra_sql && typeof body.extra_sql === 'string' && body.extra_sql.trim()) {
-        await sql.unsafe(body.extra_sql)
-        steps.push('Extra migration SQL applied')
+    // 1) Schema bootstrap via Postgres (prefer pooler — Edge often cannot reach db.* IPv6 direct)
+    const pw = encodeURIComponent(dbPassword)
+    const connCandidates = [
+      `postgresql://postgres.${ref}:${pw}@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres`,
+      `postgresql://postgres.${ref}:${pw}@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres`,
+      `postgresql://postgres.${ref}:${pw}@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`,
+      `postgresql://postgres:${pw}@db.${ref}.supabase.co:5432/postgres`,
+    ]
+    let sql: ReturnType<typeof postgres> | null = null
+    let connStr = ''
+    let lastPgErr: Error | null = null
+    for (const candidate of connCandidates) {
+      const client = postgres(candidate, { ssl: 'require', max: 1, connect_timeout: 8 })
+      try {
+        await client`select 1`
+        sql = client
+        connStr = candidate
+        break
+      } catch (e) {
+        lastPgErr = e instanceof Error ? e : new Error(String(e))
+        try { await client.end({ timeout: 1 }) } catch { /* ignore */ }
       }
-    } finally {
-      await sql.end({ timeout: 5 })
+    }
+    if (sql) {
+      steps.push(`Postgres connected (${connStr.includes('pooler') ? 'pooler' : 'direct'})`)
+      try {
+        await sql.unsafe(BOOTSTRAP_SQL)
+        steps.push('Bootstrap schema applied (profiles, churches, backup tables, is_super_admin)')
+        if (body.extra_sql && typeof body.extra_sql === 'string' && body.extra_sql.trim()) {
+          await sql.unsafe(body.extra_sql)
+          steps.push('Extra migration SQL applied')
+        }
+      } finally {
+        await sql.end({ timeout: 5 })
+      }
+    } else {
+      // Bootstrap may already have been applied in SQL Editor — continue if profiles exists
+      const { error: probeErr } = await target.from('profiles').select('id').limit(1)
+      if (probeErr && /does not exist|Could not find the table/i.test(probeErr.message || '')) {
+        throw new Error(
+          `Postgres connection failed and profiles table is missing. Last error: ${lastPgErr?.message || 'unknown'}. ` +
+            'Run the bootstrap SQL in the target project SQL Editor first, then retry Initialize.',
+        )
+      }
+      steps.push(
+        `Skipped live Postgres bootstrap (connection failed: ${lastPgErr?.message || 'unknown'}). Continuing with buckets + Super Admin.`,
+      )
     }
 
     // 2) Storage buckets
@@ -226,16 +261,18 @@ serve(async (req) => {
     }
 
     // Mark migration bootstrap
-    try {
-      const sql2 = postgres(connStr, { ssl: 'require', max: 1 })
+    if (connStr) {
       try {
-        await sql2.unsafe(
-          `insert into public.cms_schema_migrations (id) values ('bootstrap-v1') on conflict (id) do nothing`,
-        )
-      } finally {
-        await sql2.end({ timeout: 5 })
-      }
-    } catch (_) { /* ignore */ }
+        const sql2 = postgres(connStr, { ssl: 'require', max: 1 })
+        try {
+          await sql2.unsafe(
+            `insert into public.cms_schema_migrations (id) values ('bootstrap-v1') on conflict (id) do nothing`,
+          )
+        } finally {
+          await sql2.end({ timeout: 5 })
+        }
+      } catch (_) { /* ignore */ }
+    }
 
     return json({
       ok: true,

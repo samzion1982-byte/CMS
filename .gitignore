@@ -11,3 +11,6 @@ supabase/.temp
 Auction Report*.xlsx
 *.xlsx.bak
 
+# Local ops dumps / one-off SQL (may contain secrets)
+artifacts/
+
