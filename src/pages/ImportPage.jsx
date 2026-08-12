@@ -1,0 +1,3281 @@
+import { useState, useRef, useEffect, useCallback } from 'react'
+import ReactDOM from 'react-dom'
+import { supabase, adminSupabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
+import { useToast } from '../lib/toast'
+import { Upload, FileSpreadsheet, CheckCircle, Loader2, RefreshCw, Camera, Trash2, Database, ShieldAlert, AlertTriangle, Zap, XCircle, Clock, IndianRupee, BookOpen, X, BookUser } from 'lucide-react'
+import { getActiveCategories } from '../lib/paymentCategories'
+import { useEntity } from '../lib/EntityContext'
+import { getChartOfAccounts, TYPE_COLOR } from '../lib/accountingLib'
+import {
+  RECYCLE_BIN_RETENTION_DAYS,
+  purgeExpiredRecycleBinItems,
+} from '../lib/cmsRecycleBin'
+import {
+  getDirectoryCategories,
+  normalizeDirectoryPhone,
+  resolveDirectoryCategoryId,
+  bulkImportDirectoryContacts,
+} from '../lib/directoryLib'
+import MasterPasswordInput from '../components/MasterPasswordInput'
+
+// ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
+// Add any table names here that should never appear in the Flush All modal
+// or the stats tiles. These are system/config tables not managed by imports.
+const EXCLUDED_TABLES = [
+  'migration_history',
+  'members_staging',
+  'lookups',
+  'profiles',
+  'churches',
+  'auth_tracker',
+  'cms_user_passwords',
+  'cms_role_page_access',
+  'cms_backup_settings',
+  'cms_backup_log',
+  'announcement_settings',
+  'bible_verses',
+  'accounting_entities',
+  'user_devices',
+  // Add more here as needed ↓
+]
+
+/** Flush modal categories with optional sub-groups (e.g. Events → Planner / Recorder). */
+const FLUSH_CATEGORIES = [
+  {
+    key: 'members', label: 'Members', color: '#2563eb',
+    subs: [
+      { key: 'roster',  label: 'Member Roster',  color: '#3b82f6' },
+      { key: 'photos',  label: 'Member Photos',  color: '#60a5fa' },
+      { key: 'zones',   label: 'Zones & Setup',  color: '#93c5fd' },
+    ],
+  },
+  {
+    key: 'directory', label: 'Phone Directory', color: '#0f766e',
+    subs: [
+      { key: 'contacts',   label: 'Contacts',   color: '#14b8a6' },
+      { key: 'categories', label: 'Categories', color: '#2dd4bf' },
+    ],
+  },
+  {
+    key: 'events', label: 'Events', color: '#7c3aed',
+    subs: [
+      { key: 'planner',  label: 'Event Planner',  color: '#8b5cf6' },
+      { key: 'recorder', label: 'Event Recorder', color: '#a78bfa' },
+    ],
+  },
+  {
+    key: 'assets', label: 'Assets', color: '#0891b2',
+    subs: [
+      { key: 'movable',   label: 'Movable Assets', color: '#06b6d4' },
+      { key: 'fixed',     label: 'Fixed Assets',   color: '#22d3ee' },
+      { key: 'documents', label: 'Documents',      color: '#67e8f9' },
+    ],
+  },
+  {
+    key: 'receipts', label: 'Receipts', color: '#d97706',
+    subs: [
+      { key: 'entry',    label: 'Receipt Entry',    color: '#f59e0b' },
+      { key: 'payments', label: 'Payments & Pages', color: '#fbbf24' },
+      { key: 'files',    label: 'Receipt Files',    color: '#fcd34d' },
+    ],
+  },
+  {
+    key: 'accounts', label: 'Accounts', color: '#4f46e5',
+    subs: [
+      { key: 'coa',     label: 'Chart of Accounts', color: '#6366f1' },
+      { key: 'journal', label: 'Journals & Books',  color: '#818cf8' },
+    ],
+  },
+  {
+    key: 'simple-accounts', label: 'Simple Accounts', color: '#0d9488',
+    subs: [
+      { key: 'data', label: 'Transactions', color: '#14b8a6' },
+    ],
+  },
+  {
+    key: 'declaration', label: 'Declaration', color: '#db2777',
+    subs: [
+      { key: 'data', label: 'Declarations', color: '#ec4899' },
+    ],
+  },
+  {
+    key: 'announcements', label: 'Announcements', color: '#ea580c',
+    subs: [
+      { key: 'data',  label: 'Announcement Data',  color: '#f97316' },
+      { key: 'files', label: 'Announcement Files', color: '#fb923c' },
+    ],
+  },
+  {
+    key: 'logs', label: 'Logs', color: '#64748b',
+    subs: [
+      { key: 'login',    label: 'Login Details',       color: '#78829a' },
+      { key: 'whatsapp', label: 'WhatsApp Receipts',   color: '#8b95a8' },
+      { key: 'payment',  label: 'Payment Req. Log',    color: '#9ea7b6' },
+      { key: 'audit',    label: 'Accounting Audit',    color: '#b0b8c4' },
+      { key: 'cms-audit', label: 'Audit Trail',        color: '#64748b' },
+    ],
+  },
+  {
+    key: 'other', label: 'Other', color: '#94a3b8',
+    subs: [
+      { key: 'misc', label: 'Miscellaneous', color: '#a8b3c1' },
+    ],
+  },
+]
+
+/** table → { category, sub } */
+const TABLE_FLUSH_META = {
+  members:                 { category: 'members', sub: 'roster' },
+  deleted_members:         { category: 'members', sub: 'roster' },
+  member_report_history:   { category: 'members', sub: 'roster' },
+  church_zones:            { category: 'members', sub: 'zones' },
+
+  baptism_records:         { category: 'events', sub: 'recorder' },
+  confirmation_records:    { category: 'events', sub: 'recorder' },
+  wedding_records:         { category: 'events', sub: 'recorder' },
+  burial_records:          { category: 'events', sub: 'recorder' },
+  event_plans:             { category: 'events', sub: 'planner' },
+  event_tasks:             { category: 'events', sub: 'planner' },
+  event_task_buckets:      { category: 'events', sub: 'planner' },
+  event_volunteers:        { category: 'events', sub: 'planner' },
+  task_library:            { category: 'events', sub: 'planner' },
+
+  assets:                  { category: 'assets', sub: 'movable' },
+  asset_locations:         { category: 'assets', sub: 'movable' },
+  asset_conditions:        { category: 'assets', sub: 'movable' },
+  asset_item_types:        { category: 'assets', sub: 'movable' },
+  fixed_assets:            { category: 'assets', sub: 'fixed' },
+  fixed_asset_documents:   { category: 'assets', sub: 'fixed' },
+  church_document_categories: { category: 'assets', sub: 'documents' },
+  church_documents:        { category: 'assets', sub: 'documents' },
+
+  receipts:                { category: 'receipts', sub: 'entry' },
+  receipt_items:           { category: 'receipts', sub: 'entry' },
+  receipt_transfer_batches:{ category: 'receipts', sub: 'entry' },
+  receipt_financial_years: { category: 'receipts', sub: 'entry' },
+  payment_categories:      { category: 'receipts', sub: 'entry' },
+  auction_tracker:         { category: 'receipts', sub: 'entry' },
+  member_payment_schedules:{ category: 'receipts', sub: 'payments' },
+  payment_requests:        { category: 'receipts', sub: 'payments' },
+
+  chart_of_accounts:       { category: 'accounts', sub: 'coa' },
+  funds:                   { category: 'accounts', sub: 'coa' },
+  bank_accounts:           { category: 'accounts', sub: 'coa' },
+  budgets:                 { category: 'accounts', sub: 'coa' },
+  journal_entries:         { category: 'accounts', sub: 'journal' },
+  journal_entry_lines:     { category: 'accounts', sub: 'journal' },
+  journal_templates:       { category: 'accounts', sub: 'journal' },
+  account_balances:        { category: 'accounts', sub: 'journal' },
+
+  simple_accounts:         { category: 'simple-accounts', sub: 'data' },
+  simple_categories:       { category: 'simple-accounts', sub: 'data' },
+  simple_transactions:     { category: 'simple-accounts', sub: 'data' },
+
+  declarations:            { category: 'declaration', sub: 'data' },
+  declaration_items:       { category: 'declaration', sub: 'data' },
+  decl_financial_years:    { category: 'declaration', sub: 'data' },
+
+  announcements_log:       { category: 'announcements', sub: 'data' },
+  announcement_exclusions: { category: 'announcements', sub: 'data' },
+
+  directory_contacts:      { category: 'directory', sub: 'contacts' },
+  directory_categories:    { category: 'directory', sub: 'categories' },
+
+  login_logs:              { category: 'logs', sub: 'login' },
+  whatsapp_receipt_logs:   { category: 'logs', sub: 'whatsapp' },
+  payment_request_logs:    { category: 'logs', sub: 'payment' },
+  accounting_audit_log:    { category: 'logs', sub: 'audit' },
+  cms_audit_log:           { category: 'logs', sub: 'cms-audit' },
+  cms_recycle_bin:         { category: 'other', sub: 'misc' },
+}
+
+function flushMetaForTable(tbl) {
+  return TABLE_FLUSH_META[tbl] || { category: 'other', sub: 'misc' }
+}
+
+/**
+ * Child tables first so Flush All does not hit FK violations mid-wipe.
+ * Lower number = deleted earlier. Unknown tables default to 50.
+ */
+const FLUSH_TABLE_ORDER = {
+  receipt_items: 10,
+  declaration_items: 10,
+  journal_entry_lines: 10,
+  fixed_asset_documents: 10,
+  event_tasks: 10,
+  event_volunteers: 12,
+  event_task_buckets: 14,
+  directory_contacts: 10,
+  church_documents: 10,
+  simple_transactions: 10,
+  receipts: 20,
+  declarations: 20,
+  journal_entries: 20,
+  fixed_assets: 20,
+  event_plans: 20,
+  directory_categories: 20,
+  church_document_categories: 20,
+  simple_categories: 20,
+  simple_accounts: 22,
+  baptism_records: 30,
+  confirmation_records: 30,
+  wedding_records: 30,
+  burial_records: 30,
+  assets: 30,
+  chart_of_accounts: 40,
+  cms_recycle_bin: 90,
+}
+
+function flushTableSortKey(item) {
+  if (item.type !== 'table') return 100
+  const tbl = item.id.replace('table::', '')
+  return FLUSH_TABLE_ORDER[tbl] ?? 50
+}
+
+// ── COLUMN MAPPING — exact Excel column order, position-only, no name parsing ─
+// Col:  A          B           C       D             E          F
+// Pos:  0          1           2       3             4          5
+//       FamilyID   MemberID    Title   MemberName    Fname      Gender
+//
+// Col:  G          H     I    J     K            L
+// Pos:  6          7     8    9     10           11
+//       Aadhar     DOB   Age  DOBC  Is_Married   DOM
+//
+// Col:  M       N       O        P        Q         R         S     T
+// Pos:  12      13      14       15       16        17        18    19
+//       Dummy1  Dummy2  Spouse   Address  Address1  Address2  City  State
+//
+// Col:  U       V            W       X          Y
+// Pos:  20      21           22      23         24
+//       Dummy3  Zonal Area   Mobile  Whatsapp   Email
+//
+// Col:  Z               AA          AB      AC      AD      AE
+// Pos:  25              26          27      28      29      30
+//       Qualification   Profession  Sector  Dummy4  Dummy5  Dummy6
+//
+// Col:  AF          AG         AH             AI          AJ
+// Pos:  31          32         33             34          35
+//       Converted   FHStatus   Relationship   MemStatus   Church
+//
+// Col:  AK            AL        AM            AN      AO           AP
+// Pos:  36             37        38            39      40           41
+//       Denomination  Mem_Year  Is_Baptised   DOBapt  Is_Confirm   DOC
+//
+// Col:  AQ      AR      AS      AT      AU        AV
+// Pos:  42      43      44      45      46        47
+//       Dummy7  Dummy8  Dummy9  Dummy10 Is_FBRF   Photo
+//
+// Col:  AW                   AX                    AY                   AZ
+// Pos:  48                   49                    50                   51
+//       Ch1-Men's Fellowship Ch2-Women's Fellowship Ch3-Youth Association Ch4-Sunday School
+//
+// Col:  BA      BB                      BC                  BD     BE    BF             BG
+// Pos:  52      53                      54                  55     56    57             58
+//       Ch5-Choir Ch6-Pastorate Comm.  Ch7-Village Ministry Ch8-DCC Ch9-DC Ch10-Volunteers Ch11-Others
+//
+// Col:  BH      BI      BJ      BK      BL              BM
+// Pos:  59      60      61      62      63              64
+//       Dummy11 Dummy12 Dummy13 Dummy14 Old Member ID   Reason
+//
+// Col:  BN          BO           ... (all ignored)
+// Pos:  65          66
+//       Timestamp   Modified by
+//
+const POS_MAP = {
+   0: 'family_id',
+   1: 'member_id',
+   2: 'title',
+   3: 'member_name',
+   4: 'father_name',
+   5: 'gender',
+   6: 'aadhaar',
+   7: 'dob_actual',
+   8: 'age',
+   9: 'dob_certificate',
+  10: 'marital_status',
+  11: 'date_of_marriage',
+  12: null,                      // Dummy1
+  13: null,                      // Dummy2
+  14: 'spouse_name',
+  15: 'address_street',
+  16: 'area_1',
+  17: 'area_2',
+  18: 'city',
+  19: 'state',
+  20: null,                      // Dummy3
+  21: 'zonal_area',
+  22: 'mobile',
+  23: 'whatsapp',
+  24: 'email',
+  25: 'qualification',
+  26: 'profession',
+  27: 'working_sector',
+  28: null,                      // Dummy4
+  29: null,                      // Dummy5
+  30: null,                      // Dummy6
+  31: 'is_first_gen_christian',  // Converted
+  32: 'is_family_head',          // FHStatus
+  33: 'relationship_with_fh',    // Relationship
+  34: 'membership_type',         // MemStatus
+  35: 'primary_church_name',     // Church
+  36: 'denomination',
+  37: 'membership_from_year',    // Mem_Year
+  38: 'baptism_type',            // Is_Baptised
+  39: 'baptism_date',            // DOBapt
+  40: 'confirmation_taken',      // Is_Confirm
+  41: 'confirmation_date',       // DOC
+  42: null,                      // Dummy7
+  43: null,                      // Dummy8
+  44: null,                      // Dummy9
+  45: null,                      // Dummy10
+  46: 'is_fbrf_member',          // Is_FBRF
+  47: 'photo_url',               // Photo — in SKIP, never written
+  48: 'act_mens_fellowship',     // Ch1-Men's Fellowship
+  49: 'act_womens_fellowship',   // Ch2-Women's Fellowship
+  50: 'act_youth_association',   // Ch3-Youth Association
+  51: 'act_sunday_school',       // Ch4-Sunday School
+  52: 'act_choir',               // Ch5-Choir
+  53: 'act_pastorate_committee', // Ch6-Pastorate Committee
+  54: 'act_village_ministry',    // Ch7-Village Ministry
+  55: 'act_dcc',                 // Ch8-DCC
+  56: 'act_dc',                  // Ch9-DC
+  57: 'act_volunteers',          // Ch10-Volunteers
+  58: 'act_others',              // Ch11-Others
+  59: null,                      // Dummy11
+  60: null,                      // Dummy12
+  61: null,                      // Dummy13
+  62: null,                      // Dummy14
+  63: 'old_member_id',
+  64: 'change_reason',
+  // 65+ = Timestamp, Modified by, Dummy15-19, Family ID Helper — all ignored
+}
+
+const SKIP     = ['photo_url', 'last_modified_at', 'last_modified_by']
+const ACT_COLS = [
+  'act_mens_fellowship','act_womens_fellowship','act_youth_association',
+  'act_sunday_school','act_choir','act_pastorate_committee',
+  'act_village_ministry','act_dcc','act_dc','act_volunteers','act_others'
+]
+const DATE_COLS = ['dob_actual','dob_certificate','date_of_marriage','baptism_date','confirmation_date']
+
+// ── mapHeader: POSITION ONLY — header names are irrelevant ───────────────────
+// Returns the DB column name for a given column index, or null to skip.
+function mapHeader(idx) {
+  return POS_MAP[idx] ?? null
+}
+
+function cleanVal(val, dbCol) {
+  if (val===null||val===undefined||val==='') return null
+  const s = String(val).trim(); if (!s) return null
+  if (ACT_COLS.includes(dbCol)) return (s&&s!=='0'&&s.toLowerCase()!=='false'&&s.toLowerCase()!=='no')
+  if (DATE_COLS.includes(dbCol)) {
+    // ── Handle JS Date objects directly ───────────────────────────────────
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const dateStr = val.toISOString().split('T')[0]
+      if (isValidDateForField(dateStr, dbCol)) return dateStr
+      console.warn(`[cleanVal] Date object rejected as future/invalid for ${dbCol}:`, dateStr)
+      return null
+    }
+    
+    // ── Try ISO string format first (YYYY-MM-DD) ──────────────────────────
+    const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (isoMatch) {
+      const [, y, m, d] = isoMatch
+      const year = parseInt(y, 10), month = parseInt(m, 10), day = parseInt(d, 10)
+      if (isValidYMD(year, month, day)) {
+        const dateStr = formatYMD(year, month, day)
+        if (isValidDateForField(dateStr, dbCol)) {
+          console.log(`[cleanVal] Parsed ISO date for ${dbCol}:`, s, '→', dateStr)
+          return dateStr
+        }
+        console.warn(`[cleanVal] ISO date rejected for ${dbCol}:`, s)
+      }
+    }
+    
+    // ── Handle Excel numeric date format (days since 1899-12-30) ──────────
+    // Only accept reasonable ranges: year 1900-2100
+    const num = Number(val)
+    if (!isNaN(num) && num > 0 && num < 73050) { // 73050 ≈ 2099-12-31
+      const excelEpoch = new Date(1899, 11, 30)
+      const date = new Date(excelEpoch.getTime() + num * 24 * 60 * 60 * 1000)
+      if (!isNaN(date.getTime())) {
+        const dateStr = date.toISOString().split('T')[0]
+        if (isValidDateForField(dateStr, dbCol)) {
+          console.log(`[cleanVal] Parsed Excel numeric date for ${dbCol}:`, num, '→', dateStr)
+          return dateStr
+        }
+        console.warn(`[cleanVal] Excel date rejected for ${dbCol}:`, dateStr)
+      }
+    }
+    
+    // ── Parse manual date strings with explicit format detection ──────────
+    const parts = s.split(/[-\/\s]+/)
+    if (parts.length === 3) {
+      const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11}
+      const p0 = parts[0].trim()
+      const p1 = parts[1].trim()
+      const p2 = parts[2].trim()
+
+      // Try month-name format (e.g., "28-Jun-2026", "Jun-28-2026", etc.)
+      const monthIdx = months[p1.toLowerCase().substring(0,3)]
+      if (monthIdx !== undefined) {
+        // Month name in p1: try day-month-year or month-day-year pattern
+        const day = parseInt(p0, 10)
+        const year = parseInt(p2, 10)
+        if (isValidYMD(year, monthIdx + 1, day)) {
+          const dateStr = formatYMD(year, monthIdx + 1, day)
+          if (isValidDateForField(dateStr, dbCol)) {
+            console.log(`[cleanVal] Parsed month-name date for ${dbCol}:`, s, '→', dateStr)
+            return dateStr
+          }
+        }
+      }
+
+      // Try numeric date formats
+      const a = parseInt(p0, 10)
+      const b = parseInt(p1, 10)
+      const c = parseInt(p2, 10)
+      if (!Number.isNaN(a) && !Number.isNaN(b) && !Number.isNaN(c)) {
+        const isYear1st = p0.length === 4
+        // Slash separator = US M/D format; dash/dot/space = Indian D/M format
+        const usSlash = s.indexOf('/') !== -1 && s.indexOf('-') === -1 && s.indexOf('.') === -1
+
+        if (isYear1st) {
+          // YYYY-MM-DD
+          const year = a
+          if (isValidYMD(year, b, c)) {
+            const dateStr = formatYMD(year, b, c)
+            if (isValidDateForField(dateStr, dbCol)) return dateStr
+          }
+          if (c <= 12 && isValidYMD(year, c, b)) {
+            const dateStr = formatYMD(year, c, b)
+            if (isValidDateForField(dateStr, dbCol)) return dateStr
+          }
+        } else {
+          // ?-?-YY or ?-?-YYYY — expand 2-digit year across full range
+          const year = p2.length <= 2 ? (c < 30 ? c + 2000 : c + 1900) : c
+
+          // Unambiguous: b > 12 → b is the day, a is month (M/D)
+          if (b > 12 && isValidYMD(year, a, b)) {
+            const dateStr = formatYMD(year, a, b)
+            if (isValidDateForField(dateStr, dbCol)) return dateStr
+          }
+          // Unambiguous: a > 12 → a is the day, b is month (D/M)
+          if (a > 12 && isValidYMD(year, b, a)) {
+            const dateStr = formatYMD(year, b, a)
+            if (isValidDateForField(dateStr, dbCol)) return dateStr
+          }
+          // Ambiguous (both ≤ 12): slash = M/D first, dash/dot = D/M first
+          if (usSlash) {
+            if (isValidYMD(year, a, b)) {
+              const dateStr = formatYMD(year, a, b)
+              if (isValidDateForField(dateStr, dbCol)) return dateStr
+            }
+            if (isValidYMD(year, b, a)) {
+              const dateStr = formatYMD(year, b, a)
+              if (isValidDateForField(dateStr, dbCol)) return dateStr
+            }
+          } else {
+            if (isValidYMD(year, b, a)) {
+              const dateStr = formatYMD(year, b, a)
+              if (isValidDateForField(dateStr, dbCol)) return dateStr
+            }
+            if (isValidYMD(year, a, b)) {
+              const dateStr = formatYMD(year, a, b)
+              if (isValidDateForField(dateStr, dbCol)) return dateStr
+            }
+          }
+        }
+      }
+    }
+    if (s) console.warn(`[cleanVal] Failed to parse date for ${dbCol}:`, s)
+    return null
+  }
+  if (dbCol==='age') return parseInt(s)||null
+  return s
+}
+
+// Helper: Validate year-month-day components
+function isValidYMD(year, month, day) {
+  if (year < 1900 || year > 2100) return false
+  if (month < 1 || month > 12) return false
+  if (day < 1 || day > 31) return false
+  // Additional validation: check days in month
+  const daysInMonth = [31, (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= daysInMonth[month - 1]
+}
+
+// Helper: Format as YYYY-MM-DD
+function formatYMD(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// Helper: Validate date makes sense for the field (e.g., DOB not in future)
+function isValidDateForField(dateStr, dbCol) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const dateObj = new Date(dateStr + 'T00:00:00Z')
+  
+  // DOB-related fields should not be in the future
+  if (dbCol.includes('dob') || dbCol === 'baptism_date' || dbCol === 'confirmation_date') {
+    if (dateObj > today) return false
+  }
+  
+  return !isNaN(dateObj.getTime())
+}
+
+
+// ── Password Modal (eye toggle, used only for Flush All) ─────────────────────
+let _passwordModalResolve = null
+function askPassword(setModalState) {
+  return new Promise(resolve => {
+    _passwordModalResolve = resolve
+    setModalState(true)
+  })
+}
+function PasswordModal({ open, onClose }) {
+  const [pw, setPw] = useState('')
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  if (!open) return null
+  async function submit() {
+    if (!pw) return
+    setBusy(true); setErr('')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) { setErr('Session error. Please log in again.'); setBusy(false); return }
+    const { error } = await supabase.auth.signInWithPassword({ email: user.email, password: pw })
+    setBusy(false)
+    if (error) { setErr('Incorrect password. Please try again.'); return }
+    onClose()
+    if (_passwordModalResolve) { _passwordModalResolve(true); _passwordModalResolve = null }
+  }
+  function cancel() {
+    onClose()
+    if (_passwordModalResolve) { _passwordModalResolve(false); _passwordModalResolve = null }
+  }
+  return ReactDOM.createPortal(
+    <>
+      <div style={{position:'fixed',inset:0,backgroundColor:'rgba(15,23,42,0.7)',backdropFilter:'blur(4px)',WebkitBackdropFilter:'blur(4px)',zIndex:4999}} onClick={cancel}/>
+      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'calc(100% - 48px)',maxWidth:340,backgroundColor:'#ffffff',borderRadius:12,border:'1px solid #e2e8f0',padding:'24px',boxShadow:'0 25px 50px -12px rgba(0,0,0,0.5)',zIndex:5000}}>
+        <p style={{margin:'0 0 4px',fontSize:15,fontWeight:500,color:'#0f172a'}}>Confirm identity</p>
+        <p style={{margin:'0 0 16px',fontSize:12,color:'#64748b'}}>Enter your login password to proceed</p>
+        <div style={{position:'relative',marginBottom:err?8:16}}>
+          <MasterPasswordInput className="pw-no-reveal" showPlain={show} value={pw}
+            onChange={e=>{setPw(e.target.value);setErr('')}}
+            onKeyDown={e=>e.key==='Enter'&&submit()}
+            placeholder="Password" autoFocus
+            style={{width:'100%',boxSizing:'border-box',padding:'8px 36px 8px 10px',fontSize:13,border:'1px solid #cbd5e1',borderRadius:8,background:'#f8fafc',color:'#0f172a',outline:'none'}}/>
+          <button onClick={()=>setShow(s=>!s)}
+            style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:'#94a3b8',padding:2,display:'flex',alignItems:'center'}}>
+            {show
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+          </button>
+        </div>
+        {err && <p style={{margin:'0 0 12px',fontSize:11,color:'#dc2626'}}>{err}</p>}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={cancel} style={{fontSize:12,padding:'6px 14px',border:'1px solid #e2e8f0',borderRadius:8,background:'none',color:'#64748b',cursor:'pointer'}}>Cancel</button>
+          <button onClick={submit} disabled={!pw||busy}
+            style={{fontSize:12,padding:'6px 14px',border:'none',borderRadius:8,background:'#2563eb',color:'#fff',cursor:'pointer',opacity:(!pw||busy)?0.5:1}}>
+            {busy?'Verifying…':'Confirm'}
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// ── Flush All Modal — queries live tables & buckets, checkbox selection ───────
+function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast }) {
+  const [items, setItems]       = useState([])   // { id, label, type, checked, count, category, sub }
+  const [loading, setLoading]   = useState(false)
+  const [flushing, setFlushing] = useState(false)
+  const [progress, setProgress] = useState('')
+
+  useEffect(() => { if (open) loadItems() }, [open])
+
+  async function countStorageFiles(bucket, folder) {
+    // Recursive count so nested paths (incl. _quarantine/{id}/…) are included for fresh-setup Flush
+    const rootPath = folder || ''
+    let count = 0
+    async function walk(dir) {
+      const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
+      if (error || !data?.length) return
+      for (const item of data) {
+        if (item.name === '.emptyFolderPlaceholder') continue
+        const full = dir ? `${dir}/${item.name}` : item.name
+        if (item.metadata || item.id) count++
+        else await walk(full)
+      }
+    }
+    try {
+      await walk(rootPath)
+      return { count, error: null }
+    } catch (e) {
+      return { count: null, error: e.message || String(e) }
+    }
+  }
+
+  async function loadItems() {
+    setLoading(true)
+    const discovered = []
+
+    let knownTables = ['members']
+    try {
+      const { data: tables } = await supabase.rpc('get_user_tables')
+      if (tables?.length) {
+        knownTables = tables.map(t => t.table_name).filter(n => !EXCLUDED_TABLES.includes(n))
+      }
+    } catch (_) {}
+
+    await Promise.all(knownTables.map(async (tbl) => {
+      try {
+        const { count, error } = await adminSupabase.from(tbl).select('*', { count: 'exact', head: true })
+        if (!error) {
+          const meta = flushMetaForTable(tbl)
+          discovered.push({
+            id: `table::${tbl}`,
+            label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)'
+              : tbl === 'cms_audit_log' ? 'Audit Trail (cms_audit_log)'
+              : tbl,
+            type: 'table',
+            count: count || 0,
+            checked: false,
+            category: meta.category,
+            sub: meta.sub,
+          })
+        }
+      } catch (_) {}
+    }))
+
+    const KNOWN_STORAGE = [
+      { bucket: 'member-photos',        folder: 'active',  label: 'Photos — Active Members',  category: 'members',       sub: 'photos' },
+      { bucket: 'member-photos',        folder: 'deleted', label: 'Photos — Deleted Members', category: 'members',       sub: 'photos' },
+      { bucket: 'family-records',       folder: '',        label: 'Family Records',           category: 'members',       sub: 'roster' },
+      { bucket: 'event-media',          folder: '',        label: 'Event Media (incl. quarantine)',     category: 'events',        sub: 'recorder' },
+      { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos (incl. quarantine)',    category: 'assets',        sub: 'movable' },
+      { bucket: 'fixed-asset-docs',     folder: '',        label: 'Fixed Asset Docs (incl. quarantine)', category: 'assets',       sub: 'fixed' },
+      { bucket: 'church-documents',     folder: '',        label: 'Church Documents (incl. quarantine)', category: 'assets',       sub: 'documents' },
+      { bucket: 'church-logos',         folder: '',        label: 'Church Logos',              category: 'other',         sub: 'misc' },
+      { bucket: 'member-reports',       folder: '',        label: 'Member Reports',            category: 'members',       sub: 'roster' },
+      { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs (incl. quarantine)',    category: 'receipts',      sub: 'files' },
+      { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
+      { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
+      { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
+    ]
+    await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category, sub }) => {
+      try {
+        const { count, error } = await countStorageFiles(bucket, folder)
+        if (error) return
+        const id = folder ? `storage::${bucket}::${folder}` : `storage::${bucket}::`
+        discovered.push({
+          id, label, type: 'storage', count: count || 0, checked: false, category, sub,
+        })
+      } catch (_) {}
+    }))
+
+    const catOrder = Object.fromEntries(FLUSH_CATEGORIES.map((c, i) => [c.key, i]))
+    const subOrder = {}
+    for (const c of FLUSH_CATEGORIES) {
+      ;(c.subs || []).forEach((s, i) => { subOrder[`${c.key}::${s.key}`] = i })
+    }
+    discovered.sort((a, b) => {
+      const ca = catOrder[a.category] ?? 999
+      const cb = catOrder[b.category] ?? 999
+      if (ca !== cb) return ca - cb
+      const sa = subOrder[`${a.category}::${a.sub}`] ?? 999
+      const sb = subOrder[`${b.category}::${b.sub}`] ?? 999
+      if (sa !== sb) return sa - sb
+      return a.label.localeCompare(b.label)
+    })
+
+    setItems(discovered)
+    setLoading(false)
+  }
+
+  function toggle(id) {
+    setItems(prev => prev.map(it => it.id === id ? { ...it, checked: !it.checked } : it))
+  }
+  function toggleAll(val) {
+    setItems(prev => prev.map(it => ({ ...it, checked: val })))
+  }
+  function toggleCategory(category, val) {
+    setItems(prev => prev.map(it => it.category === category ? { ...it, checked: val } : it))
+  }
+  function toggleSub(category, sub, val) {
+    setItems(prev => prev.map(it => (it.category === category && it.sub === sub) ? { ...it, checked: val } : it))
+  }
+
+  async function flushStorageItem(item) {
+    const parts = item.id.split('::')
+    const bucket = parts[1]
+    const folder = parts[2] || ''
+    const rootPath = folder
+    // Recursive collect — includes _quarantine/{snapshotId}/… for fresh-setup wipes
+    const toDelete = []
+    async function walk(dir) {
+      const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
+      if (error || !data?.length) return
+      for (const itemRow of data) {
+        if (itemRow.name === '.emptyFolderPlaceholder') continue
+        const full = dir ? `${dir}/${itemRow.name}` : itemRow.name
+        if (itemRow.metadata || itemRow.id) toDelete.push(full)
+        else await walk(full)
+      }
+    }
+    await walk(rootPath)
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const chunk = toDelete.slice(i, i + 100)
+      const { error } = await adminSupabase.storage.from(bucket).remove(chunk)
+      if (error) throw new Error(`${item.label}: ${error.message}`)
+    }
+  }
+
+  async function doFlush() {
+    const selected = items.filter(it => it.checked)
+    if (selected.length === 0) { toast('Select at least one item to flush.', 'error'); return }
+
+    const ok = await askPassword(setPasswordModal)
+    if (!ok) return
+
+    setFlushing(true)
+    const skipped = []
+    try {
+      const ordered = [...selected].sort((a, b) => flushTableSortKey(a) - flushTableSortKey(b))
+      for (const item of ordered) {
+        setProgress(`Flushing ${item.label}…`)
+        if (item.type === 'table') {
+          const tbl = item.id.replace('table::', '')
+          const { error } = await adminSupabase.from(tbl).delete().not('id', 'is', null)
+          if (error) {
+            console.error(`[flush] error on ${tbl}:`, error)
+            const msg = error.message?.toLowerCase() ?? ''
+            const isNotFound = error.code === '42P01' || error.code === 'PGRST116' ||
+              msg.includes('does not exist') ||
+              error.details?.includes('404') || String(error.code) === '404'
+            if (isNotFound) {
+              skipped.push(item.label)
+            } else {
+              throw new Error(`${tbl}: ${error.message} (code: ${error.code})`)
+            }
+          }
+          // Fresh setup: wiping recycle-bin rows also clears leftover quarantine media
+          if (tbl === 'cms_recycle_bin') {
+            for (const bucket of ['event-media', 'asset-photos', 'receipt-pdfs', 'fixed-asset-docs', 'church-documents']) {
+              const toDelete = []
+              async function walk(dir) {
+                const { data } = await adminSupabase.storage.from(bucket).list(dir, { limit: 10000 })
+                for (const row of (data || [])) {
+                  if (row.name === '.emptyFolderPlaceholder') continue
+                  const full = `${dir}/${row.name}`
+                  if (row.metadata || row.id) toDelete.push(full)
+                  else await walk(full)
+                }
+              }
+              await walk('_quarantine')
+              for (let i = 0; i < toDelete.length; i += 100) {
+                await adminSupabase.storage.from(bucket).remove(toDelete.slice(i, i + 100))
+              }
+            }
+          }
+        } else {
+          await flushStorageItem(item)
+        }
+      }
+      await supabase.from('migration_history')
+        .update({ status: 'flushed', flushed_at: new Date().toISOString() })
+        .neq('status', 'flushed')
+
+      const done = selected.length - skipped.length
+      if (skipped.length > 0) {
+        toast(`${done} item${done !== 1 ? 's' : ''} flushed. Skipped: ${skipped.join(', ')} (table not found in database).`, 'warning')
+      } else {
+        toast(`${done} item${done !== 1 ? 's' : ''} flushed successfully.`, 'success')
+      }
+      onDone()
+      onClose()
+    } catch (err) {
+      toast(`Flush failed: ${err.message}`, 'error')
+    } finally {
+      setFlushing(false); setProgress('')
+    }
+  }
+
+  if (!open) return null
+
+  const allChecked = items.length > 0 && items.every(i => i.checked)
+  const anyChecked = items.some(i => i.checked)
+  const categoryGroups = FLUSH_CATEGORIES
+    .map(cat => {
+      const catItems = items.filter(i => i.category === cat.key)
+      const subs = (cat.subs || [])
+        .map(sub => ({
+          ...sub,
+          items: catItems.filter(i => i.sub === sub.key),
+        }))
+        .filter(s => s.items.length > 0)
+      const knownSubs = new Set((cat.subs || []).map(s => s.key))
+      const orphans = catItems.filter(i => !knownSubs.has(i.sub))
+      if (orphans.length) {
+        subs.push({ key: '_other', label: 'Other', color: cat.color, items: orphans })
+      }
+      return { ...cat, items: catItems, subs }
+    })
+    .filter(g => g.items.length > 0)
+
+  function FlushItem({ item, accent }) {
+    const isStorage = item.type === 'storage'
+    const checkedBorder = accent || '#bfdbfe'
+    const checkedBg = accent ? `${accent}18` : '#eff6ff'
+    return (
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8,
+        border: `1px solid ${item.checked ? checkedBorder : '#e2e8f0'}`,
+        marginBottom: 5, cursor: 'pointer',
+        background: item.checked ? checkedBg : '#ffffff',
+      }}>
+        <input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)}
+          style={{ width: 14, height: 14, accentColor: accent || '#2563eb', flexShrink: 0 }} />
+        {isStorage
+          ? <Camera size={13} style={{ color: accent || '#64748b', flexShrink: 0 }} />
+          : <Database size={13} style={{ color: accent || '#64748b', flexShrink: 0 }} />}
+        <span style={{ flex: 1, fontSize: 12.5, color: '#0f172a', fontFamily: 'var(--font-mono)' }}>{item.label}</span>
+        <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>
+          {item.count.toLocaleString()} {isStorage ? 'files' : 'rows'}
+        </span>
+      </label>
+    )
+  }
+
+  return ReactDOM.createPortal(
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 2999 }} onClick={!flushing ? onClose : undefined} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'calc(100% - 48px)', maxWidth: 540, maxHeight: '82vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 3000, overflow: 'hidden' }}>
+
+        <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid #e2e8f0' }}>
+          <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 500, color: '#0f172a' }}>Flush data</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+            Records only — table structures and folder containers are preserved.
+          </p>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
+          {loading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '20px 0', color: '#64748b', fontSize: 13 }}>
+              <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Scanning tables and storage…
+            </div>
+          ) : (
+            <>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                padding: '8px 10px', borderRadius: 8, background: '#f8fafc', marginBottom: 14,
+                border: '1px solid #e2e8f0',
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>
+                  {anyChecked
+                    ? `${items.filter(i => i.checked).length} of ${items.length} selected`
+                    : `${items.length} items`}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleAll(true)}
+                    disabled={allChecked}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 7,
+                      border: '1px solid #bfdbfe', background: allChecked ? '#eff6ff' : '#fff',
+                      color: '#1d4ed8', cursor: allChecked ? 'default' : 'pointer', opacity: allChecked ? 0.6 : 1,
+                    }}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleAll(false)}
+                    disabled={!anyChecked}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 7,
+                      border: '1px solid #e2e8f0', background: !anyChecked ? '#f8fafc' : '#fff',
+                      color: '#475569', cursor: !anyChecked ? 'default' : 'pointer', opacity: !anyChecked ? 0.6 : 1,
+                    }}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              </div>
+
+              {categoryGroups.map(group => {
+                const allCatChecked = group.items.every(i => i.checked)
+                return (
+                  <div
+                    key={group.key}
+                    style={{
+                      marginBottom: 18,
+                      borderRadius: 12,
+                      border: `1.5px solid ${group.color}55`,
+                      background: `linear-gradient(180deg, ${group.color}12 0%, ${group.color}06 40%, #fff 100%)`,
+                      overflow: 'hidden',
+                      boxShadow: `0 1px 0 ${group.color}22`,
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      background: group.color,
+                      color: '#fff',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em' }}>
+                          {group.label}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 999,
+                          background: 'rgba(255,255,255,0.22)',
+                        }}>
+                          {group.items.length}
+                        </span>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.92)' }}>
+                        <input
+                          type="checkbox"
+                          checked={allCatChecked}
+                          onChange={e => toggleCategory(group.key, e.target.checked)}
+                          style={{ width: 12, height: 12, accentColor: '#fff' }}
+                        />
+                        Select all
+                      </label>
+                    </div>
+
+                    <div style={{ padding: '10px 10px 8px' }}>
+                      {group.subs.map((sub, idx) => {
+                        const allSubChecked = sub.items.every(i => i.checked)
+                        return (
+                          <div
+                            key={sub.key}
+                            style={{
+                              marginBottom: idx === group.subs.length - 1 ? 0 : 12,
+                              paddingLeft: 10,
+                              borderLeft: `3px solid ${sub.color}`,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: sub.color }}>
+                                  {sub.label}
+                                </span>
+                                <span style={{ fontSize: 10, color: '#94a3b8' }}>{sub.items.length}</span>
+                              </div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10, color: '#64748b' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allSubChecked}
+                                  onChange={e => toggleSub(group.key, sub.key, e.target.checked)}
+                                  style={{ width: 11, height: 11, accentColor: sub.color }}
+                                />
+                                Select all
+                              </label>
+                            </div>
+                            <div style={{
+                              borderRadius: 9,
+                              border: `1px solid ${sub.color}35`,
+                              padding: '4px 5px',
+                              background: `${sub.color}0d`,
+                            }}>
+                              {sub.items.map(item => (
+                                <FlushItem key={item.id} item={item} accent={sub.color} />
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          {flushing
+            ? <p style={{ margin: 0, fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />{progress}
+              </p>
+            : <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+                {anyChecked ? `${items.filter(i => i.checked).length} item${items.filter(i => i.checked).length > 1 ? 's' : ''} selected` : 'Nothing selected'}
+              </p>
+          }
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} disabled={flushing}
+              style={{ fontSize: 12, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: 'none', color: '#64748b', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button onClick={doFlush} disabled={!anyChecked || flushing || loading}
+              style={{ fontSize: 12, padding: '6px 14px', border: 'none', borderRadius: 8, background: anyChecked && !flushing ? '#dc2626' : '#dc262680', color: '#fff', cursor: anyChecked && !flushing ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {flushing ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={12} />}
+              {flushing ? 'Flushing…' : 'Flush selected'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  )
+}
+
+// ── confirmSuperAdmin (only used by FlushAllModal internally now) ─────────────
+async function confirmSuperAdmin(profile, toast, setPasswordModal) {
+  if (profile?.role !== 'super_admin') {
+    toast('Access denied. Super Admin only.', 'error')
+    return false
+  }
+  return await askPassword(setPasswordModal)
+}
+
+
+
+// ── Log migration — only called on SUCCESS ────────────────────────────────────
+async function logMigration(category, sourceFile, status, attempted, succeeded, failed, errorMsg = null) {
+  const { data: { user } } = await supabase.auth.getUser()
+  await supabase.from('migration_history').insert({
+    category,
+    source_file:       sourceFile,
+    status,
+    records_attempted: attempted,
+    records_succeeded: succeeded,
+    records_failed:    failed,
+    error_details:     errorMsg,
+    performed_by:      user?.email,
+    performed_at:      new Date().toISOString()   // explicit — don't rely on DB default
+  })
+}
+
+// ── Erase data for a category (never drops table / bucket) ───────────────────
+// NOTE: .neq('id',0) fails on UUID primary keys. deleted_members has no created_at,
+// so use .gte('member_id','') there — it's always present and non-null.
+async function eraseCategory(category) {
+  if (category === 'members') {
+    const { error } = await supabase.from('members').delete().gte('created_at', '1970-01-01')
+    if (error) throw new Error(error.message)
+  } else if (category === 'members_deleted') {
+    const res = await supabase.from('deleted_members').delete().not('id', 'is', null)
+    console.log('[eraseCategory] deleted_members result:', res)
+    if (res.error) throw new Error(`${res.error.message} (code: ${res.error.code})`)
+  } else if (category === 'directory') {
+    const { error: cErr } = await supabase.from('directory_contacts').delete().not('id', 'is', null)
+    if (cErr) throw new Error(cErr.message)
+    const { error: catErr } = await supabase.from('directory_categories').delete().not('id', 'is', null)
+    if (catErr) throw new Error(catErr.message)
+  } else if (category.startsWith('photos_')) {
+    const folder = category.replace('photos_', '')
+    const { data: photos } = await supabase.storage.from('member-photos').list(folder, { limit: 10000 })
+    if (photos?.length) {
+      const { error } = await supabase.storage.from('member-photos').remove(photos.map(f => `${folder}/${f.name}`))
+      if (error) throw new Error(error.message)
+    }
+  }
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const opts = { timeZone:'Asia/Kolkata', hour12:true }
+  const day   = d.toLocaleDateString('en-IN', { ...opts, day:'2-digit' })
+  const month = d.toLocaleDateString('en-IN', { ...opts, month:'2-digit' })
+  const year  = d.toLocaleDateString('en-IN', { ...opts, year:'numeric' })
+  const time  = d.toLocaleTimeString('en-IN', { ...opts, hour:'2-digit', minute:'2-digit' })
+  return `${day}-${month}-${year}, ${time}`
+}
+
+// Format a YYYY-MM-DD string for display as dd-mm-yyyy
+function fmtDateDisplay(val) {
+  if (!val) return val
+  const s = String(val).trim()
+  // Handle ISO YYYY-MM-DD
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`
+  return s
+}
+
+// ── Badge colours ─────────────────────────────────────────────────────────────
+function badgeStyle(cat) {
+  if (cat === 'members')         return { bg:'#EAF3DE', color:'#3B6D11', dot:'#639922' }
+  if (cat === 'members_deleted') return { bg:'#FAEEDA', color:'#854F0B', dot:'#EF9F27' }
+  if (cat === 'photos_active')   return { bg:'#E6F1FB', color:'#185FA5', dot:'#378ADD' }
+  if (cat === 'photos_deleted')  return { bg:'#FBEAF0', color:'#993556', dot:'#D4537E' }
+  if (cat === 'directory')       return { bg:'#ccfbf1', color:'#115e59', dot:'#0f766e' }
+  return { bg:'#F1EFE8', color:'#5F5E5A', dot:'#888780' }
+}
+function recordLabel(cat, count) {
+  if (!count && count !== 0) return '—'
+  return cat.startsWith('photos_') ? `${count.toLocaleString()} photos` : `${count.toLocaleString()} records`
+}
+
+// ── IMPORT BOARD (right panel) ────────────────────────────────────────────────
+function ImportBoard({ history, loading, onFlushRow, flushingId }) {
+  const totalRecords = history.filter(h=>!h.category.startsWith('photos_')).reduce((s,h)=>s+(h.records_succeeded||0),0)
+  const totalPhotos  = history.filter(h=> h.category.startsWith('photos_')).reduce((s,h)=>s+(h.records_succeeded||0),0)
+
+  return (
+    <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:14,display:'flex',flexDirection:'column',height:'100%',overflow:'hidden',boxShadow:'0 1px 6px rgba(0,0,0,0.04)'}}>
+      {/* Header */}
+      <div style={{padding:'14px 16px 12px',borderBottom:'1px solid #f1f5f9',background:'linear-gradient(to bottom,#fafbff,#fff)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:3}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 0 2px #dcfce7'}}/>
+          <p style={{margin:0,fontSize:13,fontWeight:600,color:'#0f172a',letterSpacing:'-0.1px'}}>Import Board</p>
+        </div>
+        {history.length > 0
+          ? <p style={{margin:0,fontSize:11,color:'#94a3b8',paddingLeft:14}}>
+              {history.length} import{history.length!==1?'s':''}
+              {totalRecords>0?` · ${totalRecords.toLocaleString()} records`:''}
+              {totalPhotos >0?` · ${totalPhotos.toLocaleString()} photos`:''}
+            </p>
+          : <p style={{margin:0,fontSize:11,color:'#cbd5e1',paddingLeft:14}}>No active imports</p>
+        }
+      </div>
+
+      {/* Rows */}
+      <div style={{flex:1,overflowY:'auto',padding:'6px 0'}}>
+        {loading ? (
+          <div style={{display:'flex',justifyContent:'center',padding:'40px 0'}}>
+            <Loader2 size={18} style={{animation:'spin 1s linear infinite',color:'#94a3b8'}}/>
+          </div>
+        ) : history.length === 0 ? (
+          <div style={{padding:'36px 16px',textAlign:'center'}}>
+            <div style={{width:44,height:44,borderRadius:12,background:'#f1f5f9',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px'}}>
+              <Database size={20} style={{color:'#cbd5e1'}}/>
+            </div>
+            <p style={{margin:'0 0 3px',fontSize:13,fontWeight:500,color:'#94a3b8'}}>Nothing imported yet</p>
+            <p style={{margin:0,fontSize:11,color:'#cbd5e1'}}>Import a worksheet to get started</p>
+          </div>
+        ) : history.map((entry, i) => {
+          const bs = badgeStyle(entry.category)
+          const isFlushing = flushingId === entry.id
+          return (
+            <div key={entry.id} className="board-row" style={{
+              padding:'11px 14px',
+              borderBottom:'1px solid #f8fafc',
+              display:'flex',flexDirection:'column',gap:5,
+              animation:`fadeSlideUp 0.25s ease ${i*0.04}s both`
+            }}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,background:bs.bg,color:bs.color,flexShrink:0,letterSpacing:'0.01em'}}>
+                  <span style={{width:5,height:5,borderRadius:'50%',background:bs.dot,flexShrink:0}}/>
+                  {entry.source_file || entry.category}
+                </span>
+                <button onClick={()=>onFlushRow(entry)} disabled={!!flushingId}
+                  className="flush-btn-row"
+                  title="Delete all records in this category"
+                  style={{background:'none',border:'none',cursor:'pointer',padding:'4px 5px',borderRadius:6,color:'#cbd5e1',opacity:!!flushingId?0.3:1,display:'flex',alignItems:'center'}}>
+                  {isFlushing
+                    ? <Loader2 size={13} style={{animation:'spin 1s linear infinite',color:'#ef4444'}}/>
+                    : <Trash2 size={13}/>}
+                </button>
+              </div>
+              <p style={{margin:0,fontSize:15,fontWeight:700,color:'#0f172a',letterSpacing:'-0.2px'}}>
+                {recordLabel(entry.category, entry.records_succeeded)}
+              </p>
+              <p style={{margin:0,fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}>
+                <span style={{width:3,height:3,borderRadius:'50%',background:'#e2e8f0',flexShrink:0}}/>
+                {fmtDateTime(entry.performed_at)}
+              </p>
+              {entry.performed_by && (
+                <p style={{margin:0,fontSize:10,color:'#cbd5e1'}}>
+                  by {entry.performed_by}
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── IMPORT TAB ────────────────────────────────────────────────────────────────
+function isDirectorySheetName(name) {
+  const nl = String(name || '').toLowerCase().trim().replace(/\s+/g, '')
+  return nl.includes('contact') || nl.includes('uncategorized') || nl.includes('directory') || nl.includes('phonedirectory')
+}
+
+function ImportTab({ onRefreshBoard, setPasswordModal }) {
+  const toast = useToast()
+  const { profile } = useAuth()
+  const fileRef = useRef(null)
+  const [step, setStep] = useState(1)
+  const [wb, setWb] = useState(null)
+  const [sheetName, setSheetName] = useState('')
+  const [headers, setHeaders] = useState([])
+  const [rows, setRows] = useState([])
+  const [sheetKind, setSheetKind] = useState(null) // 'directory' | null (others inferred from name)
+  const [progress,    setProgress]    = useState({ percent: 0, done: 0, pending: 0, total: 0, label: 'Importing…' })
+  const [result,      setResult]      = useState(null)
+  const [importing,   setImporting]   = useState(false)
+  const [dragOver,    setDragOver]    = useState(false)
+  const [importError, setImportError] = useState(null)
+  const [overwriteFY, setOverwriteFY] = useState(false)
+
+  function updateImportProgress(done, total, label) {
+    const safeTotal = Math.max(0, total || 0)
+    const safeDone = Math.min(Math.max(0, done || 0), safeTotal)
+    const pending = Math.max(0, safeTotal - safeDone)
+    const percent = safeTotal > 0 ? Math.round((safeDone / safeTotal) * 100) : 0
+    setProgress({ percent, done: safeDone, pending, total: safeTotal, label: label || 'Importing…' })
+  }
+
+  async function handleFile(file) {
+    if (!file) return
+    const XLSX = await import('xlsx')
+    const data = await file.arrayBuffer()
+    const workbook = XLSX.read(data, { type:'array', cellDates:true })
+    setWb(workbook)
+    setImportError(null)
+
+    // Auto-select current FY sheet and jump straight to preview if present
+    const d = new Date(), m = d.getMonth() + 1, y = d.getFullYear()
+    const curFY = m >= 4 ? `${y}-${String(y+1).slice(2)}` : `${y-1}-${String(y).slice(2)}`
+    const fySheets = workbook.SheetNames.filter(n => /^\d{4}-\d{2}$/.test(n.trim()))
+      .sort((a, b) => a.localeCompare(b))
+    const autoSheet = fySheets.includes(curFY) ? curFY : (fySheets.length > 0 ? fySheets[fySheets.length - 1] : null)
+    if (autoSheet) {
+      setSheetName(autoSheet)
+      loadSheet(workbook, autoSheet)  // advances to step 3
+    } else {
+      setStep(2)
+    }
+  }
+
+  function loadSheet(workbook, name) {
+    setImportError(null)
+    import('xlsx').then(XLSX => {
+      const ws = workbook.Sheets[name]
+      // raw:true preserves JS Date objects (from cellDates:true in XLSX.read) and numeric values as-is.
+      // raw:false can produce unpredictable locale-formatted date strings that break parseDateDMY.
+      const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'', raw:true })
+      if (raw.length < 2) return
+
+      // Phone Directory exports include title rows above the header — find Kind/Name row
+      let headerIdx = 0
+      let kind = null
+      for (let i = 0; i < Math.min(raw.length, 20); i++) {
+        const cols = (raw[i] || []).map(c => normalizeCol(String(c ?? '')))
+        const hasKind = cols.includes('kind')
+        const hasName = cols.includes('name')
+        const hasDirectoryHint = cols.includes('primarynumber')
+          || cols.includes('secondarynumber')
+          || cols.includes('organization')
+          || cols.includes('organisation')
+          || cols.includes('titlerole')
+        if (hasKind && hasName && hasDirectoryHint) {
+          headerIdx = i
+          kind = 'directory'
+          break
+        }
+      }
+
+      const headerRow = raw[headerIdx]
+      const headerLen = headerRow.length
+      setHeaders(headerRow.map(h => String(h || '').trim()))
+      setSheetKind(kind)
+      // Pad every data row to header length so short trailing rows aren't dropped
+      const dataRows = raw.slice(headerIdx + 1)
+        .map(r => { while (r.length < headerLen) r.push(''); return r })
+        .filter(r => r.some(c => c !== ''))
+      setRows(dataRows)
+      setStep(3)
+    })
+  }
+
+  async function doImportReceipts() {
+    const fy = sheetName.trim()
+    const cats = await getActiveCategories()
+
+    // Build column index map from the `headers` state (already header-row content)
+    const hdrMap = {}
+    headers.forEach((h, i) => { if (h) hdrMap[normalizeCol(h)] = i })
+
+    // Log actual headers so column mapping is visible in devtools
+    console.log('[ReceiptImport] headers:', headers)
+    console.log('[ReceiptImport] hdrMap:', hdrMap)
+
+    // Return column index by header name; fall back to `fallbackPos` if not found
+    const col = (fallbackPos, ...names) => {
+      for (const n of names) {
+        const v = hdrMap[normalizeCol(n)]
+        if (v != null) return v
+      }
+      return fallbackPos  // use positional default when header not recognised
+    }
+
+    // Standard receipt fields — positional defaults match original VBA column order
+    const rcptNoIdx   = col(0,  'receipt_number','receiptno','receipt no','receiptnum','receipt#','rcptno','sno','sr no','srno')
+    const memberIdIdx = col(1,  'member_id','memberid','member id','memid','mem id')
+    const memberNmIdx = col(2,  'member_name','membername','member name','name','mem name')
+    const dateIdx     = col(3,  'receipt_date','receiptdate','receipt date','date','rcptdate')
+    const modeIdx     = col(4,  'payment_mode','paymentmode','payment mode','mode','paymode','pay mode')
+    const monthIdx    = col(5,  'month_paid','monthpaid','months paid','month paid','months','month')
+    const totalIdx    = col(-1, 'grand_total','grandtotal','grand total','total','amount','grandtotal')
+    const modByIdx    = col(-1, 'last_modified_by','modifiedby','modified by','modified_by')
+    const modAtIdx    = col(-1, 'last_modified_at','modifiedon','modified on','modified_at','modified on')
+
+    console.log('[ReceiptImport] col indices:', { rcptNoIdx, memberIdIdx, memberNmIdx, dateIdx, modeIdx, monthIdx, totalIdx, modByIdx, modAtIdx })
+
+    // Known alternate spellings in Excel headers for DB category names
+    const CAT_EXCEL_ALIASES = {
+      'youthassociation':  ['youthassoiciation'],  // Excel typo: "Youth Assoiciation"
+      'missionarysupport': ['missionerysupport'],  // Excel typo: "Missionery Support"
+      'other':             ['anyother'],            // Excel: "Any Other"
+    }
+
+    // Category column detection — amt / months / total per category
+    const catCols = {}
+    cats.forEach(cat => {
+      const nc      = normalizeCol(cat.name)
+      const aliases = [nc, ...(CAT_EXCEL_ALIASES[nc] || [])]
+
+      let amtIdx = -1, monIdx = -1, totIdx = -1
+      for (const a of aliases) {
+        if (amtIdx < 0) amtIdx = hdrMap[a] ?? hdrMap[a + 'amt'] ?? hdrMap[a + 'amount'] ?? -1
+        if (monIdx < 0) monIdx = hdrMap[a + 'months'] ?? hdrMap[a + 'month'] ?? -1
+        if (totIdx < 0) totIdx = hdrMap[a + 'total'] ?? hdrMap[a + 'tamount'] ?? -1
+      }
+      if (amtIdx >= 0) catCols[cat.id] = { amtIdx, monIdx, totIdx }
+    })
+
+    // Diagnostic: show which categories matched Excel columns and which didn't
+    console.group('[ReceiptImport] Category → Column Mapping')
+    cats.forEach(cat => {
+      const nc      = normalizeCol(cat.name)
+      const aliases = [nc, ...(CAT_EXCEL_ALIASES[nc] || [])]
+      if (catCols[cat.id]) {
+        const { amtIdx, monIdx, totIdx } = catCols[cat.id]
+        console.log(`  ✅ "${cat.name}" (norm: "${nc}") → amt col ${amtIdx}, mon col ${monIdx}, tot col ${totIdx}`)
+      } else {
+        const candidates = Object.keys(hdrMap).filter(k => aliases.some(a => k.startsWith(a.slice(0, 4))))
+        console.warn(`  ❌ "${cat.name}" (norm: "${nc}") → NO MATCH. Nearest headers: ${candidates.join(', ') || 'none'}`)
+      }
+    })
+    console.groupEnd()
+
+    // Debug: log first row's raw date value to help diagnose format issues
+    if (rows.length > 0) {
+      const dateIdx0 = (() => {
+        const hdrMap0 = {}
+        headers.forEach((h, i) => { if (h) hdrMap0[normalizeCol(h)] = i })
+        const col0 = (fb, ...names) => { for (const n of names) { const v = hdrMap0[normalizeCol(n)]; if (v != null) return v } return fb }
+        return col0(3, 'receipt_date','receiptdate','receipt date','date','rcptdate')
+      })()
+      const sampleDate = rows[0][dateIdx0]
+      console.log('[ReceiptImport] sample date cell value:', sampleDate, '| type:', typeof sampleDate, '| isDate:', sampleDate instanceof Date)
+      console.log('[ReceiptImport] parseDateDMY result →', parseDateDMY(sampleDate))
+    }
+
+    setImporting(true); setStep(4); updateImportProgress(0, rows.length, `Importing receipts — FY ${fy}`)
+
+    // Overwrite mode: delete all existing receipts for this FY first
+    if (overwriteFY) {
+      updateImportProgress(0, rows.length, 'Clearing existing FY receipts…')
+      const { data: exIds } = await supabase.from('receipts').select('id').eq('financial_year', fy)
+      if (exIds?.length) {
+        const ids = exIds.map(r => r.id)
+        await supabase.from('receipt_items').delete().in('receipt_id', ids)
+        await supabase.from('receipts').delete().eq('financial_year', fy)
+      }
+    }
+
+    // Pre-fetch existing receipt numbers for this FY (single query, no N+1)
+    const { data: existing } = await supabase.from('receipts')
+      .select('receipt_number').eq('financial_year', fy)
+    const existingNums = new Set((existing || []).map(r => r.receipt_number))
+
+    let imported = 0, skipped = 0, errors = 0
+    const total = rows.length
+
+    try {
+      // `rows` is already header-stripped by loadSheet; iterate all data rows
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri]
+        try {
+          // Skip fully blank rows
+          if (!row.some(c => String(c || '').trim())) { skipped++; continue }
+
+          let receiptNo = String(row[rcptNoIdx] ?? '').trim()
+          // If receipt number is blank, auto-generate from FY + sequential index
+          if (!receiptNo) receiptNo = `${fy}_imp_${String(ri + 1).padStart(6, '0')}`
+
+          if (existingNums.has(receiptNo)) { skipped++; continue }
+
+          const memberId    = String(row[memberIdIdx] ?? '').trim()
+          const memberName  = String(row[memberNmIdx] ?? '').trim()
+          const dateRaw     = row[dateIdx] ?? ''   // keep Date objects intact — don't stringify before parseDateDMY
+          const receiptDate = parseDateDMY(dateRaw) || new Date().toISOString().slice(0, 10)
+          const payMode   = String(row[modeIdx] ?? '').trim() || 'Cash'
+          let monthPaid   = String(row[monthIdx] ?? '').trim() || null
+          // Derive month from receipt date if not present in the spreadsheet
+          if (!monthPaid && receiptDate) {
+            const _MD = ['January','February','March','April','May','June','July','August','September','October','November','December']
+            const _d  = new Date(receiptDate + 'T00:00:00')
+            if (!isNaN(_d.getTime())) monthPaid = _MD[_d.getMonth()]
+          }
+          const grandTotal  = totalIdx >= 0
+            ? parseFloat(String(row[totalIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
+            : 0
+
+          const modBy = modByIdx >= 0 ? (String(row[modByIdx] ?? '').trim() || null) : null
+          const modAtRaw = modAtIdx >= 0 ? row[modAtIdx] : null
+          const modAt = modAtRaw instanceof Date
+            ? modAtRaw.toISOString()
+            : (modAtRaw ? parseDateDMY(String(modAtRaw).trim()) || null : null)
+          const { data: ins, error: insErr } = await supabase.from('receipts').insert({
+            receipt_number: receiptNo, receipt_date: receiptDate, financial_year: fy,
+            member_id: memberId || null, member_name: memberName || null,
+            payment_mode: payMode, month_paid: monthPaid, grand_total: grandTotal,
+            last_modified_by: modBy, last_modified_at: modAt,
+          }).select('id').single()
+          if (insErr) { errors++; continue }
+
+          const itemRows = []
+          for (const cat of cats) {
+            const cc = catCols[cat.id]
+            if (!cc) continue
+            const amt    = parseFloat(String(row[cc.amtIdx] ?? '0').replace(/[^0-9.]/g, '')) || 0
+            const months = cc.monIdx >= 0 ? parseFloat(String(row[cc.monIdx] ?? '1').replace(/[^0-9.]/g, '')) || 1 : 1
+            const itemTotal = cc.totIdx >= 0 ? parseFloat(String(row[cc.totIdx] ?? '0').replace(/[^0-9.]/g, '')) || (amt * months) : (amt * months)
+            if (amt > 0) itemRows.push({ receipt_id: ins.id, category_id: cat.id, amt, months, total: itemTotal })
+          }
+          if (itemRows.length) await supabase.from('receipt_items').insert(itemRows)
+          existingNums.add(receiptNo)
+          imported++
+        } catch (e) { console.warn('[ReceiptImport] row error:', e); errors++ }
+        // Update after every row so transferred / pending / % stay live
+        updateImportProgress(ri + 1, total, `Importing receipts — FY ${fy}`)
+      }
+
+      updateImportProgress(total, total, `Importing receipts — FY ${fy}`)
+      setResult({ total: rows.length, inserted: imported, errors, dups: skipped })
+      if (imported > 0) {
+        await logMigration('receipts', `${sheetName} (FY)`, 'success', imported + skipped, imported, errors)
+        onRefreshBoard?.()
+      }
+      toast(
+        `Receipts FY ${fy}: ${imported} imported, ${skipped} skipped${errors ? `, ${errors} errors` : ''}`,
+        imported > 0 ? 'success' : 'error'
+      )
+    } catch (e) {
+      setImportError(e.message)
+      setStep(3)
+    }
+    setImporting(false)
+  }
+
+  async function doImportDirectory() {
+    const hdrMap = {}
+    headers.forEach((h, i) => { if (h) hdrMap[normalizeCol(h)] = i })
+    const col = (fallbackPos, ...names) => {
+      for (const n of names) {
+        const v = hdrMap[normalizeCol(n)]
+        if (v != null) return v
+      }
+      return fallbackPos
+    }
+
+    const kindIdx  = col(0, 'kind', 'contactkind', 'type')
+    const nameIdx  = col(1, 'name', 'contactname', 'organisationname', 'organizationname')
+    const orgIdx   = col(2, 'organization', 'organisation', 'org', 'firm')
+    const titleIdx = col(3, 'titlerole', 'title', 'role', 'contactperson')
+    const catIdx   = col(4, 'category', 'categories')
+    const priIdx   = col(5, 'primarynumber', 'primary', 'whatsapp', 'mobile')
+    const secIdx   = col(6, 'secondarynumber', 'secondary', 'phone', 'altnumber')
+    const emailIdx = col(7, 'email', 'mail')
+    const addrIdx  = col(8, 'address')
+    const notesIdx = col(9, 'notes', 'note', 'keywords')
+
+    if (!headers.some(h => normalizeCol(h) === 'name')) {
+      setImportError('Directory sheet must have a Name column (export format from Phone Directory).')
+      return
+    }
+
+    setImporting(true)
+    setStep(4)
+    updateImportProgress(0, rows.length, 'Loading categories…')
+
+    try {
+      const categories = await getDirectoryCategories(false)
+      const profileName = profile?.full_name || profile?.email || ''
+      const records = []
+      let skipped = 0
+      let phoneWarn = 0
+
+      for (const row of rows) {
+        const name = String(row[nameIdx] ?? '').trim()
+        if (!name) { skipped++; continue }
+
+        const kindRaw = String(row[kindIdx] ?? '').trim().toLowerCase()
+        const contact_kind = /org|organisation|organization|firm|company/.test(kindRaw)
+          ? 'organisation'
+          : 'person'
+
+        const primary = normalizeDirectoryPhone(row[priIdx])
+        const secondary = normalizeDirectoryPhone(row[secIdx])
+        if ((!primary.ok && String(row[priIdx] ?? '').trim()) || (!secondary.ok && String(row[secIdx] ?? '').trim())) {
+          phoneWarn++
+        }
+
+        records.push({
+          contact_kind,
+          name,
+          organization: String(row[orgIdx] ?? '').trim() || null,
+          title: String(row[titleIdx] ?? '').trim() || null,
+          category_id: resolveDirectoryCategoryId(row[catIdx], categories),
+          whatsapp: primary.value || null,
+          phone: secondary.value || null,
+          email: String(row[emailIdx] ?? '').trim() || null,
+          address: String(row[addrIdx] ?? '').trim() || null,
+          notes: String(row[notesIdx] ?? '').trim() || null,
+        })
+      }
+
+      if (!records.length) {
+        setImportError('No valid contact rows found. Each row needs a Name.')
+        setImporting(false)
+        setStep(3)
+        return
+      }
+
+      updateImportProgress(0, records.length, 'Importing directory contacts…')
+      const inserted = await bulkImportDirectoryContacts(records, profileName, (done, total) => {
+        updateImportProgress(done, total, 'Importing directory contacts…')
+      })
+      updateImportProgress(inserted, inserted, 'Importing directory contacts…')
+      await logMigration('directory', sheetName, 'success', records.length + skipped, inserted, skipped)
+      setResult({ total: rows.length, inserted, errors: 0, dups: skipped })
+      toast(
+        `${inserted} contact${inserted === 1 ? '' : 's'} imported${skipped ? `, ${skipped} blank skipped` : ''}${phoneWarn ? ` (${phoneWarn} phone warning${phoneWarn === 1 ? '' : 's'})` : ''}.`,
+        'success',
+      )
+      onRefreshBoard?.()
+    } catch (err) {
+      setImportError(err.message || 'Directory import failed.')
+      await logMigration('directory', sheetName, 'error', rows.length, 0, rows.length, err.message)
+      setStep(3)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function doImport() {
+    setImportError(null)
+
+    // Phone Directory contacts (export-compatible columns)
+    if (sheetKind === 'directory' || isDirectorySheetName(sheetName)) {
+      return doImportDirectory()
+    }
+
+    // Route FY-named sheets (e.g. 2024-25) to receipt import
+    if (/^\d{4}-\d{2}$/.test(sheetName.trim())) {
+      return doImportReceipts()
+    }
+
+    // Normalise: remove spaces so "DeletedMembers" and "Deleted Members" both match
+    const sheetNorm = sheetName.toLowerCase().trim().replace(/\s+/g, '')
+    let targetTable = null
+    let targetCategory = null
+
+    if (sheetNorm.includes('deletedmember')) {
+      targetTable    = 'deleted_members'
+      targetCategory = 'members_deleted'
+    } else if (sheetNorm.includes('member')) {
+      targetTable    = 'members'
+      targetCategory = 'members'
+    }
+
+    // ── Workings → church_zones ──────────────────────────────────────────────
+    if (sheetNorm.includes('working')) {
+      const zones = rows.map(r => String(r[3] ?? '').trim()).filter(Boolean)
+      if (!zones.length) {
+        setImportError('No zone names found in column D.')
+        return
+      }
+
+      setImporting(true); setStep(4); updateImportProgress(0, zones.length, 'Importing zones…')
+
+      try {
+        const records = zones
+          .filter(z => z.toLowerCase() !== 'others')
+          .map((zone_name, idx) => ({ zone_name, sort_order: idx + 1, created_by: profile?.email }))
+        records.push({ zone_name: 'Others', sort_order: 99, created_by: profile?.email })
+
+        updateImportProgress(0, records.length, 'Clearing existing zones…')
+        const { error: delErr } = await supabase.from('church_zones').delete().not('id', 'is', null)
+        if (delErr) throw new Error(`Clear failed: ${delErr.message}`)
+
+        updateImportProgress(Math.floor(records.length / 2), records.length, 'Importing zones…')
+        const { error: insErr } = await supabase.from('church_zones').insert(records)
+        if (insErr) throw new Error(`Insert failed: ${insErr.message}`)
+
+        updateImportProgress(records.length, records.length, 'Importing zones…')
+        await logMigration('zones', sheetName, 'success', records.length, records.length, 0)
+        setResult({ total: records.length, inserted: records.length, errors: 0, dups: 0 })
+        toast(`${records.length} zones imported successfully.`, 'success')
+        onRefreshBoard?.()
+      } catch (err) {
+        setImportError(err.message)
+        await logMigration('zones', sheetName, 'error', zones.length, 0, 0, err.message)
+      } finally {
+        setImporting(false)
+      }
+      return
+    }
+
+    if (!targetTable) {
+      setImportError(
+        `Sheet "${sheetName}" is not a recognised import sheet.\n` +
+        `Import Members, Deleted Members, Workings, FY Receipt sheets, or Phone Directory contacts (All Contacts / export columns Kind, Name, …).`
+      )
+      return
+    }
+
+    // ── Check target table exists in Supabase ─────────────────────────────────
+    const { error: probeError } = await supabase.from(targetTable).select('member_id').limit(1)
+    if (probeError && (probeError.code === '42P01' || probeError.message?.toLowerCase().includes('does not exist'))) {
+      setImportError(
+        `Relevant table not found in database.\n` +
+        `Sheet "${sheetName}" maps to table "${targetTable}" but it does not exist in Supabase yet. ` +
+        `Please create it first and then proceed.`
+      )
+      return
+    }
+
+    // member_id is position 1, member_name is position 3
+    // Trim aggressively — Excel sometimes pads cells with spaces or \r\n
+    const validRows = rows.filter(r =>
+      String(r[1] ?? '').trim().length > 0 &&
+      String(r[3] ?? '').trim().length > 0
+    )
+    if (validRows.length === 0) {
+      setImportError('No valid rows found. Each row must have a Member ID (col B) and Member Name (col D).')
+      return
+    }
+
+    setImporting(true); setStep(4); updateImportProgress(0, validRows.length, `Importing ${targetTable === 'members' ? 'members' : 'deleted members'}…`)
+
+    // Transform rows using position-only mapping
+    const dateDebugLog = []
+    const records = validRows.map((row, rowIdx) => {
+      const rec = targetTable === 'members' ? { is_active: true } : {}
+      row.forEach((cell, idx) => {
+        const dbCol = mapHeader(idx)
+        if (!dbCol || SKIP.includes(dbCol)) return
+        const v = cleanVal(cell, dbCol)
+        // Log date parsing for first 5 rows and any failures
+        if (DATE_COLS.includes(dbCol) && (rowIdx < 5 || v === null)) {
+          dateDebugLog.push(`Row ${rowIdx + 1}, ${dbCol}: raw=${JSON.stringify(cell)} (type=${typeof cell}), parsed=${v}`)
+        }
+        if (v !== null) rec[dbCol] = v
+        else if (ACT_COLS.includes(dbCol)) rec[dbCol] = false
+      })
+      return rec
+    }).filter(r => String(r.member_id ?? '').trim() && String(r.member_name ?? '').trim())
+
+    if (dateDebugLog.length > 0) {
+      console.group('📅 Date Field Parsing Log')
+      dateDebugLog.forEach(log => console.log(log))
+      console.groupEnd()
+    }
+
+    if (records.length === 0) {
+      setImportError('No records could be mapped. Check that your Excel columns are in the expected order.')
+      setImporting(false); setStep(3); return
+    }
+
+    // Deduplicate by member_id — if the same member_id appears more than once
+    // in the sheet, keep the last occurrence (last row wins).
+    const dedupedMap = new Map()
+    records.forEach(r => dedupedMap.set(String(r.member_id).trim(), r))
+    const dedupedRecords = [...dedupedMap.values()]
+    const dupCount = records.length - dedupedRecords.length
+    if (dupCount > 0) console.warn(`⚠️ ${dupCount} duplicate member_id(s) found — last occurrence kept.`)
+
+    const total = dedupedRecords.length
+    const BATCH = 50
+    const progressLabel = targetTable === 'members' ? 'Importing members…' : 'Importing deleted members…'
+
+    try {
+      if (targetTable === 'members') {
+        // Atomic swap via staging for main members table — insert in batches for live progress
+        updateImportProgress(0, total, 'Preparing staging…')
+        await supabase.from('members_staging').delete().gte('created_at', '1970-01-01')
+        for (let i = 0; i < dedupedRecords.length; i += BATCH) {
+          const chunk = dedupedRecords.slice(i, i + BATCH)
+          const { error: stagingError } = await supabase.from('members_staging').insert(chunk)
+          if (stagingError) throw new Error(`Staging insert failed: ${stagingError.message}`)
+          updateImportProgress(Math.min(i + chunk.length, total), total, progressLabel)
+        }
+        updateImportProgress(total, total, 'Finalizing member swap…')
+        const { error: swapError } = await supabase.rpc('atomic_swap_members')
+        if (swapError) throw new Error(`Atomic swap failed: ${swapError.message}`)
+      } else {
+        // Stamp required fields for deleted_members
+        const now = new Date().toISOString()
+        const importedBy = profile?.email || profile?.id || 'import'
+        const stamped = dedupedRecords.map(r => ({
+          ...r,
+          deleted_by:  r.deleted_by  || importedBy,
+          deleted_at:  r.deleted_at  || now,
+        }))
+        // Clear and re-insert in batches (no unique constraint needed)
+        updateImportProgress(0, total, 'Clearing existing deleted members…')
+        const { error: delError } = await supabase.from(targetTable).delete().gte('member_id', '')
+        if (delError) throw new Error(`Clear failed: ${delError.message}`)
+        for (let i = 0; i < stamped.length; i += BATCH) {
+          const chunk = stamped.slice(i, i + BATCH)
+          const { error } = await supabase.from(targetTable).insert(chunk)
+          if (error) throw new Error(`Import failed: ${error.message}`)
+          updateImportProgress(Math.min(i + chunk.length, total), total, progressLabel)
+        }
+      }
+
+      updateImportProgress(total, total, progressLabel)
+      // Only log on success
+      await logMigration(targetCategory, sheetName, 'success', dedupedRecords.length, dedupedRecords.length, 0)
+      setResult({ total: dedupedRecords.length, inserted: dedupedRecords.length, errors: 0, dups: dupCount })
+      toast(`${dedupedRecords.length} records imported successfully from "${sheetName}".`, 'success')
+      onRefreshBoard?.()
+    } catch (err) {
+      console.error(err)
+      setImportError(err.message)
+      setStep(3)
+      toast(`Import failed: ${err.message}`, 'error')
+    } finally {
+      setImporting(false)
+      if (targetTable === 'members') {
+        await supabase.from('members_staging').delete().gte('created_at', '1970-01-01')
+      }
+    }
+  }
+
+  function reset() {
+    setWb(null);setSheetName('');setHeaders([]);setRows([]);setSheetKind(null);updateImportProgress(0, 0, 'Importing…')
+    setResult(null);setStep(1);setImporting(false);setImportError(null);setOverwriteFY(false)
+  }
+
+  // Preview uses DB column name derived by position
+  const previewCols = headers
+    .map((h, i) => ({ header: h, dbCol: mapHeader(i), idx: i }))
+    .filter(({ dbCol }) => dbCol && !SKIP.includes(dbCol))
+    .slice(0, 8)
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {/* Steps — refined pill stepper */}
+      <div style={{display:'flex',alignItems:'center',background:'#f8fafc',borderRadius:12,padding:'10px 16px'}}>
+        {[['1','Upload'],['2','Select sheet'],['3','Preview'],['4','Import']].map(([n,l],i)=>(
+          <div key={n} style={{display:'flex',alignItems:'center',flex:1}}>
+            <div style={{display:'flex',alignItems:'center',gap:7}}>
+              <div style={{
+                width:24,height:24,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:11,fontWeight:700,flexShrink:0,
+                background: step>parseInt(n) ? '#22c55e' : step===parseInt(n) ? '#2563eb' : '#e2e8f0',
+                color: step>=parseInt(n) ? '#fff' : '#94a3b8',
+                boxShadow: step===parseInt(n) ? '0 0 0 3px #dbeafe' : 'none'
+              }}>
+                {step>parseInt(n)?'✓':n}
+              </div>
+              <span style={{fontSize:11,fontWeight:600,color:step===parseInt(n)?'#2563eb':step>parseInt(n)?'#22c55e':'#94a3b8',whiteSpace:'nowrap'}}>{l}</span>
+            </div>
+            {i<3&&<div style={{flex:1,height:2,margin:'0 8px',borderRadius:2,background:step>i+1?'#22c55e':'#e2e8f0'}}/>}
+          </div>
+        ))}
+      </div>
+
+      {/* Step 1: Upload */}
+      <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+        <p style={{margin:'0 0 12px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'#3b82f6'}}>Step 1 — Upload Excel file</p>
+        <div
+          style={{
+            borderRadius:10,padding:'28px 24px',textAlign:'center',cursor:'pointer',
+            border:`2px dashed ${dragOver?'#3b82f6':wb?'#22c55e':'#e2e8f0'}`,
+            background: dragOver?'#eff6ff':wb?'#f0fdf4':'#fafafa',
+            transition:'all 0.2s ease'
+          }}
+          onClick={()=>fileRef.current?.click()}
+          onDragOver={e=>{e.preventDefault();setDragOver(true)}}
+          onDragLeave={()=>setDragOver(false)}
+          onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)handleFile(f)}}>
+          <div style={{width:48,height:48,borderRadius:12,background:wb?'#dcfce7':dragOver?'#dbeafe':'#f1f5f9',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px'}}>
+            <FileSpreadsheet size={22} style={{color:wb?'#22c55e':dragOver?'#3b82f6':'#94a3b8'}}/>
+          </div>
+          <p style={{margin:'0 0 4px',fontSize:14,fontWeight:600,color:'#334155'}}>{wb?'File loaded ✓ — click to change':'Click or drag to upload'}</p>
+          <p style={{margin:0,fontSize:12,color:'#94a3b8'}}>Main.xlsm or any .xlsx / .xls</p>
+        </div>
+        <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls" className="hidden" onChange={e=>handleFile(e.target.files[0])}/>
+      </div>
+
+      {/* Step 2: Sheet select */}
+      {step>=2 && wb && (
+        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+          <p style={{margin:'0 0 4px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:'#3b82f6'}}>Step 2 — Select worksheet</p>
+          <p style={{margin:'0 0 14px',fontSize:12,color:'#94a3b8'}}>
+            Import <strong style={{color:'#3b82f6'}}>Members</strong>, <strong style={{color:'#d97706'}}>Deleted Members</strong>, <strong style={{color:'#059669'}}>Workings</strong>, <strong style={{color:'#d97706'}}>FY Receipt sheets</strong>, or <strong style={{color:'#0f766e'}}>Phone Directory</strong> contacts (e.g. <em>All Contacts</em>).
+          </p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+            {[...wb.SheetNames].sort((a, b) => {
+              const aFY = /^\d{4}-\d{2}$/.test(a.trim())
+              const bFY = /^\d{4}-\d{2}$/.test(b.trim())
+              if (aFY && bFY) return a.trim().localeCompare(b.trim())
+              if (aFY) return -1; if (bFY) return 1
+              return a.localeCompare(b)
+            }).map(name => {
+              const nl         = name.toLowerCase().trim().replace(/\s+/g, '')
+              const isDeleted  = nl.includes('deletedmember')
+              const isMember   = !isDeleted && nl.includes('member')
+              const isWorkings = nl.includes('working')
+              const isReceipts = /^\d{4}-\d{2}$/.test(name.trim())
+              const fileHasDirectory = wb.SheetNames.some(n => isDirectorySheetName(n))
+              const isDirectory = isDirectorySheetName(name)
+                || (fileHasDirectory && !isDeleted && !isMember && !isWorkings && !isReceipts)
+              const isKnown    = isDeleted || isMember || isWorkings || isReceipts || isDirectory
+              const badge      = isDeleted ? 'Deleted Members' : isMember ? 'Members' : isWorkings ? 'Zonal Areas' : isReceipts ? 'Receipts' : isDirectory ? 'Directory' : null
+              const accentColor = isDeleted ? '#d97706' : isWorkings ? '#059669' : isReceipts ? '#d97706' : isDirectory ? '#0f766e' : '#2563eb'
+              const isSelected  = sheetName === name
+              const selBorder   = isDeleted ? '#fcd34d' : isWorkings ? '#6ee7b7' : isReceipts ? '#fcd34d' : isDirectory ? '#5eead4' : '#93c5fd'
+              const selBg       = isDeleted ? '#fffbeb' : isWorkings ? '#ecfdf5' : isReceipts ? '#fffbeb' : isDirectory ? '#f0fdfa' : '#eff6ff'
+              const badgeBg     = isDeleted ? '#fef3c7' : isWorkings ? '#d1fae5' : isReceipts ? '#fef3c7' : isDirectory ? '#ccfbf1' : '#dbeafe'
+              const badgeColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : isReceipts ? '#92400e' : isDirectory ? '#115e59' : '#1e40af'
+              const labelColor  = isDeleted ? '#92400e' : isWorkings ? '#065f46' : isReceipts ? '#92400e' : isDirectory ? '#115e59' : '#1e40af'
+              return (
+                <label key={name} style={{
+                  display:'flex',alignItems:'center',gap:8,padding:'8px 12px',borderRadius:9,
+                  border:`1px solid ${isSelected ? selBorder : isKnown ? '#e2e8f0' : '#f1f5f9'}`,
+                  background: isSelected ? selBg : '#fff',
+                  cursor:'pointer',opacity:isKnown?1:0.45,transition:'all 0.15s ease'
+                }}>
+                  <input type="radio" name="sheet" value={name} checked={isSelected} onChange={()=>{setSheetName(name);loadSheet(wb,name)}} style={{accentColor}}/>
+                  <span style={{fontSize:13,fontWeight:500,color:isSelected ? labelColor : '#475569'}}>{name}</span>
+                  {badge && (
+                    <span style={{fontSize:10,fontWeight:600,padding:'2px 7px',borderRadius:12,background:badgeBg,color:badgeColor}}>
+                      → {badge}
+                    </span>
+                  )}
+                  {!isKnown && <span style={{fontSize:10,color:'#cbd5e1',background:'#f8fafc',padding:'2px 6px',borderRadius:8}}>Not importable</span>}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Error banner */}
+      {importError && (
+        <div style={{display:'flex',gap:12,alignItems:'flex-start',padding:'14px 16px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:10}}>
+          <div style={{width:32,height:32,borderRadius:8,background:'#fee2e2',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <AlertTriangle size={15} style={{color:'#dc2626'}}/>
+          </div>
+          <div>
+            <p style={{margin:'0 0 2px',fontSize:13,fontWeight:600,color:'#991b1b'}}>Import failed</p>
+            <p style={{margin:0,fontSize:12,color:'#dc2626',lineHeight:1.6}}>{importError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Preview */}
+      {step>=3 && rows.length>0 && (() => {
+        const isWorkings = sheetName.toLowerCase().trim().replace(/\s+/g,'').includes('working')
+        const isReceipts = /^\d{4}-\d{2}$/.test(sheetName.trim())
+        const isDirectory = sheetKind === 'directory' || isDirectorySheetName(sheetName)
+        const zoneNames  = isWorkings ? rows.map(r => String(r[3] ?? '').trim()).filter(Boolean) : []
+        const accentCol  = isWorkings ? '#059669' : isReceipts ? '#d97706' : isDirectory ? '#0f766e' : '#3b82f6'
+        const btnBg      = isWorkings ? '#059669' : isReceipts ? '#d97706' : isDirectory ? '#0f766e' : '#2563eb'
+        const btnShadow  = isWorkings ? 'rgba(5,150,105,0.25)' : isReceipts ? 'rgba(217,119,6,0.25)' : isDirectory ? 'rgba(15,118,110,0.25)' : 'rgba(37,99,235,0.25)'
+        const dirPreviewCols = isDirectory
+          ? headers.map((h, idx) => ({ header: h, idx })).filter(c => c.header).slice(0, 8)
+          : []
+        return (
+          <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div>
+                <p style={{margin:'0 0 2px',fontSize:11,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:accentCol}}>Step 3 — Preview</p>
+                <p style={{margin:0,fontSize:12,color:'#64748b'}}>
+                  <strong style={{color:'#0f172a'}}>{isWorkings ? zoneNames.length : rows.length}</strong>
+                  {isWorkings ? ' zones' : isReceipts ? ' receipt rows' : isDirectory ? ' contacts' : ' rows'} from <strong style={{color:'#0f172a'}}>"{sheetName}"</strong>
+                  {isWorkings && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— reading column D only</span>}
+                  {isReceipts && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— FY {sheetName} receipts sheet</span>}
+                  {isDirectory && <span style={{marginLeft:8,fontSize:11,color:'#94a3b8'}}>— Phone Directory contacts</span>}
+                </p>
+              </div>
+            </div>
+
+            {isWorkings ? (
+              /* Zone preview */
+              <div style={{borderRadius:8,border:'1px solid #d1fae5',marginBottom:16,maxHeight:260,overflowY:'auto',background:'#f0fdf4'}}>
+                {zoneNames.map((name, i) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 12px',borderBottom:'1px solid #d1fae5',background:i%2===0?'#f0fdf4':'#fff'}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#6ee7b7',width:22,textAlign:'right',flexShrink:0}}>{i+1}</span>
+                    <span style={{fontSize:13,color:'#065f46'}}>{name}</span>
+                    {name.toLowerCase()==='others' && (
+                      <span style={{fontSize:10,padding:'1px 6px',borderRadius:8,background:'#fef3c7',color:'#92400e',marginLeft:'auto'}}>pinned last</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : isReceipts ? (
+              /* Receipt preview — amber info box */
+              <div style={{borderRadius:8,border:'1px solid #fde68a',marginBottom:16,padding:'14px 16px',background:'#fffbeb'}}>
+                <p style={{margin:'0 0 6px',fontSize:13,fontWeight:600,color:'#92400e'}}>
+                  {rows.length.toLocaleString()} receipt rows ready to import into FY {sheetName}
+                </p>
+                {/* Sample date debug panel */}
+                {rows.length > 0 && (() => {
+                  const hdrMap0 = {}
+                  headers.forEach((h, i) => { if (h) hdrMap0[normalizeCol(h)] = i })
+                  const col0 = (fb, ...ns) => { for (const n of ns) { const v = hdrMap0[normalizeCol(n)]; if (v != null) return v } return fb }
+                  const dIdx = col0(3,'receipt_date','receiptdate','receipt date','date','rcptdate')
+                  const sample = rows[0]?.[dIdx]
+                  const parsed = parseDateDMY(sample)
+                  const isDate = sample instanceof Date
+                  const asString = String(sample ?? '')
+                  return (
+                    <div style={{margin:'4px 0 8px',padding:'8px 10px',background:'rgba(0,0,0,0.06)',borderRadius:6,fontFamily:'monospace',fontSize:11,lineHeight:1.7}}>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>type:</span> {isDate ? '📅 Date object' : typeof sample}</div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>raw value:</span> {isDate ? sample.toISOString() : asString || '(empty)'}</div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>String(raw):</span> <span style={{color:'#dc2626'}}>{asString.slice(0,60)}</span></div>
+                      <div><span style={{color:'#78350f',fontWeight:600}}>parseDateDMY:</span> <strong style={{color: parsed ? '#065f46' : '#dc2626'}}>{parsed || '⚠ FAILED — will store today\'s date'}</strong></div>
+                    </div>
+                  )
+                })()}
+                <p style={{margin:'0 0 8px',fontSize:12,color:'#78350f',lineHeight:1.6}}>
+                  Duplicate receipts (matched by receipt number) will be skipped automatically.
+                  Month is derived from receipt date when no month column is present.
+                </p>
+                {/* Overwrite toggle */}
+                <label style={{display:'flex',alignItems:'center',gap:7,cursor:'pointer',marginTop:4}}>
+                  <input type="checkbox" checked={overwriteFY} onChange={e=>setOverwriteFY(e.target.checked)}
+                    style={{width:14,height:14,accentColor:'#d97706',cursor:'pointer'}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:'#92400e'}}>
+                    Clear existing receipts for FY {sheetName} and re-import (overwrite mode)
+                  </span>
+                </label>
+                {overwriteFY && (
+                  <p style={{margin:'5px 0 0 21px',fontSize:11,color:'#dc2626',fontWeight:600}}>
+                    ⚠ All existing receipts for FY {sheetName} will be deleted before importing.
+                  </p>
+                )}
+              </div>
+            ) : isDirectory ? (
+              <div style={{marginBottom:16}}>
+                <div style={{borderRadius:8,border:'1px solid #99f6e4',padding:'12px 14px',background:'#f0fdfa',marginBottom:12}}>
+                  <p style={{margin:'0 0 4px',fontSize:13,fontWeight:600,color:'#115e59',display:'flex',alignItems:'center',gap:6}}>
+                    <BookUser size={14} /> {rows.length.toLocaleString()} contacts ready for Phone Directory
+                  </p>
+                  <p style={{margin:0,fontSize:12,color:'#0f766e',lineHeight:1.55}}>
+                    Uses export columns: Kind, Name, Organization, Title/Role, Category, Primary/Secondary number, Email, Address, Notes.
+                    Categories are matched by name when they already exist in Directory Settings.
+                  </p>
+                </div>
+                <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #ccfbf1',maxHeight:260}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                    <thead>
+                      <tr style={{background:'#f0fdfa'}}>
+                        {dirPreviewCols.map(({header})=>(
+                          <th key={header} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'#0f766e',borderBottom:'1px solid #99f6e4',whiteSpace:'nowrap'}}>{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0,5).map((row,i)=>(
+                        <tr key={i} style={{background:i%2===0?'#fff':'#fafafa'}}>
+                          {dirPreviewCols.map(({header, idx})=>(
+                            <td key={header} style={{padding:'7px 10px',borderBottom:'1px solid #f0fdfa',color:'#334155',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                              {row[idx] ? String(row[idx]) : <span style={{color:'#cbd5e1'}}>—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* Normal member/deleted preview table */
+              <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #f1f5f9',marginBottom:16,maxHeight:260}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead>
+                    <tr style={{background:'#f8fafc'}}>
+                      {previewCols.map(({header, dbCol})=>(
+                        <th key={dbCol} style={{textAlign:'left',padding:'8px 10px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',color:'#94a3b8',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0,5).map((row,i)=>(
+                      <tr key={i} style={{background:i%2===0?'#fff':'#fafafa'}}>
+                        {previewCols.map(({header, idx, dbCol})=>(
+                          <td key={header} style={{padding:'7px 10px',borderBottom:'1px solid #f8fafc',color:'#334155',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {row[idx]
+                              ? (DATE_COLS.includes(dbCol)
+                                  ? fmtDateDisplay(cleanVal(row[idx], dbCol)) || row[idx]
+                                  : row[idx])
+                              : <span style={{color:'#cbd5e1'}}>—</span>}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={doImport} disabled={importing}
+                style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',fontSize:13,fontWeight:600,borderRadius:9,border:'none',
+                  background:importing?'#93c5fd':btnBg,
+                  color:'#fff',cursor:importing?'default':'pointer',
+                  boxShadow:`0 2px 8px ${btnShadow}`}}>
+                {importing
+                  ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/>Importing {progress.percent}%…</>
+                  : isWorkings
+                  ? <><CheckCircle size={13}/>Replace {zoneNames.length} zones</>
+                  : isReceipts
+                  ? <><CheckCircle size={13}/>Import {rows.length.toLocaleString()} receipts — FY {sheetName}</>
+                  : isDirectory
+                  ? <><CheckCircle size={13}/>Import {rows.length.toLocaleString()} contacts</>
+                  : <><CheckCircle size={13}/>Confirm &amp; import {rows.length.toLocaleString()} records</>}
+              </button>
+              <button onClick={reset}
+                style={{display:'flex',alignItems:'center',gap:6,padding:'9px 16px',fontSize:13,fontWeight:500,borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer'}}>
+                <RefreshCw size={13}/>Start over
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Step 4: Progress */}
+      {step>=4 && importing && !result && (
+        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+            <Loader2 size={16} style={{color:'#2563eb',animation:'spin 1s linear infinite',flexShrink:0}}/>
+            <div>
+              <p style={{margin:'0 0 1px',fontSize:13,fontWeight:600,color:'#0f172a'}}>{progress.label || 'Importing…'}</p>
+              <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>"{sheetName}"</p>
+            </div>
+            <span style={{marginLeft:'auto',fontSize:18,fontWeight:800,color:'#2563eb',lineHeight:1}}>{progress.percent}%</span>
+          </div>
+          <div style={{height:10,borderRadius:5,background:'#e2e8f0',overflow:'hidden',marginBottom:14}}>
+            <div style={{height:'100%',borderRadius:5,background:'#2563eb',transition:'width .25s ease',width:progress.percent+'%'}}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:10}}>
+            {[
+              ['Transferred', progress.done, '#16a34a', '#f0fdf4'],
+              ['Pending', progress.pending, '#d97706', '#fffbeb'],
+              ['Total', progress.total, '#2563eb', '#eff6ff'],
+            ].map(([l, v, c, bg]) => (
+              <div key={l} style={{background:bg,borderRadius:10,padding:'12px 10px',textAlign:'center'}}>
+                <p style={{margin:'0 0 2px',fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{Number(v).toLocaleString()}</p>
+                <p style={{margin:0,fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:c,opacity:0.75}}>{l}</p>
+              </div>
+            ))}
+          </div>
+          <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>
+            {progress.done.toLocaleString()} of {progress.total.toLocaleString()} processed — please wait, do not close this page.
+          </p>
+        </div>
+      )}
+
+      {/* Step 4: Result */}
+      {step>=4 && result && (
+        <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.03)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+            <div style={{width:32,height:32,borderRadius:8,background:'#f0fdf4',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <CheckCircle size={16} style={{color:'#22c55e'}}/>
+            </div>
+            <div>
+              <p style={{margin:'0 0 1px',fontSize:13,fontWeight:600,color:'#0f172a'}}>Import complete</p>
+              <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>"{sheetName}"</p>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
+            {[['Imported',result.inserted,'#22c55e','#f0fdf4'],['Errors',result.errors,result.errors?'#ef4444':'#22c55e',result.errors?'#fef2f2':'#f0fdf4'],['Total',result.total,'#2563eb','#eff6ff']].map(([l,v,c,bg])=>(
+              <div key={l} style={{background:bg,borderRadius:10,padding:'14px 12px',textAlign:'center'}}>
+                <p style={{margin:'0 0 3px',fontSize:26,fontWeight:800,color:c,lineHeight:1}}>{v}</p>
+                <p style={{margin:0,fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:c,opacity:0.7}}>{l}</p>
+              </div>
+            ))}
+          </div>
+          {result.dups > 0 && (
+            <div style={{display:'flex',gap:8,alignItems:'center',padding:'10px 14px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:9,marginBottom:12}}>
+              <AlertTriangle size={13} style={{color:'#d97706',flexShrink:0}}/>
+              <p style={{margin:0,fontSize:12,color:'#92400e'}}>
+                {result.dups} duplicate Member ID{result.dups>1?'s':''} found — last occurrence kept for each.
+              </p>
+            </div>
+          )}
+          <div style={{display:'flex',gap:8}}>
+            <a href="/members" style={{display:'flex',alignItems:'center',gap:6,padding:'8px 16px',fontSize:13,fontWeight:600,borderRadius:9,background:'#2563eb',color:'#fff',textDecoration:'none',boxShadow:'0 2px 8px rgba(37,99,235,0.2)'}}>View members</a>
+            <button onClick={reset} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 16px',fontSize:13,fontWeight:500,borderRadius:9,border:'1px solid #e2e8f0',background:'#fff',color:'#64748b',cursor:'pointer'}}>
+              <RefreshCw size={13}/>Import another
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── PHOTOS TAB ────────────────────────────────────────────────────────────────
+function PhotosTab({ onRefreshBoard }) {
+  const toast = useToast()
+  const fileRef = useRef(null)
+  const [folder, setFolder] = useState('active')
+  const [files, setFiles] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState({ percent: 0, done: 0, pending: 0, total: 0 })
+  const [errors, setErrors] = useState(0)
+  const [existing, setExisting] = useState([])
+  const [loadingExisting, setLoadingExisting] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  useEffect(() => { loadExisting(); setFiles([]) }, [folder])
+
+  async function loadExisting() {
+    setLoadingExisting(true)
+    const { data } = await supabase.storage.from('member-photos').list(folder, { limit:10000, sortBy:{column:'name',order:'asc'} })
+    setExisting((data||[]).filter(f=>/\.(jpg|jpeg|png)$/i.test(f.name)))
+    setLoadingExisting(false)
+  }
+
+  function handleFiles(fileList) {
+    const imgs = Array.from(fileList).filter(f=>/\.(jpg|jpeg|png)$/i.test(f.name))
+    if (!imgs.length) { toast('No valid image files selected.','error'); return }
+    setFiles(imgs)
+  }
+
+  function updatePhotoProgress(processed, total) {
+    const safeTotal = Math.max(0, total || 0)
+    const safeDone = Math.min(Math.max(0, processed || 0), safeTotal)
+    setProgress({
+      percent: safeTotal > 0 ? Math.round((safeDone / safeTotal) * 100) : 0,
+      done: safeDone,
+      pending: Math.max(0, safeTotal - safeDone),
+      total: safeTotal,
+    })
+  }
+
+  async function upload() {
+    if (!files.length) return
+    const targetFolder = folder // capture at call time — avoids stale closure
+    const total = files.length
+    setUploading(true); updatePhotoProgress(0, total); setErrors(0)
+    let d=0, e=0
+    for (let i=0;i<files.length;i++) {
+      const f = files[i]
+      const memberId = f.name.replace(/\.[^.]+$/,'')
+      const ext = f.name.split('.').pop().toLowerCase()
+      const { error } = await supabase.storage.from('member-photos').upload(`${targetFolder}/${memberId}.${ext}`, f, { upsert:true })
+      if (error) { e++; console.error(f.name, error.message) } else d++
+      updatePhotoProgress(i + 1, total)
+      setErrors(e)
+      await new Promise(r=>setTimeout(r,50))
+    }
+    setUploading(false)
+    toast(d+' photos uploaded to '+targetFolder+(e?' ('+e+' failed)':''), e?'warning':'success')
+    if (d > 0) {
+      await logMigration(`photos_${targetFolder}`, targetFolder === 'active' ? 'Photos — Active' : 'Photos — Deleted', 'success', files.length, d, e)
+      onRefreshBoard?.()
+    }
+    setFiles([]); loadExisting()
+  }
+
+  async function flushFolder(targetFolder) {
+    if (!confirm(`Delete ALL photos in "${targetFolder}" folder?\nThis cannot be undone.`)) return
+    const { data: allFiles } = await supabase.storage.from('member-photos').list(targetFolder, { limit:10000 })
+    if (allFiles?.length) {
+      const paths = allFiles.filter(f=>f.metadata).map(f=>`${targetFolder}/${f.name}`)
+      if (paths.length) await supabase.storage.from('member-photos').remove(paths)
+    }
+    toast(`All photos in "${targetFolder}" deleted.`, 'success')
+    loadExisting(); onRefreshBoard?.()
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Folder tabs with per-folder flush buttons */}
+      <div className="flex border-b border-slate-200 justify-between items-end">
+        <div className="flex">
+          {[['active','Active Members'],['deleted','Deleted Members']].map(([id,label])=>(
+            <button key={id} onClick={()=>{ setFolder(id); setFiles([]) }}
+              className={'px-4 py-2.5 text-sm font-semibold border-b-2 transition-all '+(folder===id?'border-blue-600 text-blue-600':'border-transparent text-slate-400 hover:text-slate-600')}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 pb-2">
+          {[['active','Active'],['deleted','Deleted']].map(([id,label])=>(
+            <button key={id} onClick={()=>flushFolder(id)}
+              style={{fontSize:11,padding:'3px 10px',border:'0.5px solid #F7C1C1',borderRadius:8,background:'#FCEBEB',color:'#A32D2D',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+              <Trash2 size={10}/> Flush {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={'rounded-xl p-8 text-center cursor-pointer transition-all border-2 border-dashed '+(dragOver?'border-blue-400 bg-blue-50':(files.length?'border-green-400 bg-green-50':'border-slate-200 bg-slate-50 hover:border-blue-300'))}
+        onClick={()=>fileRef.current?.click()}
+        onDragOver={e=>{e.preventDefault();setDragOver(true)}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files)}}>
+        <Camera size={36} className={'mx-auto mb-3 '+(files.length?'text-green-500':'text-slate-300')}/>
+        <p className="text-sm font-semibold text-slate-700">
+          {files.length ? files.length+' photo(s) selected' : 'Click or drag photos here'}
+        </p>
+        <p className="text-xs text-slate-400 mt-1">JPG, JPEG, PNG — filename must be Member ID</p>
+        <p className="text-xs text-blue-600 mt-1.5 font-medium">Uploading to: member-photos/{folder}/</p>
+      </div>
+      <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png" multiple className="hidden" onChange={e=>handleFiles(e.target.files)}/>
+
+      {files.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold text-slate-700">{files.length} photo(s) ready</p>
+            <div className="flex gap-2">
+              <button onClick={()=>setFiles([])} disabled={uploading} className="btn btn-ghost btn-sm">Clear</button>
+              <button onClick={upload} disabled={uploading} className="btn btn-primary btn-sm">
+                {uploading
+                  ? <><Loader2 size={13} className="animate-spin"/>Uploading {progress.percent}%…</>
+                  : <><Upload size={13}/>Upload {files.length} photos</>}
+              </button>
+            </div>
+          </div>
+          {uploading && (
+            <div style={{marginBottom:12}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <Loader2 size={15} style={{color:'#2563eb',animation:'spin 1s linear infinite',flexShrink:0}}/>
+                <div style={{flex:1}}>
+                  <p style={{margin:0,fontSize:13,fontWeight:600,color:'#0f172a'}}>Uploading photos to {folder}/</p>
+                  <p style={{margin:0,fontSize:11,color:'#94a3b8'}}>
+                    {progress.done.toLocaleString()} of {progress.total.toLocaleString()} processed
+                    {errors ? ` · ${errors} failed` : ''}
+                  </p>
+                </div>
+                <span style={{fontSize:18,fontWeight:800,color:'#2563eb',lineHeight:1}}>{progress.percent}%</span>
+              </div>
+              <div style={{height:10,borderRadius:5,background:'#e2e8f0',overflow:'hidden',marginBottom:12}}>
+                <div style={{height:'100%',borderRadius:5,background:'#2563eb',transition:'width .25s ease',width:progress.percent+'%'}}/>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+                {[
+                  ['Transferred', progress.done, '#16a34a', '#f0fdf4'],
+                  ['Pending', progress.pending, '#d97706', '#fffbeb'],
+                  ['Total', progress.total, '#2563eb', '#eff6ff'],
+                ].map(([l, v, c, bg]) => (
+                  <div key={l} style={{background:bg,borderRadius:10,padding:'12px 10px',textAlign:'center'}}>
+                    <p style={{margin:'0 0 2px',fontSize:22,fontWeight:800,color:c,lineHeight:1}}>{Number(v).toLocaleString()}</p>
+                    <p style={{margin:0,fontSize:10,fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',color:c,opacity:0.75}}>{l}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="grid gap-2 mt-3" style={{gridTemplateColumns:'repeat(auto-fill,minmax(80px,1fr))'}}>
+            {files.slice(0,12).map((f,i)=>(
+              <div key={i} className="rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                <img src={URL.createObjectURL(f)} className="w-full h-16 object-cover" alt=""/>
+                <p className="text-[9px] text-slate-500 p-1 text-center truncate">{f.name.replace(/\.[^.]+$/,'')}</p>
+              </div>
+            ))}
+            {files.length>12&&<div className="rounded-lg border border-dashed border-slate-200 h-20 flex items-center justify-center text-xs text-slate-400">+{files.length-12} more</div>}
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Photos in {folder}/ ({existing.length})</span>
+          <button onClick={loadExisting} className="btn btn-ghost btn-sm"><RefreshCw size={12}/>Refresh</button>
+        </div>
+        <div className="p-4">
+          {loadingExisting ? (
+            <div className="flex justify-center py-8"><Loader2 size={18} className="animate-spin text-slate-300"/></div>
+          ) : existing.length===0 ? (
+            <p className="text-center py-8 text-slate-400 text-sm">No photos in {folder}/ yet.</p>
+          ) : (
+            <div className="grid gap-2" style={{gridTemplateColumns:'repeat(auto-fill,minmax(90px,1fr))'}}>
+              {existing.map(p=>{
+                const { data: { publicUrl } } = supabase.storage.from('member-photos').getPublicUrl(`${folder}/${p.name}`)
+                return (
+                  <div key={p.name} className="rounded-lg overflow-hidden border border-slate-200">
+                    <img src={publicUrl} loading="lazy" className="w-full h-20 object-cover" alt=""/>
+                    <p className="text-[9px] text-slate-500 p-1 text-center truncate">{p.name.replace(/\.[^.]+$/,'')}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AUTO FLUSH ────────────────────────────────────────────────────────────────
+const CLEANUP_RULES = [
+  { bucket: 'announcement-cards',   label: 'Announcement Cards',   maxAgeHours: 48,  note: 'Root-level files only — templates/ subfolder is never touched.' },
+  { bucket: 'announcement-reports', label: 'Announcement Reports', maxAgeHours: 48,  note: 'Files with "template" in the name are kept forever.' },
+  { bucket: 'family-records',       label: 'Family Records',       maxAgeHours: 168, note: 'Files with "template" in the name are kept forever.' },
+  { bucket: 'payment-pages',        label: 'Payment Pages',        maxAgeHours: 168, note: 'HTML/PDF payment pages older than 7 days are removed.' },
+]
+
+const DB_CLEANUP_RULES = [
+  { table: 'login_logs',            label: 'Login Logs',            maxAgeDays: 15, dateColumn: 'login_at',   note: 'Login sessions older than 15 days are automatically removed.' },
+  { table: 'whatsapp_receipt_logs', label: 'WhatsApp Receipt Log',  maxAgeDays: 15, dateColumn: 'sent_at',    note: 'WhatsApp receipt send logs older than 15 days are removed.' },
+  { table: 'announcements_log',     label: 'Announcement Log',      maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Announcement send logs older than 15 days are removed.' },
+  { table: 'payment_request_logs',  label: 'Payment Request Log',   maxAgeDays: 15, dateColumn: 'sent_at',    note: 'Payment request send logs older than 15 days are removed.' },
+  { table: 'cms_audit_log',         label: 'Audit Trail',           maxAgeDays: 15, dateColumn: 'created_at', note: 'CMS audit trail entries older than 15 days are removed.' },
+  {
+    table: 'cms_recycle_bin',
+    label: 'Recycle Bin',
+    maxAgeDays: RECYCLE_BIN_RETENTION_DAYS,
+    dateColumn: 'deleted_at',
+    note: `Deleted snapshots older than ${RECYCLE_BIN_RETENTION_DAYS} days are permanently purged (quarantined photos/files removed).`,
+    mode: 'recycle_purge',
+  },
+]
+
+// A file is a template if it has no metadata (folder) or name contains "template"
+const isTemplateFile = f => !f.metadata || f.name.toLowerCase().includes('template')
+
+function fmtAge(hours) {
+  return hours >= 24 ? `${hours / 24} day${hours / 24 !== 1 ? 's' : ''}` : `${hours}h`
+}
+
+/** Count files in a storage bucket (root + one-level subfolders; folders themselves excluded). */
+async function countBucketFiles(bucket) {
+  const { data: rootItems, error } = await adminSupabase.storage
+    .from(bucket).list('', { limit: 10_000 })
+  if (error) return { count: null, error: error.message }
+  let count = 0
+  for (const item of (rootItems || [])) {
+    if (item.metadata) {
+      count++
+      continue
+    }
+    if (item.name.toLowerCase().includes('template')) continue
+    const { data: subItems } = await adminSupabase.storage
+      .from(bucket).list(item.name, { limit: 10_000 })
+    for (const f of (subItems || [])) {
+      if (f.metadata) count++
+    }
+  }
+  return { count, error: null }
+}
+
+function AutoFlushTab() {
+  const toast = useToast()
+  const [running,  setRunning]  = useState(false)
+  const [results,  setResults]  = useState(null)
+  const [counts,   setCounts]   = useState({})   // key → number | null
+  const [countsLoading, setCountsLoading] = useState(true)
+  const [lastRun,  setLastRun]  = useState(() => {
+    try { return localStorage.getItem('storage_cleanup_last_run') } catch { return null }
+  })
+
+  const loadCounts = useCallback(async () => {
+    setCountsLoading(true)
+    const next = {}
+    await Promise.all([
+      ...CLEANUP_RULES.map(async (rule) => {
+        const { count } = await countBucketFiles(rule.bucket)
+        next[rule.bucket] = count
+      }),
+      ...DB_CLEANUP_RULES.map(async (rule) => {
+        let q = adminSupabase.from(rule.table).select('*', { count: 'exact', head: true })
+        if (rule.mode === 'recycle_purge') q = q.eq('status', 'deleted')
+        const { count, error } = await q
+        next[rule.table] = error ? null : (count ?? 0)
+      }),
+    ])
+    setCounts(next)
+    setCountsLoading(false)
+  }, [])
+
+  useEffect(() => { loadCounts() }, [loadCounts])
+
+  async function runCleanup() {
+    setRunning(true)
+    setResults(null)
+    const out = []
+    const now = Date.now()
+
+    for (const rule of CLEANUP_RULES) {
+      // List root to discover both files and subfolders
+      const { data: rootItems, error: listErr } = await adminSupabase.storage
+        .from(rule.bucket).list('', { limit: 10_000 })
+
+      if (listErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: 0, error: listErr.message })
+        continue
+      }
+
+      const threshold = new Date(now - rule.maxAgeHours * 3_600_000)
+      const toDelete = []
+      let keptTemplates = 0
+      let keptFresh = 0
+
+      for (const item of (rootItems || [])) {
+        if (item.metadata) {
+          // Root-level file — only delete when older than retention
+          if (isTemplateFile(item)) { keptTemplates++; continue }
+          if (new Date(item.created_at) < threshold) toDelete.push(item.name)
+          else keptFresh++
+        } else {
+          // Subfolder — skip anything named template*
+          if (item.name.toLowerCase().includes('template')) continue
+          const { data: subItems } = await adminSupabase.storage
+            .from(rule.bucket).list(item.name, { limit: 10_000 })
+          for (const f of (subItems || [])) {
+            if (!f.metadata) continue
+            if (isTemplateFile(f)) { keptTemplates++; continue }
+            if (new Date(f.created_at) < threshold) toDelete.push(`${item.name}/${f.name}`)
+            else keptFresh++
+          }
+        }
+      }
+
+      if (!toDelete.length) {
+        out.push({ label: rule.label, deleted: 0, kept: keptTemplates, keptFresh, error: null })
+        continue
+      }
+
+      // Storage remove is capped; chunk large batches
+      let delErrMsg = null
+      for (let i = 0; i < toDelete.length; i += 100) {
+        const chunk = toDelete.slice(i, i + 100)
+        const { error: delErr } = await adminSupabase.storage.from(rule.bucket).remove(chunk)
+        if (delErr) { delErrMsg = delErr.message; break }
+      }
+      out.push({ label: rule.label, deleted: delErrMsg ? 0 : toDelete.length, kept: keptTemplates, keptFresh, error: delErrMsg })
+    }
+
+    // DB table cleanup — select matching ids first so kept/removed counts are accurate
+    for (const rule of DB_CLEANUP_RULES) {
+      if (rule.mode === 'recycle_purge') {
+        try {
+          const { purged, keptFresh, error: purgeErr } = await purgeExpiredRecycleBinItems(rule.maxAgeDays)
+          out.push({
+            label: rule.label,
+            deleted: purgeErr ? 0 : purged,
+            kept: 0,
+            keptFresh,
+            error: purgeErr || null,
+            isDb: true,
+            retentionDays: rule.maxAgeDays,
+          })
+        } catch (e) {
+          out.push({
+            label: rule.label,
+            deleted: 0,
+            kept: 0,
+            keptFresh: 0,
+            error: e?.message || String(e),
+            isDb: true,
+            retentionDays: rule.maxAgeDays,
+          })
+        }
+        continue
+      }
+
+      const cutoff = new Date(Date.now() - rule.maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
+      const { count: totalCount, error: totalErr } = await adminSupabase
+        .from(rule.table)
+        .select('*', { count: 'exact', head: true })
+      if (totalErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: 0, error: totalErr.message, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+
+      // Page through stale ids — PostgREST defaults to 1000 rows per request
+      const ids = []
+      let pageErr = null
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error: staleErr } = await adminSupabase
+          .from(rule.table)
+          .select('id')
+          .lt(rule.dateColumn, cutoff)
+          .range(from, from + 999)
+        if (staleErr) { pageErr = staleErr; break }
+        const rows = page || []
+        ids.push(...rows.map(r => r.id))
+        if (rows.length < 1000) break
+      }
+      if (pageErr) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh: totalCount || 0, error: pageErr.message, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+      const keptFresh = (totalCount || 0) - ids.length
+      if (!ids.length) {
+        out.push({ label: rule.label, deleted: 0, kept: 0, keptFresh, error: null, isDb: true, retentionDays: rule.maxAgeDays })
+        continue
+      }
+
+      let deleted = 0
+      let delErrMsg = null
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200)
+        const { error: delErr, count } = await adminSupabase
+          .from(rule.table)
+          .delete({ count: 'exact' })
+          .in('id', chunk)
+        if (delErr) { delErrMsg = delErr.message; break }
+        deleted += count || chunk.length
+      }
+      out.push({
+        label: rule.label,
+        deleted: delErrMsg ? 0 : deleted,
+        kept: 0,
+        keptFresh: delErrMsg ? (totalCount || 0) : keptFresh,
+        error: delErrMsg,
+        isDb: true,
+        retentionDays: rule.maxAgeDays,
+      })
+    }
+
+    const ts = new Date().toISOString()
+    try { localStorage.setItem('storage_cleanup_last_run', ts) } catch { /* ignore */ }
+    setLastRun(ts)
+    setResults(out)
+    setRunning(false)
+    loadCounts()
+
+    const total = out.reduce((s, r) => s + r.deleted, 0)
+    toast(total > 0 ? `Cleanup done — ${total} item${total !== 1 ? 's' : ''} removed.` : 'Cleanup done — nothing past retention.', 'success')
+  }
+
+  function itemCountBadge(key) {
+    if (countsLoading && counts[key] === undefined) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f1f5f9', color: '#94a3b8', fontWeight: 500 }}>
+          …
+        </span>
+      )
+    }
+    const n = counts[key]
+    if (n == null) {
+      return (
+        <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef2f2', color: '#b91c1c', fontWeight: 500 }}>
+          —
+        </span>
+      )
+    }
+    return (
+      <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>
+        {n} item{n !== 1 ? 's' : ''}
+      </span>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Config card */}
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
+          <div>
+            <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Storage Auto-Flush</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+              Runs automatically every hour via scheduled job (FIFO).<br/>
+              <strong style={{ color: '#64748b' }}>Templates are never deleted.</strong>
+            </p>
+          </div>
+          <button onClick={runCleanup} disabled={running} style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 16px', fontSize: 12, fontWeight: 600, borderRadius: 9,
+            border: 'none', background: running ? '#93c5fd' : '#2563eb', color: '#fff',
+            cursor: running ? 'default' : 'pointer', whiteSpace: 'nowrap',
+          }}>
+            {running
+              ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />Running…</>
+              : <><Zap size={13} />Run Now</>}
+          </button>
+        </div>
+
+        {/* Rules list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {CLEANUP_RULES.map(rule => (
+            <div key={rule.bucket} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc',
+            }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Camera size={15} style={{ color: '#3b82f6' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.bucket)}
+                </p>
+                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rule.bucket}</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={10} /> {fmtAge(rule.maxAgeHours)}
+                </span>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#f0fdf4', color: '#166534', fontWeight: 500 }}>
+                  🛡 Templates safe
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {/* DB cleanup rules */}
+          {DB_CLEANUP_RULES.map(rule => (
+            <div key={rule.table} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+              borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc',
+            }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: '#fdf4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Database size={15} style={{ color: '#a855f7' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {rule.label}
+                  {itemCountBadge(rule.table)}
+                </p>
+                <p style={{ margin: 0, fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>
+                  {rule.mode === 'recycle_purge'
+                    ? `${rule.table} · status=deleted · ${rule.dateColumn}`
+                    : `${rule.table} · ${rule.dateColumn}`}
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#fef3c7', color: '#92400e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={10} /> {rule.maxAgeDays} days
+                </span>
+                <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: rule.mode === 'recycle_purge' ? '#fef2f2' : '#fdf4ff', color: rule.mode === 'recycle_purge' ? '#b91c1c' : '#7e22ce', fontWeight: 500 }}>
+                  {rule.mode === 'recycle_purge' ? 'Auto purge' : 'DB table'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {lastRun && (
+          <p style={{ margin: '14px 0 0', fontSize: 11, color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <CheckCircle size={11} style={{ color: '#22c55e' }} />
+            Last run: {fmtDateTime(lastRun)}
+          </p>
+        )}
+      </div>
+
+      {/* Results */}
+      {results && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Cleanup results — {fmtDateTime(new Date().toISOString())}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {results.map(r => (
+              <div key={r.label} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                borderRadius: 9, border: `1px solid ${r.error ? '#fecaca' : r.deleted > 0 ? '#bbf7d0' : '#e2e8f0'}`,
+                background: r.error ? '#fef2f2' : r.deleted > 0 ? '#f0fdf4' : '#f8fafc',
+              }}>
+                {r.error
+                  ? <XCircle size={15} style={{ color: '#ef4444', flexShrink: 0 }} />
+                  : r.deleted > 0
+                  ? <Trash2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} />
+                  : <CheckCircle size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />}
+                <span style={{ flex: 1, fontSize: 13, color: '#0f172a', fontWeight: 500 }}>{r.label}</span>
+                {r.error ? (
+                  <span style={{ fontSize: 11, color: '#dc2626' }}>{r.error}</span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span style={{ fontSize: 12, fontWeight: r.deleted > 0 ? 700 : 400, color: r.deleted > 0 ? '#15803d' : '#94a3b8' }}>
+                      {r.deleted > 0 ? `${r.deleted} removed` : '0 removed'}
+                    </span>
+                    {r.keptFresh > 0 && (
+                      <span style={{ fontSize: 11, color: '#64748b', padding: '2px 7px', borderRadius: 12, background: '#f1f5f9' }}>
+                        {r.keptFresh} within {r.isDb ? `${r.retentionDays} days` : 'retention'}
+                      </span>
+                    )}
+                    {r.kept > 0 && (
+                      <span style={{ fontSize: 11, color: '#64748b', padding: '2px 7px', borderRadius: 12, background: '#f0fdf4' }}>
+                        {r.kept} template{r.kept !== 1 ? 's' : ''} kept
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Receipt import helpers (used by ImportTab.doImportReceipts) ───────────────
+const _DMY_MONS = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}
+function parseDateDMY(s) {
+  if (!s && s !== 0) return ''
+  // JS Date object (raw:true + cellDates:true in XLSX.read).
+  // SheetJS uses new Date(y, m, d) (local midnight), but floating-point serial math can
+  // produce a value a few seconds BEFORE midnight — e.g. 23:59:50 IST instead of 00:00:00.
+  // Adding 30 min clears that gap without ever crossing a real day boundary.
+  if (s instanceof Date) {
+    if (isNaN(s.getTime())) return ''
+    const adj = new Date(s.getTime() + 30 * 60 * 1000)
+    return `${adj.getFullYear()}-${String(adj.getMonth()+1).padStart(2,'0')}-${String(adj.getDate()).padStart(2,'0')}`
+  }
+  const str = String(s).trim()
+  if (!str) return ''
+  // ISO date / datetime: "2026-04-01" or "2026-04-01T00:00:00…"
+  const m2 = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`
+  // DD-MM-YYYY or DD/MM/YYYY
+  const m1 = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`
+  // DD-MMM-YYYY or DD MMM YYYY  e.g. "01-Apr-2026" / "1 April 2026"
+  const m3 = str.match(/^(\d{1,2})[-/ ]([a-zA-Z]{3,9})[-/ ](\d{4})$/)
+  if (m3) {
+    const mo = _DMY_MONS[m3[2].toLowerCase().slice(0,3)]
+    if (mo) return `${m3[3]}-${String(mo).padStart(2,'0')}-${m3[1].padStart(2,'0')}`
+  }
+  // Excel serial number string
+  if (/^\d+$/.test(str)) {
+    const n = parseInt(str, 10)
+    if (n > 1000) {
+      const d = new Date((n - 25569) * 86400 * 1000)
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    }
+  }
+  return ''
+}
+function normalizeCol(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+
+// ── COA Import Tab ────────────────────────────────────────────────────────────
+
+const COA_LEVEL_FROM_LABEL = { 'Main Account': 1, 'Account Group': 2, 'Ledger': 3, 'Sub-Ledger': 4 }
+
+function COAImportTab({ currentEntityId, currentEntity }) {
+  const toast = useToast()
+  const fileRef = useRef(null)
+  const [parsing,      setParsing]      = useState(false)
+  const [importModal,  setImportModal]  = useState(null)  // { rows, fileName }
+  const [saving,       setSaving]       = useState(false)
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setParsing(true)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      await wb.xlsx.load(await file.arrayBuffer())
+      const ws = wb.worksheets[0]
+
+      let headerRow = 0
+      ws.eachRow((row, n) => {
+        if (row.getCell(4).text?.trim() === 'Account Name') headerRow = n
+      })
+      if (!headerRow) throw new Error('Invalid file — could not find header row with "Account Name" in column D')
+
+      const rows = []
+      ws.eachRow((row, n) => {
+        if (n <= headerRow) return
+        const levelLabel = row.getCell(2).text?.trim()
+        const type       = row.getCell(3).text?.trim()
+        const rawName    = row.getCell(4).text || ''
+        const postable   = row.getCell(5).text?.trim() === '✓'
+        const name       = rawName.trim()
+        if (!name || !levelLabel || !type) return
+        const level = COA_LEVEL_FROM_LABEL[levelLabel]
+        if (!level) return
+        rows.push({ level, name, account_type: type, is_postable: postable })
+      })
+
+      if (rows.length === 0) throw new Error('No valid rows found in file')
+
+      const current = await getChartOfAccounts(false, currentEntityId)
+      const stack   = []
+      const preview = rows.map(row => {
+        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
+        const parentId = stack.length ? stack[stack.length - 1].id : null
+        const exists   = current.find(a =>
+          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
+        )
+        const entry = { ...row, parentId, exists: !!exists, existingId: exists?.id || null }
+        stack.push({ level: row.level, name: row.name, id: exists?.id || null })
+        return entry
+      })
+
+      setImportModal({ rows: preview, fileName: file.name })
+    } catch (err) { toast('Parse failed: ' + err.message, 'error') }
+    setParsing(false)
+  }
+
+  async function doImport() {
+    if (!importModal) return
+    setSaving(true)
+    try {
+      const current = await getChartOfAccounts(false, currentEntityId)
+      const stack   = []
+      let created = 0, skipped = 0
+
+      for (const row of importModal.rows) {
+        while (stack.length && stack[stack.length - 1].level >= row.level) stack.pop()
+        const parent   = stack.length ? stack[stack.length - 1] : null
+        const parentId = parent?.id || null
+
+        const exists = current.find(a =>
+          a.name.trim().toLowerCase() === row.name.toLowerCase() && a.parent_id === parentId
+        )
+        if (exists) {
+          stack.push({ level: row.level, name: row.name, id: exists.id, code: exists.code })
+          skipped++
+          continue
+        }
+
+        const uid  = Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase()
+        const code = parent?.code ? `${parent.code}-${uid}` : uid
+
+        const { data, error } = await supabase.from('chart_of_accounts').insert({
+          code, name: row.name, account_type: row.account_type, level: row.level,
+          is_postable: row.is_postable, parent_id: parentId, entity_id: currentEntityId,
+          sort_order: 0, is_active: true,
+        }).select().single()
+
+        if (error) throw error
+        current.push(data)
+        stack.push({ level: row.level, name: row.name, id: data.id, code: data.code })
+        created++
+      }
+
+      toast(`Import complete — ${created} created, ${skipped} already existed`, 'success')
+      setImportModal(null)
+    } catch (err) { toast('Import failed: ' + err.message, 'error') }
+    setSaving(false)
+  }
+
+  const newCount  = importModal?.rows.filter(r => !r.exists).length ?? 0
+  const skipCount = importModal?.rows.filter(r =>  r.exists).length ?? 0
+
+  return (
+    <div style={{ maxWidth: 600 }}>
+      <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleFile} />
+
+      <div style={{ background: '#f3e8ff', border: '1.5px solid #c4b5fd', borderRadius: 12, padding: '20px 24px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <BookOpen size={18} color="#7c3aed" />
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#4c1d95' }}>Import Chart of Accounts</p>
+        </div>
+        {currentEntityId && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#ede9fe', borderRadius: 8, padding: '4px 12px', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: '#5b21b6', fontWeight: 700 }}>Importing into:</span>
+            <span style={{ fontSize: 12, color: '#4c1d95', fontWeight: 800 }}>{currentEntity?.name || currentEntityId}</span>
+          </div>
+        )}
+        <p style={{ margin: '0 0 16px', fontSize: 12, color: '#6d28d9', lineHeight: 1.6 }}>
+          Upload an Excel file exported from the Chart of Accounts page.
+          Switch the entity badge (top of page) before importing to target a different book.
+          Accounts that already exist (matched by name + parent) will be skipped.
+        </p>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={parsing || !currentEntityId}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 20px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: parsing || !currentEntityId ? 'not-allowed' : 'pointer', opacity: parsing || !currentEntityId ? 0.6 : 1 }}>
+          {parsing ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
+          {parsing ? 'Reading file…' : 'Choose Excel File'}
+        </button>
+        {!currentEntityId && (
+          <p style={{ margin: '10px 0 0', fontSize: 11, color: '#dc2626' }}>No accounting entity selected. Set up an entity in the Accounting module first.</p>
+        )}
+      </div>
+
+      {/* Preview Modal */}
+      {importModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--card-bg)', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+
+            <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Upload size={16} color="#7c3aed" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Import Chart of Accounts → <span style={{ color: '#7c3aed' }}>{currentEntity?.name || 'Entity'}</span></p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>{importModal.fileName}</p>
+              </div>
+              <button onClick={() => setImportModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--card-border)', display: 'flex', gap: 10 }}>
+              <span style={{ padding: '4px 12px', background: '#dcfce7', color: '#16a34a', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>{newCount} to import</span>
+              {skipCount > 0 && (
+                <span style={{ padding: '4px 12px', background: '#f1f5f9', color: '#64748b', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{skipCount} already exist (will skip)</span>
+              )}
+              <span style={{ padding: '4px 12px', background: '#eff6ff', color: '#2563eb', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>{importModal.rows.length} total rows</span>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {importModal.rows.map((row, i) => {
+                const indent = (row.level - 1) * 20
+                const c = TYPE_COLOR[row.account_type] || { bg: '#f1f5f9', text: '#475569' }
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 22px', paddingLeft: 22 + indent, borderBottom: '1px solid var(--card-border)', opacity: row.exists ? 0.45 : 1 }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: c.bg, color: c.text, flexShrink: 0 }}>{row.account_type}</span>
+                    <span style={{ fontSize: 12, fontWeight: row.level <= 2 ? 700 : 400, color: 'var(--text-1)', flex: 1 }}>{row.name}</span>
+                    {row.exists
+                      ? <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>exists</span>
+                      : <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>new</span>
+                    }
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+              {newCount === 0 && <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>All accounts already exist — nothing to import.</span>}
+              <button onClick={() => setImportModal(null)} style={{ padding: '8px 18px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>Cancel</button>
+              <button onClick={doImport} disabled={saving || newCount === 0}
+                style={{ padding: '8px 22px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: newCount === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 7, opacity: saving || newCount === 0 ? 0.6 : 1 }}>
+                {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
+                {saving ? 'Importing…' : `Import ${newCount} account${newCount !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function ImportPage() {
+  const { profile } = useAuth()
+  const toast = useToast()
+  const { currentEntityId, currentEntity } = useEntity()
+  const [tab, setTab] = useState('import')
+  const [stats, setStats] = useState([])   // [{ label, count, icon }]
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [flushingId, setFlushingId]           = useState(null)
+  const [passwordModal, setPasswordModal]     = useState(false)
+  const [flushAllModal, setFlushAllModal]     = useState(false)
+
+  const refreshStats = async () => {
+    const newStats = []
+
+    // Stats tiles show only the 4 primary items
+    for (const tbl of ['members', 'deleted_members']) {
+      try {
+        const { count, error } = await supabase.from(tbl).select('*', { count:'exact', head:true })
+        if (!error) newStats.push({ label: tbl, count: count || 0 })
+      } catch (_) {}
+    }
+
+    const KNOWN_STORAGE = [
+      { bucket: 'member-photos', folder: 'active',  label: 'Photos - Active Members'  },
+      { bucket: 'member-photos', folder: 'deleted', label: 'Photos - Deleted Members' },
+    ]
+    for (const { bucket, folder, label } of KNOWN_STORAGE) {
+      try {
+        const { data: files, error } = await supabase.storage.from(bucket).list(folder, { limit: 10000 })
+        if (!error) {
+          const fileCount = (files||[]).filter(f => f.metadata).length
+          newStats.push({ label, count: fileCount, type: 'storage' })
+        }
+      } catch (_) {}
+    }
+
+    setStats(newStats)
+  }
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true)
+    const { data, error } = await supabase
+      .from('migration_history')
+      .select('*')
+      .neq('status', 'flushed')
+      .gt('records_succeeded', 0)        // hide ghost rows from failed past attempts
+      .order('performed_at', { ascending: false })
+    if (!error) setHistory(data || [])
+    setHistoryLoading(false)
+  }, [])
+
+  useEffect(() => { refreshStats(); loadHistory() }, [loadHistory])
+
+  async function flushRow(entry) {
+    const label = entry.source_file || entry.category
+    if (!window.confirm(`Delete all records in "${label}"?\nTable structure is preserved. This cannot be undone.`)) return
+    setFlushingId(entry.id)
+    try {
+      await eraseCategory(entry.category)
+      await supabase.from('migration_history')
+        .update({ status:'flushed', flushed_at: new Date().toISOString(), flushed_by: profile?.email })
+        .eq('category', entry.category)
+      toast(`"${label}" flushed.`, 'success')
+      loadHistory(); refreshStats()
+    } catch (err) {
+      toast(`Flush failed: ${err.message}`, 'error')
+    } finally {
+      setFlushingId(null)
+    }
+  }
+
+  if (profile?.role !== 'super_admin') {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <ShieldAlert size={32} className="text-slate-300"/>
+        <p className="text-slate-400 text-sm">Access denied. Super Admin only.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="animate-fade-in max-w-6xl mx-auto">
+      <style>{`
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes fadeSlideUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .imp-page { font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif; }
+        .stat-tile {
+          position: relative;
+          overflow: hidden;
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+        .stat-tile::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image:
+            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.75) 0%, transparent 42%),
+            repeating-linear-gradient(-32deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 6px);
+          pointer-events: none;
+          border-radius: inherit;
+        }
+        .stat-tile::after {
+          content: '';
+          position: absolute;
+          left: 0; top: 0; bottom: 0;
+          width: 4px;
+          background: var(--tile-accent, #3b82f6);
+          border-radius: 12px 0 0 12px;
+        }
+        .stat-tile:hover {
+          transform: translateY(-3px);
+          box-shadow: var(--tile-shadow-hover, 0 10px 28px rgba(15,23,42,0.1));
+        }
+        .stat-tile > * { position: relative; z-index: 1; }
+        .imp-tab-bar {
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(ellipse at 18% 40%, rgba(255,255,255,0.1) 0%, transparent 48%),
+            radial-gradient(ellipse at 86% 70%, rgba(56,189,248,0.12) 0%, transparent 45%),
+            linear-gradient(135deg, var(--sidebar-bg, #0d2244) 0%, #122c55 52%, #0a1a36 100%);
+          border: 1px solid #081428;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 14px rgba(8,20,40,0.28);
+        }
+        .imp-tab-bar::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: repeating-linear-gradient(
+            115deg,
+            transparent,
+            transparent 8px,
+            rgba(255,255,255,0.04) 8px,
+            rgba(255,255,255,0.04) 9px
+          );
+          pointer-events: none;
+          border-radius: inherit;
+          opacity: 1;
+        }
+        .imp-tab-btn {
+          position: relative;
+          z-index: 1;
+          transition: all 0.18s ease;
+          color: rgba(255,255,255,0.72);
+          background: transparent;
+        }
+        .imp-tab-btn:hover:not(.imp-tab-active) {
+          color: #fff !important;
+          background: rgba(255,255,255,0.1) !important;
+        }
+        .imp-tab-active {
+          background: #fff !important;
+          color: var(--sidebar-bg, #0d2244) !important;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.28) !important;
+        }
+        .board-row { transition: background 0.12s ease; }
+        .board-row:hover { background: #f8fafc; }
+        .flush-btn-row { transition: all 0.15s ease; }
+        .flush-btn-row:hover { color: #dc2626 !important; background: #fef2f2 !important; }
+      `}</style>
+
+      <div className="imp-page">
+        {/* ── Header ── */}
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,marginBottom:28}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+              <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#2563eb,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <Database size={16} style={{color:'#fff'}}/>
+              </div>
+              <h1 className="page-title" style={{margin:0}}>Migration Dashboard</h1>
+            </div>
+            <p style={{margin:0,fontSize:12,color:'#94a3b8',paddingLeft:42}}>Import worksheets &amp; photos · Monitor all activity on the board</p>
+          </div>
+          <button onClick={()=>setFlushAllModal(true)}
+            style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,padding:'9px 18px',fontSize:13,fontWeight:500,border:'1px solid #fecaca',borderRadius:10,background:'#fff5f5',color:'#dc2626',cursor:'pointer',marginTop:4,transition:'all 0.15s ease',boxShadow:'0 1px 3px rgba(220,38,38,0.1)'}}
+            onMouseEnter={e=>{e.currentTarget.style.background='#fee2e2';e.currentTarget.style.boxShadow='0 4px 12px rgba(220,38,38,0.15)'}}
+            onMouseLeave={e=>{e.currentTarget.style.background='#fff5f5';e.currentTarget.style.boxShadow='0 1px 3px rgba(220,38,38,0.1)'}}>
+            <Trash2 size={14}/> Flush All
+          </button>
+        </div>
+
+        {/* ── Stats tiles ── */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:14,marginBottom:28}}>
+          {stats.map((s, i) => {
+            const isTable   = !s.type || s.type === 'table'
+            const isDeleted = s.label.toLowerCase().includes('deleted')
+            const accent    = isTable
+              ? (isDeleted
+                ? {
+                    bg: 'linear-gradient(155deg, #fffbeb 0%, #fef3c7 48%, #fde68a55 100%)',
+                    border: '#f6d58a',
+                    text: '#92400e',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#fbbf24,#d97706)',
+                    bar: '#f59e0b',
+                    shadow: '0 4px 16px rgba(245,158,11,0.14)',
+                    shadowHover: '0 12px 28px rgba(245,158,11,0.22)',
+                  }
+                : {
+                    bg: 'linear-gradient(155deg, #eff6ff 0%, #dbeafe 48%, #bfdbfe55 100%)',
+                    border: '#93c5fd',
+                    text: '#1e40af',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#60a5fa,#2563eb)',
+                    bar: '#3b82f6',
+                    shadow: '0 4px 16px rgba(37,99,235,0.12)',
+                    shadowHover: '0 12px 28px rgba(37,99,235,0.2)',
+                  })
+              : (isDeleted
+                ? {
+                    bg: 'linear-gradient(155deg, #fff1f2 0%, #ffe4e6 48%, #fecdd355 100%)',
+                    border: '#fda4af',
+                    text: '#9f1239',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#fb7185,#e11d48)',
+                    bar: '#e11d48',
+                    shadow: '0 4px 16px rgba(225,29,72,0.12)',
+                    shadowHover: '0 12px 28px rgba(225,29,72,0.2)',
+                  }
+                : {
+                    bg: 'linear-gradient(155deg, #ecfdf5 0%, #d1fae5 48%, #a7f3d055 100%)',
+                    border: '#6ee7b7',
+                    text: '#065f46',
+                    icon: '#fff',
+                    iconBg: 'linear-gradient(135deg,#34d399,#059669)',
+                    bar: '#10b981',
+                    shadow: '0 4px 16px rgba(16,185,129,0.12)',
+                    shadowHover: '0 12px 28px rgba(16,185,129,0.2)',
+                  })
+            return (
+              <div key={s.label} className="stat-tile" style={{
+                background: accent.bg,
+                border: `1px solid ${accent.border}`,
+                borderRadius: 12,
+                padding: '16px 18px 16px 20px',
+                boxShadow: accent.shadow,
+                ['--tile-accent']: accent.bar,
+                ['--tile-shadow-hover']: accent.shadowHover,
+                animation: `fadeSlideUp 0.3s ease ${i * 0.05}s both`,
+              }}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: accent.iconBg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 2px 8px rgba(15,23,42,0.12)',
+                  }}>
+                    {isTable
+                      ? <Database size={13} style={{color: accent.icon}}/>
+                      : <Camera size={13} style={{color: accent.icon}}/>}
+                  </div>
+                </div>
+                <p style={{margin:'0 0 3px',fontSize:22,fontWeight:700,color:'#0f172a',lineHeight:1}}>{s.count.toLocaleString()}</p>
+                <p style={{margin:0,fontSize:11,color:accent.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.label}</p>
+              </div>
+            )
+          })}
+          {stats.length === 0 && [1,2,3,4].map(i => (
+            <div key={i} className="stat-tile" style={{
+              background: 'linear-gradient(155deg,#f8fafc,#eef2f7)',
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              padding: '16px 18px',
+              opacity: 0.55,
+              ['--tile-accent']: '#cbd5e1',
+            }}>
+              <div style={{width:28,height:28,borderRadius:7,background:'#e2e8f0',marginBottom:10}}/>
+              <div style={{height:22,width:'60%',background:'#e2e8f0',borderRadius:4,marginBottom:6}}/>
+              <div style={{height:11,width:'80%',background:'#e2e8f0',borderRadius:4}}/>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Split layout ── */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 290px',gap:24,alignItems:'start'}}>
+
+          {/* LEFT: import tools */}
+          <div>
+            {/* Tab bar */}
+            <div className="imp-tab-bar" style={{display:'flex',gap:4,marginBottom:20,padding:5,borderRadius:12,width:'fit-content',maxWidth:'100%',flexWrap:'wrap'}}>
+              {[['import','Import Excel',FileSpreadsheet],['photos','Upload Photos',Camera],['autoflush','Auto Flush',Zap],['coa','Import COA',BookOpen]].map(([id,label,Icon])=>(
+                <button key={id} onClick={()=>setTab(id)}
+                  className={'imp-tab-btn' + (tab === id ? ' imp-tab-active' : '')}
+                  style={{
+                    display:'flex', alignItems:'center', gap:7,
+                    padding:'8px 16px', fontSize:13, fontWeight: tab===id ? 700 : 500,
+                    borderRadius:8, border:'none', cursor:'pointer',
+                    background: 'transparent',
+                    color: tab===id ? 'var(--sidebar-bg, #0d2244)' : 'rgba(255,255,255,0.72)',
+                  }}>
+                  <Icon size={14}/>{label}
+                </button>
+              ))}
+            </div>
+            {tab === 'import'    && <ImportTab onRefreshBoard={() => { loadHistory(); refreshStats() }} setPasswordModal={setPasswordModal}/>}
+            {tab === 'photos'    && <PhotosTab onRefreshBoard={() => { loadHistory(); refreshStats() }}/>}
+            {tab === 'autoflush' && <AutoFlushTab />}
+            {tab === 'coa'       && <COAImportTab currentEntityId={currentEntityId} currentEntity={currentEntity} />}
+          </div>
+
+          {/* RIGHT: sticky import board */}
+          <div style={{position:'sticky',top:20,height:'calc(100vh - 220px)'}}>
+            <ImportBoard
+              history={history}
+              loading={historyLoading}
+              onFlushRow={flushRow}
+              flushingId={flushingId}
+            />
+          </div>
+
+        </div>
+      </div>
+
+      <PasswordModal open={passwordModal} onClose={() => setPasswordModal(false)}/>
+      <FlushAllModal
+        open={flushAllModal}
+        onClose={() => setFlushAllModal(false)}
+        onDone={() => { loadHistory(); refreshStats() }}
+        setPasswordModal={setPasswordModal}
+        profile={profile}
+        toast={toast}
+      />
+    </div>
+  )
+}

@@ -1,0 +1,82 @@
+/**
+ * Header alert preferences — silent + per-alert snooze (localStorage).
+ */
+
+const SILENT_KEY = 'cms_notif_silent'
+const SNOOZE_KEY = 'cms_notif_snooze'
+
+export const ALERT_IDS = {
+  payment: 'payment',
+  license: 'license',
+  backup: 'backup',
+}
+
+export const SNOOZE_OPTIONS = [
+  { id: '1d', label: '1 day', ms: 24 * 60 * 60 * 1000 },
+  { id: '2d', label: '2 days', ms: 2 * 24 * 60 * 60 * 1000 },
+  { id: '3d', label: '3 days', ms: 3 * 24 * 60 * 60 * 1000 },
+  { id: '1w', label: '1 week', ms: 7 * 24 * 60 * 60 * 1000 },
+]
+
+function readJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw)
+  } catch {
+    return fallback
+  }
+}
+
+export function isNotificationsSilent() {
+  try {
+    return localStorage.getItem(SILENT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setNotificationsSilent(on) {
+  try {
+    localStorage.setItem(SILENT_KEY, on ? '1' : '0')
+  } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+}
+
+export function getSnoozeMap() {
+  const map = readJson(SNOOZE_KEY, {})
+  return map && typeof map === 'object' ? map : {}
+}
+
+export function isAlertSnoozed(alertId, now = Date.now()) {
+  const until = getSnoozeMap()[alertId]
+  return typeof until === 'number' && until > now
+}
+
+export function snoozeAlert(alertId, optionId) {
+  const opt = SNOOZE_OPTIONS.find((o) => o.id === optionId)
+  if (!opt || !opt.ms) return
+  const until = Date.now() + opt.ms
+  const next = { ...getSnoozeMap(), [alertId]: until }
+  try {
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(next))
+  } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+}
+
+export function clearAlertSnooze(alertId) {
+  const next = { ...getSnoozeMap() }
+  delete next[alertId]
+  try {
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(next))
+  } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+}
+
+export function formatSnoozeUntil(until) {
+  if (!until) return ''
+  const d = new Date(until)
+  return d.toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
+  })
+}
