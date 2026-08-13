@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1",
+    "deploy:stpauls": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -Only stpauls",
+    "deploy:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -DryRun"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

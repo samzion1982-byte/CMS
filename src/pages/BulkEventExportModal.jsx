@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, FileDown, Loader2, CheckSquare, Square } from 'lucide-react'
 import JSZip from 'jszip'
 import { supabase } from '../lib/supabase'
-import { exportEventExtractPDF, eventPdfFileName } from '../lib/exportEventExtractPDF'
+import { exportEventExtractPDFs, recordFolderName } from '../lib/exportEventExtractPDF'
 
 const KIND_OPTIONS = [
   { id: 'all', label: 'All' },
@@ -236,10 +236,16 @@ export default function BulkEventExportModal({ onClose, initialKind = 'all' }) {
         setProgress({ current: i + 1, total: jobs.length, name: `${FOLDER_NAMES[k]} ${sn} ${label}`.trim() })
 
         try {
-          const blob = await exportEventExtractPDF(k, record, church)
-          const folder = root.folder(`${FOLDER_NAMES[k]}/${record.year}`)
-          folder.file(eventPdfFileName(k, record), blob)
-          exported++
+          const files = await exportEventExtractPDFs(k, record, church)
+          // Wedding: dedicated folder with Sch. IV + Marriage Register
+          // Others: year folder with one extract PDF
+          const folder = k === 'wedding'
+            ? root.folder(`${FOLDER_NAMES[k]}/${record.year}/${recordFolderName(k, record)}`)
+            : root.folder(`${FOLDER_NAMES[k]}/${record.year}`)
+          for (const { fileName, blob } of files) {
+            folder.file(fileName, blob)
+          }
+          exported += files.length
         } catch {
           failed++
         }
@@ -260,7 +266,7 @@ export default function BulkEventExportModal({ onClose, initialKind = 'all' }) {
       a.download = `event_extracts_${kindLabel}_${yearLabel}_${stampNow()}.zip`
       a.click()
       URL.revokeObjectURL(url)
-      setResult({ exported, failed, total: jobs.length })
+      setResult({ exported, failed, total: jobs.length, pdfCount: exported })
     } catch (e) {
       setError(e.message || 'Bulk export failed')
     } finally {

@@ -1,0 +1,27 @@
+{
+  "branch": "main",
+  "clients": [
+    {
+      "id": "hub",
+      "label": "Zion Hub",
+      "remote": "origin",
+      "siteUrl": "https://cms-three-mu.vercel.app",
+      "notes": "GitHub auto-deploy usually works. Set vercelDeploy true if you need CLI force.",
+      "vercelDeploy": false,
+      "vercelProject": null,
+      "vercelOrgId": null,
+      "vercelProjectId": null
+    },
+    {
+      "id": "stpauls",
+      "label": "St Pauls",
+      "remote": "stpauls",
+      "siteUrl": "https://cms-trichystpaulschurch.vercel.app",
+      "notes": "Hobby team blocks Cursor co-authored commits — CLI prod deploy required.",
+      "vercelDeploy": true,
+      "vercelProject": "cms-trichystpaulschurch",
+      "vercelOrgId": "team_EVuE6HuScDMDboahp0y302nC",
+      "vercelProjectId": "prj_R7GYhZa5x9H0BDh3EFfy4xrkI1LV"
+    }
+  ]
+}

@@ -14,3 +14,4 @@ Auction Report*.xlsx
 # Local ops dumps / one-off SQL (may contain secrets)
 artifacts/
 
+.env*
