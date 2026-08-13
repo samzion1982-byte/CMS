@@ -1,7 +1,7 @@
 /* Shared Event Recorder extract / register sheets — same layouts as print modals.
    Used by bulk PDF export (html2canvas). Keep field names in form-shape (camelCase). */
 
-import { MONTHS } from './eventRecordMaps'
+import { MONTHS } from '../../lib/eventRecordMaps'
 
 const BL = '#1a237e'
 
