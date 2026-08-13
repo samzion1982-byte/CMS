@@ -1,5 +1,10 @@
 {
   "branch": "main",
+  "commitAuthor": {
+    "name": "Trichy St Pauls Church",
+    "email": "trichystpaulschurch@gmail.com",
+    "notes": "Must match a Vercel Zion team owner email. Do NOT use smhtevwms@gmail.com (WMS) - Hobby blocks it."
+  },
   "clients": [
     {
       "id": "hub",
@@ -17,7 +22,7 @@
       "label": "St Pauls",
       "remote": "stpauls",
       "siteUrl": "https://cms-trichystpaulschurch.vercel.app",
-      "notes": "Hobby team blocks Cursor co-authored commits — CLI prod deploy required.",
+      "notes": "Hobby: GitHub deploys need commit author trichystpaulschurch@gmail.com. CLI vercel --prod is backup.",
       "vercelDeploy": true,
       "vercelProject": "cms-trichystpaulschurch",
       "vercelOrgId": "team_EVuE6HuScDMDboahp0y302nC",

@@ -46,6 +46,13 @@ if (-not (Test-Path $ConfigPath)) { throw "Missing config: $ConfigPath" }
 $config = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $branch = if ($config.branch) { $config.branch } else { 'main' }
 $clients = @($config.clients)
+
+# Commit identity for Vercel Hobby (must be a Zion team owner - not WMS smhtevwms)
+$CommitName = 'Trichy St Pauls Church'
+$CommitEmail = 'trichystpaulschurch@gmail.com'
+if ($config.commitAuthor -and $config.commitAuthor.name) { $CommitName = [string]$config.commitAuthor.name }
+if ($config.commitAuthor -and $config.commitAuthor.email) { $CommitEmail = [string]$config.commitAuthor.email }
+
 if ($Only.Count -gt 0) {
   $want = $Only | ForEach-Object { $_.ToLowerInvariant() }
   $clients = $clients | Where-Object {
@@ -73,22 +80,41 @@ function Test-HasCursorCoAuthor([string]$msg) {
 function New-CleanCommit([string]$msg) {
   # Write message without agent trailers; commit via commit-tree so hooks/agents
   # cannot append Co-authored-by: Cursor (which blocks Vercel Hobby deploys).
+  # Author/committer come from deploy/clients.json (trichystpaulschurch) - NOT global git config.
   $tree = (git write-tree).Trim()
   $parent = (git rev-parse HEAD).Trim()
-  $env:GIT_AUTHOR_DATE = Get-Date -Format 'o'
-  $env:GIT_COMMITTER_DATE = $env:GIT_AUTHOR_DATE
+  $stamp = Get-Date -Format 'o'
   $msgFile = Join-Path $env:TEMP ("cms-commit-msg-{0}.txt" -f [guid]::NewGuid())
   # Keep only the subject/body the user asked for - drop any Co-authored-by lines
   $clean = ($msg -split "`r?`n" | Where-Object { $_ -notmatch '(?i)^\s*Co-authored-by:\s*' }) -join "`n"
   $clean = $clean.Trim()
   if (-not $clean) { throw 'Commit message is empty after cleaning trailers' }
   Set-Content -Path $msgFile -Value $clean -Encoding utf8
+
+  $prevAuthorName = $env:GIT_AUTHOR_NAME
+  $prevAuthorEmail = $env:GIT_AUTHOR_EMAIL
+  $prevAuthorDate = $env:GIT_AUTHOR_DATE
+  $prevCommitterName = $env:GIT_COMMITTER_NAME
+  $prevCommitterEmail = $env:GIT_COMMITTER_EMAIL
+  $prevCommitterDate = $env:GIT_COMMITTER_DATE
   try {
+    $env:GIT_AUTHOR_NAME = $CommitName
+    $env:GIT_AUTHOR_EMAIL = $CommitEmail
+    $env:GIT_AUTHOR_DATE = $stamp
+    $env:GIT_COMMITTER_NAME = $CommitName
+    $env:GIT_COMMITTER_EMAIL = $CommitEmail
+    $env:GIT_COMMITTER_DATE = $stamp
     $newSha = (git commit-tree $tree -p $parent -F $msgFile).Trim()
     git update-ref HEAD $newSha
     return $newSha
   } finally {
     Remove-Item $msgFile -ErrorAction SilentlyContinue
+    if ($null -eq $prevAuthorName) { Remove-Item Env:\GIT_AUTHOR_NAME -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_NAME = $prevAuthorName }
+    if ($null -eq $prevAuthorEmail) { Remove-Item Env:\GIT_AUTHOR_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_EMAIL = $prevAuthorEmail }
+    if ($null -eq $prevAuthorDate) { Remove-Item Env:\GIT_AUTHOR_DATE -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_DATE = $prevAuthorDate }
+    if ($null -eq $prevCommitterName) { Remove-Item Env:\GIT_COMMITTER_NAME -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_NAME = $prevCommitterName }
+    if ($null -eq $prevCommitterEmail) { Remove-Item Env:\GIT_COMMITTER_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_EMAIL = $prevCommitterEmail }
+    if ($null -eq $prevCommitterDate) { Remove-Item Env:\GIT_COMMITTER_DATE -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_DATE = $prevCommitterDate }
   }
 }
 
@@ -99,6 +125,7 @@ Write-Host " CMS Multi-Church Deploy" -ForegroundColor White
 Write-Host "============================================" -ForegroundColor DarkCyan
 Write-Host " Repo   : $Root"
 Write-Host " Branch : $branch"
+Write-Host " Author : $CommitName <$CommitEmail>"
 Write-Host " Mode   : $(if ($DryRun) { 'DRY RUN' } else { 'LIVE' })"
 Write-Host " Clients: $($clients.Count)"
 
@@ -154,17 +181,36 @@ if (Test-HasCursorCoAuthor $headMsg) {
     $fix = Read-Host 'Create a clean empty follow-up commit to help GitHub deploys? (y/N)'
     if ($fix -match '^(y|yes)$') {
       $fixMsg = "Trigger redeploy (clean author)."
-      # Empty commit: same tree, new commit
+      # Empty commit: same tree, new commit - same author as New-CleanCommit
       $tree = (git write-tree).Trim()
       $parent = (git rev-parse HEAD).Trim()
       $msgFile = Join-Path $env:TEMP ("cms-commit-msg-{0}.txt" -f [guid]::NewGuid())
       Set-Content -Path $msgFile -Value $fixMsg -Encoding utf8
+      $stamp = Get-Date -Format 'o'
+      $prevAuthorName = $env:GIT_AUTHOR_NAME
+      $prevAuthorEmail = $env:GIT_AUTHOR_EMAIL
+      $prevAuthorDate = $env:GIT_AUTHOR_DATE
+      $prevCommitterName = $env:GIT_COMMITTER_NAME
+      $prevCommitterEmail = $env:GIT_COMMITTER_EMAIL
+      $prevCommitterDate = $env:GIT_COMMITTER_DATE
       try {
+        $env:GIT_AUTHOR_NAME = $CommitName
+        $env:GIT_AUTHOR_EMAIL = $CommitEmail
+        $env:GIT_AUTHOR_DATE = $stamp
+        $env:GIT_COMMITTER_NAME = $CommitName
+        $env:GIT_COMMITTER_EMAIL = $CommitEmail
+        $env:GIT_COMMITTER_DATE = $stamp
         $newSha = (git commit-tree $tree -p $parent -F $msgFile).Trim()
         git update-ref HEAD $newSha
         Write-Ok "Clean follow-up commit $newSha"
       } finally {
         Remove-Item $msgFile -ErrorAction SilentlyContinue
+        if ($null -eq $prevAuthorName) { Remove-Item Env:\GIT_AUTHOR_NAME -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_NAME = $prevAuthorName }
+        if ($null -eq $prevAuthorEmail) { Remove-Item Env:\GIT_AUTHOR_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_EMAIL = $prevAuthorEmail }
+        if ($null -eq $prevAuthorDate) { Remove-Item Env:\GIT_AUTHOR_DATE -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_DATE = $prevAuthorDate }
+        if ($null -eq $prevCommitterName) { Remove-Item Env:\GIT_COMMITTER_NAME -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_NAME = $prevCommitterName }
+        if ($null -eq $prevCommitterEmail) { Remove-Item Env:\GIT_COMMITTER_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_EMAIL = $prevCommitterEmail }
+        if ($null -eq $prevCommitterDate) { Remove-Item Env:\GIT_COMMITTER_DATE -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_DATE = $prevCommitterDate }
       }
     }
   }
