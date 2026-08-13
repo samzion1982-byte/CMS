@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   BookMarked, Upload, Save, Trash2, RotateCcw,
-  Edit2, Plus, Camera, Search, FileText, X, Printer, Loader2,
+  Edit2, Plus, Camera, Search, FileText, X, Printer, Loader2, FileDown,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { logCmsAudit } from '../lib/cmsAudit'
 import { captureDeletedRecord, quarantineStorageFolder } from '../lib/cmsRecycleBin'
+import BulkEventExportModal from './BulkEventExportModal'
 
 /* ─── Constants ──────────────────────────────────────────────────── */
 const TABS = [
@@ -137,6 +138,7 @@ function optionalDateTextError(value, label) {
 /* ─── Root page ──────────────────────────────────────────────────── */
 export default function EventRecorderPage() {
   const [activeTab, setActiveTab] = useState('wedding')
+  const [showBulkExport, setShowBulkExport] = useState(false)
 
   return (
     <div style={{ padding: '32px 28px' }}>
@@ -149,7 +151,7 @@ export default function EventRecorderPage() {
         }}>
           <BookMarked size={20} color="#fff" />
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: '#0f172a' }}>
             Event Recorder
           </h1>
@@ -157,7 +159,27 @@ export default function EventRecorderPage() {
             Baptism, Confirmation, Wedding &amp; Burial registers
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowBulkExport(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 16px', borderRadius: 10, border: 'none',
+            background: 'linear-gradient(180deg, #15803d 0%, #166534 100%)',
+            color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(22,101,52,0.28)',
+            flexShrink: 0,
+          }}
+        >
+          <FileDown size={16} /> Bulk Export
+        </button>
       </div>
+      {showBulkExport && (
+        <BulkEventExportModal
+          initialKind={activeTab}
+          onClose={() => setShowBulkExport(false)}
+        />
+      )}
       <div style={{
         display: 'inline-flex', gap: 4, padding: 4, marginBottom: 22,
         background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
