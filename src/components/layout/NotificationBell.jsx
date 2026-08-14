@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Bell, BellOff, Clock, CreditCard, HardDrive, Loader2,
-  ShieldAlert, Volume2, VolumeX, X,
+  Bell, BellOff, Clock, CreditCard, HardDrive, Loader2, Lock,
+  Settings, ShieldAlert, Volume2, VolumeX, X,
 } from 'lucide-react'
 import { supabase, getChurch, LICENSE_CSV } from '../../lib/supabase'
 import { listBackupLogs } from '../../lib/cmsFullBackup'
 import {
   ALERT_IDS,
+  ALERT_TYPE_OPTIONS,
   SNOOZE_OPTIONS,
   clearAlertSnooze,
   formatSnoozeUntil,
+  getEnabledAlertTypes,
   getSnoozeMap,
   isAlertSnoozed,
+  isAlertTypeEnabled,
   isNotificationsSilent,
+  setAlertTypeEnabled,
   setNotificationsSilent,
   snoozeAlert,
 } from '../../lib/cmsNotifications'
@@ -140,18 +144,52 @@ const ALERT_ICON = {
   [ALERT_IDS.backup]: HardDrive,
 }
 
+function ToggleSwitch({ on, disabled, onToggle, accent }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onToggle() }}
+      title={disabled ? 'Always on' : (on ? 'Turn off' : 'Turn on')}
+      style={{
+        width: 42, height: 24, borderRadius: 99, flexShrink: 0,
+        border: 'none', padding: 2, cursor: disabled ? 'not-allowed' : 'pointer',
+        background: on ? (accent || '#2563eb') : '#cbd5e1',
+        opacity: disabled ? 0.85 : 1,
+        transition: 'background 0.15s',
+        position: 'relative',
+        outline: 'none',
+      }}
+    >
+      <span style={{
+        position: 'absolute',
+        top: 2, left: on ? 20 : 2,
+        width: 20, height: 20, borderRadius: '50%',
+        background: '#fff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        transition: 'left 0.15s',
+      }} />
+    </button>
+  )
+}
+
 export default function NotificationBell({ g }) {
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [loading, setLoading] = useState(true)
   const [alerts, setAlerts] = useState([])
   const [silent, setSilent] = useState(() => isNotificationsSilent())
   const [snoozeMap, setSnoozeMap] = useState(() => getSnoozeMap())
+  const [enabledTypes, setEnabledTypes] = useState(() => getEnabledAlertTypes())
   const [snoozeFor, setSnoozeFor] = useState(null) // alertId menu open
 
   const refreshPrefs = useCallback(() => {
     setSilent(isNotificationsSilent())
     setSnoozeMap(getSnoozeMap())
+    setEnabledTypes(getEnabledAlertTypes())
   }, [])
 
   const load = useCallback(async () => {
@@ -181,6 +219,7 @@ export default function NotificationBell({ g }) {
       if (ref.current && !ref.current.contains(e.target)) {
         setOpen(false)
         setSnoozeFor(null)
+        setShowSettings(false)
       }
     }
     document.addEventListener('mousedown', close)
@@ -188,7 +227,8 @@ export default function NotificationBell({ g }) {
   }, [])
 
   const now = Date.now()
-  const activeAlerts = alerts.filter((a) => !isAlertSnoozed(a.id, now))
+  const visibleAlerts = alerts.filter((a) => isAlertTypeEnabled(a.id))
+  const activeAlerts = visibleAlerts.filter((a) => !isAlertSnoozed(a.id, now))
   const badgeCount = silent ? 0 : activeAlerts.reduce((s, a) => s + (a.count || 1), 0)
   const showPulse = !silent && activeAlerts.length > 0
 
@@ -196,6 +236,13 @@ export default function NotificationBell({ g }) {
     const next = !silent
     setNotificationsSilent(next)
     setSilent(next)
+  }
+
+  function handleTypeToggle(alertId) {
+    if (alertId === ALERT_IDS.license) return
+    const nextOn = !enabledTypes[alertId]
+    setAlertTypeEnabled(alertId, nextOn)
+    setEnabledTypes(getEnabledAlertTypes())
   }
 
   function handleSnooze(alertId, optionId) {
@@ -213,7 +260,13 @@ export default function NotificationBell({ g }) {
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
         type="button"
-        onClick={() => { setOpen((o) => !o); if (!open) load() }}
+        onClick={() => {
+          setOpen((o) => !o)
+          if (!open) {
+            load()
+            setShowSettings(false)
+          }
+        }}
         aria-label="Notifications"
         aria-expanded={open}
         style={{
@@ -271,31 +324,53 @@ export default function NotificationBell({ g }) {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
           }}>
             <div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: g.drop.text }}>Alerts</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: g.drop.text }}>
+                {showSettings ? 'Alert settings' : 'Alerts'}
+              </p>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: g.drop.sub }}>
-                {silent ? 'Silent mode on' : `${activeAlerts.length} active`}
+                {showSettings
+                  ? 'Choose which alerts you receive'
+                  : (silent ? 'Silent mode on' : `${activeAlerts.length} active`)}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {!showSettings && (
+                <button
+                  type="button"
+                  onClick={toggleSilent}
+                  title={silent ? 'Turn notifications on' : 'Turn notifications off — hide badge'}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
+                    border: `1px solid ${g.drop.border}`,
+                    background: silent ? 'rgba(239,68,68,0.1)' : 'transparent',
+                    color: silent ? '#dc2626' : g.drop.text,
+                    fontSize: 11, fontWeight: 700,
+                  }}
+                >
+                  {silent ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  {silent ? 'Notification Off' : 'Notification On'}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={toggleSilent}
-                title={silent ? 'Turn notifications on' : 'Turn notifications off — hide badge'}
+                onClick={() => { setShowSettings((s) => !s); setSnoozeFor(null) }}
+                title={showSettings ? 'Back to alerts' : 'Alert settings'}
+                aria-label="Alert settings"
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
-                  border: `1px solid ${g.drop.border}`,
-                  background: silent ? 'rgba(239,68,68,0.1)' : 'transparent',
-                  color: silent ? '#dc2626' : g.drop.text,
-                  fontSize: 11, fontWeight: 700,
+                  width: 28, height: 28, borderRadius: 8,
+                  border: `1px solid ${showSettings ? g.accent : g.drop.border}`,
+                  background: showSettings ? (g.accentL || 'rgba(37,99,235,0.12)') : 'transparent',
+                  color: showSettings ? g.accent : g.drop.sub,
+                  cursor: 'pointer',
+                  display: 'grid', placeItems: 'center',
                 }}
               >
-                {silent ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                {silent ? 'Notification Off' : 'Notification On'}
+                <Settings size={14} />
               </button>
               <button
                 type="button"
-                onClick={() => { setOpen(false); setSnoozeFor(null) }}
+                onClick={() => { setOpen(false); setSnoozeFor(null); setShowSettings(false) }}
                 style={{
                   width: 28, height: 28, borderRadius: 8, border: 'none',
                   background: 'transparent', color: g.drop.sub, cursor: 'pointer',
@@ -309,18 +384,76 @@ export default function NotificationBell({ g }) {
 
           {/* Body */}
           <div style={{ overflowY: 'auto', flex: 1, padding: 10 }}>
-            {loading && !alerts.length ? (
+            {showSettings ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {ALERT_TYPE_OPTIONS.map((opt) => {
+                  const on = enabledTypes[opt.id] !== false
+                  const Icon = ALERT_ICON[opt.id] || Bell
+                  const locked = !!opt.locked
+                  return (
+                    <div
+                      key={opt.id}
+                      style={{
+                        borderRadius: 12,
+                        border: `1px solid ${g.drop.border}`,
+                        background: g.drop.hov || 'rgba(15,23,42,0.03)',
+                        padding: '12px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{
+                        width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+                        background: g.drop.bg,
+                        border: `1px solid ${g.drop.border}`,
+                        display: 'grid', placeItems: 'center',
+                      }}>
+                        <Icon size={15} color={g.drop.sub} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{
+                          margin: 0, fontSize: 13, fontWeight: 800, color: g.drop.text,
+                          display: 'flex', alignItems: 'center', gap: 6,
+                        }}>
+                          {opt.label}
+                          {locked && (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontSize: 10, fontWeight: 700, color: g.drop.sub,
+                              background: 'rgba(15,23,42,0.06)',
+                              padding: '2px 6px', borderRadius: 99,
+                            }}>
+                              <Lock size={9} /> Always on
+                            </span>
+                          )}
+                        </p>
+                        <p style={{ margin: '3px 0 0', fontSize: 11, color: g.drop.sub, lineHeight: 1.4 }}>
+                          {opt.description}
+                        </p>
+                      </div>
+                      <ToggleSwitch
+                        on={on}
+                        disabled={locked}
+                        accent={g.accent}
+                        onToggle={() => handleTypeToggle(opt.id)}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            ) : loading && !visibleAlerts.length ? (
               <div style={{ padding: 28, textAlign: 'center', color: g.drop.sub }}>
                 <Loader2 size={18} className="animate-spin" style={{ margin: '0 auto 8px' }} />
                 <p style={{ margin: 0, fontSize: 12 }}>Checking alerts…</p>
               </div>
-            ) : alerts.length === 0 ? (
+            ) : visibleAlerts.length === 0 ? (
               <div style={{ padding: 28, textAlign: 'center', color: g.drop.sub, fontSize: 13 }}>
                 No alerts right now.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {alerts.map((a) => {
+                {visibleAlerts.map((a) => {
                   const snoozed = isAlertSnoozed(a.id, now)
                   const sev = SEVERITY[a.severity] || SEVERITY.info
                   const Icon = ALERT_ICON[a.id] || Bell

@@ -36,6 +36,7 @@ import {
 } from '../lib/eventPlannerLib'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
 import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -2670,22 +2671,14 @@ export default function EventPlannerPage(){
     const isCalView=view==='month'||view==='week'||view==='year'
     return(
       <div style={{display:'flex',flexDirection:'column',borderBottom:'1px solid var(--card-border,#e2e8f0)',background:'var(--card-bg,#fff)',flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,padding:'13px 24px',flexWrap:'wrap',rowGap:8}}>
-          <div style={{display:'flex',alignItems:'center',gap:7,flex:1,minWidth:0}}>
-            <Calendar size={20} color="var(--accent,#2563eb)" style={{flexShrink:0}}/>
-            {view==='year'?(
-              <h1 style={{margin:0,fontSize:19,fontWeight:700,color:'var(--text-1)'}}>Event Planner</h1>
-            ):(
-              <>
-                <button onClick={()=>setView('year')} style={{margin:0,fontSize:19,fontWeight:700,color:'var(--accent,#2563eb)',background:'none',border:'none',padding:0,cursor:'pointer',lineHeight:1}}
-                  title="Back to Event Planner">Event Planner</button>
-                <ChevronRight size={14} color="var(--text-3)" style={{flexShrink:0}}/>
-                <span style={{fontSize:15,fontWeight:600,color:'var(--text-1)',whiteSpace:'nowrap'}}>
-                  {view==='month'?`${MONTH_NAMES[calMonth.getMonth()]} ${calMonth.getFullYear()}`:view==='week'?'Week View':view==='agenda'?'Agenda':view==='cards'?'All Events':view}
-                </span>
-              </>
-            )}
-          </div>
+        <PageHeader
+          icon={Calendar}
+          title="Event Planner"
+          subtitle={view==='year'?undefined:(
+            view==='month'?`${MONTH_NAMES[calMonth.getMonth()]} ${calMonth.getFullYear()}`:view==='week'?'Week View':view==='agenda'?'Agenda':view==='cards'?'All Events':view
+          )}
+          style={{borderBottom:'none',marginBottom:0,padding:'13px 24px'}}
+        >
           {/* Search */}
           <div style={{position:'relative',display:'flex',alignItems:'center',gap:4}}>
             {showSearch&&(
@@ -2720,7 +2713,7 @@ export default function EventPlannerPage(){
           <button style={{...btnP,display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'7px 14px'}} onClick={()=>setEventModal({})}>
             <Plus size={14}/> New Event
           </button>
-        </div>
+        </PageHeader>
         {/* Calendar filter row */}
         {isCalView&&(
           <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 24px',borderTop:'1px solid var(--card-border,#e2e8f0)',background:'var(--page-bg,#f8fafc)',flexWrap:'wrap'}}>

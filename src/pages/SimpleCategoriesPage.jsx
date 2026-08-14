@@ -13,6 +13,7 @@ import {
 import {
   downloadCategoryTemplate, readAndParseCategoryFile, importParsedCategories,
 } from '../lib/simpleCategoryImport'
+import PageHeader from '../components/ui/PageHeader'
 
 const inputStyle = {
   height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)',
@@ -299,41 +300,38 @@ export default function SimpleCategoriesPage() {
 
   return (
     <div className="page-container simple-accounts-scope">
-      <div className="page-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
-              style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0 }}>
-              <ArrowLeft size={16} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+          style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0, marginTop: 2 }}>
+          <ArrowLeft size={16} />
+        </button>
+        <PageHeader
+          icon={Tag}
+          title="Categories"
+          subtitle="Organise income and expenses — use sub-categories to group related items"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={handleSeedDefaults} disabled={seeding}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: seeding ? 'not-allowed' : 'pointer', color: 'var(--text-2)', whiteSpace: 'nowrap', opacity: seeding ? 0.6 : 1 }}
+              title="Insert commonly used church income and expense categories">
+              {seeding ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <Sparkles size={14} />}
+              {seeding ? 'Loading…' : 'Load Starter'}
             </button>
-            <div>
-              <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Tag size={20} style={{ color: 'var(--accent)' }} /> Categories
-              </h1>
-              <p className="page-subtitle">Organise income and expenses — use sub-categories to group related items</p>
-            </div>
+            <button onClick={handleDownloadTemplate} disabled={templateLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: templateLoading ? 'not-allowed' : 'pointer', color: 'var(--text-2)', whiteSpace: 'nowrap', opacity: templateLoading ? 0.6 : 1 }}
+              title="Download Excel template for importing categories">
+              {templateLoading ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <Download size={14} />}
+              Template
+            </button>
+            <button onClick={() => importFileRef.current?.click()}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              title="Import categories from a filled-in Excel template">
+              <FileSpreadsheet size={14} /> Import from Excel
+            </button>
+            <input ref={importFileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleImportFileChosen} />
           </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={handleSeedDefaults} disabled={seeding}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: seeding ? 'not-allowed' : 'pointer', color: 'var(--text-2)', whiteSpace: 'nowrap', opacity: seeding ? 0.6 : 1 }}
-            title="Insert commonly used church income and expense categories">
-            {seeding ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <Sparkles size={14} />}
-            {seeding ? 'Loading…' : 'Load Starter'}
-          </button>
-          <button onClick={handleDownloadTemplate} disabled={templateLoading}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: templateLoading ? 'not-allowed' : 'pointer', color: 'var(--text-2)', whiteSpace: 'nowrap', opacity: templateLoading ? 0.6 : 1 }}
-            title="Download Excel template for importing categories">
-            {templateLoading ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <Download size={14} />}
-            Template
-          </button>
-          <button onClick={() => importFileRef.current?.click()}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            title="Import categories from a filled-in Excel template">
-            <FileSpreadsheet size={14} /> Import from Excel
-          </button>
-          <input ref={importFileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleImportFileChosen} />
-        </div>
+        </PageHeader>
       </div>
 
       {!loading && incomes.length === 0 && expenses.length === 0 && (

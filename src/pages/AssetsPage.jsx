@@ -25,6 +25,7 @@ import {
   masterDisplayName, flattenMasterOptions, buildMasterTree, isAssetOnHand,
   userFacingNotes, findConditionId, assertStockDates,
 } from '../lib/assetsLib'
+import PageHeader from '../components/ui/PageHeader'
 
 const INPUT = {
   height: 38, padding: '0 12px', border: '1.5px solid var(--card-border)',
@@ -1990,14 +1991,12 @@ export default function AssetsPage() {
   return (
     <div className="page-container">
       {/* Header */}
-      <div className="page-header" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Package size={20} style={{ color: 'var(--accent)' }} />
-            Asset Management
-          </h1>
-          <p className="page-subtitle">Track church inventory — one entry per item</p>
-        </div>
+      <PageHeader
+        icon={Package}
+        title="Asset Management"
+        subtitle="Track church inventory — one entry per item"
+        style={{ alignItems: 'flex-start' }}
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => navigate('/assets/settings')}
@@ -2053,7 +2052,7 @@ export default function AssetsPage() {
             </button>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {/* Tabs */}
       <div style={{

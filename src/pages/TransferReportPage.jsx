@@ -5,6 +5,7 @@ import {
   ArrowRightLeft, Loader2, RefreshCw, CheckCircle2, Clock, ChevronDown,
   TrendingUp, Wallet, Hash, AlertCircle, FileSpreadsheet,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -331,15 +332,11 @@ export default function TransferReportPage() {
 
   return (
     <div className="page-container">
-      {/* ── header ── */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <ArrowRightLeft size={20} style={{ color: 'var(--accent)' }} />
-            Transfer Report
-          </h1>
-          <p className="page-subtitle">Receipt transfer statistics and batch history</p>
-        </div>
+      <PageHeader
+        icon={ArrowRightLeft}
+        title="Transfer Report"
+        subtitle="Receipt transfer statistics and batch history"
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* FY selector */}
           <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
@@ -371,7 +368,7 @@ export default function TransferReportPage() {
             Refresh
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {loading && !stats ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>

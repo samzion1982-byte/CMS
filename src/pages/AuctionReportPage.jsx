@@ -14,6 +14,7 @@ import {
   Gavel, Upload, RefreshCw, Loader2, FileSpreadsheet,
   FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── helpers (Auction Report FY = natural Apr–Mar of the Aug/Sep auction) ──
 
@@ -1238,14 +1239,11 @@ export default function AuctionReportPage() {
   return (
     <div className="page-container">
       {/* ── Header ── */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Gavel size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Auction Report
-          </h1>
-          <p className="page-subtitle">Import tracker or current-year purchase, check payment status, and export</p>
-        </div>
+      <PageHeader
+        icon={Gavel}
+        title="Auction Report"
+        subtitle="Import tracker or current-year purchase, check payment status, and export"
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePick} />
           <a
@@ -1318,7 +1316,7 @@ export default function AuctionReportPage() {
             </>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {/* ── FY filter bar ── */}
       <div className="card" style={{ padding: '12px 20px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>

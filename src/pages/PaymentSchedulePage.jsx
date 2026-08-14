@@ -13,6 +13,7 @@ import {
   CreditCard, ScanLine, Loader2, Search, UserX,
   CheckSquare, Square, ChevronDown, RefreshCw, Send,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const FY_MONTHS  = ['April','May','June','July','August','September','October','November','December','January','February','March']
 
@@ -224,15 +225,11 @@ export default function PaymentSchedulePage() {
 
   return (
     <div className="animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CreditCard size={20} style={{ color: 'var(--accent)', flexShrink: 0 }}/>
-            Payment Schedule
-          </h1>
-          <p className="page-subtitle">Configure payment frequency and online eligibility per member</p>
-        </div>
+      <PageHeader
+        icon={CreditCard}
+        title="Payment Schedule"
+        subtitle="Configure payment frequency and online eligibility per member"
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={() => setShowPushModal(true)}
             className="btn btn-sm"
@@ -244,7 +241,7 @@ export default function PaymentSchedulePage() {
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''}/>
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Auto-Scan card */}
       <div className="card p-5 mb-5">

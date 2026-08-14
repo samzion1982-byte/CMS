@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { Send, Loader2, Search, X, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const STATUS = {
   pending:        { bg: '#eff6ff', color: '#2563eb', label: 'Pending'           },
@@ -64,19 +65,15 @@ export default function PaymentRequestLogPage() {
 
   return (
     <div className="animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Send size={20} style={{ color: 'var(--accent)', flexShrink: 0 }}/>
-            Payment Request Log
-          </h1>
-          <p className="page-subtitle">History of all payment requests sent to members</p>
-        </div>
+      <PageHeader
+        icon={Send}
+        title="Payment Request Log"
+        subtitle="History of all payment requests sent to members"
+      >
         <button onClick={load} disabled={loading} className="btn btn-ghost btn-sm" title="Refresh">
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''}/>
         </button>
-      </div>
+      </PageHeader>
 
       {/* Status filter */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>

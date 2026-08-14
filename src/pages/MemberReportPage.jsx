@@ -7,6 +7,7 @@ import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
 import { logCmsAudit } from '../lib/cmsAudit'
+import PageHeader from '../components/ui/PageHeader'
 
 /** Walk a contentEditable DOM tree → WhatsApp markdown string */
 function htmlToWaMd(el) {
@@ -1134,15 +1135,12 @@ export default function MemberReportPage() {
     <div style={{ padding:'24px 28px', maxWidth:1400, margin:'0 auto' }}>
 
       {/* Header */}
-      <div style={{ marginBottom:20, display:'flex', alignItems:'center', gap:12 }}>
-        <div style={{ width:44, height:44, borderRadius:10, background:'linear-gradient(135deg,var(--accent),var(--accent-hover))', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <Users size={22} color="var(--accent-text)" />
-        </div>
-        <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'var(--text-1)', margin:0 }}>Member Report</h1>
-          <p style={{ fontSize:13, color:'var(--text-2)', margin:'2px 0 0' }}>Custom filtered member list with column selection</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Users}
+        title="Member Report"
+        subtitle="Custom filtered member list with column selection"
+        style={{ marginBottom: 20 }}
+      />
 
       {/* Tabs */}
       <div style={{ display:'flex', gap:2, marginBottom:16, borderBottom:'2px solid var(--card-border)' }}>

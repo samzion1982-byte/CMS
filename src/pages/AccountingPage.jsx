@@ -25,6 +25,7 @@ import {
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Balance Bar (Cash | Bank | Total) ────────────────────────────
 
@@ -530,14 +531,11 @@ export default function AccountingPage() {
   if (enabled === false) {
     return (
       <div className="page-container">
-        <div className="page-header">
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Landmark size={22} style={{ color: 'var(--accent)' }} /> Accounts
-            </h1>
-            <p className="page-subtitle">Double-entry accounting for your church</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={Landmark}
+          title="Accounts"
+          subtitle="Double-entry accounting for your church"
+        />
         <div className="card" style={{ padding: '60px 40px', textAlign: 'center' }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#fff7ed', border: '2px solid #fed7aa', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <BookOpen size={28} color="#f97316" />
@@ -561,14 +559,11 @@ export default function AccountingPage() {
   if (!entityLoading && !currentEntityId) {
     return (
       <div className="page-container">
-        <div className="page-header">
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Landmark size={22} style={{ color: 'var(--accent)' }} /> Accounts
-            </h1>
-            <p className="page-subtitle">Financial overview &amp; accounting management</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={Landmark}
+          title="Accounts"
+          subtitle="Financial overview & accounting management"
+        />
         <div className="card" style={{ padding: '60px 40px', textAlign: 'center' }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#eff6ff', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Layers size={28} color="#2563eb" />
@@ -664,14 +659,11 @@ export default function AccountingPage() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Landmark size={22} style={{ color: 'var(--accent)' }} /> Accounts
-          </h1>
-          <p className="page-subtitle">Financial overview &amp; accounting management</p>
-        </div>
-
+      <PageHeader
+        icon={Landmark}
+        title="Accounts"
+        subtitle="Financial overview & accounting management"
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {/* Entity Switcher — always visible */}
           <div style={{ position: 'relative' }}
@@ -740,7 +732,7 @@ export default function AccountingPage() {
             <Settings size={15} />
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Draft entries warning */}
       {!L && stats?.draftEntries > 0 && (

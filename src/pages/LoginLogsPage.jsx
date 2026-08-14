@@ -10,6 +10,7 @@ import {
   LogIn, Loader2, ChevronLeft, ChevronRight,
   CheckCircle, Clock, MapPin, Shield, FileSpreadsheet, Monitor,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
 const PAGE_SIZE   = 50
@@ -162,15 +163,11 @@ export default function LoginLogsPage() {
   return (
     <div className="animate-fade-in p-6">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <LogIn size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Login Details
-            </h1>
-          <p className="page-subtitle">Audit log of all user login sessions — who logged in, when, from where, and for how long.</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={LogIn}
+        title="Login Details"
+        subtitle="Audit log of all user login sessions — who logged in, when, from where, and for how long."
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4 items-center">

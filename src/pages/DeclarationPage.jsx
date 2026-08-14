@@ -8,6 +8,7 @@ import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
 import { logCmsAudit } from '../lib/cmsAudit'
 import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -405,14 +406,11 @@ export default function DeclarationPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileText size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Declaration
-            </h1>
-          <p className="page-subtitle">Annual income declaration per member</p>
-        </div>
+      <PageHeader
+        icon={FileText}
+        title="Declaration"
+        subtitle="Annual income declaration per member"
+      >
         <div style={{ display: 'flex', gap: 8 }}>
 
           {/* Export submenu */}
@@ -470,7 +468,7 @@ export default function DeclarationPage() {
             <span style={{ marginLeft: 6, fontSize: 10, background: 'rgba(255,255,255,0.18)', padding: '1px 5px', borderRadius: 3, fontWeight: 800, letterSpacing: '0.05em' }}>+</span>
           </button>
         </div>
-      </div>
+      </PageHeader>
       {/* FY count tiles — click to filter + gear for FY management */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
         {availableFYs.length > 0 && (

@@ -15,6 +15,7 @@ import {
   Loader2, CheckCircle, Power, Check, Trash2,
   Calendar, MapPin, Phone, Mail, Church,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const ENTITY_TYPES = ['Church', 'Trust', 'School', 'Complex', 'Other']
 
@@ -331,25 +332,24 @@ export default function EntityManagementPage() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Layers size={20} style={{ color: 'var(--accent)' }} /> Entity Management
-            </h1>
-            <p className="page-subtitle">Manage separate accounting books — each has its own accounts and journal entries</p>
-          </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        <button onClick={() => setModal('add')}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          <Plus size={14} /> Add Accounting Book
-        </button>
+        <PageHeader
+          icon={Layers}
+          title="Entity Management"
+          subtitle="Manage separate accounting books — each has its own accounts and journal entries"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <button onClick={() => setModal('add')}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Plus size={14} /> Add Accounting Book
+          </button>
+        </PageHeader>
       </div>
 
       {/* ── Info banner ────────────────────────────────────────── */}

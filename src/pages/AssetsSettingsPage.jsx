@@ -25,6 +25,7 @@ import {
   moveChurchDocumentCategory,
 } from '../lib/churchDocumentsLib'
 import FixedAssetsSettingsPanel from '../components/assets/FixedAssetsSettingsPanel'
+import PageHeader from '../components/ui/PageHeader'
 
 const TABS = [
   { id: 'locations',      label: 'Locations',      icon: MapPin,     table: 'asset_locations',            load: getAssetLocations,           save: saveAssetLocation,           hierarchical: true,  kind: 'master', move: (d, t, p, a) => moveMasterItem('asset_locations', d, t, p, a) },
@@ -796,29 +797,24 @@ export default function AssetsSettingsPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button
-              onClick={() => navigate('/assets')}
-              style={{
-                padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff',
-              }}
-            >
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Assets</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Settings size={18} style={{ color: 'var(--accent)' }} />
-              Asset Settings
-            </h1>
-            <p className="page-subtitle">Masters for movable inventory · Fixed Asset tiles for the vault</p>
-          </div>
+      <PageHeader
+        icon={Settings}
+        title="Asset Settings"
+        subtitle="Masters for movable inventory · Fixed Asset tiles for the vault"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button
+            onClick={() => navigate('/assets')}
+            style={{
+              padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff',
+            }}
+          >
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Assets</span>
         </div>
-      </div>
+      </PageHeader>
 
       <div style={{
         display: 'flex', gap: 4, borderBottom: '2px solid var(--border, #e2e8f0)', marginBottom: 20,

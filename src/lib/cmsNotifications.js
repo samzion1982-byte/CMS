@@ -1,15 +1,38 @@
 /**
- * Header alert preferences — silent + per-alert snooze (localStorage).
+ * Header alert preferences — silent, per-alert snooze, enabled alert types (localStorage).
  */
 
 const SILENT_KEY = 'cms_notif_silent'
 const SNOOZE_KEY = 'cms_notif_snooze'
+const ENABLED_KEY = 'cms_notif_enabled_types'
 
 export const ALERT_IDS = {
   payment: 'payment',
   license: 'license',
   backup: 'backup',
 }
+
+/** Toggle rows in the Alerts settings panel. License is always on. */
+export const ALERT_TYPE_OPTIONS = [
+  {
+    id: ALERT_IDS.payment,
+    label: 'Payment confirmations',
+    description: 'Payments awaiting confirmation in Receipts',
+    locked: false,
+  },
+  {
+    id: ALERT_IDS.license,
+    label: 'License validity',
+    description: 'Licence expiry and inactive status — always on',
+    locked: true,
+  },
+  {
+    id: ALERT_IDS.backup,
+    label: 'Backup failures',
+    description: 'Failed or partial full backups',
+    locked: false,
+  },
+]
 
 export const SNOOZE_OPTIONS = [
   { id: '1d', label: '1 day', ms: 24 * 60 * 60 * 1000 },
@@ -28,6 +51,10 @@ function readJson(key, fallback) {
   }
 }
 
+function emitPrefsChanged() {
+  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+}
+
 export function isNotificationsSilent() {
   try {
     return localStorage.getItem(SILENT_KEY) === '1'
@@ -40,7 +67,41 @@ export function setNotificationsSilent(on) {
   try {
     localStorage.setItem(SILENT_KEY, on ? '1' : '0')
   } catch { /* ignore */ }
-  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+  emitPrefsChanged()
+}
+
+export function getEnabledAlertTypes() {
+  const defaults = {
+    [ALERT_IDS.payment]: true,
+    [ALERT_IDS.license]: true,
+    [ALERT_IDS.backup]: true,
+  }
+  const stored = readJson(ENABLED_KEY, {})
+  const merged = {
+    ...defaults,
+    ...(stored && typeof stored === 'object' ? stored : {}),
+  }
+  // Licence validity can never be turned off
+  merged[ALERT_IDS.license] = true
+  return merged
+}
+
+export function isAlertTypeEnabled(alertId) {
+  if (alertId === ALERT_IDS.license) return true
+  return getEnabledAlertTypes()[alertId] !== false
+}
+
+export function setAlertTypeEnabled(alertId, enabled) {
+  if (alertId === ALERT_IDS.license) return
+  const next = {
+    ...getEnabledAlertTypes(),
+    [alertId]: !!enabled,
+    [ALERT_IDS.license]: true,
+  }
+  try {
+    localStorage.setItem(ENABLED_KEY, JSON.stringify(next))
+  } catch { /* ignore */ }
+  emitPrefsChanged()
 }
 
 export function getSnoozeMap() {
@@ -61,7 +122,7 @@ export function snoozeAlert(alertId, optionId) {
   try {
     localStorage.setItem(SNOOZE_KEY, JSON.stringify(next))
   } catch { /* ignore */ }
-  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+  emitPrefsChanged()
 }
 
 export function clearAlertSnooze(alertId) {
@@ -70,7 +131,7 @@ export function clearAlertSnooze(alertId) {
   try {
     localStorage.setItem(SNOOZE_KEY, JSON.stringify(next))
   } catch { /* ignore */ }
-  window.dispatchEvent(new CustomEvent('cms-notif-prefs-changed'))
+  emitPrefsChanged()
 }
 
 export function formatSnoozeUntil(until) {

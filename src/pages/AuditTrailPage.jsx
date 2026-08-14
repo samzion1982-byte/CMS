@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileSpreadsheet, RefreshCw, Search, History, Loader2, Trash2, X } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { ROLE_LABELS } from '../lib/auth'
@@ -304,16 +305,12 @@ export default function AuditTrailPage() {
 
   return (
     <div className="page-container animate-fade-in" style={{ fontFamily: 'var(--font-ui)' }}>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 20 }}>
-            <History size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Audit Trail
-          </h1>
-          <p className="page-subtitle" style={{ margin: '4px 0 0', fontSize: 12 }}>
-            Who changed what across Members, Events, Assets, and Finance.
-          </p>
-        </div>
+      <PageHeader
+        icon={History}
+        title="Audit Trail"
+        subtitle="Who changed what across Members, Events, Assets, and Finance."
+        style={{ marginBottom: 12 }}
+      >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button type="button" className="action-btn" onClick={() => load(page)} disabled={loading} style={secondaryBtn}>
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -338,7 +335,7 @@ export default function AuditTrailPage() {
             <Trash2 size={13} /> Flush
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       <div
         style={{

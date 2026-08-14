@@ -19,6 +19,7 @@ import {
   moveDirectoryCategory,
   getAllMasterDescendants,
 } from '../lib/directoryLib'
+import PageHeader from '../components/ui/PageHeader'
 
 const INPUT = {
   height: 34, padding: '0 10px', border: '1.5px solid var(--card-border)',
@@ -472,31 +473,24 @@ export default function DirectorySettingsPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button
-              onClick={() => navigate('/directory')}
-              style={{
-                padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff',
-              }}
-            >
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', letterSpacing: 0.3 }}>Directory</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-              <Settings size={18} style={{ color: 'var(--accent)' }} />
-              Directory Setup
-            </h1>
-            <p className="page-subtitle" style={{ margin: '4px 0 0' }}>
-              Create categories and sub-categories for your phone directory
-            </p>
-          </div>
+      <PageHeader
+        icon={Settings}
+        title="Directory Setup"
+        subtitle="Create categories and sub-categories for your phone directory"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button
+            onClick={() => navigate('/directory')}
+            style={{
+              padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff',
+            }}
+          >
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', letterSpacing: 0.3 }}>Directory</span>
         </div>
-      </div>
+      </PageHeader>
 
       <CategoriesList />
     </div>

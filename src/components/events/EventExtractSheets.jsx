@@ -274,13 +274,9 @@ export function ScheduleIVSheet({ form }) {
 
   const TH = {
     border: '1px solid #333', padding: '4px 5px', textAlign: 'center',
-    fontWeight: 700, fontSize: 9, background: '#fff',
+    fontWeight: 700, fontSize: 9, background: '#fff', verticalAlign: 'middle',
   }
-  const TD = { border: '1px solid #333', padding: '12px 8px', verticalAlign: 'top', fontSize: 9 }
-  const VT = {
-    writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-    whiteSpace: 'nowrap', textAlign: 'center', width: 24,
-  }
+  const TD = { border: '1px solid #333', padding: '8px 6px', verticalAlign: 'middle', fontSize: 9 }
 
   return (
     <div style={{
@@ -304,14 +300,14 @@ export function ScheduleIVSheet({ form }) {
 
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '4%' }} />
-              <col style={{ width: '3%' }} />
-              <col style={{ width: '3%' }} />
-              <col style={{ width: '2.5%' }} />
-              <col style={{ width: '9.5%' }} />
-              <col style={{ width: '7.5%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '6%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '4%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '7%' }} />
               <col style={{ width: '8%' }} />
               <col />
               <col style={{ width: '9%' }} />
@@ -319,7 +315,7 @@ export function ScheduleIVSheet({ form }) {
             </colgroup>
             <thead>
               <tr>
-                <th rowSpan={2} style={TH}>NO</th>
+                <th rowSpan={2} style={TH}>Seq. No</th>
                 <th colSpan={3} style={TH}>When Married</th>
                 <th colSpan={2} style={TH}>Name of Parties</th>
                 <th rowSpan={2} style={TH}>Date of Birth &amp; Age</th>
@@ -330,19 +326,19 @@ export function ScheduleIVSheet({ form }) {
                 <th rowSpan={2} style={TH}>Banns or Licensee</th>
               </tr>
               <tr>
-                <th style={{ ...TH, ...VT }}>Year</th>
-                <th style={{ ...TH, ...VT }}>Month</th>
-                <th style={{ ...TH, ...VT }}>Day</th>
+                <th style={TH}>Year</th>
+                <th style={TH}>Month</th>
+                <th style={TH}>Day</th>
                 <th style={TH}>Christian Name</th>
                 <th style={TH}>Surname</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td rowSpan={2} style={{ ...TD, ...VT, textAlign: 'center', fontSize: 10, fontWeight: 700 }}>{slNo}</td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{form.year}</td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{monthAbbr}</td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{form.day}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{slNo}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{form.year}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{monthAbbr}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{form.day}</td>
                 <td style={{ ...TD, minHeight: 80, fontWeight: 700 }}>{form.nameGroom?.toUpperCase()}</td>
                 <td style={{ ...TD, fontWeight: 700 }}>{form.surnameGroom?.toUpperCase()}</td>
                 <td style={TD}>
@@ -416,7 +412,7 @@ export function ScheduleIVSheet({ form }) {
                 <div style={{ fontWeight: 700, fontSize: 9, marginBottom: 10 }}>THIS MARRIAGE WAS SOLEMNIZED / AUTHORITY BY</div>
                 <div style={{ fontSize: 9, marginBottom: 10 }}>SIGNATURE :</div>
                 <div style={{ fontSize: 9, marginBottom: 6 }}>
-                  FULLNAME : <strong>{form.solemnizedBy?.toUpperCase() || ''}</strong>
+                  FULL NAME : <strong>{form.solemnizedBy?.toUpperCase() || ''}</strong>
                 </div>
                 <div style={{ fontSize: 9, marginBottom: 6 }}>DATE : {marriageDate}</div>
                 <div style={{ fontSize: 9, marginTop: 10 }}>OFFICE SEAL</div>
@@ -437,13 +433,9 @@ export function MarriageRegisterSheet({ form }) {
 
   const TH = {
     border: '1px solid #333', padding: '4px 5px', textAlign: 'center',
-    fontWeight: 700, fontSize: 9, background: '#fff',
+    fontWeight: 700, fontSize: 9, background: '#fff', verticalAlign: 'middle',
   }
-  const TD = { border: '1px solid #333', padding: '6px 5px', verticalAlign: 'top', fontSize: 8.5 }
-  const VT = {
-    writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-    whiteSpace: 'nowrap', textAlign: 'center', width: 22,
-  }
+  const TD = { border: '1px solid #333', padding: '6px 5px', verticalAlign: 'middle', fontSize: 8.5 }
 
   return (
     <div style={{
@@ -462,45 +454,45 @@ export function MarriageRegisterSheet({ form }) {
 
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '3%' }} />
-            <col style={{ width: '3.5%' }} />
-            <col style={{ width: '2.5%' }} />
-            <col style={{ width: '9%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '5.5%' }} />
-            <col style={{ width: '7%' }} />
-            <col />
             <col style={{ width: '8%' }} />
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '5%' }} />
+            <col style={{ width: '4%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '8%' }} />
+            <col />
+            <col style={{ width: '9%' }} />
             <col style={{ width: '7%' }} />
           </colgroup>
           <thead>
             <tr>
-              <th rowSpan={3} style={{ ...TH, ...VT }}>NO</th>
+              <th rowSpan={2} style={TH}>Seq. No</th>
               <th colSpan={3} style={TH}>When Married</th>
               <th colSpan={2} style={TH}>Name of Parties</th>
-              <th rowSpan={3} style={TH}>Date of Birth &amp; Age</th>
-              <th rowSpan={3} style={TH}>Condition</th>
-              <th rowSpan={3} style={TH}>Rank or Profession</th>
-              <th rowSpan={3} style={TH}>Residence at the time of Marriage</th>
-              <th rowSpan={3} style={TH}>Father&apos;s name and Surname</th>
-              <th rowSpan={3} style={TH}>Banns or Licensee</th>
+              <th rowSpan={2} style={TH}>Date of Birth &amp; Age</th>
+              <th rowSpan={2} style={TH}>Condition</th>
+              <th rowSpan={2} style={TH}>Rank or Profession</th>
+              <th rowSpan={2} style={TH}>Residence at the time of Marriage</th>
+              <th rowSpan={2} style={TH}>Father&apos;s name and Surname</th>
+              <th rowSpan={2} style={TH}>Banns or Licensee</th>
             </tr>
             <tr>
-              <th style={{ ...TH, ...VT }}>Year</th>
-              <th style={{ ...TH, ...VT }}>Month</th>
-              <th style={{ ...TH, ...VT }}>Day</th>
+              <th style={TH}>Year</th>
+              <th style={TH}>Month</th>
+              <th style={TH}>Day</th>
               <th style={TH}>Christian Name</th>
               <th style={TH}>Surname</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td style={{ ...TD, ...VT, fontWeight: 700, fontSize: 8 }}>{slNo}</td>
-              <td style={{ ...TD, ...VT, fontSize: 8 }}>{form.year}</td>
-              <td style={{ ...TD, ...VT, fontSize: 8 }}>{monthAbbr}</td>
-              <td style={{ ...TD, ...VT, fontSize: 8 }}>{form.day}</td>
+              <td style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontWeight: 700, fontSize: 9, whiteSpace: 'nowrap' }}>{slNo}</td>
+              <td style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontSize: 9 }}>{form.year}</td>
+              <td style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontSize: 9 }}>{monthAbbr}</td>
+              <td style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontSize: 9 }}>{form.day}</td>
               <td style={TD}>
                 <div style={{ fontWeight: 700 }}>{form.nameGroom?.toUpperCase()}</div>
                 <div style={{ marginTop: 4, paddingTop: 4, borderTop: '1px solid #ccc', fontWeight: 700 }}>

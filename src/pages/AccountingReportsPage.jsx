@@ -13,13 +13,14 @@ import {
 } from '../lib/accountingLib'
 import {
   ArrowLeft, BookOpen, Calendar, Filter, Download,
-  TrendingUp, TrendingDown, BarChart2, Loader2,
+  TrendingUp, TrendingDown, BarChart3, Loader2,
   ChevronDown, ChevronRight, FileText, Search, X, Scale,
   ArrowUp, ArrowDown, FileSpreadsheet,
 } from 'lucide-react'
 import { exportToExcel, exportToExcelWithTitle } from '../lib/exportExcel'
 import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -466,26 +467,25 @@ export default function AccountingReportsPage() {
     <div className="page-container">
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <BarChart2 size={20} style={{ color: 'var(--accent)' }} /> GL Reports
-            </h1>
-            <p className="page-subtitle">Day Book &amp; Account Balance Summary</p>
-          </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <TabBtn active={tab === 'daybook'}        onClick={() => setTab('daybook')}>Day Book</TabBtn>
-          <TabBtn active={tab === 'account-summary'} onClick={() => setTab('account-summary')}>Account Summary</TabBtn>
-          <TabBtn active={tab === 'group-report'}   onClick={() => setTab('group-report')}>Group Report</TabBtn>
-        </div>
+        <PageHeader
+          icon={BarChart3}
+          title="GL Reports"
+          subtitle="Day Book & Account Balance Summary"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <TabBtn active={tab === 'daybook'}        onClick={() => setTab('daybook')}>Day Book</TabBtn>
+            <TabBtn active={tab === 'account-summary'} onClick={() => setTab('account-summary')}>Account Summary</TabBtn>
+            <TabBtn active={tab === 'group-report'}   onClick={() => setTab('group-report')}>Group Report</TabBtn>
+          </div>
+        </PageHeader>
       </div>
 
       {/* ══════════ DAY BOOK TAB ═══════════════════════════════════ */}

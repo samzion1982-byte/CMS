@@ -3,7 +3,8 @@ import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
-         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Settings } from 'lucide-react'
+         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Church } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 import MasterPasswordInput from '../components/MasterPasswordInput'
@@ -510,21 +511,17 @@ export default function ChurchSetupPage() {
 
   return (
     <div className="animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Settings size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Church Setup
-            </h1>
-          <p className="page-subtitle">
-            {isSuperAdmin
-              ? 'Configure church details, logo, zones and license'
-              : canEditBasics
-                ? 'Update church identity and office bearers'
-                : 'Manage zonal areas'}
-          </p>
-        </div>
+      <PageHeader
+        icon={Church}
+        title="Church Setup"
+        subtitle={
+          isSuperAdmin
+            ? 'Configure church details, logo, zones and license'
+            : canEditBasics
+              ? 'Update church identity and office bearers'
+              : 'Manage zonal areas'
+        }
+      >
         {isSuperAdmin && (
           <div className="flex gap-2">
             <button onClick={flush} disabled={flushing || saving || !church} className="btn btn-secondary"
@@ -541,7 +538,7 @@ export default function ChurchSetupPage() {
             {saving ? <><Loader2 size={14} className="animate-spin"/>Saving...</> : <><Save size={14}/>Save changes</>}
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {/* Two-column layout for super_admin; section cards for Admin grants; zones for others */}
       {isSuperAdmin ? (

@@ -69,7 +69,7 @@ export default function LoginPage() {
     setLoading(true)
     setStatus('authenticating')
     setError('')
-    sessionStorage.setItem('login_welcome', '1')  // flag checked by PublicRoute to delay redirect
+    sessionStorage.setItem('login_welcome', '1')  // hold redirect so welcome overlay is visible
     // Clear any leftover setup flag from a prior attempt
     sessionStorage.removeItem('device_setup_pending')
 
@@ -87,7 +87,6 @@ export default function LoginPage() {
         setStatus('')
         setLoading(false)
       } else {
-        setStatus('welcome')
         const uid = authData?.user?.id
 
         // Resolve device meta before writing the login row (atomic insert).
@@ -140,6 +139,10 @@ export default function LoginPage() {
           userAgent: navigator.userAgent,
           ...(deviceMeta || {}),
         })
+
+        // Keep Authenticating + slider visible for 3 more seconds
+        await new Promise((r) => setTimeout(r, 3000))
+        setStatus('welcome')
       }
     } catch (ex) {
       sessionStorage.removeItem('device_setup_pending')
@@ -627,6 +630,205 @@ export default function LoginPage() {
           animation: spin 0.85s linear infinite;
         }
 
+        /* Shield + lock auth animation */
+        .auth-verify {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          width: 100%;
+          max-width: 280px;
+          animation: authShieldIn 0.45s ease both;
+        }
+        .auth-ecg {
+          flex: 1;
+          height: 44px;
+          overflow: visible;
+        }
+        .auth-ecg path {
+          fill: none;
+          stroke: #38bdf8;
+          stroke-width: 1.6;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.55));
+          stroke-dasharray: 120;
+          animation: authEcgDash 1.35s linear infinite;
+        }
+        .auth-ecg-r path {
+          animation-direction: reverse;
+          animation-duration: 1.5s;
+          opacity: 0.85;
+        }
+        .auth-shield {
+          width: 72px;
+          height: 80px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          position: relative;
+        }
+        .auth-shield svg {
+          overflow: visible;
+        }
+        .auth-shield-glow {
+          fill: rgba(56, 189, 248, 0.12);
+          transform-origin: 40px 42px;
+          transform-box: fill-box;
+          animation: authGlowPulse 2s ease-in-out infinite;
+        }
+        .auth-shield-body {
+          fill: rgba(15, 23, 42, 0.72);
+          stroke: #38bdf8;
+          filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.35));
+          stroke-dasharray: 220;
+          stroke-dashoffset: 220;
+          animation: authDrawShield 1.1s ease forwards;
+        }
+        .auth-binary {
+          font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+          font-size: 5.2px;
+          font-weight: 600;
+          fill: #67e8f9;
+          opacity: 0.55;
+          letter-spacing: 0.4px;
+        }
+        .auth-binary-scroll {
+          animation: authBinaryScroll 2.4s linear infinite;
+        }
+        .auth-binary-scroll-b {
+          animation: authBinaryScroll 3.1s linear infinite reverse;
+          opacity: 0.35;
+        }
+        .auth-lens {
+          animation: authLensScan 2.2s ease-in-out infinite;
+          transform-origin: 40px 40px;
+        }
+        .auth-lens-glass {
+          fill: rgba(56, 189, 248, 0.14);
+          stroke: #fbbf24;
+          stroke-width: 1.5;
+          filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.45));
+        }
+        .auth-lens-handle {
+          stroke: #fbbf24;
+          stroke-width: 1.8;
+          stroke-linecap: round;
+        }
+        /* Closed lock — verified by scan + check (no shackle swing) */
+        .auth-lock {
+          opacity: 0;
+          animation: authLockFade 0.4s ease 0.5s forwards;
+        }
+        .auth-lock-body {
+          fill: rgba(15, 23, 42, 0.9);
+          stroke: #fbbf24;
+          stroke-width: 2;
+        }
+        .auth-lock-shackle {
+          fill: none;
+          stroke: #fbbf24;
+          stroke-width: 2;
+          stroke-linecap: round;
+        }
+        .auth-lock-keyhole {
+          fill: #fde68a;
+          animation: authKeyPulse 1.4s ease-in-out 0.8s infinite;
+        }
+        .auth-scan-beam {
+          fill: url(#authScanGrad);
+          opacity: 0;
+          animation: authScanSweep 1.6s ease-in-out 1.1s 1 forwards;
+        }
+        .auth-lock-ring {
+          fill: none;
+          stroke: #38bdf8;
+          stroke-width: 1.6;
+          stroke-linecap: round;
+          stroke-dasharray: 72;
+          stroke-dashoffset: 72;
+          opacity: 0;
+          animation: authRingDraw 1.2s ease 1.2s forwards;
+        }
+        .auth-lock-check {
+          fill: none;
+          stroke: #4ade80;
+          stroke-width: 2.2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+          stroke-dasharray: 24;
+          stroke-dashoffset: 24;
+          opacity: 0;
+          filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.7));
+          animation: authCheckDraw 0.45s ease 2.15s forwards;
+        }
+        .auth-lock-verified .auth-lock-body {
+          animation: authLockVerified 0.5s ease 2.15s forwards;
+        }
+        .auth-lock-verified .auth-lock-keyhole {
+          animation: authKeyholeHide 0.25s ease 2.1s forwards;
+        }
+        @keyframes authShieldIn {
+          from { opacity: 0; transform: translateY(8px) scale(0.92); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes authDrawShield {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes authGlowPulse {
+          0%, 100% { opacity: 0.55; transform: scale(1); }
+          50%      { opacity: 1; transform: scale(1.06); }
+        }
+        @keyframes authLockFade {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes authKeyPulse {
+          0%, 100% { opacity: 0.7; }
+          50%      { opacity: 1; }
+        }
+        @keyframes authScanSweep {
+          0%   { opacity: 0; transform: translateY(-28px); }
+          15%  { opacity: 0.85; }
+          85%  { opacity: 0.75; }
+          100% { opacity: 0; transform: translateY(34px); }
+        }
+        @keyframes authRingDraw {
+          0%   { opacity: 0; stroke-dashoffset: 72; }
+          10%  { opacity: 1; }
+          100% { opacity: 1; stroke-dashoffset: 0; }
+        }
+        @keyframes authCheckDraw {
+          0%   { opacity: 0; stroke-dashoffset: 24; }
+          20%  { opacity: 1; }
+          100% { opacity: 1; stroke-dashoffset: 0; }
+        }
+        @keyframes authKeyholeHide {
+          to { opacity: 0; }
+        }
+        @keyframes authLockVerified {
+          to {
+            stroke: #4ade80;
+            fill: rgba(6, 78, 59, 0.55);
+            filter: drop-shadow(0 0 6px rgba(74, 222, 128, 0.45));
+          }
+        }
+        @keyframes authEcgDash {
+          0%   { stroke-dashoffset: 120; }
+          100% { stroke-dashoffset: 0; }
+        }
+        @keyframes authBinaryScroll {
+          0%   { transform: translateY(0); }
+          100% { transform: translateY(-18px); }
+        }
+        @keyframes authLensScan {
+          0%   { transform: translate(0px, 2px); }
+          25%  { transform: translate(8px, -6px); }
+          50%  { transform: translate(-6px, 4px); }
+          75%  { transform: translate(4px, -2px); }
+          100% { transform: translate(0px, 2px); }
+        }
+
         .status-check {
           color: #22c55e;
           filter: drop-shadow(0 0 10px rgba(34,197,94,0.5));
@@ -686,6 +888,31 @@ export default function LoginPage() {
           75%, 100% { content: '...'; }
         }
 
+        /* Indeterminate loading slider under Authenticating */
+        .status-slider {
+          width: min(220px, 70%);
+          height: 4px;
+          margin-top: 4px;
+          border-radius: 99px;
+          background: rgba(148,163,184,0.22);
+          overflow: hidden;
+          position: relative;
+        }
+        .status-slider-bar {
+          position: absolute;
+          top: 0; left: 0;
+          height: 100%;
+          width: 40%;
+          border-radius: 99px;
+          background: linear-gradient(90deg, #38bdf8, #60a5fa, #fbbf24);
+          box-shadow: 0 0 12px rgba(56,189,248,0.45);
+          animation: statusSlide 1.25s ease-in-out infinite;
+        }
+        @keyframes statusSlide {
+          0%   { transform: translateX(-120%); }
+          100% { transform: translateX(280%); }
+        }
+
         @media (max-width: 550px) {
           .card { padding: 16px 20px 16px; }
           .church-name { font-size: 18px; letter-spacing: 1px; }
@@ -736,8 +963,92 @@ export default function LoginPage() {
               <div className="status-overlay">
                 {status === 'authenticating' ? (
                   <>
-                    <div className="status-ring"/>
+                    <div className="auth-verify" aria-hidden>
+                      {/* Left ECG */}
+                      <svg className="auth-ecg auth-ecg-l" viewBox="0 0 64 44" preserveAspectRatio="none">
+                        <path d="M0 22 H10 L14 22 L17 8 L21 36 L25 22 H34 L37 14 L41 30 L45 22 H64" />
+                      </svg>
+
+                      <div className="auth-shield">
+                        <svg viewBox="0 0 80 88" width="72" height="80" fill="none">
+                          <defs>
+                            <clipPath id="authShieldClip">
+                              <path d="M40 10 L64 21 V39 C64 55 53 68 40 74 C27 68 16 55 16 39 V21 Z" />
+                            </clipPath>
+                            <linearGradient id="authScanGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0" />
+                              <stop offset="45%" stopColor="#67e8f9" stopOpacity="0.55" />
+                              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+                            </linearGradient>
+                          </defs>
+                          <circle className="auth-shield-glow" cx="40" cy="42" r="28" />
+                          <path
+                            className="auth-shield-body"
+                            d="M40 8 L66 20 V40 C66 58 54 72 40 78 C26 72 14 58 14 40 V20 Z"
+                            strokeWidth="2.4"
+                            strokeLinejoin="round"
+                          />
+
+                          {/* Scrolling binary inside shield */}
+                          <g clipPath="url(#authShieldClip)">
+                            <g className="auth-binary auth-binary-scroll">
+                              <text x="20" y="22">1 0 1 1 0</text>
+                              <text x="20" y="30">0 1 0 1 1</text>
+                              <text x="20" y="38">1 1 0 0 1</text>
+                              <text x="20" y="46">0 0 1 1 0</text>
+                              <text x="20" y="54">1 0 1 0 1</text>
+                              <text x="20" y="62">0 1 1 0 0</text>
+                              <text x="20" y="70">1 0 0 1 1</text>
+                              <text x="20" y="78">0 1 0 1 0</text>
+                              <text x="20" y="86">1 1 0 1 0</text>
+                              <text x="20" y="94">0 0 1 0 1</text>
+                            </g>
+                            <g className="auth-binary auth-binary-scroll-b">
+                              <text x="42" y="18">0 1</text>
+                              <text x="42" y="26">1 0</text>
+                              <text x="42" y="34">1 1</text>
+                              <text x="42" y="42">0 0</text>
+                              <text x="42" y="50">1 0</text>
+                              <text x="42" y="58">0 1</text>
+                              <text x="42" y="66">1 1</text>
+                              <text x="42" y="74">0 1</text>
+                              <text x="42" y="82">1 0</text>
+                              <text x="42" y="90">0 1</text>
+                            </g>
+                            {/* Scan beam through binary */}
+                            <rect className="auth-scan-beam" x="16" y="18" width="48" height="10" rx="2" />
+                          </g>
+
+                          {/* Magnifying lens scanning binary */}
+                          <g className="auth-lens">
+                            <circle className="auth-lens-glass" cx="36" cy="36" r="9" />
+                            <line className="auth-lens-handle" x1="42.5" y1="42.5" x2="49" y2="49" />
+                          </g>
+
+                          {/* Closed lock → ring verify → green check */}
+                          <g className="auth-lock auth-lock-verified">
+                            <path
+                              className="auth-lock-shackle"
+                              d="M34 50 V44 C34 40.2 36.7 37.5 40 37.5 C43.3 37.5 46 40.2 46 44 V50"
+                            />
+                            <rect className="auth-lock-body" x="30" y="50" width="20" height="15" rx="2.5" />
+                            <circle className="auth-lock-keyhole" cx="40" cy="56" r="1.7" />
+                            <rect className="auth-lock-keyhole" x="39.15" y="57.2" width="1.7" height="3.4" rx="0.5" />
+                            <circle className="auth-lock-ring" cx="40" cy="55" r="11.5" />
+                            <path className="auth-lock-check" d="M34.5 56.2 L38.2 59.8 L46 51.5" />
+                          </g>
+                        </svg>
+                      </div>
+
+                      {/* Right ECG */}
+                      <svg className="auth-ecg auth-ecg-r" viewBox="0 0 64 44" preserveAspectRatio="none">
+                        <path d="M0 22 H19 L23 22 L26 6 L30 38 L34 22 H43 L46 12 L50 32 L54 22 H64" />
+                      </svg>
+                    </div>
                     <p className="status-msg">Authenticating<span className="status-dots"/></p>
+                    <div className="status-slider" aria-hidden>
+                      <div className="status-slider-bar"/>
+                    </div>
                   </>
                 ) : (
                   <>

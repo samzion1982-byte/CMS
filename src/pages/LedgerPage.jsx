@@ -8,8 +8,9 @@ import { useToast } from '../lib/toast'
 import { getLedger, getChartOfAccounts, getAccountById, getPostableAccountsWithPath, getFY, fyDateRange, fmtAmt, TYPE_COLOR, displayAccountType } from '../lib/accountingLib'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import { useEntity } from '../lib/EntityContext'
-import { BookMarked, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
+import { BookMarked, BookOpen, ArrowLeft, Loader2, FileSpreadsheet, Printer, Search, X } from 'lucide-react'
 import DatePresets from '../components/accounting/DatePresets'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Account multi-select dropdown (tree view) ─────────────────────
 function AccountSelector({ allAccounts, postableIds, selectedIds, onChange }) {
@@ -383,41 +384,41 @@ export default function LedgerPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header no-print">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+      <div className="no-print" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, paddingTop: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+              <ArrowLeft size={15} />
+            </button>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
+          </div>
+          {cameFromReport && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+              <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
                 <ArrowLeft size={15} />
               </button>
-              <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Back</span>
             </div>
-            {cameFromReport && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <button onClick={() => navigate(-1)} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-                  <ArrowLeft size={15} />
-                </button>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Back</span>
-              </div>
-            )}
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <BookMarked size={20} style={{ color: 'var(--accent)' }} /> Ledger
-            </h1>
-            <p className="page-subtitle">View account-wise transaction history</p>
-          </div>
+          )}
         </div>
-        {generated && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={doExport} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <FileSpreadsheet size={15} /> Export
-            </button>
-            <button onClick={doPrint} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              <Printer size={15} /> Print
-            </button>
-          </div>
-        )}
+        <PageHeader
+          icon={BookOpen}
+          title="Ledger"
+          subtitle="View account-wise transaction history"
+          className="no-print"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          {generated && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={doExport} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <FileSpreadsheet size={15} /> Export
+              </button>
+              <button onClick={doPrint} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                <Printer size={15} /> Print
+              </button>
+            </div>
+          )}
+        </PageHeader>
       </div>
 
       {/* Date presets */}

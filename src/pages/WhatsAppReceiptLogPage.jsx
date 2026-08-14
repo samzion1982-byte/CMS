@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { exportToExcel } from '../lib/exportExcel'
 import { CheckCircle, XCircle, Loader2, ChevronLeft, ChevronRight, MessageSquare, RefreshCw, Download } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const PAGE_SIZE = 50
 
@@ -90,15 +91,11 @@ export default function WhatsAppReceiptLogPage() {
 
   return (
     <div className="animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <MessageSquare size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              WhatsApp Receipt Log
-            </h1>
-          <p className="page-subtitle">Track all receipt WhatsApp sends — {total} total entries</p>
-        </div>
+      <PageHeader
+        icon={MessageSquare}
+        title="WhatsApp Receipt Log"
+        subtitle={`Track all receipt WhatsApp sends — ${total} total entries`}
+      >
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={handleExport} disabled={exporting || loading}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
@@ -112,7 +109,7 @@ export default function WhatsAppReceiptLogPage() {
             Refresh
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Filter bar */}
       <div className="flex gap-2 mb-4">

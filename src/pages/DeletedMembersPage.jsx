@@ -7,7 +7,8 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { formatDate } from '../lib/date'
-import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileSpreadsheet, Trash2, Archive } from 'lucide-react'
+import { Search, Undo2, Loader2, ChevronLeft, ChevronRight, FileSpreadsheet, Trash2, UserX } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { supabase } from '../lib/supabase'
 import { fetchDeletedMembers, getDeletedMemberDetails, permanentDeleteMembers } from '../lib/memberDelete'
 import RestoreMemberModal from './RestoreMemberModal'
@@ -256,15 +257,11 @@ export default function DeletedMembersPage() {
 
   return (
     <div className="animate-fade-in p-6">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Archive size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Deleted Members Archive
-            </h1>
-          <p className="page-subtitle">Manage archived members and restore if needed</p>
-        </div>
+      <PageHeader
+        icon={UserX}
+        title="Deleted Members Archive"
+        subtitle="Manage archived members and restore if needed"
+      >
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
             <button
@@ -287,7 +284,7 @@ export default function DeletedMembersPage() {
             {exporting ? 'Exporting...' : 'Excel Export'}
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Stats */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">

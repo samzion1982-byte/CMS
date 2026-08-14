@@ -13,8 +13,9 @@ import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, RefreshCw, ChevronDown, Wallet,
-  TrendingUp, TrendingDown, Target, ChevronRight,
+  TrendingUp, TrendingDown, PieChart, ChevronRight,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const LABEL_TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }
 
@@ -71,38 +72,37 @@ export default function FundReportPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/accounting/funds')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <ArrowLeft size={15} />
-          </button>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Target size={20} style={{ color: 'var(--accent)' }} /> Fund Report
-            </h1>
-            <p className="page-subtitle">Income and expenses by designated fund</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              FY {fy} <ChevronDown size={13} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/accounting/funds')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)', marginTop: 2 }}>
+          <ArrowLeft size={15} />
+        </button>
+        <PageHeader
+          icon={PieChart}
+          title="Fund Report"
+          subtitle="Income and expenses by designated fund"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                FY {fy} <ChevronDown size={13} />
+              </button>
+              {fyOpen && (
+                <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
+                  {FYS.map(f => (
+                    <button key={f} onClick={() => { setFy(f); setFyOpen(false); setSelectedFund(null) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
+                      FY {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={load} disabled={loading} title="Refresh"
+              style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             </button>
-            {fyOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
-                {FYS.map(f => (
-                  <button key={f} onClick={() => { setFy(f); setFyOpen(false); setSelectedFund(null) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
-                    FY {f}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-          <button onClick={load} disabled={loading} title="Refresh"
-            style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
+        </PageHeader>
       </div>
 
       {loading ? (

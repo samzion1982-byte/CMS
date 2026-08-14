@@ -18,6 +18,7 @@ import {
   bulkImportDirectoryContacts,
 } from '../lib/directoryLib'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
 // Add any table names here that should never appear in the Flush All modal
@@ -3117,23 +3118,18 @@ export default function ImportPage() {
 
       <div className="imp-page">
         {/* ── Header ── */}
-        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,marginBottom:28}}>
-          <div>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
-              <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#2563eb,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                <Database size={16} style={{color:'#fff'}}/>
-              </div>
-              <h1 className="page-title" style={{margin:0}}>Migration Dashboard</h1>
-            </div>
-            <p style={{margin:0,fontSize:12,color:'#94a3b8',paddingLeft:42}}>Import worksheets &amp; photos · Monitor all activity on the board</p>
-          </div>
+        <PageHeader
+          icon={Database}
+          title="Migration Dashboard"
+          subtitle="Import worksheets & photos · Monitor all activity on the board"
+        >
           <button onClick={()=>setFlushAllModal(true)}
             style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,padding:'9px 18px',fontSize:13,fontWeight:500,border:'1px solid #fecaca',borderRadius:10,background:'#fff5f5',color:'#dc2626',cursor:'pointer',marginTop:4,transition:'all 0.15s ease',boxShadow:'0 1px 3px rgba(220,38,38,0.1)'}}
             onMouseEnter={e=>{e.currentTarget.style.background='#fee2e2';e.currentTarget.style.boxShadow='0 4px 12px rgba(220,38,38,0.15)'}}
             onMouseLeave={e=>{e.currentTarget.style.background='#fff5f5';e.currentTarget.style.boxShadow='0 1px 3px rgba(220,38,38,0.1)'}}>
             <Trash2 size={14}/> Flush All
           </button>
-        </div>
+        </PageHeader>
 
         {/* ── Stats tiles ── */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:14,marginBottom:28}}>

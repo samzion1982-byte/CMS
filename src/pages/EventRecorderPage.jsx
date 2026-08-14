@@ -8,6 +8,7 @@ import { useToast } from '../lib/toast'
 import { logCmsAudit } from '../lib/cmsAudit'
 import { captureDeletedRecord, quarantineStorageFolder } from '../lib/cmsRecycleBin'
 import BulkEventExportModal from './BulkEventExportModal'
+import PageHeader from '../components/ui/PageHeader'
 
 /* ─── Constants ──────────────────────────────────────────────────── */
 const TABS = [
@@ -142,23 +143,12 @@ export default function EventRecorderPage() {
 
   return (
     <div style={{ padding: '32px 28px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10,
-          background: 'var(--sidebar-bg, #0d2244)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 12px color-mix(in srgb, var(--sidebar-bg, #0d2244) 35%, transparent)',
-        }}>
-          <BookMarked size={20} color="#fff" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: '#0f172a' }}>
-            Event Recorder
-          </h1>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-            Baptism, Confirmation, Wedding &amp; Burial registers
-          </p>
-        </div>
+      <PageHeader
+        icon={BookMarked}
+        title="Event Recorder"
+        subtitle="Baptism, Confirmation, Wedding & Burial registers"
+        style={{ marginBottom: 20 }}
+      >
         <button
           type="button"
           onClick={() => setShowBulkExport(true)}
@@ -173,7 +163,7 @@ export default function EventRecorderPage() {
         >
           <FileDown size={16} /> Bulk Export
         </button>
-      </div>
+      </PageHeader>
       {showBulkExport && (
         <BulkEventExportModal
           initialKind={activeTab}
@@ -3065,8 +3055,7 @@ function MarriageRegisterModal({ onClose }) {
     body { font-family:'Times New Roman',serif; font-size:8pt; color:#000; }
     table { width:100%; border-collapse:collapse; table-layout:fixed; }
     th,td { border:1px solid #000; padding:3pt 4pt; vertical-align:top; }
-    th { text-align:center; font-weight:bold; background:#fff; }
-    [style*="writing-mode"] { writing-mode:vertical-rl; transform:rotate(180deg); text-align:center; white-space:nowrap; }
+    th { text-align:center; font-weight:bold; background:#fff; vertical-align:middle; }
   </style>
 </head>
 <body>${el.innerHTML}</body>
@@ -3075,9 +3064,8 @@ function MarriageRegisterModal({ onClose }) {
     setTimeout(() => { win.focus(); win.print() }, 500)
   }
 
-  const TH = { border:'1px solid #333', padding:'4px 5px', textAlign:'center', fontWeight:700, fontSize:9, background:'#fff' }
-  const TD = { border:'1px solid #333', padding:'6px 5px', verticalAlign:'top', fontSize:8.5 }
-  const VT = { writingMode:'vertical-rl', transform:'rotate(180deg)', whiteSpace:'nowrap', textAlign:'center', width:22 }
+  const TH = { border:'1px solid #333', padding:'4px 5px', textAlign:'center', fontWeight:700, fontSize:9, background:'#fff', verticalAlign:'middle' }
+  const TD = { border:'1px solid #333', padding:'6px 5px', verticalAlign:'middle', fontSize:8.5 }
 
   const yearOpts = []
   for (let y = new Date().getFullYear(); y >= 2000; y--) yearOpts.push(y)
@@ -3150,35 +3138,35 @@ function MarriageRegisterModal({ onClose }) {
             ) : (
               <table style={{ width:'100%', borderCollapse:'collapse', tableLayout:'fixed' }}>
                 <colgroup>
-                  <col style={{ width:'5%'   }} />{/* No */}
-                  <col style={{ width:'3%'   }} />{/* Year */}
-                  <col style={{ width:'3.5%' }} />{/* Month */}
-                  <col style={{ width:'2.5%' }} />{/* Day */}
-                  <col style={{ width:'9%'   }} />{/* Chr. Name */}
-                  <col style={{ width:'7%'   }} />{/* Surname */}
-                  <col style={{ width:'7%'   }} />{/* DOB & Age */}
-                  <col style={{ width:'5.5%' }} />{/* Condition */}
-                  <col style={{ width:'7%'   }} />{/* Profession */}
+                  <col style={{ width:'8%'   }} />{/* Seq */}
+                  <col style={{ width:'5%'   }} />{/* Year */}
+                  <col style={{ width:'5%' }} />{/* Month */}
+                  <col style={{ width:'4%' }} />{/* Day */}
+                  <col style={{ width:'10%'   }} />{/* Chr. Name */}
+                  <col style={{ width:'8%'   }} />{/* Surname */}
+                  <col style={{ width:'8%'   }} />{/* DOB & Age */}
+                  <col style={{ width:'7%' }} />{/* Condition */}
+                  <col style={{ width:'8%'   }} />{/* Profession */}
                   <col                          />{/* Residence */}
-                  <col style={{ width:'8%'   }} />{/* Father */}
+                  <col style={{ width:'9%'   }} />{/* Father */}
                   <col style={{ width:'7%'   }} />{/* Banns */}
                 </colgroup>
                 <thead>
                   <tr>
-                    <th rowSpan={3} style={{ ...TH, ...VT }}>NO</th>
+                    <th rowSpan={2} style={TH}>Seq. No</th>
                     <th colSpan={3} style={TH}>When Married</th>
                     <th colSpan={2} style={TH}>Name of Parties</th>
-                    <th rowSpan={3} style={TH}>Date of Birth &amp; Age</th>
-                    <th rowSpan={3} style={TH}>Condition</th>
-                    <th rowSpan={3} style={TH}>Rank or Profession</th>
-                    <th rowSpan={3} style={TH}>Residence at the time of Marriage</th>
-                    <th rowSpan={3} style={TH}>Father's name and Surname</th>
-                    <th rowSpan={3} style={TH}>Banns or Licensee</th>
+                    <th rowSpan={2} style={TH}>Date of Birth &amp; Age</th>
+                    <th rowSpan={2} style={TH}>Condition</th>
+                    <th rowSpan={2} style={TH}>Rank or Profession</th>
+                    <th rowSpan={2} style={TH}>Residence at the time of Marriage</th>
+                    <th rowSpan={2} style={TH}>Father's name and Surname</th>
+                    <th rowSpan={2} style={TH}>Banns or Licensee</th>
                   </tr>
                   <tr>
-                    <th style={{ ...TH, ...VT }}>Year</th>
-                    <th style={{ ...TH, ...VT }}>Month</th>
-                    <th style={{ ...TH, ...VT }}>Day</th>
+                    <th style={TH}>Year</th>
+                    <th style={TH}>Month</th>
+                    <th style={TH}>Day</th>
                     <th style={TH}>Christian Name</th>
                     <th style={TH}>Surname</th>
                   </tr>
@@ -3189,10 +3177,10 @@ function MarriageRegisterModal({ onClose }) {
                     const monthAbbr = r.month ? MONTHS[r.month - 1]?.slice(0,3).toUpperCase() : ''
                     return (
                       <tr key={r.seq_num}>
-                        <td style={{ ...TD, ...VT, fontWeight:700, fontSize:8 }}>{slNo}</td>
-                        <td style={{ ...TD, ...VT, fontSize:8 }}>{r.year}</td>
-                        <td style={{ ...TD, ...VT, fontSize:8 }}>{monthAbbr}</td>
-                        <td style={{ ...TD, ...VT, fontSize:8 }}>{r.day}</td>
+                        <td style={{ ...TD, textAlign:'center', verticalAlign:'middle', fontWeight:700, fontSize:9, whiteSpace:'nowrap' }}>{slNo}</td>
+                        <td style={{ ...TD, textAlign:'center', verticalAlign:'middle', fontSize:9 }}>{r.year}</td>
+                        <td style={{ ...TD, textAlign:'center', verticalAlign:'middle', fontSize:9 }}>{monthAbbr}</td>
+                        <td style={{ ...TD, textAlign:'center', verticalAlign:'middle', fontSize:9 }}>{r.day}</td>
                         <td style={TD}>
                           <div style={{ fontWeight:700 }}>{r.name_groom?.toUpperCase()}</div>
                           <div style={{ marginTop:4, paddingTop:4, borderTop:'1px solid #ccc', fontWeight:700 }}>{r.name_bride?.toUpperCase()}</div>
@@ -3262,8 +3250,7 @@ function ScheduleIVModal({ form, files, onClose }) {
     body { font-family:'Times New Roman',serif; font-size:10pt; color:#000; background:#fff; border:2px solid #000; padding:0.25in 0.3in; box-sizing:border-box; }
     table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:8.5pt; }
     th, td { border:1px solid #000; padding:3pt 4pt; vertical-align:top; }
-    th { text-align:center; font-weight:bold; }
-    [style*="writing-mode"] { writing-mode:vertical-rl; transform:rotate(180deg); text-align:center; white-space:nowrap; }
+    th { text-align:center; font-weight:bold; vertical-align:middle; }
     .grid { display:grid; grid-template-columns:1fr 1fr; gap:16pt; margin-top:14pt; font-size:8.5pt; }
     .box  { border:1px solid #000; padding:8pt 10pt; }
   </style>
@@ -3278,11 +3265,9 @@ ${el.innerHTML}
 
   /* table cell styles */
   const TH = { border: '1px solid #333', padding: '4px 5px', textAlign: 'center',
-    fontWeight: 700, fontSize: 9, background: '#fff' }
-  const TD = { border: '1px solid #333', padding: '12px 8px',
-    verticalAlign: 'top', fontSize: 9 }
-  const VT = { writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-    whiteSpace: 'nowrap', textAlign: 'center', width: 24 }
+    fontWeight: 700, fontSize: 9, background: '#fff', verticalAlign: 'middle' }
+  const TD = { border: '1px solid #333', padding: '8px 6px',
+    verticalAlign: 'middle', fontSize: 9 }
 
   return (
     <div style={{
@@ -3353,14 +3338,14 @@ ${el.innerHTML}
           {/* Main table */}
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '4%'   }} />{/* NO */}
-              <col style={{ width: '3%'   }} />{/* Year */}
-              <col style={{ width: '3%'   }} />{/* Month */}
-              <col style={{ width: '2.5%' }} />{/* Day */}
-              <col style={{ width: '9.5%' }} />{/* Christian Name */}
-              <col style={{ width: '7.5%' }} />{/* Surname */}
+              <col style={{ width: '8%'   }} />{/* Seq */}
+              <col style={{ width: '5%'   }} />{/* Year */}
+              <col style={{ width: '5%'   }} />{/* Month */}
+              <col style={{ width: '4%' }} />{/* Day */}
+              <col style={{ width: '10%' }} />{/* Christian Name */}
+              <col style={{ width: '8%' }} />{/* Surname */}
               <col style={{ width: '8%'   }} />{/* Age & DOB */}
-              <col style={{ width: '6%'   }} />{/* Condition */}
+              <col style={{ width: '7%'   }} />{/* Condition */}
               <col style={{ width: '8%'   }} />{/* Profession */}
               <col                           />{/* Residence — takes remaining */}
               <col style={{ width: '9%'   }} />{/* Father */}
@@ -3368,7 +3353,7 @@ ${el.innerHTML}
             </colgroup>
             <thead>
               <tr>
-                <th rowSpan={2} style={TH}>NO</th>
+                <th rowSpan={2} style={TH}>Seq. No</th>
                 <th colSpan={3} style={TH}>When Married</th>
                 <th colSpan={2} style={TH}>Name of Parties</th>
                 <th rowSpan={2} style={TH}>Date of Birth &amp; Age</th>
@@ -3379,9 +3364,9 @@ ${el.innerHTML}
                 <th rowSpan={2} style={TH}>Banns or Licensee</th>
               </tr>
               <tr>
-                <th style={{ ...TH, ...VT }}>Year</th>
-                <th style={{ ...TH, ...VT }}>Month</th>
-                <th style={{ ...TH, ...VT }}>Day</th>
+                <th style={TH}>Year</th>
+                <th style={TH}>Month</th>
+                <th style={TH}>Day</th>
                 <th style={TH}>Christian Name</th>
                 <th style={TH}>Surname</th>
               </tr>
@@ -3389,12 +3374,12 @@ ${el.innerHTML}
             <tbody>
               {/* Groom row */}
               <tr>
-                <td rowSpan={2} style={{ ...TD, ...VT, textAlign: 'center', fontSize: 10, fontWeight: 700 }}>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {slNo}
                 </td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{form.year}</td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{monthAbbr}</td>
-                <td rowSpan={2} style={{ ...TD, ...VT }}>{form.day}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{form.year}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{monthAbbr}</td>
+                <td rowSpan={2} style={{ ...TD, textAlign: 'center', verticalAlign: 'middle' }}>{form.day}</td>
                 <td style={{ ...TD, minHeight: 80, fontWeight: 700 }}>{form.nameGroom?.toUpperCase()}</td>
                 <td style={{ ...TD, fontWeight: 700 }}>{form.surnameGroom?.toUpperCase()}</td>
                 <td style={TD}>
@@ -3485,7 +3470,7 @@ ${el.innerHTML}
                 </div>
                 <div style={{ fontSize: 9, marginBottom: 10 }}>SIGNATURE :</div>
                 <div style={{ fontSize: 9, marginBottom: 6 }}>
-                  FULLNAME : <strong>{form.solemnizedBy?.toUpperCase() || ''}</strong>
+                  FULL NAME : <strong>{form.solemnizedBy?.toUpperCase() || ''}</strong>
                 </div>
                 <div style={{ fontSize: 9, marginBottom: 6 }}>DATE : {marriageDate}</div>
                 <div style={{ fontSize: 9, marginTop: 10 }}>OFFICE SEAL</div>

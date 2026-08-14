@@ -18,6 +18,7 @@ import {
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
 import JournalEntryModal from '../components/accounting/JournalEntryModal'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Level config ──────────────────────────────────────────────────
 
@@ -688,8 +689,8 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
     <div className="page-container">
 
       {/* Header */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => isModal ? onClose?.() : navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               {isModal ? <X size={15} /> : <ArrowLeft size={15} />}
@@ -704,24 +705,25 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
               <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
             </div>
           )}
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <BookOpen size={20} style={{ color: 'var(--accent)' }} /> Chart of Accounts
-            </h1>
-            <p className="page-subtitle">Manage account hierarchy — Main Account → Group → Ledger</p>
+        </div>
+        <PageHeader
+          icon={BookOpen}
+          title="Chart of Accounts"
+          subtitle="Manage account hierarchy — Main Account → Group → Ledger"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={exportExcel} disabled={exporting || loading}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#16a34a', border: '1.5px solid #16a34a', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading ? 0.6 : 1 }}>
+              {exporting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Download size={14} />}
+              {exporting ? 'Exporting…' : 'Export Excel'}
+            </button>
+            <button onClick={handleAddMainAccount}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}>
+              <Plus size={15} /> Add Main Account
+            </button>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportExcel} disabled={exporting || loading}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', color: '#16a34a', border: '1.5px solid #16a34a', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: exporting || loading ? 'not-allowed' : 'pointer', opacity: exporting || loading ? 0.6 : 1 }}>
-            {exporting ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Download size={14} />}
-            {exporting ? 'Exporting…' : 'Export Excel'}
-          </button>
-          <button onClick={handleAddMainAccount}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: 'var(--accent-text)', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px var(--accent-ring)' }}>
-            <Plus size={15} /> Add Main Account
-          </button>
-        </div>
+        </PageHeader>
       </div>
 
       {/* Return-to banner */}

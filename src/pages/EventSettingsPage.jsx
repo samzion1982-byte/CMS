@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Settings, Calendar, ChevronLeft, ChevronDown, Check, Globe, Download, UploadCloud, Trash2, Plus, Pencil } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -543,15 +544,16 @@ export default function EventSettingsPage() {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
 
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 }}>
+      <PageHeader
+        icon={Settings}
+        title="Event Settings"
+        style={{ marginBottom: 26 }}
+      >
         <button onClick={() => navigate('/events/planner')}
           style={{ ...btnS, display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px' }}>
           <ChevronLeft size={15} /> Event Planner
         </button>
-        <div style={{ width: 1, height: 22, background: 'var(--card-border,#e2e8f0)' }} />
-        <Settings size={20} color="var(--accent,#2563eb)" />
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text-1)' }}>Event Settings</h1>
-      </div>
+      </PageHeader>
 
       {/* Tab Navigation */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--card-border,#e2e8f0)', marginBottom: 28 }}>

@@ -24,6 +24,7 @@ import {
   RefreshCw, CheckCircle, XCircle, Calendar, ExternalLink, FileSpreadsheet,
 } from 'lucide-react'
 import { exportTwoColumn } from '../lib/exportExcel'
+import PageHeader from '../components/ui/PageHeader'
 
 // Format an ISO date string (YYYY-MM-DD) according to the configured date format
 function fmtD(iso, fmt) {
@@ -904,54 +905,53 @@ export default function FinancialStatementsPage() {
     <div className="page-container">
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header no-print">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <BarChart2 size={20} style={{ color: 'var(--accent)' }} /> Financial Statements
-            </h1>
-            <p className="page-subtitle">R&amp;P · Income &amp; Expenditure · Balance Sheet — FY {fy}</p>
-          </div>
+      <div className="no-print" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
+        <PageHeader
+          icon={FileSpreadsheet}
+          title="Financial Statements"
+          subtitle={`R&P · Income & Expenditure · Balance Sheet — FY ${fy}`}
+          className="no-print"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* FY picker */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setFyOpen(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                FY {fy} <ChevronDown size={14} />
+              </button>
+              {fyOpen && (
+                <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 200, minWidth: 130, overflow: 'hidden' }}>
+                  {FYS.map(f => (
+                    <button key={f} onClick={() => handleFyChange(f)}
+                      style={{ display: 'block', width: '100%', padding: '9px 14px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* FY picker */}
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setFyOpen(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              FY {fy} <ChevronDown size={14} />
+            <button onClick={generate} disabled={loading}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {loading ? 'Generating…' : generated ? 'Refresh' : 'Generate'}
             </button>
-            {fyOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.15)', zIndex: 200, minWidth: 130, overflow: 'hidden' }}>
-                {FYS.map(f => (
-                  <button key={f} onClick={() => handleFyChange(f)}
-                    style={{ display: 'block', width: '100%', padding: '9px 14px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
-                    {f}
-                  </button>
-                ))}
-              </div>
+
+            {generated && (
+              <button onClick={handlePrint}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                <Printer size={14} /> Print
+              </button>
             )}
           </div>
-
-          <button onClick={generate} disabled={loading}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-            {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {loading ? 'Generating…' : generated ? 'Refresh' : 'Generate'}
-          </button>
-
-          {generated && (
-            <button onClick={handlePrint}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
-              <Printer size={14} /> Print
-            </button>
-          )}
-        </div>
+        </PageHeader>
       </div>
 
       {/* ── Date Range Picker ───────────────────────────────────── */}

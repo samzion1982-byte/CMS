@@ -22,6 +22,7 @@ import {
   FileText, ArrowLeft, Loader2, PlusCircle, Minus, AlertCircle, ChevronDown,
   Settings, Zap, Eye, Clock, User, ShieldAlert, RotateCcw, ShieldOff, Lock,
   FileSpreadsheet, Printer, ChevronLeft, ChevronRight, ArrowUp, ArrowDown,
+  BookMarked,
 } from 'lucide-react'
 import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
@@ -30,6 +31,7 @@ import VoucherPrint from '../components/accounting/VoucherPrint'
 import AccountPicker from '../components/accounting/AccountPicker'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -304,49 +306,48 @@ function JournalEntryList() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <FileText size={20} style={{ color: 'var(--accent)' }} /> Journal Entries
-            </h1>
-            <p className="page-subtitle">Voucher register &amp; transaction ledger</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* FY */}
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              FY {fy} <ChevronDown size={13} />
-            </button>
-            {fyOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
-                {FYS.map(f => (
-                  <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>FY {f}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          {!loading && filtered.length > 0 && (
-            <>
-              <button onClick={doExport} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                <FileSpreadsheet size={14} /> Export
-              </button>
-              <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-                <Printer size={14} /> Print
-              </button>
-            </>
-          )}
-          <button onClick={() => setShowNewEntry(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Plus size={15} /> New Entry
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
           </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
+        <PageHeader
+          icon={BookMarked}
+          title="Journal Entries"
+          subtitle="Voucher register & transaction ledger"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* FY */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                FY {fy} <ChevronDown size={13} />
+              </button>
+              {fyOpen && (
+                <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
+                  {FYS.map(f => (
+                    <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>FY {f}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {!loading && filtered.length > 0 && (
+              <>
+                <button onClick={doExport} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  <FileSpreadsheet size={14} /> Export
+                </button>
+                <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                  <Printer size={14} /> Print
+                </button>
+              </>
+            )}
+            <button onClick={() => setShowNewEntry(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <Plus size={15} /> New Entry
+            </button>
+          </div>
+        </PageHeader>
       </div>
 
       {/* Filters */}
@@ -730,60 +731,56 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <FileText size={20} style={{ color: 'var(--accent)' }} />
-              {formReadOnly ? `View: ${header.entry_number}` : (entryId ? `Edit: ${header.entry_number}` : 'New Journal Entry')}
-            </h1>
-            <p className="page-subtitle">
-              {editingPosted ? 'Editing posted entry — changes update financial records' : formReadOnly ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}
-            </p>
-          </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {entryId && (
-            <button onClick={() => setShowPrint(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
-              <Printer size={14} /> Print
-            </button>
-          )}
-          {isPosted && !editingPosted && (
-            <button onClick={() => {
-              if (!window.confirm('This entry is posted. Editing it will update financial records and is logged. Continue?')) return
-              setEditingPosted(true)
-            }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#fff7ed', color: '#c2410c', border: '1.5px solid #fdba74', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <Edit2 size={14} /> Edit Entry
-            </button>
-          )}
-          {editingPosted && (
-            <>
-              <button onClick={() => setEditingPosted(false)} style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
-                Cancel
+        <PageHeader
+          icon={BookMarked}
+          title={formReadOnly ? `View: ${header.entry_number}` : (entryId ? `Edit: ${header.entry_number}` : 'New Journal Entry')}
+          subtitle={editingPosted ? 'Editing posted entry — changes update financial records' : formReadOnly ? 'Posted entry (read-only)' : 'Fill debit and credit accounts'}
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            {entryId && (
+              <button onClick={() => setShowPrint(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                <Printer size={14} /> Print
               </button>
-              <button onClick={() => handleSave(false)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#c2410c' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
+            )}
+            {isPosted && !editingPosted && (
+              <button onClick={() => {
+                if (!window.confirm('This entry is posted. Editing it will update financial records and is logged. Continue?')) return
+                setEditingPosted(true)
+              }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#fff7ed', color: '#c2410c', border: '1.5px solid #fdba74', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <Edit2 size={14} /> Edit Entry
               </button>
-            </>
-          )}
-          {!isPosted && (
-            <>
-              <button onClick={() => handleSave(false)} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
-              </button>
-              <button onClick={() => handleSave(true)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
-              </button>
-            </>
-          )}
-        </div>
+            )}
+            {editingPosted && (
+              <>
+                <button onClick={() => setEditingPosted(false)} style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
+                  Cancel
+                </button>
+                <button onClick={() => handleSave(false)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#c2410c' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
+                </button>
+              </>
+            )}
+            {!isPosted && (
+              <>
+                <button onClick={() => handleSave(false)} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Draft
+                </button>
+                <button onClick={() => handleSave(true)} disabled={saving || !balanced} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: balanced ? '#16a34a' : '#e5e7eb', color: balanced ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: balanced ? 'pointer' : 'not-allowed' }}>
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckSquare size={14} />} Save &amp; Post
+                </button>
+              </>
+            )}
+          </div>
+        </PageHeader>
       </div>
 
       {/* Warning banner when editing posted entry */}

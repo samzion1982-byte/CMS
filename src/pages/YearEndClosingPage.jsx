@@ -17,8 +17,9 @@ import { useEntity } from '../lib/EntityContext'
 import { useEntityFY } from '../lib/useEntityFY'
 import {
   ArrowLeft, Loader2, CheckCircle, AlertTriangle, RefreshCw,
-  ChevronDown, Archive, ArrowRight, ChevronsRight, RotateCcw,
+  ChevronDown, CalendarCheck, ArrowRight, ChevronsRight, RotateCcw,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 function nextFY(fy) {
   const y = parseInt(fy.split('-')[0]) + 1
@@ -253,8 +254,8 @@ export default function YearEndClosingPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
@@ -267,40 +268,41 @@ export default function YearEndClosingPage() {
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
           </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Archive size={20} style={{ color: 'var(--accent)' }} /> Year-End Closing
-            </h1>
-            <p className="page-subtitle">Transfer Income &amp; Expense balances to Corpus Fund</p>
-          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* FY picker */}
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              FY {fy} <ChevronDown size={13} />
+        <PageHeader
+          icon={CalendarCheck}
+          title="Year-End Closing"
+          subtitle="Transfer Income & Expense balances to Corpus Fund"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* FY picker */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setFyOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                FY {fy} <ChevronDown size={13} />
+              </button>
+              {fyOpen && (
+                <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
+                  {FYS.map(f => (
+                    <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
+                      FY {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={loadPreview} disabled={loading} title="Refresh"
+              style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             </button>
-            {fyOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
-                {FYS.map(f => (
-                  <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
-                    FY {f}
-                  </button>
-                ))}
-              </div>
+            {alreadyDone && (
+              <button onClick={() => setShowRevoke(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#fff5f5', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#b91c1c', cursor: 'pointer' }}>
+                <RotateCcw size={13} /> Revoke Closing
+              </button>
             )}
           </div>
-          <button onClick={loadPreview} disabled={loading} title="Refresh"
-            style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          </button>
-          {alreadyDone && (
-            <button onClick={() => setShowRevoke(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#fff5f5', border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#b91c1c', cursor: 'pointer' }}>
-              <RotateCcw size={13} /> Revoke Closing
-            </button>
-          )}
-        </div>
+        </PageHeader>
       </div>
 
       {/* ── Step 2: Carry Forward (shown after closing entry exists) ── */}

@@ -12,12 +12,13 @@ import {
 } from '../lib/accountingLib'
 import {
   PlusCircle, Trash2, Loader2, Save, CheckSquare, ArrowLeft,
-  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer,
+  CheckCircle2, Banknote, Landmark, ChevronRight, Pencil, Printer, CreditCard,
 } from 'lucide-react'
 import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
 import AccountPicker from '../components/accounting/AccountPicker'
+import PageHeader from '../components/ui/PageHeader'
 import { getChurch } from '../lib/supabase'
 import { getFunds } from '../lib/accountingLib'
 
@@ -237,16 +238,19 @@ export default function PaymentVoucherPage() {
           </button>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        <div style={{ flex: 1 }}>
-          <h1 className="page-title" style={{ marginBottom: 1 }}>{editId ? 'Edit Payment Voucher' : 'Payment Voucher'}</h1>
-        </div>
-        <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: accentColor, background: '#fee2e2', padding: '4px 10px', borderRadius: 6 }}>
-          {voucherNo}
-        </div>
-        <button onClick={() => setShowPrint(true)} title="Print voucher"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
-          <Printer size={14} /> Print
-        </button>
+        <PageHeader
+          icon={CreditCard}
+          title={editId ? 'Edit Payment Voucher' : 'Payment Voucher'}
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}
+        >
+          <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: accentColor, background: '#fee2e2', padding: '4px 10px', borderRadius: 6 }}>
+            {voucherNo}
+          </div>
+          <button onClick={() => setShowPrint(true)} title="Print voucher"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
+            <Printer size={14} /> Print
+          </button>
+        </PageHeader>
       </div>
 
       {/* Posted-entry warning */}

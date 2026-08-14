@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   ArchiveRestore, Loader2, RefreshCw, RotateCcw, Search, Trash2,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -201,17 +202,12 @@ export default function RecycleBinPage() {
 
   return (
     <div className="page-container animate-fade-in" style={{ fontFamily: 'var(--font-ui)' }}>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 20 }}>
-            <ArchiveRestore size={18} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Recycle Bin
-          </h1>
-          <p className="page-subtitle" style={{ margin: '4px 0 0', fontSize: 12 }}>
-            Soft-deleted records from Events, Assets, and Finance. Photos/files are held in quarantine until you Restore or Purge.
-            {' '}Items older than {RECYCLE_BIN_RETENTION_DAYS} days are auto-purged.
-          </p>
-        </div>
+      <PageHeader
+        icon={ArchiveRestore}
+        title="Recycle Bin"
+        subtitle={`Soft-deleted records from Events, Assets, and Finance. Photos/files are held in quarantine until you Restore or Purge. Items older than ${RECYCLE_BIN_RETENTION_DAYS} days are auto-purged.`}
+        style={{ marginBottom: 12 }}
+      >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button type="button" className="action-btn" onClick={() => load(page)} disabled={loading} style={secondaryBtn}>
             {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -230,7 +226,7 @@ export default function RecycleBinPage() {
             </button>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {/* Status tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>

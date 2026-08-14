@@ -14,15 +14,15 @@ import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
 
 const NAV = [
   { group: 'MAIN', items: [
-    { label: 'Dashboard',     path: '/dashboard',     icon: LayoutDashboard },
-    { label: 'Members',         path: '/members',       icon: Users           },
-    { label: 'Phone Directory', path: '/directory',     icon: BookUser        },
-    { label: 'Announcements',   path: '/announcements', icon: Megaphone       },
+    { label: 'Dashboard',        path: '/dashboard',     icon: LayoutDashboard },
+    { label: 'Members',          path: '/members',       icon: Users           },
+    { label: 'Asset Management', path: '/assets',        icon: Package        },
+    { label: 'Phone Directory',  path: '/directory',     icon: BookUser        },
     { label: 'Events', icon: Calendar, children: [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },
     ]},
-    { label: 'Asset Management', path: '/assets',     icon: Package        },
+    { label: 'Announcements',    path: '/announcements', icon: Megaphone       },
   ]},
   { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },

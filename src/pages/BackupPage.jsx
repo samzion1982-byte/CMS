@@ -27,6 +27,7 @@ import {
   getBackupFunctionVersion,
 } from '../lib/cmsFullBackup'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import PageHeader from '../components/ui/PageHeader'
 
 const secondaryBtn = {
   gap: 5,
@@ -1070,14 +1071,13 @@ export default function BackupPage() {
 
   return (
     <div style={{ padding: '20px 24px 48px', maxWidth: 960, margin: '0 auto', fontFamily: 'var(--font-ui)' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>
-          Backup &amp; Restore
-        </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45 }}>
-          Super Admin only. Complete backups include every database table and every storage file (photos, PDFs, logos, etc.) in a Google Drive folder. Restore replaces live data from that folder.
-        </p>
-        <p style={{ margin: '12px 0 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <PageHeader
+        icon={Database}
+        title="Backup & Restore"
+        subtitle="Super Admin only. Complete backups include every database table and every storage file (photos, PDFs, logos, etc.) in a Google Drive folder. Restore replaces live data from that folder."
+        style={{ marginBottom: 18 }}
+      >
+        <p style={{ margin: 0, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <a
             href="/docs/Google_Drive_Backup_Setup_Guide.docx"
             download="Google_Drive_Backup_Setup_Guide.docx"
@@ -1107,7 +1107,7 @@ export default function BackupPage() {
             Deployment Guide
           </a>
         </p>
-      </div>
+      </PageHeader>
 
       {fnVersion && !fnVersion.canPrune && (
         <div style={{

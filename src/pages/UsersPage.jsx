@@ -7,9 +7,10 @@ import MasterPasswordInput from '../components/MasterPasswordInput'
 import { invokeEdgeFunction } from '../lib/cmsFullBackup'
 import {
   Save, RotateCcw, Edit2, Power, Trash2,
-  Eye, EyeOff, Loader2, Users, UserPlus,
+  Eye, EyeOff, Loader2, UserPlus, UserCog,
   Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle, Lock, X,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 
 const MAX_SLOTS = 5
@@ -304,22 +305,18 @@ export default function UsersPage() {
 
   return (
     <div className="page-container animate-fade-in" style={{ maxWidth: 1180 }}>
-      <div style={{
-        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
-        gap: 14, flexWrap: 'wrap', marginBottom: 20,
-      }}>
-        <div>
-          <h1 className="page-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Users size={22} style={{ color: 'var(--accent)' }} />
-            User Management
-          </h1>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)' }}>
+      <PageHeader
+        icon={UserCog}
+        title="User Management"
+        subtitle={
+          <>
             {slotsUsed} of {MAX_SLOTS} slots used
             {slotsUsed < MAX_SLOTS
               ? <span style={{ color: 'var(--success)', fontWeight: 600 }}> · {openSlots} available</span>
               : <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · All slots in use</span>}
-          </p>
-        </div>
+          </>
+        }
+      >
         <button
           type="button"
           className="btn btn-primary"
@@ -329,7 +326,7 @@ export default function UsersPage() {
         >
           <UserPlus size={15} /> Add user
         </button>
-      </div>
+      </PageHeader>
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 64 }}>

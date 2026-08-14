@@ -19,6 +19,7 @@ import {
   ArrowLeft, Plus, Trash2, Edit2, Loader2,
   X, Save, Play, Copy,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const VOUCHER_OPTS = ['Journal', 'Receipt', 'Payment', 'Contra']
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -347,8 +348,8 @@ export default function JournalTemplatesPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
@@ -361,17 +362,18 @@ export default function JournalTemplatesPage() {
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
           </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Copy size={19} style={{ color: 'var(--accent)' }} /> Journal Templates
-            </h1>
-            <p className="page-subtitle">Save recurring entries as templates for quick reuse</p>
-          </div>
         </div>
-        <button onClick={() => setEditModal({})}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          <Plus size={14} /> New Template
-        </button>
+        <PageHeader
+          icon={Copy}
+          title="Journal Templates"
+          subtitle="Save recurring entries as templates for quick reuse"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <button onClick={() => setEditModal({})}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Plus size={14} /> New Template
+          </button>
+        </PageHeader>
       </div>
 
       {loading ? (

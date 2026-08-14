@@ -9,8 +9,9 @@ import { fmtAmt, getFunds } from '../lib/accountingLib'
 import { supabase } from '../lib/supabase'
 import { logCmsAudit } from '../lib/cmsAudit'
 import {
-  ArrowLeft, Plus, Trash2, Edit2, Loader2, X, Save, Wallet,
+  ArrowLeft, Plus, Trash2, Edit2, Loader2, X, Save, Wallet, PiggyBank,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const PRESET_COLORS = [
   '#2563eb', '#16a34a', '#7c3aed', '#0891b2', '#c2410c',
@@ -151,8 +152,8 @@ export default function FundsPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
@@ -165,23 +166,24 @@ export default function FundsPage() {
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
           </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Wallet size={19} style={{ color: 'var(--accent)' }} /> Designated Funds
-            </h1>
-            <p className="page-subtitle">Manage Building Fund, Benevolence Fund, and other designated funds</p>
+        </div>
+        <PageHeader
+          icon={PiggyBank}
+          title="Designated Funds"
+          subtitle="Manage Building Fund, Benevolence Fund, and other designated funds"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => navigate('/accounting/fund-report')}
+              style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
+              View Report
+            </button>
+            <button onClick={() => setModal({})}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <Plus size={14} /> New Fund
+            </button>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => navigate('/accounting/fund-report')}
-            style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>
-            View Report
-          </button>
-          <button onClick={() => setModal({})}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Plus size={14} /> New Fund
-          </button>
-        </div>
+        </PageHeader>
       </div>
 
       {loading ? (

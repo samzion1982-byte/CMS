@@ -24,6 +24,7 @@ import {
 } from '../lib/simpleAccountsBackup'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
+import PageHeader from '../components/ui/PageHeader'
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -393,11 +394,10 @@ export default function SimpleAccountsSettingsPage() {
   if (loading) {
     return (
       <div className="page-container simple-accounts-scope">
-        <div className="page-header">
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Settings size={20} style={{ color: 'var(--accent)' }} /> Simple Accounts Settings
-          </h1>
-        </div>
+        <PageHeader
+          icon={Settings}
+          title="Simple Accounts Settings"
+        />
         <div className="card" style={{ padding: 24 }}>
           {[1,2,3,4].map(i => <div key={i} className="loading-skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 14 }} />)}
         </div>
@@ -409,21 +409,17 @@ export default function SimpleAccountsSettingsPage() {
 
   return (
     <div className="page-container simple-accounts-scope">
-      <div className="page-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
-              style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0 }}>
-              <ArrowLeft size={16} />
-            </button>
-            <div>
-              <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Settings size={20} style={{ color: 'var(--accent)' }} /> Simple Accounts Settings
-              </h1>
-              <p className="page-subtitle">Customise how Simple Accounts works for your church</p>
-            </div>
-          </div>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+          style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0, marginTop: 2 }}>
+          <ArrowLeft size={16} />
+        </button>
+        <PageHeader
+          icon={Settings}
+          title="Simple Accounts Settings"
+          subtitle="Customise how Simple Accounts works for your church"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        />
       </div>
 
       {/* ── 1. Display & Format ──────────────────────────────── */}

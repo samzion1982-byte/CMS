@@ -13,6 +13,7 @@ import {
   Scale, ArrowLeft, Loader2, FileSpreadsheet,
   Printer, ChevronDown, CheckCircle2, AlertTriangle, ExternalLink,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 /* FY "2025-26" → "31st March 2026" */
 function fyEndDate(fy) {
@@ -124,34 +125,34 @@ export default function TrialBalancePage() {
     <div className="page-container">
 
       {/* Page header — hidden when printing */}
-      <div className="page-header no-print">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')}
-              style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Scale size={20} style={{ color: 'var(--accent)' }} /> Trial Balance
-            </h1>
-            <p className="page-subtitle">Verify total debits equal total credits</p>
-          </div>
+      <div className="no-print" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')}
+            style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
+          </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        {generated && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={doExport}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <FileSpreadsheet size={15} /> Export
-            </button>
-            <button onClick={() => window.print()}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
-              <Printer size={15} /> Print
-            </button>
-          </div>
-        )}
+        <PageHeader
+          icon={Scale}
+          title="Trial Balance"
+          subtitle="Verify total debits equal total credits"
+          className="no-print"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          {generated && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={doExport}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <FileSpreadsheet size={15} /> Export
+              </button>
+              <button onClick={() => window.print()}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-1)' }}>
+                <Printer size={15} /> Print
+              </button>
+            </div>
+          )}
+        </PageHeader>
       </div>
 
       {/* Controls — hidden when printing */}

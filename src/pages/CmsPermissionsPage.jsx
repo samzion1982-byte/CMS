@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Shield, Save, Loader2, RotateCcw, CheckSquare, Square, ChevronRight, Users } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { supabase } from '../lib/supabase'
@@ -232,10 +233,24 @@ export default function CmsPermissionsPage() {
         }
       `}</style>
 
-      <div
-        className="page-header"
+      <PageHeader
+        icon={Shield}
+        title={
+          <>
+            CMS Permissions
+            {dirty && (
+              <span style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+                color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
+                borderRadius: 99, padding: '3px 8px', marginLeft: 10,
+              }}>
+                Unsaved
+              </span>
+            )}
+          </>
+        }
+        subtitle="Choose which pages each role can open. Multiple people can share a role (e.g. User1). Names appear above each role column. Super Admin always has full access."
         style={{
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
           marginBottom: 18,
           padding: '16px 18px',
           borderRadius: 14,
@@ -244,34 +259,6 @@ export default function CmsPermissionsPage() {
           boxShadow: '0 10px 28px rgba(15,23,42,0.06)',
         }}
       >
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{
-            width: 42, height: 42, borderRadius: 11, flexShrink: 0,
-            background: 'var(--sidebar-bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 6px 16px color-mix(in srgb, var(--sidebar-bg) 35%, transparent)',
-          }}>
-            <Shield size={20} color="#fff" />
-          </div>
-          <div>
-            <h1 className="page-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              CMS Permissions
-              {dirty && (
-                <span style={{
-                  fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
-                  color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
-                  borderRadius: 99, padding: '3px 8px',
-                }}>
-                  Unsaved
-                </span>
-              )}
-            </h1>
-            <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.45, maxWidth: 560 }}>
-              Choose which pages each role can open. Multiple people can share a role
-              (e.g. User1). Names appear above each role column. Super Admin always has full access.
-            </p>
-          </div>
-        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={resetDefaults} disabled={loading || saving} style={secondaryBtn}>
             <RotateCcw size={14} /> Reset to defaults
@@ -294,7 +281,7 @@ export default function CmsPermissionsPage() {
             Save Permissions
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       <div className="card" style={{
         overflow: 'hidden',

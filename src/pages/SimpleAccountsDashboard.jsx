@@ -14,6 +14,7 @@ import {
   getSimpleSettings, fmtAmt, fmtDate, txnLabel,
 } from '../lib/simpleAccountsLib'
 import SimpleAddTransactionModal from '../components/simple-accounts/SimpleAddTransactionModal'
+import PageHeader from '../components/ui/PageHeader'
 
 // Card showing cumulative total at top + individual breakdown below
 function BalanceGroupCard({ label, accounts, balances, currency, color, bg, icon: Icon, loading }) {
@@ -169,13 +170,11 @@ export default function SimpleAccountsDashboard() {
   return (
     <div className="page-container simple-accounts-scope">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Wallet size={22} style={{ color: 'var(--accent)' }} /> Money Book
-          </h1>
-          <p className="page-subtitle">Simple church accounts — receipts, payments and bank movements</p>
-        </div>
+      <PageHeader
+        icon={Wallet}
+        title="Money Book"
+        subtitle="Simple church accounts — receipts, payments and bank movements"
+      >
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setModal('transfer')}
             style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--card-bg)', color: '#2563eb', border: '1.5px solid #93c5fd', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -198,7 +197,7 @@ export default function SimpleAccountsDashboard() {
             <Settings size={15} />
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* ── Balance cards: Cash + Bank (+ Other if any) ─── */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>

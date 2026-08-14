@@ -6,6 +6,7 @@ import {
   BarChart3, Loader2, Search, FileSpreadsheet, Tag, List, ChevronDown,
   CheckSquare, Square, X,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -566,15 +567,11 @@ export default function ReportsPage() {
     <div className="page-container">
 
       {/* ── page header ──────────────────────────────────────── */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <BarChart3 size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Receipt Report
-          </h1>
-          <p className="page-subtitle">Consolidated receipts report and payment head analysis</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={BarChart3}
+        title="Receipt Report"
+        subtitle="Consolidated receipts report and payment head analysis"
+      />
 
       {/* ── report-type tabs ──────────────────────────────────── */}
       <div style={{

@@ -12,6 +12,7 @@ import {
   Building2, ArrowLeft, Plus, Pencil, Trash2, Loader2, Save,
   X, CheckCircle, CreditCard, Hash, ChevronDown, ChevronUp,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const ACCOUNT_TYPES = ['Savings', 'Current', 'Cash Credit', 'Fixed Deposit', 'Overdraft', 'Cash']
 
@@ -373,32 +374,31 @@ export default function BankAccountsPage() {
       )}
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
-              <ArrowLeft size={15} />
-            </button>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
-          </div>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Building2 size={20} style={{ color: 'var(--accent)' }} /> Bank Accounts
-            </h1>
-            <p className="page-subtitle">{accounts.filter(a => a.is_active).length} active accounts &nbsp;·&nbsp; Opening total: {fmtAmt(totalOpening)}</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select value={filter} onChange={e => setFilter(e.target.value)}
-            style={{ height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text-1)', cursor: 'pointer', outline: 'none' }}>
-            <option value="active">Active only</option>
-            <option value="all">All accounts</option>
-          </select>
-          <button onClick={() => setModal({ editing: null })}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Plus size={14} /> Add Bank Account
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2 }}>
+          <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <ArrowLeft size={15} />
           </button>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
+        <PageHeader
+          icon={Building2}
+          title="Bank Accounts"
+          subtitle={`${accounts.filter(a => a.is_active).length} active accounts  ·  Opening total: ${fmtAmt(totalOpening)}`}
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <select value={filter} onChange={e => setFilter(e.target.value)}
+              style={{ height: 36, padding: '0 10px', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, background: 'var(--card-bg)', color: 'var(--text-1)', cursor: 'pointer', outline: 'none' }}>
+              <option value="active">Active only</option>
+              <option value="all">All accounts</option>
+            </select>
+            <button onClick={() => setModal({ editing: null })}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <Plus size={14} /> Add Bank Account
+            </button>
+          </div>
+        </PageHeader>
       </div>
 
       {/* ── Summary cards ──────────────────────────────────────── */}

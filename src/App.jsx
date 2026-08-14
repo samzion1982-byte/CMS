@@ -70,9 +70,20 @@ import { EntityProvider }         from './lib/EntityContext'
 
 console.log('📱 App component rendering')
 
-const SPINNER = (
-  <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#2563eb', borderRadius:'50%', animation:'spin .7s linear infinite', margin:'0 auto 12px' }} />
-)
+function GateLoading() {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--page-bg, #f1f5f9)',
+    }}>
+      <div style={{
+        width: 36, height: 36, borderRadius: '50%',
+        border: '3px solid rgba(37,99,235,0.2)', borderTopColor: '#2563eb',
+        animation: 'spin 0.8s linear infinite',
+      }} />
+    </div>
+  )
+}
 
 // 🔒 License Gate – blocks non-super_admin users when license is inactive/expired
 function LicenseGate({ children }) {
@@ -165,11 +176,7 @@ function LicenseGate({ children }) {
   }, [profile])
 
   if (status === 'checking') {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
-        <div className="text-center">{SPINNER}<p className="text-sm text-slate-500">Verifying license...</p></div>
-      </div>
-    )
+    return <GateLoading />
   }
 
   if (status === 'blocked') {
@@ -242,14 +249,7 @@ function PrivateRoute({ children }) {
   const { session, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
-        <div className="text-center">
-          {SPINNER}
-          <p className="text-sm text-slate-500">Loading session...</p>
-        </div>
-      </div>
-    )
+    return <GateLoading />
   }
 
   if (!session) {
@@ -268,9 +268,10 @@ function PageAccess({ children }) {
   const { profile, pageGrants, loading, session } = useAuth()
   const location = useLocation()
 
-  if (loading) return null
+  if (loading || !profile?.role) {
+    return <GateLoading />
+  }
   if (!session) return <Navigate to="/login" replace />
-  if (!profile?.role) return null
 
   if (!canAccessPath(location.pathname, profile.role, pageGrants)) {
     return <Navigate to="/dashboard" replace />
@@ -292,27 +293,19 @@ function PublicRoute({ children }) {
       return
     }
     if (sessionStorage.getItem('login_welcome')) {
-      // Just logged in — hold redirect so "Welcome back" animation is visible
+      // Hold redirect: ~3s Authenticating slider + ~3s Welcome overlay
       timerRef.current = setTimeout(() => {
         sessionStorage.removeItem('login_welcome')
         setCanRedirect(true)
-      }, 3000)
+      }, 6000)
     } else {
-      // Already had a session (e.g. navigated back to /login while logged in)
       setCanRedirect(true)
     }
     return () => clearTimeout(timerRef.current)
   }, [session])
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
-        <div className="text-center">
-          <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#2563eb', borderRadius:'50%', animation:'spin .7s linear infinite', margin:'0 auto 12px' }} />
-          <p className="text-sm text-slate-500">Loading...</p>
-        </div>
-      </div>
-    )
+    return <GateLoading />
   }
 
   if (session && canRedirect) return <Navigate to="/dashboard" replace />

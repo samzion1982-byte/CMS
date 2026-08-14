@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react'
 import { supabase, getChurch } from '../lib/supabase'
 import { useToast } from '../lib/toast'
 import { Search, Loader2, ChevronLeft, ChevronDown, ChevronRight, FileText } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { getActiveCategories } from '../lib/paymentCategories'
 import { exportStatementPDF } from '../lib/exportStatementPDF'
 
@@ -413,17 +414,11 @@ export default function MemberStatementPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileText size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Member Statement
-            </h1>
-          <p className="page-subtitle">
-            {listLoading ? 'Loading…' : `${members.length} members`}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        icon={FileText}
+        title="Member Statement"
+        subtitle={listLoading ? 'Loading…' : `${members.length} members`}
+      />
 
       {/* Filter */}
       <div className="card" style={{ padding: '14px 20px', marginBottom: 16 }}>

@@ -15,6 +15,7 @@ import {
 import { useEntity } from '../lib/EntityContext'
 import NarrationInput from '../components/accounting/NarrationInput'
 import VoucherPrint from '../components/accounting/VoucherPrint'
+import PageHeader from '../components/ui/PageHeader'
 import { getChurch } from '../lib/supabase'
 
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -283,17 +284,20 @@ export default function ContraVoucherPage() {
           </button>
           <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
         </div>
-        <div style={{ flex: 1 }}>
-          <h1 className="page-title" style={{ marginBottom: 1 }}>{editId ? 'Edit Contra Entry' : 'Contra Entry'}</h1>
-          <p className="page-subtitle" style={{ margin: 0 }}>Transfer between cash and bank accounts</p>
-        </div>
-        <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: ACCENT, background: '#f3e8ff', padding: '4px 10px', borderRadius: 6 }}>
-          {voucherNo}
-        </div>
-        <button onClick={() => setShowPrint(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
-          <Printer size={14} /> Print
-        </button>
+        <PageHeader
+          icon={ArrowLeftRight}
+          title={editId ? 'Edit Contra Entry' : 'Contra Entry'}
+          subtitle="Transfer between cash and bank accounts"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none' }}
+        >
+          <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: ACCENT, background: '#f3e8ff', padding: '4px 10px', borderRadius: 6 }}>
+            {voucherNo}
+          </div>
+          <button onClick={() => setShowPrint(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', fontSize: 12, fontWeight: 600 }}>
+            <Printer size={14} /> Print
+          </button>
+        </PageHeader>
       </div>
 
       {/* Posted-entry warning */}

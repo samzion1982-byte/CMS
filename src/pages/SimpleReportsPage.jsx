@@ -13,6 +13,7 @@ import {
   fmtAmt, fmtDate, txnLabel, todayISO,
 } from '../lib/simpleAccountsLib'
 import { exportToExcel, exportToExcelMultiSheet } from '../lib/exportExcel'
+import PageHeader from '../components/ui/PageHeader'
 
 function Tab({ label, active, onClick }) {
   return (
@@ -197,58 +198,57 @@ export default function SimpleReportsPage() {
 
   return (
     <div className="page-container simple-accounts-scope">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
-            style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0 }}>
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <BarChart3 size={20} style={{ color: 'var(--accent)' }} /> Reports
-            </h1>
-            <p className="page-subtitle">Summarised view of your church finances</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* FY / Calendar toggle */}
-          <div style={{ display: 'flex', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, overflow: 'hidden' }}>
-            <button onClick={() => setFyMode(false)}
-              style={{ padding: '7px 12px', fontSize: 12, fontWeight: fyMode ? 500 : 700, background: fyMode ? 'transparent' : 'var(--accent)', color: fyMode ? 'var(--text-2)' : '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Calendar size={12} /> Calendar
-            </button>
-            <button onClick={() => setFyMode(true)}
-              style={{ padding: '7px 12px', fontSize: 12, fontWeight: fyMode ? 700 : 500, background: fyMode ? 'var(--accent)' : 'transparent', color: fyMode ? '#fff' : 'var(--text-2)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Calendar size={12} /> Fiscal Year
-            </button>
-          </div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+          style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0, marginTop: 2 }}>
+          <ArrowLeft size={16} />
+        </button>
+        <PageHeader
+          icon={BarChart3}
+          title="Reports"
+          subtitle="Summarised view of your church finances"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* FY / Calendar toggle */}
+            <div style={{ display: 'flex', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, overflow: 'hidden' }}>
+              <button onClick={() => setFyMode(false)}
+                style={{ padding: '7px 12px', fontSize: 12, fontWeight: fyMode ? 500 : 700, background: fyMode ? 'transparent' : 'var(--accent)', color: fyMode ? 'var(--text-2)' : '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Calendar size={12} /> Calendar
+              </button>
+              <button onClick={() => setFyMode(true)}
+                style={{ padding: '7px 12px', fontSize: 12, fontWeight: fyMode ? 700 : 500, background: fyMode ? 'var(--accent)' : 'transparent', color: fyMode ? '#fff' : 'var(--text-2)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Calendar size={12} /> Fiscal Year
+              </button>
+            </div>
 
-          {/* Year picker */}
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setYearOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--text-1)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              {fyMode ? fyLabel(year) : year} <ChevronDown size={13} />
+            {/* Year picker */}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setYearOpen(o => !o)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--text-1)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {fyMode ? fyLabel(year) : year} <ChevronDown size={13} />
+              </button>
+              {yearOpen && (
+                <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 120, overflow: 'hidden' }}>
+                  {years.map(y => (
+                    <button key={y} onClick={() => { setYear(y); setYearOpen(false) }}
+                      style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: y === year ? 'var(--sidebar-item-active-bg)' : 'transparent', color: y === year ? 'var(--accent)' : 'var(--text-1)', fontWeight: y === year ? 700 : 400, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {fyMode ? fyLabel(y) : y}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <RefreshCw size={15} />
             </button>
-            {yearOpen && (
-              <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 120, overflow: 'hidden' }}>
-                {years.map(y => (
-                  <button key={y} onClick={() => { setYear(y); setYearOpen(false) }}
-                    style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: y === year ? 'var(--sidebar-item-active-bg)' : 'transparent', color: y === year ? 'var(--accent)' : 'var(--text-1)', fontWeight: y === year ? 700 : 400, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {fyMode ? fyLabel(y) : y}
-                  </button>
-                ))}
-              </div>
-            )}
+            <button onClick={handleExport} disabled={exporting || loading} className="action-btn"
+              style={{ background: '#16a34a', opacity: (exporting || loading) ? 0.6 : 1 }}>
+              {exporting ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={13} />}
+              {exporting ? 'Exporting…' : 'Excel Export'}
+            </button>
           </div>
-          <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <RefreshCw size={15} />
-          </button>
-          <button onClick={handleExport} disabled={exporting || loading} className="action-btn"
-            style={{ background: '#16a34a', opacity: (exporting || loading) ? 0.6 : 1 }}>
-            {exporting ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={13} />}
-            {exporting ? 'Exporting…' : 'Excel Export'}
-          </button>
-        </div>
+        </PageHeader>
       </div>
 
       {/* Annual summary strip */}

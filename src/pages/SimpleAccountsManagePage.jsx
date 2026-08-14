@@ -11,6 +11,7 @@ import {
   getSimpleAccounts, createSimpleAccount, updateSimpleAccount, deactivateSimpleAccount,
   getAllAccountBalances, getSimpleSettings, currentFiscalStartYear, fmtAmt, fmtDate,
 } from '../lib/simpleAccountsLib'
+import PageHeader from '../components/ui/PageHeader'
 
 const inputStyle = {
   height: 38, padding: '0 10px', border: '1.5px solid var(--card-border)',
@@ -199,22 +200,21 @@ export default function SimpleAccountsManagePage() {
 
   return (
     <div className="page-container simple-accounts-scope">
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
-            style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)' }}>
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Wallet size={20} style={{ color: 'var(--accent)' }} /> Accounts
-            </h1>
-            <p className="page-subtitle">Manage your cash, bank and other money accounts</p>
-          </div>
-        </div>
-        <button onClick={startAdd} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          <Plus size={14} /> Add Account
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+          style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', marginTop: 2 }}>
+          <ArrowLeft size={16} />
         </button>
+        <PageHeader
+          icon={Wallet}
+          title="Accounts"
+          subtitle="Manage your cash, bank and other money accounts"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <button onClick={startAdd} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Plus size={14} /> Add Account
+          </button>
+        </PageHeader>
       </div>
 
       <div className="card" style={{ overflow: 'hidden' }}>

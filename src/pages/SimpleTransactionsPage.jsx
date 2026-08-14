@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, TrendingDown, ArrowLeftRight, Pencil, Trash2, Plus, RefreshCw, Search, X, ArrowLeft, Copy, ChevronUp, ChevronDown, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowLeftRight, Pencil, Trash2, Plus, RefreshCw, Search, X, ArrowLeft, Copy, ChevronUp, ChevronDown, FileSpreadsheet, Loader2, List } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
@@ -14,6 +14,7 @@ import {
 } from '../lib/simpleAccountsLib'
 import { exportToExcel } from '../lib/exportExcel'
 import SimpleAddTransactionModal from '../components/simple-accounts/SimpleAddTransactionModal'
+import PageHeader from '../components/ui/PageHeader'
 
 function TypeBadge({ txn }) {
   const c = txnLabel(txn)
@@ -182,33 +183,34 @@ export default function SimpleTransactionsPage() {
   return (
     <div className="page-container simple-accounts-scope">
       {/* Header */}
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
-            style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0 }}>
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <h1 className="page-title">All Transactions</h1>
-            <p className="page-subtitle">Complete record of all income and expenses</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
+        <button onClick={() => navigate('/simple-accounts')} title="Back to Money Book"
+          style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-2)', flexShrink: 0, marginTop: 2 }}>
+          <ArrowLeft size={16} />
+        </button>
+        <PageHeader
+          icon={List}
+          title="All Transactions"
+          subtitle="Complete record of all income and expenses"
+          style={{ flex: 1, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', minWidth: 220 }}
+        >
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleExport} disabled={exporting} className="action-btn"
+              style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1 }}>
+              {exporting ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={13} />}
+              {exporting ? 'Exporting…' : 'Excel Export'}
+            </button>
+            <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+              <RefreshCw size={15} />
+            </button>
+            <button onClick={() => setModal('add-expense')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <TrendingDown size={14} /> Money Out
+            </button>
+            <button onClick={() => setModal('add-income')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <Plus size={14} /> Money In
+            </button>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleExport} disabled={exporting} className="action-btn"
-            style={{ background: '#16a34a', opacity: exporting ? 0.6 : 1 }}>
-            {exporting ? <Loader2 size={13} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={13} />}
-            {exporting ? 'Exporting…' : 'Excel Export'}
-          </button>
-          <button onClick={load} title="Refresh" style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
-            <RefreshCw size={15} />
-          </button>
-          <button onClick={() => setModal('add-expense')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-            <TrendingDown size={14} /> Money Out
-          </button>
-          <button onClick={() => setModal('add-income')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-            <Plus size={14} /> Money In
-          </button>
-        </div>
+        </PageHeader>
       </div>
 
       {/* Filter bar */}

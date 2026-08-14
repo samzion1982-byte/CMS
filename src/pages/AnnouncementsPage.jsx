@@ -24,6 +24,7 @@ import {
   Send, CheckCircle, XCircle, Plus, Pencil, Trash2,
   FileDown, ToggleLeft, ToggleRight, Eye, Upload, Download, UserX,
 } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard',    icon: Megaphone },
@@ -53,15 +54,11 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="animate-fade-in p-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Megaphone size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-            Announcements
-          </h1>
-          <p className="page-subtitle">Birthday &amp; anniversary wishes, weekly reports and automation settings</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Megaphone}
+        title="Announcements"
+        subtitle="Birthday & anniversary wishes, weekly reports and automation settings"
+      />
 
       {/* Tabs — same style as Event Recorder */}
       <div style={{

@@ -18,6 +18,7 @@ import { sendWhatsAppMessage }                     from '../lib/whatsapp'
 import BulkReceiptsPrintModal                      from './BulkReceiptsPrintModal'
 import TransferToAccountsModal                     from '../components/receipts/TransferToAccountsModal'
 import { logCmsAudit } from '../lib/cmsAudit'
+import PageHeader from '../components/ui/PageHeader'
 import { captureDeletedRecord, quarantineStoragePaths } from '../lib/cmsRecycleBin'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 
@@ -424,14 +425,11 @@ export default function ReceiptsPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <IndianRupee size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Receipt Entry
-            </h1>
-          <p className="page-subtitle">Record member payments across all categories</p>
-        </div>
+      <PageHeader
+        icon={IndianRupee}
+        title="Receipt Entry"
+        subtitle="Record member payments across all categories"
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
 
           {/* Transfer to Accounts — visible only when Advanced Accounts enabled */}
@@ -517,7 +515,7 @@ export default function ReceiptsPage() {
           </button>
 
         </div>
-      </div>
+      </PageHeader>
 
       {/* FY tiles + gear */}
       {availableFYs.length > 0 && (

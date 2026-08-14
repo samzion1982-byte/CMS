@@ -26,6 +26,7 @@ import {
   masterDisplayName,
   categoryIdsIncludingDescendants,
 } from '../lib/directoryLib'
+import PageHeader from '../components/ui/PageHeader'
 
 const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 
@@ -944,16 +945,12 @@ export default function DirectoryPage() {
 
   return (
     <div className="page-container">
-      <div className="page-header" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <BookUser size={20} style={{ color: 'var(--accent)' }} />
-            Phone Directory
-          </h1>
-          <p className="page-subtitle">
-            Diocese, vendors, service providers, officials — quick dial contacts
-          </p>
-        </div>
+      <PageHeader
+        icon={BookUser}
+        title="Phone Directory"
+        subtitle="Diocese, vendors, service providers, officials — quick dial contacts"
+        style={{ alignItems: 'flex-start' }}
+      >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => navigate('/directory/settings')}
@@ -994,7 +991,7 @@ export default function DirectoryPage() {
             <Plus size={14} /> Add Contact
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       <div style={{
         display: 'grid',

@@ -7,6 +7,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getAnnouncementsLog } from '../lib/announcements'
 import { exportToExcel } from '../lib/exportExcel'
 import { CheckCircle, XCircle, Clock, Loader2, ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 
 const ADMIN_ROLES = ['super_admin', 'admin', 'admin1']
 const PAGE_SIZE   = 50
@@ -101,15 +102,11 @@ export default function AnnouncementsLogPage() {
 
   return (
     <div className="animate-fade-in p-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ClipboardList size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Announcements Log
-            </h1>
-          <p className="page-subtitle">History of all WhatsApp messages sent via Announcements.</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={ClipboardList}
+        title="Announcements Log"
+        subtitle="History of all WhatsApp messages sent via Announcements."
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">

@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { getPerms, fmtDate, initials } from '../lib/auth'
 import { useToast } from '../lib/toast'
 import { Search, UserPlus, Printer, Users, Loader2, UserX, Save, RotateCcw, Trash2, Upload, FileSpreadsheet, Archive } from 'lucide-react'
+import PageHeader from '../components/ui/PageHeader'
 import { getZones } from '../lib/zones'
 import MemberPrintModal from './MemberPrintModal'
 import BulkPrintModal  from './BulkPrintModal'
@@ -559,14 +560,12 @@ export default function MembersPage() {
     <div className="animate-fade-in">
 
       {/* ── Page Header ── */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:12, marginBottom:24, paddingBottom:20, borderBottom:'1px solid var(--card-border)' }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-              <Users size={20} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-              Member Entry
-            </h1>
-          <p style={{ fontSize:12, color:'var(--text-3)', marginTop:3 }}>{total.toLocaleString()} members total</p>
-        </div>
+      <PageHeader
+        icon={Users}
+        title="Member Entry"
+        subtitle={`${total.toLocaleString()} members total`}
+        style={{ marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid var(--card-border)' }}
+      >
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           {perms.canDelete && (
             <button className="action-btn" onClick={() => navigate('/deleted-members')} style={{background:'#0d9488'}}>
@@ -590,7 +589,7 @@ export default function MembersPage() {
             </button>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {/* ── Tabs ── */}
       <div style={{ display:'flex', borderBottom:'1px solid var(--card-border)', marginBottom:20, gap:0 }}>
