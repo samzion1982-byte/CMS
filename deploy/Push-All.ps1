@@ -2,10 +2,10 @@
 # Push-All.ps1 - One-shot multi-church CMS deploy
 # =============================================================================
 # What it does:
-#   1) Optional clean commit (strips Cursor Co-authored-by trailers)
+#   1) Commits any uncommitted files (asks for a message)
 #   2) Pushes current branch to every remote in deploy/clients.json
 #   3) For clients with vercelDeploy=true, runs npx vercel --prod
-#      (bypasses Hobby "commit author blocked" deploys)
+#      (or a deploy hook). All churches get the same git commit.
 #
 # Usage:
 #   Double-click Push-All.bat
@@ -147,29 +147,27 @@ foreach ($c in $clients) {
   Write-Ok "$($c.label) -> $($c.remote) ($url)"
 }
 
-# -- Commit (optional) -------------------------------------------------------
+# -- Commit, then push (keeps every church on the same files) ---------------
 $dirty = @(Get-GitStatusShort)
 if ($SkipCommit) {
   Write-Step "Commit skipped (-SkipCommit)"
 } elseif ($dirty.Count -eq 0) {
   Write-Step "Working tree clean - nothing to commit"
 } else {
-  Write-Step "Uncommitted changes detected"
+  Write-Step "Uncommitted changes - will commit, then push"
   $dirty | ForEach-Object { Write-Host "      $_" }
   if (-not $Message) {
-    $Message = Read-Host 'Commit message (blank = skip commit and push existing HEAD)'
+    $Message = Read-Host 'Commit message (Enter = Deploy updates.)'
   }
   if ([string]::IsNullOrWhiteSpace($Message)) {
-    Write-Warn "No commit message - pushing existing HEAD only"
+    $Message = 'Deploy updates.'
+  }
+  if ($DryRun) {
+    Write-Warn "DRY RUN - would commit: $Message"
   } else {
-    if ($DryRun) {
-      Write-Warn "DRY RUN - would commit: $Message"
-    } else {
-      git add -A
-      # Stage then create clean commit (avoids Cursor Co-authored-by trailer)
-      $sha = New-CleanCommit $Message
-      Write-Ok "Committed $sha - $Message"
-    }
+    git add -A
+    $sha = New-CleanCommit $Message
+    Write-Ok "Committed $sha - $Message"
   }
 }
 
@@ -281,13 +279,13 @@ if ($SkipVercel) {
 
       if (-not $hasHook -and -not $hasProject) {
         Write-Err "No Vercel Project ID or https deploy-hook URL for $($c.label)."
-        Write-Err "Project Settings → General → Project ID  →  vercelProjectId"
-        Write-Err "Account name (top-left) → Settings → Team ID  →  vercelOrgId  (Hobby hides this on the project page)"
+        Write-Err "Project Settings > General > Project ID  ->  vercelProjectId"
+        Write-Err "Account name (top-left) > Settings > Team ID  ->  vercelOrgId  (Hobby hides this on the project page)"
         $vercelFailed += $c.label
         continue
       }
       if (-not [string]::IsNullOrWhiteSpace($hook) -and -not $hasHook) {
-        Write-Err "vercelDeployHook must be a full https:// URL from Settings → Git → Deploy Hooks."
+        Write-Err "vercelDeployHook must be a full https:// URL from Settings > Git > Deploy Hooks."
         Write-Err "A Project ID (prj_...) is not a deploy hook. It belongs in vercelProjectId."
         $vercelFailed += $c.label
         continue

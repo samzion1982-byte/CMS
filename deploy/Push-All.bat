@@ -5,7 +5,7 @@ cd /d "%~dp0.."
 echo.
 echo  CMS Multi-Church Deploy
 echo  -----------------------
-echo   1^) Push all remotes + Vercel prod ^(every church, same commit^)
+echo   1^) Commit if needed, push all remotes + Vercel prod
 echo   2^) Push all remotes only ^(skip Vercel CLI^)
 echo   3^) Dry run ^(show what would happen^)
 echo   4^) St Pauls only ^(push + Vercel^)
