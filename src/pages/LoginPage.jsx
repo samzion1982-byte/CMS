@@ -1031,30 +1031,13 @@ export default function LoginPage() {
           margin-top: 4px;
           text-align: center;
           max-width: 320px;
-          display: flex;
-          justify-content: center;
-          flex-wrap: wrap;
+          color: #ffffff;
+          transform-origin: center center;
+          animation: nameZoom 0.7s cubic-bezier(0.16, 0.84, 0.32, 1.12) both;
         }
-        .welcome-letter {
-          display: inline-block;
-          background: linear-gradient(90deg, #ffffff, #fde68a, #67e8f9, #ffffff);
-          background-size: 240% auto;
-          -webkit-background-clip: text;
-          background-clip: text;
-          -webkit-text-fill-color: transparent;
-          animation:
-            nameReveal 0.55s cubic-bezier(0.2, 0.9, 0.35, 1.25) both,
-            nameShine 2.6s ease 0.7s infinite;
-          animation-delay: calc(var(--i) * 0.07s), calc(0.7s + var(--i) * 0.07s);
-          filter: drop-shadow(0 0 10px rgba(253,224,71,0.28));
-        }
-        @keyframes nameReveal {
-          from { opacity: 0; transform: translateY(16px) scale(0.7); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes nameShine {
-          0%, 100% { background-position: 0% center; }
-          50%      { background-position: 100% center; }
+        @keyframes nameZoom {
+          from { opacity: 0; transform: scale(0.2); }
+          to   { opacity: 1; transform: scale(1); }
         }
 
         .status-dots::after {
@@ -1279,11 +1262,7 @@ export default function LoginPage() {
                     <CheckCircle2 size={52} className="status-check"/>
                     <p className="status-msg welcome">Welcome back</p>
                     <p className="welcome-name">
-                      {(welcomeFirst || displayFirstName(profile, email)).split('').map((ch, i) => (
-                        <span key={i} className="welcome-letter" style={{ '--i': i }}>
-                          {ch === ' ' ? '\u00a0' : ch}
-                        </span>
-                      ))}
+                      {welcomeFirst || displayFirstName(profile, email)}
                     </p>
                   </>
                 )}
