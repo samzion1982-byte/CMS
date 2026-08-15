@@ -109,6 +109,13 @@ export async function getChurchDocuments({ status = 'active', categoryId = null,
   return data || []
 }
 
+function localDateISO(d = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function isWarrantyExpired(doc, today = new Date()) {
   if (!doc?.warranty_upto) return false
   const w = String(doc.warranty_upto).slice(0, 10)
@@ -116,11 +123,44 @@ export function isWarrantyExpired(doc, today = new Date()) {
   return w < t
 }
 
-function localDateISO(d = new Date()) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+/** Calendar days from today until date (negative if already past). */
+export function daysUntilDate(iso, today = new Date()) {
+  if (!iso) return null
+  const w = String(iso).slice(0, 10)
+  const m = w.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  const t = localDateISO(today)
+  const tm = t.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const a = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  const b = new Date(Number(tm[1]), Number(tm[2]) - 1, Number(tm[3]))
+  return Math.round((a - b) / 86400000)
+}
+
+export function normalizeAlertDays(value) {
+  if (value == null || value === '') return null
+  const n = parseInt(value, 10)
+  if (!Number.isFinite(n) || n < 1) return null
+  return Math.min(365, n)
+}
+
+export function isDocumentAlertDue(doc, today = new Date()) {
+  const days = normalizeAlertDays(doc?.alert_days_before)
+  if (!days || !doc?.warranty_upto) return false
+  const left = daysUntilDate(doc.warranty_upto, today)
+  return left != null && left <= days
+}
+
+/** Active documents whose expiry is within the configured alert window. */
+export async function getChurchDocumentsDueForAlert() {
+  const { data, error } = await supabase
+    .from('church_documents')
+    .select('id, title, vendor, warranty_upto, alert_days_before')
+    .eq('status', 'active')
+    .eq('is_active', true)
+    .not('alert_days_before', 'is', null)
+    .not('warranty_upto', 'is', null)
+  if (error) throw error
+  return (data || []).filter((d) => isDocumentAlertDue(d))
 }
 
 /** Move active docs whose warranty_upto has passed into Archive. */
@@ -136,6 +176,7 @@ export async function archiveExpiredDocuments(updatedBy = null) {
     .eq('status', 'active')
     .eq('is_active', true)
     .not('warranty_upto', 'is', null)
+    .is('alert_days_before', null)
     .lt('warranty_upto', today)
     .select('id, title')
   if (error) throw error
@@ -208,6 +249,7 @@ export async function saveChurchDocument({
   doc_type = null,
   doc_date = null,
   warranty_upto = null,
+  alert_days_before = null,
   vendor = null,
   notes = null,
   file = null,
@@ -232,6 +274,7 @@ export async function saveChurchDocument({
       doc_type: doc_type?.trim() || null,
       doc_date: doc_date || null,
       warranty_upto: warranty_upto || null,
+      alert_days_before: warranty_upto ? normalizeAlertDays(alert_days_before) : null,
       vendor: vendor?.trim() || null,
       notes: notes?.trim() || null,
       updated_by: created_by,
@@ -278,6 +321,7 @@ export async function saveChurchDocument({
       doc_type: doc_type?.trim() || null,
       doc_date: doc_date || null,
       warranty_upto: warranty_upto || null,
+      alert_days_before: warranty_upto ? normalizeAlertDays(alert_days_before) : null,
       vendor: vendor?.trim() || null,
       notes: notes?.trim() || null,
       status: 'active',

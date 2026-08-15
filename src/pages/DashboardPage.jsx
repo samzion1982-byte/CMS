@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { displayFirstName } from '../lib/auth'
 import { useTheme, THEMES } from '../lib/ThemeContext'
 import { formatDate as formatDateLib } from '../lib/date'
 import {
@@ -28,12 +29,6 @@ function greetingForNow() {
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
-}
-
-function firstNameOf(profile, user) {
-  const raw = String(profile?.full_name || profile?.name || user?.email?.split('@')[0] || '').trim()
-  if (!raw) return 'there'
-  return raw.split(/\s+/)[0]
 }
 
 function isBaptisedMember(m) {
@@ -689,7 +684,7 @@ export default function DashboardPage() {
     )
   }
 
-  const firstName = firstNameOf(profile, user)
+  const firstName = displayFirstName(profile, user?.email)
   const ministryMax = Math.max(...activities.map(a => a.count), 1)
 
   const STAT_CARDS = [

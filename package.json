@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "deploy:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1",
     "deploy:stpauls": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -Only stpauls",
+    "deploy:hub": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -Only hub",
     "deploy:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -DryRun"
   },
   "dependencies": {

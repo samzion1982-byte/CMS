@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { useTheme, THEMES, FONTS } from '../../lib/ThemeContext'
 import { getChurch, LICENSE_CSV, VENDOR } from '../../lib/supabase'
-import { initials, ROLE_LABELS } from '../../lib/auth'
+import { initials, ROLE_LABELS, displayFirstName } from '../../lib/auth'
 import { ChevronDown, LogOut, Edit } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 
@@ -530,7 +530,7 @@ export default function Header({ onEditDevice }) {
   const ini       = avatarDisplayName
     ? avatarDisplayName.trim().slice(0, 3).toUpperCase()
     : initials(profile?.full_name || '').slice(0, 3)
-  const firstName = profile?.full_name?.split(' ')[0] || 'User'
+  const firstName = displayFirstName(profile)
   const roleLabel = ROLE_LABELS[profile?.role] || profile?.role || ''
   const g         = T[theme] || T.royal
 

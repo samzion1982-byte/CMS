@@ -31,6 +31,29 @@ export const ROLE_LABELS = {
 /** Non–super-admin slots Super Admin can assign in User Management. */
 export const ASSIGNABLE_ROLES = ['admin1', 'admin', 'user', 'demo', 'user4']
 
+/** Super Admin is not editable in User Management — greeting / badge name. */
+export const SUPER_ADMIN_NICKNAME = 'Sam'
+
+/**
+ * Welcome screen and header badge name.
+ * Super Admin is always "Sam". Other users prefer nickname, then first name.
+ */
+export function displayFirstName(profile, email) {
+  if (profile?.role === 'super_admin') return SUPER_ADMIN_NICKNAME
+
+  const nick = String(profile?.nickname || '').trim()
+  if (nick) return nick
+
+  const raw = String(profile?.full_name || profile?.name || '').trim()
+  const fallback = String(email || profile?.email || '').split('@')[0]?.trim() || 'User'
+  if (!raw) return fallback
+
+  const roleLabel = ROLE_LABELS[profile?.role] || ''
+  if (roleLabel && raw.toLowerCase() === roleLabel.toLowerCase()) return roleLabel
+
+  return raw.split(/\s+/)[0] || fallback
+}
+
 export function getPerms(role) {
   return ROLE_PERMISSIONS[role] || USER_LEVEL
 }

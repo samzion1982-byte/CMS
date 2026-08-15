@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  Bell, BellOff, Clock, CreditCard, HardDrive, Loader2, Lock,
+  Bell, BellOff, Clock, CreditCard, FileText, HardDrive, Loader2, Lock,
   Settings, ShieldAlert, Volume2, VolumeX, X,
 } from 'lucide-react'
 import { supabase, getChurch, LICENSE_CSV } from '../../lib/supabase'
 import { listBackupLogs } from '../../lib/cmsFullBackup'
+import { getChurchDocumentsDueForAlert, daysUntilDate } from '../../lib/churchDocumentsLib'
 import {
   ALERT_IDS,
   ALERT_TYPE_OPTIONS,
@@ -129,6 +131,36 @@ async function fetchAlerts() {
     console.warn('[notifications] backup check failed', e)
   }
 
+  // 4) Document renewal / expiry alerts
+  try {
+    const due = await getChurchDocumentsDueForAlert()
+    if (due.length) {
+      const sorted = [...due].sort((a, b) => {
+        const da = daysUntilDate(a.warranty_upto) ?? 9999
+        const db = daysUntilDate(b.warranty_upto) ?? 9999
+        return da - db
+      })
+      const first = sorted[0]
+      const left = daysUntilDate(first.warranty_upto)
+      const firstLine = left == null
+        ? first.title
+        : left <= 0
+          ? `${first.title} — overdue`
+          : `${first.title} — ${left} day${left === 1 ? '' : 's'} left`
+      const extra = sorted.length > 1 ? ` (+${sorted.length - 1} more)` : ''
+      alerts.push({
+        id: ALERT_IDS.documents,
+        severity: (left != null && left <= 0) ? 'danger' : 'warning',
+        title: 'Documents - Renewal',
+        detail: `${firstLine}${extra}`,
+        count: sorted.length,
+        href: '/assets?tab=document',
+      })
+    }
+  } catch (e) {
+    console.warn('[notifications] document renewal check failed', e)
+  }
+
   return alerts
 }
 
@@ -142,6 +174,7 @@ const ALERT_ICON = {
   [ALERT_IDS.payment]: CreditCard,
   [ALERT_IDS.license]: ShieldAlert,
   [ALERT_IDS.backup]: HardDrive,
+  [ALERT_IDS.documents]: FileText,
 }
 
 function ToggleSwitch({ on, disabled, onToggle, accent }) {
@@ -176,6 +209,7 @@ function ToggleSwitch({ on, disabled, onToggle, accent }) {
 }
 
 export default function NotificationBell({ g }) {
+  const navigate = useNavigate()
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -478,7 +512,15 @@ export default function NotificationBell({ g }) {
                         }}>
                           <Icon size={15} color={snoozed ? g.drop.sub : sev.icon} />
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{ flex: 1, minWidth: 0, cursor: a.href ? 'pointer' : 'default' }}
+                          onClick={() => {
+                            if (!a.href) return
+                            setOpen(false)
+                            setSnoozeFor(null)
+                            navigate(a.href)
+                          }}
+                        >
                           <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: snoozed ? g.drop.sub : sev.color }}>
                             {a.title}
                           </p>

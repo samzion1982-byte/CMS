@@ -16,6 +16,7 @@
 #     powershell -ExecutionPolicy Bypass -File .\deploy\Push-All.ps1 -SkipVercel
 #     powershell -ExecutionPolicy Bypass -File .\deploy\Push-All.ps1 -DryRun
 #     powershell -ExecutionPolicy Bypass -File .\deploy\Push-All.ps1 -Only stpauls
+#     powershell -ExecutionPolicy Bypass -File .\deploy\Push-All.ps1 -Only hub
 #
 # Add a new church later:
 #   1) git remote add <name> git@github.com:ORG/REPO.git
@@ -219,6 +220,15 @@ if (Test-HasCursorCoAuthor $headMsg) {
 $head = (git rev-parse --short HEAD).Trim()
 Write-Step "Deploying HEAD $head"
 
+$stillDirty = @(Get-GitStatusShort)
+if ($stillDirty.Count -gt 0 -and -not $DryRun) {
+  Write-Err "Working tree is not clean. Stopping so every church gets the SAME git commit."
+  Write-Err "Vercel CLI uploads this folder. Uncommitted files made St Pauls newer than Zion Hub last time."
+  $stillDirty | ForEach-Object { Write-Host "      $_" }
+  Write-Err "Enter a commit message when this script asks, or commit/stash first, then run again."
+  exit 1
+}
+
 # -- Push remotes ------------------------------------------------------------
 $pushFailed = @()
 foreach ($c in $clients) {
@@ -233,6 +243,11 @@ foreach ($c in $clients) {
     $pushFailed += $c.label
   } else {
     Write-Ok "Pushed to $($c.remote)/$branch"
+    if ($c.vercelDeploy -ne $true) {
+      Write-Warn "No Vercel CLI for $($c.label) (vercelDeploy=false)."
+      Write-Warn "GitHub auto-deploy may be BLOCKED if the commit author is not the Hub Vercel owner."
+      Write-Warn "Open $($c.siteUrl) after a hard refresh, or Redeploy in the Vercel dashboard."
+    }
   }
 }
 
@@ -249,37 +264,95 @@ if ($SkipVercel) {
   } else {
     foreach ($c in $vercelClients) {
       Write-Step "Vercel production - $($c.label) ($($c.vercelProject))"
-      if (-not $c.vercelOrgId -or -not $c.vercelProjectId) {
-        Write-Err "Missing vercelOrgId / vercelProjectId in clients.json for $($c.id)"
+      $hook = [string]$c.vercelDeployHook
+      if ([string]::IsNullOrWhiteSpace($hook) -and $c.id -eq 'hub') {
+        $hook = [string]$env:VERCEL_HUB_DEPLOY_HOOK
+      }
+      $hook = $hook.Trim()
+      $projectId = [string]$c.vercelProjectId
+      $orgId = [string]$c.vercelOrgId
+      # People often paste Project ID into the hook field. That is not a URL.
+      if ($hook -match '^prj_') {
+        if ([string]::IsNullOrWhiteSpace($projectId)) { $projectId = $hook }
+        $hook = ''
+      }
+      $hasHook = $hook -match '^https://'
+      $hasProject = -not [string]::IsNullOrWhiteSpace($projectId)
+
+      if (-not $hasHook -and -not $hasProject) {
+        Write-Err "No Vercel Project ID or https deploy-hook URL for $($c.label)."
+        Write-Err "Project Settings → General → Project ID  →  vercelProjectId"
+        Write-Err "Account name (top-left) → Settings → Team ID  →  vercelOrgId  (Hobby hides this on the project page)"
         $vercelFailed += $c.label
         continue
       }
-      # Always CLI-deploy after push for vercelDeploy clients (bypasses Hobby git-author block).
-      Write-Warn "NOTE: Vercel Hobby may show a BLOCKED GitHub deployment for this push."
-      Write-Warn "That GitHub auto-deploy can be ignored if this CLI deploy succeeds."
-      if ($DryRun) {
-        Write-Warn "DRY RUN - would: npx vercel --prod --yes --force (project $($c.vercelProject))"
+      if (-not [string]::IsNullOrWhiteSpace($hook) -and -not $hasHook) {
+        Write-Err "vercelDeployHook must be a full https:// URL from Settings → Git → Deploy Hooks."
+        Write-Err "A Project ID (prj_...) is not a deploy hook. It belongs in vercelProjectId."
+        $vercelFailed += $c.label
         continue
       }
-      $prevOrg = $env:VERCEL_ORG_ID
-      $prevProj = $env:VERCEL_PROJECT_ID
-      try {
-        $env:VERCEL_ORG_ID = $c.vercelOrgId
-        $env:VERCEL_PROJECT_ID = $c.vercelProjectId
-        npx vercel --prod --yes --force
-        if ($LASTEXITCODE -ne 0) {
-          Write-Err "Vercel deploy failed for $($c.label)"
-          $vercelFailed += $c.label
-        } else {
-          Write-Ok "CLI production deploy succeeded for $($c.label)"
-          Write-Ok "Live: $($c.siteUrl)"
-          Write-Warn "Ignore any BLOCKED GitHub deployment on the Vercel dashboard for this commit."
+
+      $tokenEnvName = [string]$c.vercelTokenEnv
+      $token = $null
+      if (-not [string]::IsNullOrWhiteSpace($tokenEnvName)) {
+        $token = [string][Environment]::GetEnvironmentVariable($tokenEnvName)
+      }
+
+      Write-Warn "NOTE: Vercel Hobby may show a BLOCKED GitHub deployment for this push."
+      Write-Warn "That GitHub auto-deploy can be ignored if CLI or the deploy hook succeeds."
+      if ($DryRun) {
+        if ($hasProject) { Write-Warn "DRY RUN - would: npx vercel --prod --yes --force (project $projectId)" }
+        elseif ($hasHook) { Write-Warn "DRY RUN - would POST deploy hook for $($c.label)" }
+        continue
+      }
+
+      $cliOk = $false
+      $tryCli = $hasProject -and (
+        -not $hasHook -or
+        -not [string]::IsNullOrWhiteSpace($token) -or
+        -not [string]::IsNullOrWhiteSpace($orgId)
+      )
+      if ($tryCli) {
+        $prevOrg = $env:VERCEL_ORG_ID
+        $prevProj = $env:VERCEL_PROJECT_ID
+        $prevTok = $env:VERCEL_TOKEN
+        try {
+          if (-not [string]::IsNullOrWhiteSpace($orgId)) { $env:VERCEL_ORG_ID = $orgId }
+          else { Remove-Item Env:\VERCEL_ORG_ID -ErrorAction SilentlyContinue }
+          $env:VERCEL_PROJECT_ID = $projectId
+          if (-not [string]::IsNullOrWhiteSpace($token)) { $env:VERCEL_TOKEN = $token }
+          Write-Host "    -> Vercel CLI production (same local commit as git push)"
+          npx vercel --prod --yes --force
+          if ($LASTEXITCODE -eq 0) {
+            $cliOk = $true
+            Write-Ok "CLI production deploy succeeded for $($c.label)"
+            Write-Ok "Live: $($c.siteUrl)"
+          } else {
+            Write-Warn "CLI deploy failed for $($c.label) (often wrong Vercel account)."
+          }
+        } finally {
+          if ($null -eq $prevOrg) { Remove-Item Env:\VERCEL_ORG_ID -ErrorAction SilentlyContinue } else { $env:VERCEL_ORG_ID = $prevOrg }
+          if ($null -eq $prevProj) { Remove-Item Env:\VERCEL_PROJECT_ID -ErrorAction SilentlyContinue } else { $env:VERCEL_PROJECT_ID = $prevProj }
+          if ($null -eq $prevTok) { Remove-Item Env:\VERCEL_TOKEN -ErrorAction SilentlyContinue } else { $env:VERCEL_TOKEN = $prevTok }
         }
-      } finally {
-        if ($null -eq $prevOrg) { Remove-Item Env:\VERCEL_ORG_ID -ErrorAction SilentlyContinue }
-        else { $env:VERCEL_ORG_ID = $prevOrg }
-        if ($null -eq $prevProj) { Remove-Item Env:\VERCEL_PROJECT_ID -ErrorAction SilentlyContinue }
-        else { $env:VERCEL_PROJECT_ID = $prevProj }
+      }
+
+      if (-not $cliOk -and $hasHook) {
+        try {
+          Write-Host "    -> Deploy hook (builds this git commit on Vercel)"
+          Invoke-WebRequest -Uri $hook -Method POST -UseBasicParsing | Out-Null
+          Write-Ok "Deploy hook triggered for $($c.label)"
+          Write-Ok "Watch: $($c.siteUrl)"
+          $cliOk = $true
+        } catch {
+          Write-Err "Deploy hook failed for $($c.label): $($_.Exception.Message)"
+        }
+      }
+
+      if (-not $cliOk) {
+        Write-Err "Vercel production failed for $($c.label)"
+        $vercelFailed += $c.label
       }
     }
   }
@@ -292,12 +365,18 @@ Write-Host " Done" -ForegroundColor White
 Write-Host "============================================" -ForegroundColor DarkCyan
 Write-Host " Commit : $(git rev-parse --short HEAD)"
 foreach ($c in $clients) {
+  $cli = ($c.vercelDeploy -eq $true)
   $flag = if ($pushFailed -contains $c.label) { 'PUSH FAILED' }
           elseif ($vercelFailed -contains $c.label) { 'VERCEL FAILED' }
-          else { 'OK' }
-  $color = if ($flag -eq 'OK') { 'Green' } else { 'Red' }
+          elseif ($cli) { 'LIVE' }
+          else { 'GIT ONLY' }
+  $color = if ($flag -eq 'LIVE' -or $flag -eq 'GIT ONLY') { 'Green' } else { 'Red' }
+  if ($flag -eq 'GIT ONLY') { $color = 'Yellow' }
   Write-Host (" {0,-12} {1,-28} {2}" -f $flag, $c.label, $c.siteUrl) -ForegroundColor $color
 }
+Write-Host ""
+Write-Host " GIT ONLY = code is on GitHub. Confirm Vercel built it (Hobby often blocks this author)." -ForegroundColor DarkGray
+Write-Host " LIVE     = Vercel CLI production deploy finished." -ForegroundColor DarkGray
 
 if ($pushFailed.Count -or $vercelFailed.Count) {
   Write-Host ""

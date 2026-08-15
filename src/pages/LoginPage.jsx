@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
-import { signIn } from '../lib/auth'
+import { signIn, displayFirstName } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
 import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, insertLoginLog } from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
@@ -10,6 +10,14 @@ import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 const supportsDiscMask = typeof CSS !== 'undefined'
   && typeof CSS.supports === 'function'
   && CSS.supports('-webkit-text-security', 'disc')
+
+const AUTH_STEPS = [
+  { text: 'Verifying credentials', tone: 'wait' },
+  { text: 'Authenticating session', tone: 'wait' },
+  { text: 'Access granted', tone: 'ok' },
+]
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export default function LoginPage() {
   const { session, profile } = useAuth()
@@ -21,6 +29,8 @@ export default function LoginPage() {
   const [error,    setError]    = useState('')
   const [inputErr, setInputErr] = useState(false)
   const [status,   setStatus]   = useState('')   // '' | 'authenticating' | 'welcome'
+  const [authStep, setAuthStep] = useState(0)
+  const [welcomeFirst, setWelcomeFirst] = useState('')
   const [church,   setChurch]   = useState(null)
 
   const orbParticles = useMemo(() => {
@@ -29,9 +39,10 @@ export default function LoginPage() {
       { fill: 'rgba(96,165,250,0.75)',  glow: '0 0 12px 4px rgba(96,165,250,0.40)' },
       { fill: 'rgba(34,211,238,0.75)',  glow: '0 0 16px 5px rgba(34,211,238,0.40)' },
       { fill: 'rgba(139,92,246,0.70)',  glow: '0 0 14px 5px rgba(139,92,246,0.38)' },
+      { fill: 'rgba(251,191,36,0.70)',  glow: '0 0 14px 4px rgba(251,191,36,0.35)' },
       { fill: 'rgba(224,242,254,0.65)', glow: '0 0 10px 3px rgba(255,255,255,0.30)' },
     ]
-    return [...Array(45)].map((_, i) => {
+    return [...Array(58)].map((_, i) => {
       const c    = palette[Math.floor(Math.random() * palette.length)]
       const size = 3 + Math.random() * 11
       return {
@@ -48,14 +59,25 @@ export default function LoginPage() {
   }, [])
 
   const starParticles = useMemo(() =>
-    [...Array(30)].map((_, i) => ({
+    [...Array(48)].map((_, i) => ({
       id: i,
       left: `${Math.random() * 100}%`,
       top:  `${Math.random() * 100}%`,
-      width: `${1 + Math.random() * 2}px`,
-      height: `${1 + Math.random() * 2}px`,
+      width: `${1 + Math.random() * 2.4}px`,
+      height: `${1 + Math.random() * 2.4}px`,
       animationDelay: `${Math.random() * 5}s`,
       animationDuration: `${2 + Math.random() * 3}s`
+    })), []
+  )
+
+  const goldDust = useMemo(() =>
+    [...Array(22)].map((_, i) => ({
+      id: i,
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      size: 2 + Math.random() * 4,
+      delay: `${Math.random() * 8}s`,
+      duration: `${6 + Math.random() * 8}s`,
     })), []
   )
 
@@ -67,11 +89,14 @@ export default function LoginPage() {
   const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
+    setAuthStep(0)
     setStatus('authenticating')
     setError('')
     sessionStorage.setItem('login_welcome', '1')  // hold redirect so welcome overlay is visible
     // Clear any leftover setup flag from a prior attempt
     sessionStorage.removeItem('device_setup_pending')
+
+    const toSession = setTimeout(() => setAuthStep(1), 1100)
 
     try {
       const devId = getOrCreateDeviceId()
@@ -79,12 +104,14 @@ export default function LoginPage() {
       // Sign in first — device/login tables require an authenticated session
       // (service-role key is no longer shipped in the browser).
       const { error: err, data: authData, profile } = await signIn(email.trim(), password)
+      clearTimeout(toSession)
 
       if (err) {
         sessionStorage.removeItem('login_welcome')
         setError(err.message)
         setInputErr(true)
         setStatus('')
+        setAuthStep(0)
         setLoading(false)
       } else {
         const uid = authData?.user?.id
@@ -140,16 +167,21 @@ export default function LoginPage() {
           ...(deviceMeta || {}),
         })
 
-        // Keep Authenticating + slider visible for 3 more seconds
-        await new Promise((r) => setTimeout(r, 3000))
+        setAuthStep(1)
+        await sleep(900)
+        setAuthStep(2)
+        await sleep(1200)
+        setWelcomeFirst(displayFirstName(profile, email.trim()))
         setStatus('welcome')
       }
     } catch (ex) {
+      clearTimeout(toSession)
       sessionStorage.removeItem('device_setup_pending')
       sessionStorage.removeItem('login_welcome')
       setError('Login failed. Please try again.')
       setInputErr(true)
       setStatus('')
+      setAuthStep(0)
       setLoading(false)
     }
   }
@@ -187,9 +219,10 @@ export default function LoginPage() {
           position: absolute;
           inset: 0;
           background:
-            radial-gradient(ellipse 60% 50% at 15% 20%, rgba(37,99,235,0.22) 0%, transparent 70%),
-            radial-gradient(ellipse 50% 40% at 85% 80%, rgba(139,92,246,0.18) 0%, transparent 70%),
-            radial-gradient(ellipse 70% 60% at 50% 50%, rgba(10,14,42,0.95)   0%, transparent 100%);
+            radial-gradient(ellipse 60% 50% at 15% 20%, rgba(37,99,235,0.32) 0%, transparent 70%),
+            radial-gradient(ellipse 50% 40% at 85% 80%, rgba(139,92,246,0.26) 0%, transparent 70%),
+            radial-gradient(ellipse 40% 35% at 80% 15%, rgba(251,191,36,0.12) 0%, transparent 70%),
+            radial-gradient(ellipse 70% 60% at 50% 50%, rgba(10,14,42,0.92)   0%, transparent 100%);
           animation: bgShift 10s ease-in-out infinite alternate;
         }
         @keyframes bgShift {
@@ -220,13 +253,14 @@ export default function LoginPage() {
           top: -20%;
           width: 1.5px;
           height: 140%;
-          background: linear-gradient(to bottom, transparent 0%, rgba(96,165,250,0.12) 40%, rgba(96,165,250,0.08) 60%, transparent 100%);
+          background: linear-gradient(to bottom, transparent 0%, rgba(96,165,250,0.22) 40%, rgba(251,191,36,0.12) 60%, transparent 100%);
           transform-origin: top center;
           pointer-events: none;
         }
         .ray-1 { left: 25%; transform: rotate(-18deg); animation: raySweep 18s ease-in-out infinite; }
-        .ray-2 { left: 55%; transform: rotate(12deg);  animation: raySweep 24s ease-in-out infinite reverse; opacity: 0.6; }
-        .ray-3 { left: 75%; transform: rotate(-8deg);  animation: raySweep 20s ease-in-out infinite 4s; opacity: 0.4; }
+        .ray-2 { left: 55%; transform: rotate(12deg);  animation: raySweep 24s ease-in-out infinite reverse; opacity: 0.75; }
+        .ray-3 { left: 75%; transform: rotate(-8deg);  animation: raySweep 20s ease-in-out infinite 4s; opacity: 0.55; }
+        .ray-4 { left: 40%; width: 2px; transform: rotate(6deg); animation: raySweep 16s ease-in-out infinite 2s; opacity: 0.5; }
         @keyframes raySweep {
           0%, 100% { opacity: 0; transform: rotate(var(--r, -18deg)) translateX(0px); }
           20%      { opacity: 1; }
@@ -286,6 +320,92 @@ export default function LoginPage() {
         @keyframes twinkle {
           0%, 100% { opacity: 0.2; transform: scale(1); }
           50% { opacity: 0.8; transform: scale(1.3); }
+        }
+
+        .bg-grid {
+          position: absolute;
+          inset: -30% -10% -10%;
+          background-image:
+            linear-gradient(rgba(96,165,250,0.09) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(96,165,250,0.09) 1px, transparent 1px);
+          background-size: 56px 56px;
+          transform: perspective(700px) rotateX(58deg) translateY(0);
+          transform-origin: center top;
+          animation: gridDrift 22s linear infinite;
+          mask-image: radial-gradient(ellipse 75% 70% at 50% 40%, #000 10%, transparent 78%);
+          -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 40%, #000 10%, transparent 78%);
+          pointer-events: none;
+        }
+        @keyframes gridDrift {
+          0%   { background-position: 0 0; opacity: 0.35; }
+          50%  { opacity: 0.7; }
+          100% { background-position: 0 56px; opacity: 0.35; }
+        }
+
+        .bg-halo {
+          position: absolute;
+          width: min(90vw, 780px);
+          height: min(90vw, 780px);
+          left: 50%;
+          top: 48%;
+          transform: translate(-50%, -50%);
+          background: conic-gradient(from 0deg,
+            transparent 0 38%,
+            rgba(96,165,250,0.16),
+            rgba(251,191,36,0.14),
+            rgba(167,139,250,0.16),
+            transparent 72% 100%);
+          border-radius: 50%;
+          animation: haloSpin 26s linear infinite;
+          filter: blur(22px);
+          pointer-events: none;
+        }
+        @keyframes haloSpin {
+          from { transform: translate(-50%, -50%) rotate(0deg); }
+          to   { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        .bg-ring {
+          position: absolute;
+          left: 50%;
+          top: 48%;
+          border-radius: 50%;
+          border: 1px solid rgba(96,165,250,0.16);
+          box-shadow: 0 0 24px rgba(96,165,250,0.08), inset 0 0 18px rgba(251,191,36,0.05);
+          pointer-events: none;
+          transform: translate(-50%, -50%);
+          animation: ringPulse 9s ease-out infinite;
+        }
+        .bg-ring-a { width: 280px; height: 280px; animation-delay: 0s; }
+        .bg-ring-b { width: 420px; height: 420px; animation-delay: 2.2s; border-color: rgba(251,191,36,0.14); }
+        .bg-ring-c { width: 580px; height: 580px; animation-delay: 4.4s; }
+        @keyframes ringPulse {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.86); }
+          25%  { opacity: 0.85; }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1.18); }
+        }
+
+        .gold-dust {
+          position: absolute;
+          border-radius: 50%;
+          background: rgba(253, 224, 71, 0.85);
+          box-shadow: 0 0 10px 3px rgba(251,191,36,0.35);
+          pointer-events: none;
+          animation: dustDrift ease-in-out infinite;
+        }
+        @keyframes dustDrift {
+          0%, 100% { transform: translate(0, 0) scale(0.7); opacity: 0.15; }
+          40%      { transform: translate(12px, -18px) scale(1.15); opacity: 0.9; }
+          70%      { transform: translate(-10px, 8px) scale(0.9); opacity: 0.45; }
+        }
+
+        .bg-vignette {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(ellipse 90% 80% at 50% 50%, transparent 40%, rgba(1,4,9,0.55) 100%),
+            linear-gradient(180deg, rgba(251,191,36,0.06) 0%, transparent 18%, transparent 82%, rgba(37,99,235,0.12) 100%);
         }
 
         .card-wrap { 
@@ -841,17 +961,46 @@ export default function LoginPage() {
 
         .praise-label {
           font-family: 'Sora', sans-serif;
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 800;
-          letter-spacing: 2.5px;
+          letter-spacing: 2.6px;
           text-transform: uppercase;
-          background: linear-gradient(135deg, #ffd700, #daa520, #ffd700);
-          background-size: 200% auto;
+          margin-bottom: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          position: relative;
+        }
+        .praise-star {
+          color: #fbbf24;
+          -webkit-text-fill-color: #fbbf24;
+          display: inline-block;
+          animation: praiseStar 2.4s ease-in-out infinite;
+          filter: drop-shadow(0 0 8px rgba(251,191,36,0.75));
+        }
+        .praise-star-r { animation-delay: 0.4s; }
+        @keyframes praiseStar {
+          0%, 100% { transform: rotate(0deg) scale(1); opacity: 0.75; }
+          50%      { transform: rotate(180deg) scale(1.35); opacity: 1; }
+        }
+        .praise-word {
+          display: inline-flex;
+        }
+        .praise-letter {
+          display: inline-block;
+          background: linear-gradient(135deg, #fff6c2, #ffd700, #daa520, #ffd700, #fff6c2);
+          background-size: 220% auto;
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
-          animation: goldenShimmer 2s ease infinite;
-          margin-bottom: 4px;
+          animation: goldenShimmer 2.2s ease infinite, praiseBounce 2.6s ease-in-out infinite;
+          animation-delay: 0s, calc(var(--i) * 0.07s);
+        }
+        @keyframes praiseBounce {
+          0%, 100% { transform: translateY(0); }
+          40%      { transform: translateY(-4px); }
+          55%      { transform: translateY(1px); }
         }
 
         .status-msg {
@@ -860,21 +1009,52 @@ export default function LoginPage() {
           font-weight: 700;
           letter-spacing: 0.8px;
           color: #e2e8f0;
+          min-height: 1.35em;
         }
-        .status-msg.welcome { color: #86efac; }
+        .status-msg.auth-line { animation: authLineIn 0.38s ease both; }
+        .status-msg.auth-ok { color: #86efac; }
+        @keyframes authLineIn {
+          from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
+          to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        .status-msg.welcome { color: #86efac; animation: welcomeFade 0.5s ease both; }
+        @keyframes welcomeFade {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
 
         .welcome-name {
           font-family: 'Sora', sans-serif;
-          font-size: 22px;
+          font-size: 26px;
           font-weight: 800;
-          color: #ffffff;
-          letter-spacing: 0.5px;
-          margin-top: 2px;
+          letter-spacing: 0.6px;
+          margin-top: 4px;
           text-align: center;
           max-width: 320px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          display: flex;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+        .welcome-letter {
+          display: inline-block;
+          background: linear-gradient(90deg, #ffffff, #fde68a, #67e8f9, #ffffff);
+          background-size: 240% auto;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation:
+            nameReveal 0.55s cubic-bezier(0.2, 0.9, 0.35, 1.25) both,
+            nameShine 2.6s ease 0.7s infinite;
+          animation-delay: calc(var(--i) * 0.07s), calc(0.7s + var(--i) * 0.07s);
+          filter: drop-shadow(0 0 10px rgba(253,224,71,0.28));
+        }
+        @keyframes nameReveal {
+          from { opacity: 0; transform: translateY(16px) scale(0.7); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes nameShine {
+          0%, 100% { background-position: 0% center; }
+          50%      { background-position: 100% center; }
         }
 
         .status-dots::after {
@@ -912,6 +1092,14 @@ export default function LoginPage() {
           0%   { transform: translateX(-120%); }
           100% { transform: translateX(280%); }
         }
+        .status-slider-done .status-slider-bar {
+          width: 100%;
+          left: 0;
+          animation: none;
+          transform: none;
+          background: linear-gradient(90deg, #22c55e, #86efac);
+          box-shadow: 0 0 12px rgba(34,197,94,0.45);
+        }
 
         @media (max-width: 550px) {
           .card { padding: 16px 20px 16px; }
@@ -923,10 +1111,16 @@ export default function LoginPage() {
 
       <div className="login-page">
         <div className="animated-bg"/>
+        <div className="bg-grid"/>
+        <div className="bg-halo"/>
+        <div className="bg-ring bg-ring-a"/>
+        <div className="bg-ring bg-ring-b"/>
+        <div className="bg-ring bg-ring-c"/>
         <div className="bg-blob2"/>
         <div className="ray ray-1"/>
         <div className="ray ray-2"/>
         <div className="ray ray-3"/>
+        <div className="ray ray-4"/>
         <div className="aurora"/>
 
         {/* Rising glowing orbs */}
@@ -953,6 +1147,19 @@ export default function LoginPage() {
             }}
           />
         ))}
+
+        {goldDust.map(d => (
+          <div
+            key={`dust-${d.id}`}
+            className="gold-dust"
+            style={{
+              left: d.left, top: d.top, width: d.size, height: d.size,
+              animationDelay: d.delay, animationDuration: d.duration,
+            }}
+          />
+        ))}
+
+        <div className="bg-vignette"/>
 
         <div className="card-wrap">
           <div className="card-border"/>
@@ -1045,18 +1252,38 @@ export default function LoginPage() {
                         <path d="M0 22 H19 L23 22 L26 6 L30 38 L34 22 H43 L46 12 L50 32 L54 22 H64" />
                       </svg>
                     </div>
-                    <p className="status-msg">Authenticating<span className="status-dots"/></p>
-                    <div className="status-slider" aria-hidden>
+                    <p
+                      key={authStep}
+                      className={`status-msg auth-line${AUTH_STEPS[authStep]?.tone === 'ok' ? ' auth-ok' : ''}`}
+                    >
+                      {AUTH_STEPS[authStep]?.text}
+                      {AUTH_STEPS[authStep]?.tone === 'wait' ? <span className="status-dots"/> : null}
+                    </p>
+                    <div className={`status-slider${AUTH_STEPS[authStep]?.tone === 'ok' ? ' status-slider-done' : ''}`} aria-hidden>
                       <div className="status-slider-bar"/>
                     </div>
                   </>
                 ) : (
                   <>
-                    <p className="praise-label">✦ Praise the Lord ✦</p>
+                    <p className="praise-label">
+                      <span className="praise-star">✦</span>
+                      <span className="praise-word">
+                        {'Praise the Lord'.split('').map((ch, i) => (
+                          <span key={i} className="praise-letter" style={{ '--i': i }}>
+                            {ch === ' ' ? '\u00a0' : ch}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="praise-star praise-star-r">✦</span>
+                    </p>
                     <CheckCircle2 size={52} className="status-check"/>
-                    <p className="status-msg welcome">Welcome back!</p>
+                    <p className="status-msg welcome">Welcome back</p>
                     <p className="welcome-name">
-                      {profile?.full_name || email.split('@')[0]}
+                      {(welcomeFirst || displayFirstName(profile, email)).split('').map((ch, i) => (
+                        <span key={i} className="welcome-letter" style={{ '--i': i }}>
+                          {ch === ' ' ? '\u00a0' : ch}
+                        </span>
+                      ))}
                     </p>
                   </>
                 )}

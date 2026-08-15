@@ -10,6 +10,7 @@ export const ALERT_IDS = {
   payment: 'payment',
   license: 'license',
   backup: 'backup',
+  documents: 'documents',
 }
 
 /** Toggle rows in the Alerts settings panel. License is always on. */
@@ -30,6 +31,12 @@ export const ALERT_TYPE_OPTIONS = [
     id: ALERT_IDS.backup,
     label: 'Backup failures',
     description: 'Failed or partial full backups',
+    locked: false,
+  },
+  {
+    id: ALERT_IDS.documents,
+    label: 'Documents - Renewal',
+    description: 'Subscription and warranty alerts from Documents',
     locked: false,
   },
 ]
@@ -75,6 +82,7 @@ export function getEnabledAlertTypes() {
     [ALERT_IDS.payment]: true,
     [ALERT_IDS.license]: true,
     [ALERT_IDS.backup]: true,
+    [ALERT_IDS.documents]: true,
   }
   const stored = readJson(ENABLED_KEY, {})
   const merged = {

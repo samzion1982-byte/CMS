@@ -11,11 +11,13 @@
       "label": "Zion Hub",
       "remote": "origin",
       "siteUrl": "https://cms-three-mu.vercel.app",
-      "notes": "GitHub auto-deploy usually works. Set vercelDeploy true if you need CLI force.",
-      "vercelDeploy": false,
-      "vercelProject": null,
+      "notes": "Vercel production via Deploy Hook (Hub is samzion1982 Hobby; CLI login is St Pauls). Hook must be https:// not a Project ID. Optional: set VERCEL_TOKEN_HUB + vercelOrgId for true CLI.",
+      "vercelDeploy": true,
+      "vercelProject": "cms",
       "vercelOrgId": null,
-      "vercelProjectId": null
+      "vercelProjectId": "prj_op8q6Hh5Sdl44z0DV9ZlbptLETwJ",
+      "vercelTokenEnv": "VERCEL_TOKEN_HUB",
+      "vercelDeployHook": "https://api.vercel.com/v1/integrations/deploy/prj_op8q6Hh5Sdl44z0DV9ZlbptLETwJ/lBAbsOAhum"
     },
     {
       "id": "stpauls",

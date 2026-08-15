@@ -14,6 +14,7 @@ import PageHeader from '../components/ui/PageHeader'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
 
 const MAX_SLOTS = 5
+const EMPTY_FORM = { name: '', nickname: '', email: '', password: '', role: '', mobile: '' }
 
 const USER_PERMS_MATRIX = {
   'Add member': true,
@@ -84,7 +85,7 @@ export default function UsersPage() {
   const [toggleLoading, setToggleLoading] = useState(null)
   const [deactivateLoading, setDeactivateLoading] = useState(null)
   const [permDeleteLoading, setPermDeleteLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: '', mobile: '' })
+  const [form, setForm] = useState({ ...EMPTY_FORM })
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(async () => {
@@ -108,7 +109,7 @@ export default function UsersPage() {
 
   function openCreate() {
     setEditing(null)
-    setForm({ name: '', email: '', password: '', role: '', mobile: '' })
+    setForm({ ...EMPTY_FORM })
     setShowPw(false)
     setPanelOpen(true)
     setTimeout(() => formRef.current?.querySelector('input')?.focus(), 40)
@@ -120,7 +121,14 @@ export default function UsersPage() {
       return
     }
     setEditing(u.id)
-    setForm({ name: u.full_name || '', email: u.email || '', password: '', role: u.role || '', mobile: u.mobile || '' })
+    setForm({
+      name: u.full_name || '',
+      nickname: u.nickname || '',
+      email: u.email || '',
+      password: '',
+      role: u.role || '',
+      mobile: u.mobile || '',
+    })
     setShowPw(false)
     setPanelOpen(true)
   }
@@ -128,7 +136,7 @@ export default function UsersPage() {
   function closePanel() {
     setPanelOpen(false)
     setEditing(null)
-    setForm({ name: '', email: '', password: '', role: '', mobile: '' })
+    setForm({ ...EMPTY_FORM })
     setShowPw(false)
   }
 
@@ -145,7 +153,12 @@ export default function UsersPage() {
     if (editing) {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: form.name, role: form.role, mobile: cleanPhone(form.mobile) || null })
+        .update({
+          full_name: form.name.trim(),
+          nickname: form.nickname.trim() || null,
+          role: form.role,
+          mobile: cleanPhone(form.mobile) || null,
+        })
         .eq('id', editing)
       if (error) {
         toast('Update failed: ' + error.message, 'error')
@@ -195,7 +208,8 @@ export default function UsersPage() {
     const { error: profileError } = await supabase.from('profiles').upsert({
       id: newUserId,
       email: form.email,
-      full_name: form.name,
+      full_name: form.name.trim(),
+      nickname: form.nickname.trim() || null,
       role: form.role,
       mobile: cleanPhone(form.mobile) || null,
       is_active: true,
@@ -386,6 +400,11 @@ export default function UsersPage() {
                       }}>
                         {u.full_name}
                       </div>
+                      {u.nickname && (
+                        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                          Nickname · {u.nickname}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
                         <span style={{
                           fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
@@ -571,7 +590,20 @@ export default function UsersPage() {
             <div style={{ padding: 18, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div>
                 <label style={labelStyle}>Full name *</label>
-                <input className="field-input" value={form.name} onChange={e => sf('name', e.target.value)} placeholder="e.g. John Samuel" />
+                <input className="field-input" value={form.name} onChange={e => sf('name', e.target.value)} placeholder="e.g. Daniel Peterson" />
+              </div>
+              <div>
+                <label style={labelStyle}>Nickname</label>
+                <input
+                  className="field-input"
+                  value={form.nickname}
+                  onChange={e => sf('nickname', e.target.value)}
+                  placeholder="e.g. Danie"
+                  maxLength={24}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                  Shown on the welcome screen and header badge. Leave blank to use first name.
+                </p>
               </div>
               <div>
                 <label style={labelStyle}>Email *</label>

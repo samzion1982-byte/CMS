@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Package, Settings, Plus, Pencil, Trash2, Loader2, X, Save,
   Search, Camera, ImageOff, Filter, RotateCcw, ChevronDown, ChevronRight,
@@ -1441,6 +1441,7 @@ function ComingSoon({ label }) {
 
 export default function AssetsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const toast = useToast()
   const { profile, pageGrants } = useAuth()
   const role = profile?.role
@@ -1454,10 +1455,13 @@ export default function AssetsPage() {
 
   useEffect(() => {
     if (!allowedCategories.length) return
-    if (!allowedCategories.some(t => t.id === tab)) {
-      setTab(allowedCategories[0].id)
+    const q = searchParams.get('tab')
+    if (q && allowedCategories.some(t => t.id === q)) {
+      setTab(q)
+      return
     }
-  }, [allowedCategories, tab])
+    setTab(prev => (allowedCategories.some(t => t.id === prev) ? prev : allowedCategories[0].id))
+  }, [allowedCategories, searchParams])
   const [assets, setAssets] = useState([])
   const [locations, setLocations] = useState([])
   const [itemTypes, setItemTypes] = useState([])
@@ -2061,7 +2065,13 @@ export default function AssetsPage() {
         {allowedCategories.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              setTab(t.id)
+              const next = new URLSearchParams(searchParams)
+              if (t.id === allowedCategories[0]?.id) next.delete('tab')
+              else next.set('tab', t.id)
+              setSearchParams(next, { replace: true })
+            }}
             style={{
               padding: '9px 22px', fontSize: 14,
               fontWeight: tab === t.id ? 700 : 500,

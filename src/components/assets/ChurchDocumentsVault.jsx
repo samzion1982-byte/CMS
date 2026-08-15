@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Lock, Eye, EyeOff, FileText, Plus, Loader2, X, Upload, Trash2,
-  Settings, Search, Archive, RotateCcw, ExternalLink, File, ChevronRight,
+  Settings, Search, Archive, RotateCcw, ExternalLink, File, ChevronRight, Bell,
 } from 'lucide-react'
 import { useToast } from '../../lib/toast'
 import { useAuth } from '../../lib/AuthContext'
@@ -19,7 +19,7 @@ import {
   saveChurchDocument, saveChurchDocumentCategory, deleteChurchDocument,
   setChurchDocumentStatus, archiveExpiredDocuments, isWarrantyExpired,
   flattenMasterOptions, masterDisplayName, buildMasterTree, getAllMasterDescendants,
-  formatFileSize, formatDocDate,
+  formatFileSize, formatDocDate, daysUntilDate, isDocumentAlertDue, normalizeAlertDays,
 } from '../../lib/churchDocumentsLib'
 
 const INPUT = {
@@ -140,6 +140,8 @@ function DocFormModal({ editing, categories, onSave, onClose }) {
     category: initialCat === '—' ? '' : initialCat,
     doc_date: editing?.doc_date || '',
     warranty_upto: editing?.warranty_upto || '',
+    alert_enabled: !!normalizeAlertDays(editing?.alert_days_before),
+    alert_days_before: String(normalizeAlertDays(editing?.alert_days_before) || 10),
     vendor: editing?.vendor || '',
     notes: editing?.notes || '',
     file: null,
@@ -163,6 +165,17 @@ function DocFormModal({ editing, categories, onSave, onClose }) {
       toast('Choose a file to upload.', 'error')
       return
     }
+    if (form.alert_enabled) {
+      if (!form.warranty_upto) {
+        toast('Set Valid until / Expiry to schedule a notification.', 'error')
+        return
+      }
+      const days = normalizeAlertDays(form.alert_days_before)
+      if (!days) {
+        toast('Alert must be between 1 and 365 days.', 'error')
+        return
+      }
+    }
     setSaving(true)
     try {
       const category_id = await resolveCategoryId(form.category, categories)
@@ -173,6 +186,7 @@ function DocFormModal({ editing, categories, onSave, onClose }) {
         doc_type: null,
         doc_date: form.doc_date || null,
         warranty_upto: form.warranty_upto || null,
+        alert_days_before: form.alert_enabled ? normalizeAlertDays(form.alert_days_before) : null,
         vendor: form.vendor,
         notes: form.notes,
         file: form.file,
@@ -203,7 +217,7 @@ function DocFormModal({ editing, categories, onSave, onClose }) {
           <div>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{editing ? 'Edit Document' : 'Add Document'}</p>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
-              Keep until warranty ends, then archive
+              Keep until expiry, then archive. Optional renewal alert.
             </p>
           </div>
           <button type="button" onClick={onClose} style={{
@@ -240,12 +254,54 @@ function DocFormModal({ editing, categories, onSave, onClose }) {
               <input style={INPUT} type="date" value={form.doc_date} onChange={e => set('doc_date', e.target.value)} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 5 }}>Warranty until</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 5 }}>Valid until / Expiry</label>
               <input style={INPUT} type="date" value={form.warranty_upto} onChange={e => set('warranty_upto', e.target.value)} />
               <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--text-3)' }}>
                 After this date the document moves to Archive
               </p>
             </div>
+          </div>
+          <div style={{
+            padding: 12, borderRadius: 10, border: '1.5px solid var(--card-border)',
+            background: form.alert_enabled ? '#ecfeff' : 'var(--input-bg)',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={form.alert_enabled}
+                onChange={e => set('alert_enabled', e.target.checked)}
+                style={{ marginTop: 3, width: 16, height: 16, accentColor: '#0e7490' }}
+              />
+              <span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                  <Bell size={14} color="#0e7490" /> Notification alert
+                </span>
+                <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                  Remind to renew (subscription, warranty) before expiry
+                </span>
+              </span>
+            </label>
+            {form.alert_enabled && (
+              <div style={{ marginTop: 10, paddingLeft: 26 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 5 }}>
+                  Alert before
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    style={{ ...INPUT, width: 88 }}
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={form.alert_days_before}
+                    onChange={e => set('alert_days_before', e.target.value)}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-2)' }}>days</span>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                  You’ll get a header alert at least this many days before Valid until / Expiry.
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 5 }}>Vendor / Shop</label>
@@ -663,17 +719,40 @@ export default function ChurchDocumentsVault() {
                       )}
                       <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>
                         {doc.warranty_upto
-                          ? `Warranty until ${formatDocDate(doc.warranty_upto)}`
+                          ? `Expires ${formatDocDate(doc.warranty_upto)}`
                           : `Doc date ${formatDocDate(doc.doc_date)}`}
                       </p>
-                      {statusTab === 'active' && expired && (
-                        <span style={{
-                          display: 'inline-block', marginTop: 4, fontSize: 10, fontWeight: 700,
-                          padding: '1px 6px', borderRadius: 5, background: '#fff7ed', color: '#c2410c',
-                        }}>
-                          Warranty ended
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {statusTab === 'active' && expired && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700,
+                            padding: '1px 6px', borderRadius: 5, background: '#fff7ed', color: '#c2410c',
+                          }}>
+                            Expired
+                          </span>
+                        )}
+                        {statusTab === 'active' && isDocumentAlertDue(doc) && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700,
+                            padding: '1px 6px', borderRadius: 5, background: '#fef2f2', color: '#b91c1c',
+                          }}>
+                            {(() => {
+                              const left = daysUntilDate(doc.warranty_upto)
+                              if (left == null) return 'Renewal alert'
+                              if (left <= 0) return 'Renew now'
+                              return `Renew in ${left} day${left === 1 ? '' : 's'}`
+                            })()}
+                          </span>
+                        )}
+                        {normalizeAlertDays(doc.alert_days_before) && !isDocumentAlertDue(doc) && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 700,
+                            padding: '1px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490',
+                          }}>
+                            Alert {normalizeAlertDays(doc.alert_days_before)}d before
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -703,6 +782,10 @@ export default function ChurchDocumentsVault() {
                       selected.vendor,
                     ].filter(Boolean).join(' · ')}
                     {selected.file_size != null ? ` · ${formatFileSize(selected.file_size)}` : ''}
+                    {selected.warranty_upto ? ` · Expires ${formatDocDate(selected.warranty_upto)}` : ''}
+                    {normalizeAlertDays(selected.alert_days_before)
+                      ? ` · Alert ${normalizeAlertDays(selected.alert_days_before)} days before`
+                      : ''}
                   </p>
                 </div>
                 {selected.file_url && (
