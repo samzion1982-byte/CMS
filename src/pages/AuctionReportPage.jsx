@@ -12,7 +12,7 @@ import { verifyMasterPassword } from '../lib/masterPassword'
 import { snapshotAuctionTrackerFY, snapshotCloseYearUndo } from '../lib/cmsRecycleBin'
 import {
   Gavel, Upload, RefreshCw, Loader2, FileSpreadsheet,
-  FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2,
+  FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2, Calendar,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 
@@ -43,6 +43,20 @@ function nextFY(fy) {
   return `${n}-${String((n + 1) % 100).padStart(2, '0')}`
 }
 
+function fyFromAuctionYear(y) {
+  return `${y}-${String((y + 1) % 100).padStart(2, '0')}`
+}
+
+/** This calendar year's auction (e.g. 2026 → FY 2026-27). Spill-over is not for this year. */
+function currentAuctionFY(now = new Date()) {
+  return fyFromAuctionYear(now.getFullYear())
+}
+
+/** Last calendar year's auction — the year being / just closed (e.g. Aug 2026 → FY 2025-26). */
+function previousCloseAuctionFY(now = new Date()) {
+  return fyFromAuctionYear(now.getFullYear() - 1)
+}
+
 function fyOptions() {
   const seen = new Set(), opts = []
   // Auction seasons from 2025 onward (drop older 2023-24 / 2024-25)
@@ -53,6 +67,13 @@ function fyOptions() {
     if (!seen.has(fy)) { seen.add(fy); opts.push(fy) }
   }
   return opts.sort().reverse()
+}
+
+function fmtDateIN(s) {
+  if (!s) return ''
+  const [y, m, d] = String(s).split('-')
+  if (!y || !m || !d) return s
+  return `${d}/${m}/${y}`
 }
 
 function fmtAmt(n) {
@@ -85,8 +106,11 @@ function receiptFYsForAuctionCheck(fy) {
   return fys
 }
 
-/** Paid totals (+ optional receipt details) for auction category in a FY */
-async function fetchAuctionPaidForFY(fy, { withDetails = false } = {}) {
+/** Paid totals (+ optional receipt details) for auction category.
+ *  Check Status / Close Year: receipts tagged FY + next FY.
+ *  Spill-over: receipts whose receipt_date is in [dateFrom, dateTo] (inclusive).
+ */
+async function fetchAuctionPaidForFY(fy, { withDetails = false, dateFrom, dateTo } = {}) {
   const paidMap = {}
   const detailsMap = {}
 
@@ -98,7 +122,7 @@ async function fetchAuctionPaidForFY(fy, { withDetails = false } = {}) {
   if (!cats?.length) return { paidMap, detailsMap }
 
   const catIds = cats.map(c => c.id)
-  const receiptFYs = receiptFYsForAuctionCheck(fy)
+  const byDate = !!(dateFrom && dateTo)
 
   // Paginate receipts — PostgREST/Supabase caps each request at 1000 rows.
   // FY 2026-27 alone has 2700+ receipts; without paging, newer payments are missed.
@@ -106,12 +130,13 @@ async function fetchAuctionPaidForFY(fy, { withDetails = false } = {}) {
   const recs = []
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
+    let q = supabase
       .from('receipts')
       .select('id,member_id,receipt_number,receipt_date,month_paid,payment_mode')
-      .in('financial_year', receiptFYs)
       .order('id')
-      .range(from, from + PAGE - 1)
+    if (byDate) q = q.gte('receipt_date', dateFrom).lte('receipt_date', dateTo)
+    else q = q.in('financial_year', receiptFYsForAuctionCheck(fy))
+    const { data, error } = await q.range(from, from + PAGE - 1)
     if (error) throw error
     if (!data?.length) break
     recs.push(...data)
@@ -331,9 +356,11 @@ function fmtPDF(n, decimals = 2) {
   return decimals > 0 ? result + '.' + decPart : result
 }
 
-async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMap = {} }) {
+async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMap = {}, dateFrom, dateTo } = {}) {
   const { jsPDF } = await import('jspdf')
   const auctionYr = auctionYearFromFY(filterFY)
+  const isSpill = !!(dateFrom && dateTo)
+  const rangeLabel = isSpill ? `${fmtDateIN(dateFrom)} to ${fmtDateIN(dateTo)}` : ''
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   const PW = 297, PH = 210
@@ -374,7 +401,12 @@ async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMa
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(...WHITE)
-  doc.text(`AUCTION PAYMENT REPORT — FY ${filterFY} (Auction ${auctionYr})`, PW / 2, y + 6, { align: 'center' })
+  doc.text(
+    isSpill
+      ? `AUCTION SPILL-OVER REPORT — FY ${filterFY} (Auction ${auctionYr})  ·  ${rangeLabel}`
+      : `AUCTION PAYMENT REPORT — FY ${filterFY} (Auction ${auctionYr})`,
+    PW / 2, y + 6, { align: 'center' },
+  )
   y += 13
 
   // ── summary cards ──────────────────────────────────────────────
@@ -406,10 +438,10 @@ async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMa
     { label: '#',             w: 10,  align: 'C', key: '_sno'           },
     { label: 'Member ID',     w: 22,  align: 'C', key: 'member_id'      },
     { label: 'Member Name',   w: 56,  align: 'L', key: 'member_name'    },
-    { label: 'Prev Pending',  w: 28,  align: 'R', key: 'previous_pending' },
+    { label: isSpill ? 'Opening' : 'Prev Pending',  w: 28,  align: 'R', key: 'previous_pending' },
     { label: String(auctionYr), w: 28,  align: 'R', key: 'current_year_purchase' },
     { label: 'Total Due',     w: 28,  align: 'R', key: 'total'          },
-    { label: 'Amount Paid',   w: 28,  align: 'R', key: 'paid'           },
+    { label: isSpill ? 'Payments' : 'Amount Paid',   w: 28,  align: 'R', key: 'paid'           },
     { label: 'Balance',       w: 28,  align: 'R', key: 'balance'        },
     { label: 'Status',        w: 22,  align: 'C', key: 'status'         },
   ]
@@ -618,7 +650,8 @@ async function exportAuctionPDF({ rows, filterFY, church, summary, paidDetailsMa
   addPageFooter()
 
   const safeChurch = churchName.replace(/[^a-zA-Z0-9]/g, '_')
-  doc.save(`Auction_Report_${safeChurch}_FY${filterFY}.pdf`)
+  const rangeFile = isSpill ? `_${dateFrom}_to_${dateTo}` : ''
+  doc.save(`${isSpill ? 'Auction_Spillover' : 'Auction_Report'}_${safeChurch}_FY${filterFY}${rangeFile}.pdf`)
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -655,9 +688,20 @@ export default function AuctionReportPage() {
   const [revertPwError,   setRevertPwError]   = useState('')
   const [showRevertPw,    setShowRevertPw]    = useState(false)
   const [loadingRevert,   setLoadingRevert]   = useState(false)
+  const [spillModalOpen,  setSpillModalOpen]  = useState(false)
+  const [spillFrom,       setSpillFrom]       = useState('')
+  const [spillTo,         setSpillTo]         = useState('')
+  const [loadingSpill,    setLoadingSpill]    = useState(false)
+  const [reportKind,      setReportKind]      = useState('status') // 'status' | 'spillover'
+  const [spillRange,      setSpillRange]      = useState(null) // { from, to } when spillover generated
+
 
   const auctionYear = auctionYearFromFY(filterFY)
   const currYearColLabel = String(auctionYear)
+  const isSpillReport = reportKind === 'spillover' && spillRange
+  const spillRangeLabel = isSpillReport ? `${fmtDateIN(spillRange.from)} to ${fmtDateIN(spillRange.to)}` : ''
+  const spilloverFY = previousCloseAuctionFY()
+  const spilloverAllowed = filterFY === spilloverFY
 
   useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
 
@@ -674,6 +718,8 @@ export default function AuctionReportPage() {
         .order('member_name')
       if (error) throw error
       setTrackerRows(data || [])
+      setReportKind('status')
+      setSpillRange(null)
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -685,6 +731,7 @@ export default function AuctionReportPage() {
   const handleFYChange = (fy) => {
     setFilterFY(fy)
     setPreview(null)
+    setSpillModalOpen(false)
   }
 
   // ── File pick & parse ──────────────────────────────────────────
@@ -823,10 +870,49 @@ export default function AuctionReportPage() {
       setReportRows(rows)
       setPaidDetailsMap(detailsMap)
       setGenerated(true)
+      setReportKind('status')
+      setSpillRange(null)
     } catch (e) {
       toast(e.message, 'error')
     }
     setLoadingCheck(false)
+  }
+
+  // ── Spill-over report (payments in a chosen date range only) ──
+  const confirmSpilloverReport = async () => {
+    if (!spilloverAllowed) {
+      toast(`Spill-over is only for the previous closed auction year (FY ${spilloverFY})`, 'error')
+      return
+    }
+    if (!trackerRows.length) { toast('Import the Auction Payment Tracker first', 'error'); return }
+    if (!spillFrom || !spillTo) { toast('Select a date range', 'error'); return }
+    if (spillFrom > spillTo) { toast('From date must be on or before To date', 'error'); return }
+    setLoadingSpill(true)
+    setExpandedMember(null)
+    try {
+      const { paidMap, detailsMap } = await fetchAuctionPaidForFY(filterFY, {
+        withDetails: true,
+        dateFrom: spillFrom,
+        dateTo: spillTo,
+      })
+      const rows = trackerRows.map(tr => ({
+        ...tr,
+        previous_pending:      Number(tr.previous_pending)      || 0,
+        current_year_purchase: Number(tr.current_year_purchase) || 0,
+        total:                 Number(tr.total)                 || 0,
+        paid:    paidMap[tr.member_id] || 0,
+        balance: (Number(tr.total) || 0) - (paidMap[tr.member_id] || 0),
+      }))
+      setReportRows(rows)
+      setPaidDetailsMap(detailsMap)
+      setGenerated(true)
+      setReportKind('spillover')
+      setSpillRange({ from: spillFrom, to: spillTo })
+      setSpillModalOpen(false)
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setLoadingSpill(false)
   }
 
   // ── Close auction year (carry balance → next FY previous_pending) ──
@@ -1048,6 +1134,10 @@ export default function AuctionReportPage() {
       const dateStr    = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
       const NCOLS      = 9
 
+      const isSpill = reportKind === 'spillover' && spillRange
+      const rangeLabel = isSpill ? `${fmtDateIN(spillRange.from)} to ${fmtDateIN(spillRange.to)}` : ''
+      const reportName = isSpill ? 'Auction Spill-over Report' : 'Auction Payment Report'
+
       // ── colours ──
       const C_HDR   = '1E3A5F'
       const C_SUB   = '0070C0'
@@ -1066,7 +1156,7 @@ export default function AuctionReportPage() {
 
       const numFmt  = '#,##0.00'
       const COL_W   = [7, 18, 32, 18, 18, 18, 18, 18, 16]
-      const HDR_LABELS = ['#', 'Member ID', 'Member Name', 'Prev. Pending (₹)', `${auctionYear} (₹)`, 'Total Due (₹)', 'Amount Paid (₹)', 'Balance (₹)', 'Status']
+      const HDR_LABELS = ['#', 'Member ID', 'Member Name', isSpill ? 'Opening (₹)' : 'Prev. Pending (₹)', `${auctionYear} (₹)`, 'Total Due (₹)', isSpill ? 'Payments (₹)' : 'Amount Paid (₹)', 'Balance (₹)', 'Status']
       const fmtDate = s => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
 
       // ── shared: build title block + col headers on a worksheet ──
@@ -1076,7 +1166,7 @@ export default function AuctionReportPage() {
 
         const titles = [
           { text: churchName,                                    bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
-          { text: `${sheetTitle} — FY ${filterFY}`,             bold: true,  size: 12, bg: C_SUB, fg: C_WHITE },
+          { text: `${sheetTitle} — FY ${filterFY}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true,  size: 12, bg: C_SUB, fg: C_WHITE },
           { text: `Generated: ${dateStr}`,                       bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
         ]
         titles.forEach(({ text, bold, size, bg, fg }, idx) => {
@@ -1148,7 +1238,7 @@ export default function AuctionReportPage() {
       //  Sheet 1 — Summary (no receipt breakup)
       // ════════════════════════════════
       const wsSummary = wb.addWorksheet('Summary')
-      buildSheetHeader(wsSummary, 'Auction Payment Report (Summary)')
+      buildSheetHeader(wsSummary, `${reportName} (Summary)`)
       reportRows.forEach((row, i) => {
         addMemberRow(wsSummary, row, i, i === reportRows.length - 1)
       })
@@ -1158,7 +1248,7 @@ export default function AuctionReportPage() {
       //  Sheet 2 — Detailed (with receipt sub-rows)
       // ════════════════════════════════
       const wsDetail = wb.addWorksheet('Detailed')
-      buildSheetHeader(wsDetail, 'Auction Payment Report (Detailed)')
+      buildSheetHeader(wsDetail, `${reportName} (Detailed)`)
 
       reportRows.forEach((row, i) => {
         const details = paidDetailsMap[row.member_id] || []
@@ -1206,13 +1296,152 @@ export default function AuctionReportPage() {
 
       addTotalRow(wsDetail)
 
+      // ════════════════════════════════
+      //  Sheet 3 — Monthwise breakup (payments by receipt month)
+      // ════════════════════════════════
+      const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+      const monthKey = s => (s && String(s).length >= 7) ? String(s).slice(0, 7) : ''
+      const monthLabel = ym => {
+        const [yy, mm] = String(ym).split('-')
+        const mi = Number(mm) - 1
+        if (!yy || mi < 0 || mi > 11) return ym
+        return `${MONTH_NAMES[mi]}-${String(yy).slice(2)}`
+      }
+      const monthsInRange = (from, to) => {
+        const out = []
+        const [fy, fm] = String(from).split('-').map(Number)
+        const [ty, tm] = String(to).split('-').map(Number)
+        if (!fy || !fm || !ty || !tm) return out
+        let y = fy, m = fm
+        while (y < ty || (y === ty && m <= tm)) {
+          out.push(`${y}-${String(m).padStart(2, '0')}`)
+          m += 1
+          if (m > 12) { m = 1; y += 1 }
+        }
+        return out
+      }
+
+      let monthKeys
+      if (isSpill && spillRange?.from && spillRange?.to) {
+        monthKeys = monthsInRange(spillRange.from, spillRange.to)
+      } else {
+        const seen = new Set()
+        Object.values(paidDetailsMap).forEach(arr => {
+          (arr || []).forEach(d => { const k = monthKey(d.receipt_date); if (k) seen.add(k) })
+        })
+        monthKeys = [...seen].sort()
+      }
+
+      const mwN = 3 + 2 + monthKeys.length + 2
+      const mwHdr = [
+        '#', 'Member ID', 'Member Name',
+        'Opening (₹)', `${auctionYear} (₹)`,
+        ...monthKeys.map(monthLabel),
+        'Total Paid (₹)', 'Closing Balance (₹)',
+      ]
+      const wsMonth = wb.addWorksheet('Monthwise Breakup')
+      wsMonth.columns = [
+        { width: 7 }, { width: 18 }, { width: 32 },
+        { width: 14 }, { width: 14 },
+        ...monthKeys.map(() => ({ width: 12 })),
+        { width: 16 }, { width: 18 },
+      ]
+      wsMonth.views = [{ state: 'frozen', ySplit: 4, xSplit: 3 }]
+
+      const mwTitles = [
+        { text: churchName, bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
+        { text: `${reportName} (Monthwise Breakup) — FY ${filterFY}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
+        { text: `Generated: ${dateStr}`, bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
+      ]
+      mwTitles.forEach(({ text, bold, size, bg, fg }, idx) => {
+        const r = wsMonth.addRow([text, ...Array(Math.max(mwN - 1, 0)).fill('')])
+        if (mwN > 1) wsMonth.mergeCells(r.number, 1, r.number, mwN)
+        const cell = wsMonth.getCell(r.number, 1)
+        cell.value = text
+        cell.font  = { bold, size, name: 'Calibri', color: { argb: fg } }
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell.border = { top: idx === 0 ? outerMed : innerThn, bottom: idx === mwTitles.length - 1 ? outerMed : innerThn, left: outerMed, right: outerMed }
+        r.height = size * 2.1
+      })
+
+      const mwHr = wsMonth.addRow(mwHdr)
+      mwHr.height = 24
+      mwHr.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.font      = { bold: true, color: { argb: C_WHITE }, size: 10, name: 'Calibri' }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+        cell.border    = border(true, false, ci === 1, ci === mwN)
+      })
+
+      const monthTotals = monthKeys.map(() => 0)
+      let grandOpening = 0
+      let grandAuction = 0
+      let grandPaid = 0
+      let grandClosing = 0
+      const closeCol = mwN
+
+      reportRows.forEach((row, i) => {
+        const byMonth = {}
+        ;(paidDetailsMap[row.member_id] || []).forEach(d => {
+          const k = monthKey(d.receipt_date)
+          if (!k) return
+          byMonth[k] = (byMonth[k] || 0) + (Number(d.amount) || 0)
+        })
+        const monthVals = monthKeys.map((k, mi) => {
+          const v = byMonth[k] || 0
+          monthTotals[mi] += v
+          return v || null
+        })
+        const opening = Number(row.previous_pending) || 0
+        const auctionAmt = Number(row.current_year_purchase) || 0
+        const paid = Number(row.paid) || 0
+        const closing = Number(row.balance) || 0
+        grandOpening += opening
+        grandAuction += auctionAmt
+        grandPaid += paid
+        grandClosing += closing
+        const isLast = i === reportRows.length - 1
+        const isAlt = i % 2 === 1
+        const dr = wsMonth.addRow([
+          i + 1, row.member_id, row.member_name,
+          opening || null, auctionAmt || null,
+          ...monthVals,
+          paid || null, closing || null,
+        ])
+        dr.height = 18
+        dr.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font      = { size: 10, name: 'Calibri' }
+          cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? (ci === 1 ? 'center' : 'left') : 'right' }
+          cell.border    = border(false, isLast, ci === 1, ci === mwN)
+          if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_ALT } }
+          if (ci >= 4 && cell.value != null) cell.numFmt = numFmt
+          if (ci === closeCol && closing > 0) cell.font = { ...cell.font, color: { argb: 'DC2626' } }
+        })
+      })
+
+      const mwTot = wsMonth.addRow([
+        '', 'TOTAL', '',
+        grandOpening || null, grandAuction || null,
+        ...monthTotals.map(v => v || null),
+        grandPaid || null, grandClosing || null,
+      ])
+      mwTot.height = 22
+      mwTot.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.font      = { bold: true, size: 11, name: 'Calibri', color: { argb: C_WHITE } }
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+        cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? 'left' : 'right' }
+        cell.border    = border(true, true, ci === 1, ci === mwN)
+        if (ci >= 4 && cell.value != null) cell.numFmt = numFmt
+      })
+
       // ── download ──
       const buf = await wb.xlsx.writeBuffer()
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       const safeChurch = churchName.replace(/[^a-zA-Z0-9]/g, '_')
-      a.href = url; a.download = `Auction_Report_${safeChurch}_FY${filterFY}.xlsx`; a.click()
+      a.href = url; a.download = `${isSpill ? 'Auction_Spillover' : 'Auction_Report'}_${safeChurch}_FY${filterFY}${isSpill ? `_${spillRange.from}_to_${spillRange.to}` : ''}.xlsx`; a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
       toast(e.message, 'error')
@@ -1225,7 +1454,11 @@ export default function AuctionReportPage() {
     if (!reportRows.length) return
     setExporting(true)
     try {
-      await exportAuctionPDF({ rows: reportRows, filterFY, church, summary, paidDetailsMap })
+      await exportAuctionPDF({
+        rows: reportRows, filterFY, church, summary, paidDetailsMap,
+        dateFrom: reportKind === 'spillover' ? spillRange?.from : undefined,
+        dateTo: reportKind === 'spillover' ? spillRange?.to : undefined,
+      })
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -1242,7 +1475,7 @@ export default function AuctionReportPage() {
       <PageHeader
         icon={Gavel}
         title="Auction Report"
-        subtitle="Import tracker or current-year purchase, check payment status, and export"
+        subtitle="Import tracker or current-year purchase, check payment status, spill-over report, and export"
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePick} />
@@ -1268,11 +1501,26 @@ export default function AuctionReportPage() {
           <button
             className="action-btn"
             onClick={checkStatus}
-            disabled={loadingCheck || !trackerRows.length}
+            disabled={loadingCheck || loadingSpill || !trackerRows.length}
             style={{ background: '#2563eb' }}
           >
             {loadingCheck ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             {loadingCheck ? 'Checking…' : 'Check Status'}
+          </button>
+
+          <button
+            className="action-btn"
+            onClick={() => setSpillModalOpen(true)}
+            disabled={loadingSpill || loadingCheck || !trackerRows.length || !spilloverAllowed}
+            style={{ background: '#0e7490', opacity: !spilloverAllowed && trackerRows.length ? 0.45 : undefined }}
+            title={
+              !spilloverAllowed
+                ? `Spill-over is only for the previous closed auction year (FY ${spilloverFY}), not the current year (FY ${currentAuctionFY()})`
+                : 'Spill-over report — opening, payments in a date range, and remaining balance'
+            }
+          >
+            {loadingSpill ? <Loader2 size={13} className="animate-spin" /> : <Calendar size={13} />}
+            {loadingSpill ? 'Preparing…' : 'Spill-over Report'}
           </button>
 
           <button
@@ -1327,7 +1575,7 @@ export default function AuctionReportPage() {
         {trackerRows.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 4 }}>
             {trackerRows.length} members imported · Auction {auctionYear}
-            {generated ? ` · ${reportRows.length} checked` : ' · Click "Check Status" to fetch payment data'}
+            {generated ? ` · ${reportRows.length} ${isSpillReport ? 'spill-over' : 'checked'}` : ' · Check Status or Spill-over Report'}
           </span>
         )}
       </div>
@@ -1386,6 +1634,83 @@ export default function AuctionReportPage() {
                     From Total Purchase sheet. Merges / updates Current Year Purchase only.
                   </div>
                 </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Spill-over date range ── */}
+      {spillModalOpen && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 80,
+            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+          onClick={() => !loadingSpill && setSpillModalOpen(false)}
+        >
+          <div
+            className="card"
+            style={{ width: '100%', maxWidth: 440, padding: 24, position: 'relative' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => !loadingSpill && setSpillModalOpen(false)}
+              style={{ position: 'absolute', top: 12, right: 12, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Calendar size={16} style={{ color: '#0e7490' }} />
+              Spill-over Report
+            </h3>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
+              Tracker members for FY <strong>{filterFY}</strong>. Opening is Previous Pending.
+              Payments counted only when the receipt date is in this range. Does not close the year.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>From</label>
+                <input
+                  type="date"
+                  value={spillFrom}
+                  onChange={e => setSpillFrom(e.target.value)}
+                  className="field-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>To</label>
+                <input
+                  type="date"
+                  value={spillTo}
+                  onChange={e => setSpillTo(e.target.value)}
+                  className="field-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="action-btn"
+                onClick={confirmSpilloverReport}
+                disabled={loadingSpill || !spillFrom || !spillTo}
+                style={{ background: '#0e7490' }}
+              >
+                {loadingSpill ? <Loader2 size={13} className="animate-spin" /> : <Calendar size={13} />}
+                {loadingSpill ? 'Preparing…' : 'Prepare Report'}
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => setSpillModalOpen(false)}
+                disabled={loadingSpill}
+                style={{ background: '#64748b' }}
+              >
+                Cancel
               </button>
             </div>
           </div>
@@ -1477,13 +1802,13 @@ export default function AuctionReportPage() {
       )}
 
       {/* ── Report section (after Check Status) ── */}
-      {generated && !loadingCheck && (
+      {generated && !loadingCheck && !loadingSpill && (
         <>
           {/* Summary cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
             <SummaryCard label="Total Members"   value={summary.totalMembers}   isCount />
             <SummaryCard label="Total Due"        value={summary.totalDue}       />
-            <SummaryCard label="Total Paid"       value={summary.totalPaid}      accent />
+            <SummaryCard label={isSpillReport ? 'Payments in Range' : 'Total Paid'} value={summary.totalPaid} accent />
             <SummaryCard label="Balance Pending"  value={summary.totalBalance}   warn={summary.totalBalance > 0} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 16 }}>
@@ -1494,15 +1819,21 @@ export default function AuctionReportPage() {
           {/* Report table */}
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>Auction Payment Status</h3>
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>FY {filterFY} · Auction {auctionYear} · {reportRows.length} members · Click a row to see receipt details</span>
+              <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
+                {isSpillReport ? 'Auction Spill-over Report' : 'Auction Payment Status'}
+              </h3>
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                FY {filterFY} · Auction {auctionYear}
+                {isSpillReport ? ` · Payments ${spillRangeLabel}` : ''}
+                {' · '}{reportRows.length} members · Click a row to see receipt details
+              </span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr style={{ background: 'var(--table-header-bg)' }}>
                     <th style={{ width: 32, padding: '9px 8px' }} />
-                    {['#', 'Member ID', 'Member Name', 'Prev. Pending', currYearColLabel, 'Total Due', 'Amount Paid', 'Balance', 'Status'].map(h => (
+                    {['#', 'Member ID', 'Member Name', isSpillReport ? 'Opening' : 'Prev. Pending', currYearColLabel, 'Total Due', isSpillReport ? 'Payments' : 'Amount Paid', 'Balance', 'Status'].map(h => (
                       <th key={h} style={{
                         padding: '9px 12px',
                         textAlign: ['#','Member ID','Member Name','Status'].includes(h) ? 'left' : 'right',
@@ -1588,7 +1919,10 @@ export default function AuctionReportPage() {
                             <td colSpan={10} style={{ padding: '0 0 12px 52px' }}>
                               {details.length === 0 ? (
                                 <div style={{ padding: '10px 0', fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic' }}>
-                                  No auction receipts found for this member (FY {filterFY} / {nextFY(filterFY)})
+                                  No auction receipts found for this member
+                                  {isSpillReport
+                                    ? ` (${spillRangeLabel})`
+                                    : ` (FY ${filterFY} / ${nextFY(filterFY)})`}
                                 </div>
                               ) : (
                                 <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8 }}>
@@ -1680,7 +2014,7 @@ export default function AuctionReportPage() {
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>Imported Tracker — FY {filterFY}</h3>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{trackerRows.length} members · Click "Check Status" to fetch payment data</span>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{trackerRows.length} members · Check Status or Spill-over Report</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
