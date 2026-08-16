@@ -1332,19 +1332,19 @@ export default function AuctionReportPage() {
         monthKeys = [...seen].sort()
       }
 
-      const mwN = 3 + 2 + monthKeys.length + 2
+      const mwN = 3 + 3 + monthKeys.length + 3
       const mwHdr = [
         '#', 'Member ID', 'Member Name',
-        'Opening (₹)', `${auctionYear} (₹)`,
+        'Opening (₹)', `${auctionYear} (₹)`, 'Total Due (₹)',
         ...monthKeys.map(monthLabel),
-        'Total Paid (₹)', 'Closing Balance (₹)',
+        'Total Paid (₹)', 'Closing Balance (₹)', 'Status',
       ]
       const wsMonth = wb.addWorksheet('Monthwise Breakup')
       wsMonth.columns = [
         { width: 7 }, { width: 18 }, { width: 32 },
-        { width: 14 }, { width: 14 },
+        { width: 14 }, { width: 14 }, { width: 14 },
         ...monthKeys.map(() => ({ width: 12 })),
-        { width: 16 }, { width: 18 },
+        { width: 16 }, { width: 18 }, { width: 14 },
       ]
       wsMonth.views = [{ state: 'frozen', ySplit: 4, xSplit: 3 }]
 
@@ -1377,9 +1377,13 @@ export default function AuctionReportPage() {
       const monthTotals = monthKeys.map(() => 0)
       let grandOpening = 0
       let grandAuction = 0
+      let grandDue = 0
       let grandPaid = 0
       let grandClosing = 0
-      const closeCol = mwN
+      let countClearedMw = 0
+      let countPendingMw = 0
+      const closeCol = mwN - 1
+      const statusCol = mwN
 
       reportRows.forEach((row, i) => {
         const byMonth = {}
@@ -1395,19 +1399,25 @@ export default function AuctionReportPage() {
         })
         const opening = Number(row.previous_pending) || 0
         const auctionAmt = Number(row.current_year_purchase) || 0
+        const totalDue = Number(row.total) || (opening + auctionAmt)
         const paid = Number(row.paid) || 0
         const closing = Number(row.balance) || 0
+        const cleared = closing <= 0
+        if (cleared) countClearedMw += 1
+        else countPendingMw += 1
         grandOpening += opening
         grandAuction += auctionAmt
+        grandDue += totalDue
         grandPaid += paid
         grandClosing += closing
         const isLast = i === reportRows.length - 1
         const isAlt = i % 2 === 1
         const dr = wsMonth.addRow([
           i + 1, row.member_id, row.member_name,
-          opening || null, auctionAmt || null,
+          opening || null, auctionAmt || null, totalDue || null,
           ...monthVals,
           paid || null, closing || null,
+          cleared ? 'Cleared' : 'Pending',
         ])
         dr.height = 18
         dr.eachCell({ includeEmpty: true }, (cell, ci) => {
@@ -1415,16 +1425,21 @@ export default function AuctionReportPage() {
           cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? (ci === 1 ? 'center' : 'left') : 'right' }
           cell.border    = border(false, isLast, ci === 1, ci === mwN)
           if (isAlt) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_ALT } }
-          if (ci >= 4 && cell.value != null) cell.numFmt = numFmt
+          if (ci >= 4 && ci < statusCol && cell.value != null) cell.numFmt = numFmt
           if (ci === closeCol && closing > 0) cell.font = { ...cell.font, color: { argb: 'DC2626' } }
+          if (ci === statusCol) {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' }
+            cell.font = { ...cell.font, bold: true, color: { argb: cleared ? '15803D' : 'DC2626' } }
+          }
         })
       })
 
       const mwTot = wsMonth.addRow([
         '', 'TOTAL', '',
-        grandOpening || null, grandAuction || null,
+        grandOpening || null, grandAuction || null, grandDue || null,
         ...monthTotals.map(v => v || null),
         grandPaid || null, grandClosing || null,
+        `${countClearedMw}✓ / ${countPendingMw}✗`,
       ])
       mwTot.height = 22
       mwTot.eachCell({ includeEmpty: true }, (cell, ci) => {
@@ -1432,7 +1447,7 @@ export default function AuctionReportPage() {
         cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
         cell.alignment = { vertical: 'middle', horizontal: ci <= 3 ? 'left' : 'right' }
         cell.border    = border(true, true, ci === 1, ci === mwN)
-        if (ci >= 4 && cell.value != null) cell.numFmt = numFmt
+        if (ci >= 4 && ci < mwN && cell.value != null) cell.numFmt = numFmt
       })
 
       // ── download ──
