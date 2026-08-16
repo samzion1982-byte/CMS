@@ -1332,6 +1332,8 @@ export default function AuctionReportPage() {
         monthKeys = [...seen].sort()
       }
 
+      const monthStartCol = 7
+      const monthEndCol = monthKeys.length ? 6 + monthKeys.length : 6
       const mwN = 3 + 3 + monthKeys.length + 3
       const mwHdr = [
         '#', 'Member ID', 'Member Name',
@@ -1346,7 +1348,9 @@ export default function AuctionReportPage() {
         ...monthKeys.map(() => ({ width: 12 })),
         { width: 16 }, { width: 18 }, { width: 14 },
       ]
-      wsMonth.views = [{ state: 'frozen', ySplit: 4, xSplit: 3 }]
+      wsMonth.views = [{ state: 'frozen', ySplit: 5, xSplit: 3 }]
+      wsMonth.properties.outlineLevelCol = monthKeys.length ? 1 : 0
+      wsMonth.properties.outlineProperties = { summaryBelow: true, summaryRight: true }
 
       const mwTitles = [
         { text: churchName, bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
@@ -1364,6 +1368,29 @@ export default function AuctionReportPage() {
         cell.border = { top: idx === 0 ? outerMed : innerThn, bottom: idx === mwTitles.length - 1 ? outerMed : innerThn, left: outerMed, right: outerMed }
         r.height = size * 2.1
       })
+
+      const cap = wsMonth.addRow(Array(mwN).fill(''))
+      cap.height = 20
+      cap.eachCell({ includeEmpty: true }, (cell, ci) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+        cell.font = { bold: true, color: { argb: C_WHITE }, size: 10, name: 'Calibri' }
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        cell.border = border(true, false, ci === 1, ci === mwN)
+      })
+      if (monthKeys.length) {
+        const rangeText = monthKeys.length === 1
+          ? monthLabel(monthKeys[0])
+          : `${monthLabel(monthKeys[0])} to ${monthLabel(monthKeys[monthKeys.length - 1])}`
+        wsMonth.mergeCells(cap.number, monthStartCol, cap.number, monthEndCol)
+        for (let c = monthStartCol; c <= monthEndCol; c++) {
+          const cell = wsMonth.getCell(cap.number, c)
+          cell.value = c === monthStartCol ? `Payments (${rangeText})` : ''
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_SUB } }
+          cell.font = { bold: true, color: { argb: C_WHITE }, size: 10, name: 'Calibri' }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+          cell.border = border(true, false, c === 1, c === mwN)
+        }
+      }
 
       const mwHr = wsMonth.addRow(mwHdr)
       mwHr.height = 24
@@ -1449,6 +1476,12 @@ export default function AuctionReportPage() {
         cell.border    = border(true, true, ci === 1, ci === mwN)
         if (ci >= 4 && ci < mwN && cell.value != null) cell.numFmt = numFmt
       })
+
+      if (monthKeys.length) {
+        for (let c = monthStartCol; c <= monthEndCol; c++) {
+          wsMonth.getColumn(c).outlineLevel = 1
+        }
+      }
 
       // ── download ──
       const buf = await wb.xlsx.writeBuffer()
