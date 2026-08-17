@@ -370,6 +370,60 @@ export async function snapshotAuctionTrackerFY(fy, { operation = 'change', notes
 }
 
 /**
+ * Snapshot every FY then delete all auction_tracker rows.
+ * Does not touch receipts, receipt_items, or other CMS tables.
+ */
+export async function flushAllAuctionTracker({ actor = null } = {}) {
+  const PAGE = 1000
+  const rows = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('auction_tracker')
+      .select('*')
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    rows.push(...(data || []))
+    if (!data || data.length < PAGE) break
+    from += PAGE
+  }
+  if (!rows.length) return { deleted: 0, fys: [] }
+
+  const fys = [...new Set(rows.map((r) => r.financial_year).filter(Boolean))]
+  for (const fy of fys) {
+    const fyRows = rows.filter((r) => r.financial_year === fy)
+    await captureTableSnapshot({
+      module: 'finance',
+      tableName: 'auction_tracker',
+      snapshotKey: `auction_tracker:FY:${fy}:flush:${Date.now()}`,
+      recordLabel: `Auction tracker FY ${fy} (${fyRows.length} members)`,
+      rows: fyRows,
+      meta: { financial_year: fy, operation: 'flush_all' },
+      notes: `Snapshot before flush all auction tracker (FY ${fy})`,
+      actor,
+    })
+  }
+
+  for (const fy of fys) {
+    const { error: delErr } = await supabase
+      .from('auction_tracker')
+      .delete()
+      .eq('financial_year', fy)
+    if (delErr) throw delErr
+  }
+
+  await logCmsAudit({
+    action: 'deleted',
+    module: 'finance',
+    entityType: 'auction_tracker',
+    entityId: 'all',
+    summary: `Flushed auction tracker (${rows.length} rows; FY ${fys.join(', ')}). Receipts not touched.`,
+    actor,
+  })
+  return { deleted: rows.length, fys }
+}
+
+/**
  * Always-save Close Year undo token (even when target FY had 0 rows).
  * Recycle Bin restore replaces toFY with prior_rows (often empty = clear carry).
  */
@@ -499,6 +553,34 @@ export async function restoreRecycleBinItem(id, actor = null) {
   if (item.status !== 'deleted') throw new Error(`Cannot restore — status is ${item.status}`)
 
   const payload = item.payload || {}
+
+  // ── Auction reference file (storage only, no table row) ──
+  if (payload.row?._kind === 'auction_document') {
+    await restoreQuarantinedFiles(payload)
+    let emailTs = actor?.email || null
+    if (!emailTs) {
+      const { data: { user } } = await supabase.auth.getUser()
+      emailTs = user?.email || null
+    }
+    await supabase
+      .from('cms_recycle_bin')
+      .update({
+        status: 'restored',
+        restored_at: new Date().toISOString(),
+        restored_by_email: emailTs,
+      })
+      .eq('id', id)
+    await logCmsAudit({
+      action: 'restored',
+      module: 'recycle_bin',
+      entityType: 'auction_documents',
+      entityId: item.record_id,
+      entityLabel: item.record_label,
+      summary: `Restored auction reference file ${item.record_label || item.record_id}`,
+      actor,
+    })
+    return item
+  }
 
   // ── Bulk table snapshot / close-year undo (auction_tracker FY) ──
   if (payload.kind === 'table_snapshot' || payload.kind === 'close_year_undo') {

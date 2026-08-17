@@ -9,12 +9,15 @@ import { useToast } from '../lib/toast'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
-import { snapshotAuctionTrackerFY, snapshotCloseYearUndo } from '../lib/cmsRecycleBin'
+import { snapshotAuctionTrackerFY, snapshotCloseYearUndo, flushAllAuctionTracker } from '../lib/cmsRecycleBin'
+import { uploadAuctionDocument, deleteAuctionDocument } from '../lib/auctionDocumentsLib'
 import {
   Gavel, Upload, RefreshCw, Loader2, FileSpreadsheet,
   FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2, Calendar,
+  PanelRight, Trash2,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import AuctionDocsPanel from '../components/AuctionDocsPanel'
 
 // ── helpers (Auction Report FY = natural Apr–Mar of the Aug/Sep auction) ──
 
@@ -694,6 +697,18 @@ export default function AuctionReportPage() {
   const [loadingSpill,    setLoadingSpill]    = useState(false)
   const [reportKind,      setReportKind]      = useState('status') // 'status' | 'spillover'
   const [spillRange,      setSpillRange]      = useState(null) // { from, to } when spillover generated
+  const [docsPanelOpen,   setDocsPanelOpen]   = useState(true)
+  const [docsRefreshKey,  setDocsRefreshKey]  = useState(0)
+  const [flushModalOpen,  setFlushModalOpen]  = useState(false)
+  const [flushPw,         setFlushPw]         = useState('')
+  const [flushPwError,    setFlushPwError]    = useState('')
+  const [showFlushPw,     setShowFlushPw]     = useState(false)
+  const [flushing,        setFlushing]        = useState(false)
+  const [deleteDocModal,  setDeleteDocModal]  = useState(null) // { doc, reload }
+  const [deleteDocPw,     setDeleteDocPw]     = useState('')
+  const [deleteDocPwError,setDeleteDocPwError]= useState('')
+  const [showDeleteDocPw, setShowDeleteDocPw] = useState(false)
+  const [deletingDoc,     setDeletingDoc]     = useState(false)
 
 
   const auctionYear = auctionYearFromFY(filterFY)
@@ -753,7 +768,7 @@ export default function AuctionReportPage() {
       const rows = mode === 'current_year'
         ? await parseTotalPurchaseFile(file)
         : await parseAuctionFile(file)
-      setPreview({ rows, fileName: file.name, mode })
+      setPreview({ rows, fileName: file.name, mode, file })
     } catch (err) {
       toast(err.message, 'error')
     }
@@ -840,6 +855,19 @@ export default function AuctionReportPage() {
           entityId: filterFY, summary: `Initial import ${insRows.length} auction tracker rows (FY ${filterFY})`,
         })
         toast(`${insRows.length} rows imported for FY ${filterFY}. Previous state saved to Recycle Bin (if any).`, 'success')
+      }
+
+      if (preview.file) {
+        try {
+          await uploadAuctionDocument({
+            fy: filterFY,
+            file: preview.file,
+            kind: preview.mode === 'current_year' ? 'current_year' : 'initial',
+          })
+          setDocsRefreshKey((k) => k + 1)
+        } catch (fileErr) {
+          toast(`Tracker saved, but the reference file was not stored: ${fileErr.message}`, 'error')
+        }
       }
 
       setPreview(null)
@@ -1513,6 +1541,53 @@ export default function AuctionReportPage() {
     setExporting(false)
   }
 
+  const confirmFlushAuction = async () => {
+    setFlushPwError('')
+    const ok = await verifyMasterPassword(flushPw)
+    if (!ok) {
+      setFlushPwError('Incorrect master password.')
+      setFlushPw('')
+      return
+    }
+    setFlushing(true)
+    try {
+      const result = await flushAllAuctionTracker()
+      setFlushModalOpen(false)
+      setFlushPw('')
+      setGenerated(false)
+      setReportRows([])
+      await loadTracker(filterFY)
+      if (!result.deleted) toast('No auction tracker rows to flush.', 'success')
+      else toast(`Flushed ${result.deleted} auction tracker rows (${result.fys.join(', ')}). Receipts and other records were not changed. Snapshots are in Recycle Bin.`, 'success')
+    } catch (e) {
+      setFlushPwError(e.message || 'Flush failed')
+    }
+    setFlushing(false)
+  }
+
+  const confirmDeleteAuctionDoc = async () => {
+    if (!deleteDocModal?.doc) return
+    setDeleteDocPwError('')
+    const ok = await verifyMasterPassword(deleteDocPw)
+    if (!ok) {
+      setDeleteDocPwError('Incorrect master password.')
+      setDeleteDocPw('')
+      return
+    }
+    setDeletingDoc(true)
+    try {
+      await deleteAuctionDocument(deleteDocModal.doc)
+      await deleteDocModal.reload?.()
+      setDocsRefreshKey((k) => k + 1)
+      setDeleteDocModal(null)
+      setDeleteDocPw('')
+      toast('Reference file deleted. A copy is in Recycle Bin.', 'success')
+    } catch (e) {
+      setDeleteDocPwError(e.message || 'Delete failed')
+    }
+    setDeletingDoc(false)
+  }
+
   // ══════════════════════════════════════════════════════════════
   //  Render
   // ══════════════════════════════════════════════════════════════
@@ -1611,8 +1686,37 @@ export default function AuctionReportPage() {
               </button>
             </>
           )}
+
+          <button
+            className="action-btn"
+            onClick={() => setDocsPanelOpen((v) => !v)}
+            style={{ background: docsPanelOpen ? '#0f766e' : '#64748b' }}
+            title="Show uploaded documents by year"
+          >
+            <PanelRight size={13} />
+            Documents
+          </button>
+
+          <button
+            className="action-btn"
+            onClick={() => {
+              setFlushPw('')
+              setFlushPwError('')
+              setShowFlushPw(false)
+              setFlushModalOpen(true)
+            }}
+            disabled={flushing}
+            style={{ background: '#dc2626' }}
+            title="Delete all auction tracker rows. Receipts and other CMS data are not touched."
+          >
+            {flushing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            Flush
+          </button>
         </div>
       </PageHeader>
+
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
 
       {/* ── FY filter bar ── */}
       <div className="card" style={{ padding: '12px 20px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -2096,6 +2200,23 @@ export default function AuctionReportPage() {
         </div>
       )}
 
+      </div>
+
+      {docsPanelOpen && (
+        <AuctionDocsPanel
+          selectedFY={filterFY}
+          refreshKey={docsRefreshKey}
+          onClose={() => setDocsPanelOpen(false)}
+          onRequestDelete={(doc, reload) => {
+            setDeleteDocPw('')
+            setDeleteDocPwError('')
+            setShowDeleteDocPw(false)
+            setDeleteDocModal({ doc, reload })
+          }}
+        />
+      )}
+      </div>
+
       {/* ── Close auction year (master password) ── */}
       {closeModalOpen && closePreview && (
         <div
@@ -2272,6 +2393,151 @@ export default function AuctionReportPage() {
                 className="action-btn"
                 onClick={() => setRevertModalOpen(false)}
                 disabled={loadingRevert}
+                style={{ background: '#64748b' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {flushModalOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 90,
+            background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+          onClick={() => !flushing && setFlushModalOpen(false)}
+        >
+          <div
+            className="card"
+            style={{ width: '100%', maxWidth: 480, padding: 24, position: 'relative' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => !flushing && setFlushModalOpen(false)}
+              style={{ position: 'absolute', top: 12, right: 12, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Trash2 size={16} style={{ color: '#dc2626' }} />
+              Flush auction records
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
+              Deletes <strong>all auction tracker rows</strong> (every financial year).
+              Receipts, members, and other CMS data are not touched.
+              Reference files in the documents panel are kept.
+              A Recycle Bin snapshot is saved first.
+            </p>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>
+              Master Password
+            </label>
+            <MasterPasswordInput
+              showPlain={showFlushPw}
+              value={flushPw}
+              onChange={e => { setFlushPw(e.target.value); setFlushPwError('') }}
+              onKeyDown={e => { if (e.key === 'Enter') confirmFlushAuction() }}
+              placeholder="Enter master password…"
+              className="field-input"
+              style={{ width: '100%', marginBottom: 8 }}
+            />
+            <button type="button" onClick={() => setShowFlushPw(v => !v)} style={{ border: 'none', background: 'none', fontSize: 12, color: 'var(--text-3)', cursor: 'pointer', marginBottom: 8, padding: 0 }}>
+              {showFlushPw ? 'Hide password' : 'Show password'}
+            </button>
+            {flushPwError && (
+              <p style={{ margin: '0 0 10px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{flushPwError}</p>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                className="action-btn"
+                onClick={confirmFlushAuction}
+                disabled={flushing || !flushPw}
+                style={{ background: '#dc2626' }}
+              >
+                {flushing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                {flushing ? 'Flushing…' : 'Yes, flush auction tracker'}
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => setFlushModalOpen(false)}
+                disabled={flushing}
+                style={{ background: '#64748b' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteDocModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 110,
+            background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+          onClick={() => !deletingDoc && setDeleteDocModal(null)}
+        >
+          <div
+            className="card"
+            style={{ width: '100%', maxWidth: 440, padding: 24, position: 'relative' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => !deletingDoc && setDeleteDocModal(null)}
+              style={{ position: 'absolute', top: 12, right: 12, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Lock size={16} style={{ color: '#dc2626' }} />
+              Delete reference file
+            </h3>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
+              Delete <strong>{deleteDocModal.doc?.originalName}</strong>
+              {deleteDocModal.doc?.fy ? ` (FY ${deleteDocModal.doc.fy})` : ''}?
+              Master password is required. The file is moved to Recycle Bin.
+            </p>
+            <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>
+              Master Password
+            </label>
+            <MasterPasswordInput
+              showPlain={showDeleteDocPw}
+              value={deleteDocPw}
+              onChange={e => { setDeleteDocPw(e.target.value); setDeleteDocPwError('') }}
+              onKeyDown={e => { if (e.key === 'Enter') confirmDeleteAuctionDoc() }}
+              placeholder="Enter master password…"
+              className="field-input"
+              style={{ width: '100%', marginBottom: 8 }}
+            />
+            <button type="button" onClick={() => setShowDeleteDocPw(v => !v)} style={{ border: 'none', background: 'none', fontSize: 12, color: 'var(--text-3)', cursor: 'pointer', marginBottom: 8, padding: 0 }}>
+              {showDeleteDocPw ? 'Hide password' : 'Show password'}
+            </button>
+            {deleteDocPwError && (
+              <p style={{ margin: '0 0 10px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{deleteDocPwError}</p>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button
+                className="action-btn"
+                onClick={confirmDeleteAuctionDoc}
+                disabled={deletingDoc || !deleteDocPw}
+                style={{ background: '#dc2626' }}
+              >
+                {deletingDoc ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                {deletingDoc ? 'Deleting…' : 'Delete file'}
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => setDeleteDocModal(null)}
+                disabled={deletingDoc}
                 style={{ background: '#64748b' }}
               >
                 Cancel
