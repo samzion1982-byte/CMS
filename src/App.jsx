@@ -2,7 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate, useLocatio
 import { useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ToastProvider } from './lib/toast'
-import { supabase, getChurch, LICENSE_CSV, VENDOR } from './lib/supabase'
+import { VENDOR } from './lib/supabase'
+import {
+  evaluateChurchLicense,
+  applyLicenseVerificationStamp,
+  licenseBlockTitle,
+  licenseBlockMessage,
+} from './lib/churchLicense'
 import { canAccessPath } from './lib/cmsPermissions'
 
 import AppLayout from './components/layout/AppLayout'
@@ -101,75 +107,20 @@ function LicenseGate({ children }) {
     }
 
     async function check() {
-      // Fetch church record first — needed for auth_code and grace period timestamp
-      const church = await getChurch()
-      const code = church?.auth_code?.trim()?.toUpperCase()
-      if (!code) {
-        setBlockReason('missing')
+      const result = await evaluateChurchLicense()
+      if (!result.ok) {
+        if (result.reason === 'inactive' || result.reason === 'expired') {
+          await applyLicenseVerificationStamp(result.church, false)
+        }
+        setInfo(result.info)
+        setBlockReason(result.reason)
         setStatus('blocked')
         return
       }
-
-      try {
-        const resp = await fetch(LICENSE_CSV)
-        const text = await resp.text()
-        const rows = text.trim().split('\n').slice(1)
-        let found = null
-        for (const row of rows) {
-          const cols = row.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
-          const [rowCode, churchCode, churchName, validUpto, licStatus] = cols
-          if (rowCode?.toUpperCase() === code) {
-            found = { code: rowCode, churchCode, churchName, validUpto, licStatus }
-            break
-          }
-        }
-
-        if (!found) {
-          setInfo({ code })
-          setBlockReason('invalid')
-          setStatus('blocked')
-          return
-        }
-
-        const isDemo = code === '0000-DEMOACCOUNT'
-        const inactive = found.licStatus?.toLowerCase().includes('inactive')
-        let isExpired = false
-        let daysLeft = null
-
-        if (!isDemo) {
-          const parts = found.validUpto?.split(/[-\/]/)
-          if (parts?.length === 3) {
-            const d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10))
-            if (!isNaN(d.getTime())) {
-              daysLeft = Math.ceil((d - new Date()) / 86400000)
-              isExpired = !inactive && d < new Date()
-            }
-          }
-        }
-
-        if (inactive || isExpired) {
-          // Clear the grace period timestamp so offline cannot bypass the block
-          await supabase.from('churches').update({ license_ok_ts: null }).eq('id', church.id)
-          setInfo({ ...found, daysLeft })
-          setBlockReason(inactive ? 'inactive' : 'expired')
-          setStatus('blocked')
-        } else {
-          // Stamp the last successful verification time in Supabase
-          await supabase.from('churches').update({ license_ok_ts: new Date().toISOString() }).eq('id', church.id)
-          setStatus('ok')
-        }
-      } catch (e) {
-        // CSV unreachable — allow up to 24 hours from last verified timestamp in Supabase
-        console.error('License CSV fetch failed:', e)
-        const lastOk = church?.license_ok_ts ? new Date(church.license_ok_ts).getTime() : 0
-        const hoursElapsed = (Date.now() - lastOk) / 3600000
-        if (lastOk && hoursElapsed < 24) {
-          setStatus('ok')
-        } else {
-          setBlockReason('network')
-          setStatus('blocked')
-        }
+      if (result.reason !== 'grace') {
+        await applyLicenseVerificationStamp(result.church, true)
       }
+      setStatus('ok')
     }
 
     check()
@@ -192,21 +143,10 @@ function LicenseGate({ children }) {
           </div>
 
           <h2 style={{ color:'#fff', fontSize:22, fontWeight:700, margin:'0 0 8px' }}>
-            {blockReason === 'network' ? 'License Unverified'
-              : blockReason === 'missing' ? 'License Required'
-              : blockReason === 'invalid' ? 'Invalid License'
-              : `License ${blockReason === 'inactive' ? 'Inactive' : 'Expired'}`}
+            {licenseBlockTitle(blockReason)}
           </h2>
           <p style={{ color:'rgba(255,255,255,0.55)', fontSize:14, margin:'0 0 24px', lineHeight:1.6 }}>
-            {blockReason === 'inactive'
-              ? 'Your church license has been deactivated. Access is restricted until the license is reactivated.'
-              : blockReason === 'expired'
-              ? 'Your church license has expired. Please renew to continue using the system.'
-              : blockReason === 'missing'
-              ? 'No AUTH CODE is configured for this church. Ask a Super Admin to enter and verify the license in Church Setup.'
-              : blockReason === 'invalid'
-              ? 'The AUTH CODE on this church is not recognised. Ask a Super Admin to verify the license in Church Setup.'
-              : 'License could not be verified and the 24-hour offline grace period has elapsed. Please check your internet connection or contact support.'}
+            {licenseBlockMessage(blockReason)}
           </p>
 
           {info?.churchCode && (

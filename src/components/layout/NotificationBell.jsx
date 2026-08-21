@@ -496,6 +496,7 @@ export default function NotificationBell({ g }) {
               {!showSettings && (
                 <button
                   type="button"
+                  className={showCreate ? undefined : 'notif-create-plus'}
                   onClick={() => (showCreate ? closeCreate() : openCreate())}
                   title={showCreate ? 'Back to alerts' : 'Create alert'}
                   aria-label="Create alert"
@@ -503,11 +504,13 @@ export default function NotificationBell({ g }) {
                     height: 28, borderRadius: 8, cursor: 'pointer',
                     padding: showCreate ? '0 8px' : 0,
                     width: showCreate ? 'auto' : 28,
-                    border: `1px solid ${showCreate ? g.accent : g.drop.border}`,
-                    background: showCreate ? (g.accentL || 'rgba(37,99,235,0.12)') : 'transparent',
-                    color: showCreate ? g.accent : g.drop.sub,
+                    border: showCreate ? `1px solid ${g.accent}` : 'none',
+                    background: showCreate ? (g.accentL || 'rgba(37,99,235,0.12)') : g.accent,
+                    color: showCreate ? g.accent : '#fff',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                     fontSize: 11, fontWeight: 700,
+                    position: 'relative',
+                    ['--plus-glow']: g.accent,
                   }}
                 >
                   {showCreate ? <X size={14} /> : <Plus size={14} />}
@@ -906,6 +909,28 @@ export default function NotificationBell({ g }) {
         .notif-bell-pulse {
           animation: notifBellPulse 1.8s ease-in-out infinite;
           transform-origin: top center;
+        }
+        .notif-create-plus {
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 55%, transparent);
+          animation: notifPlusPulse 1.8s ease-out infinite;
+        }
+        .notif-create-plus::after {
+          content: '';
+          position: absolute;
+          inset: -40% -60%;
+          background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.55) 50%, transparent 65%);
+          animation: notifPlusShine 2.4s ease-in-out infinite;
+          pointer-events: none;
+        }
+        @keyframes notifPlusPulse {
+          0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 50%, transparent); transform: scale(1); }
+          55%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--plus-glow, #22c55e) 0%, transparent); transform: scale(1.06); }
+          100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 0%, transparent); transform: scale(1); }
+        }
+        @keyframes notifPlusShine {
+          0%   { transform: translateX(-30%); opacity: 0; }
+          30%  { opacity: 1; }
+          100% { transform: translateX(30%); opacity: 0; }
         }
       `}</style>
     </div>

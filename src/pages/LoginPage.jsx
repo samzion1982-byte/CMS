@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
-import { signIn, displayFirstName } from '../lib/auth'
+import { signIn, signOut, displayFirstName } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
+import { evaluateChurchLicense, licenseBlockMessage } from '../lib/churchLicense'
 import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, insertLoginLog } from '../lib/loginLogs'
-import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 /** Prefer CSS disc mask so browsers do not treat the field as a saveable password. */
 const supportsDiscMask = typeof CSS !== 'undefined'
@@ -12,8 +13,8 @@ const supportsDiscMask = typeof CSS !== 'undefined'
   && CSS.supports('-webkit-text-security', 'disc')
 
 const AUTH_STEPS = [
+  { text: 'Checking license', tone: 'wait' },
   { text: 'Verifying credentials', tone: 'wait' },
-  { text: 'Authenticating session', tone: 'wait' },
   { text: 'Access granted', tone: 'ok' },
 ]
 
@@ -96,25 +97,40 @@ export default function LoginPage() {
     // Clear any leftover setup flag from a prior attempt
     sessionStorage.removeItem('device_setup_pending')
 
-    const toSession = setTimeout(() => setAuthStep(1), 1100)
-
     try {
       const devId = getOrCreateDeviceId()
 
-      // Sign in first — device/login tables require an authenticated session
+      const license = await evaluateChurchLicense(church)
+      await sleep(500)
+      setAuthStep(1)
+
+      // Device/login tables require an authenticated session
       // (service-role key is no longer shipped in the browser).
       const { error: err, data: authData, profile } = await signIn(email.trim(), password)
-      clearTimeout(toSession)
 
       if (err) {
         sessionStorage.removeItem('login_welcome')
-        setError(err.message)
+        setError(!license.ok ? licenseBlockMessage(license.reason) : err.message)
         setInputErr(true)
         setStatus('')
         setAuthStep(0)
         setLoading(false)
-      } else {
-        const uid = authData?.user?.id
+        return
+      }
+
+      if (!license.ok && profile?.role !== 'super_admin') {
+        await signOut()
+        sessionStorage.removeItem('login_welcome')
+        sessionStorage.removeItem('device_setup_pending')
+        setError(licenseBlockMessage(license.reason))
+        setInputErr(true)
+        setStatus('')
+        setAuthStep(0)
+        setLoading(false)
+        return
+      }
+
+      const uid = authData?.user?.id
 
         // Resolve device meta before writing the login row (atomic insert).
         // Popup is ONLY for a truly new user/device — never after a cache flush
@@ -167,15 +183,11 @@ export default function LoginPage() {
           ...(deviceMeta || {}),
         })
 
-        setAuthStep(1)
-        await sleep(900)
         setAuthStep(2)
         await sleep(1200)
         setWelcomeFirst(displayFirstName(profile, email.trim()))
         setStatus('welcome')
-      }
     } catch (ex) {
-      clearTimeout(toSession)
       sessionStorage.removeItem('device_setup_pending')
       sessionStorage.removeItem('login_welcome')
       setError('Login failed. Please try again.')
@@ -959,6 +971,56 @@ export default function LoginPage() {
           to   { opacity: 1; transform: scale(1); }
         }
 
+        .welcome-smiley {
+          width: 64px;
+          height: 64px;
+          display: block;
+          filter: drop-shadow(0 0 12px rgba(250,204,21,0.55));
+          animation: smileyPop 0.55s cubic-bezier(0.2, 0.9, 0.4, 1.25) both, smileyBob 2.4s ease-in-out 0.55s infinite;
+          transform-origin: 50% 50%;
+        }
+        @keyframes smileyPop {
+          0%   { opacity: 0; transform: scale(0.2) rotate(-18deg); }
+          70%  { opacity: 1; transform: scale(1.12) rotate(6deg); }
+          100% { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        @keyframes smileyBob {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          40%      { transform: translateY(-5px) rotate(-4deg); }
+          70%      { transform: translateY(1px) rotate(3deg); }
+        }
+        .welcome-smiley-face {
+          fill: #facc15;
+          stroke: #ca8a04;
+          stroke-width: 2.5;
+        }
+        .welcome-smiley-eye {
+          fill: #3f2a00;
+          transform-origin: center;
+          animation: smileyBlink 3.2s ease-in-out infinite;
+        }
+        .welcome-smiley-eye-r { animation-delay: 0.12s; }
+        @keyframes smileyBlink {
+          0%, 42%, 50%, 100% { transform: scaleY(1); }
+          46% { transform: scaleY(0.08); }
+        }
+        .welcome-smiley-mouth {
+          fill: none;
+          stroke: #3f2a00;
+          stroke-width: 3.4;
+          stroke-linecap: round;
+          stroke-dasharray: 48;
+          stroke-dashoffset: 48;
+          animation: smileySmile 0.7s ease-out 0.25s forwards, smileyGrin 2.4s ease-in-out 1s infinite;
+        }
+        @keyframes smileySmile {
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes smileyGrin {
+          0%, 100% { d: path("M24 46 Q40 62 56 46"); }
+          50%      { d: path("M22 44 Q40 68 58 44"); }
+        }
+
         .praise-label {
           font-family: 'Sora', sans-serif;
           font-size: 12px;
@@ -1259,7 +1321,12 @@ export default function LoginPage() {
                       </span>
                       <span className="praise-star praise-star-r">✦</span>
                     </p>
-                    <CheckCircle2 size={52} className="status-check"/>
+                    <svg className="welcome-smiley" viewBox="0 0 80 80" aria-hidden="true">
+                      <circle className="welcome-smiley-face" cx="40" cy="40" r="34" />
+                      <circle className="welcome-smiley-eye" cx="28" cy="32" r="4.6" />
+                      <circle className="welcome-smiley-eye welcome-smiley-eye-r" cx="52" cy="32" r="4.6" />
+                      <path className="welcome-smiley-mouth" d="M24 46 Q40 62 56 46" />
+                    </svg>
                     <p className="status-msg welcome">Welcome back</p>
                     <p className="welcome-name">
                       {welcomeFirst || displayFirstName(profile, email)}
