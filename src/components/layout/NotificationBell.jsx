@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Bell, BellOff, Clock, CreditCard, FileText, HardDrive, Loader2, Lock,
-  Settings, ShieldAlert, Volume2, VolumeX, X,
+  Bell, BellOff, CalendarClock, Clock, CreditCard, FileText, HardDrive, Loader2, Lock,
+  Plus, Settings, ShieldAlert, Trash2, Volume2, VolumeX, X,
 } from 'lucide-react'
 import { supabase, getChurch, LICENSE_CSV } from '../../lib/supabase'
 import { listBackupLogs } from '../../lib/cmsFullBackup'
 import { getChurchDocumentsDueForAlert, daysUntilDate } from '../../lib/churchDocumentsLib'
+import { formatDate } from '../../lib/date'
+import { useAuth } from '../../lib/AuthContext'
+import {
+  createUserAlert,
+  deleteUserAlert,
+  isUserAlertDue,
+  listUserAlerts,
+  USER_ALERT_SCOPES,
+} from '../../lib/userAlertsLib'
 import {
   ALERT_IDS,
   ALERT_TYPE_OPTIONS,
@@ -32,7 +41,9 @@ function parseLicenseExpiry(validUpto) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-async function fetchAlerts() {
+const EMPTY_FORM = { title: '', due_date: '', alert_days_before: '10', scope: 'self' }
+
+async function fetchAlerts(userId) {
   const alerts = []
 
   // 1) Pending payment confirmations
@@ -161,6 +172,49 @@ async function fetchAlerts() {
     console.warn('[notifications] document renewal check failed', e)
   }
 
+  // 5) User-created reminders
+  try {
+    const rows = await listUserAlerts()
+    for (const row of rows) {
+      const mine = !!userId && row.created_by === userId
+      const due = isUserAlertDue(row)
+      if (!mine && !due) continue
+      const left = daysUntilDate(row.due_date)
+      const dueLabel = formatDate(row.due_date)
+      let detail
+      let severity
+      if (left == null) {
+        detail = `Due ${dueLabel}`
+        severity = 'info'
+      } else if (left <= 0) {
+        detail = `Due ${dueLabel} — overdue`
+        severity = 'danger'
+      } else if (due) {
+        detail = `Due ${dueLabel} — ${left} day${left === 1 ? '' : 's'} left`
+        severity = 'warning'
+      } else {
+        const before = row.alert_days_before
+        detail = `Due ${dueLabel} · alert ${before} day${before === 1 ? '' : 's'} before`
+        severity = 'info'
+      }
+      if (row.scope === 'all') detail += mine ? ' · for all' : ' · shared'
+      alerts.push({
+        id: `user:${row.id}`,
+        typeId: ALERT_IDS.user,
+        userAlertId: row.id,
+        canDelete: mine,
+        due,
+        severity,
+        title: row.title,
+        detail,
+        count: due ? 1 : 0,
+        href: null,
+      })
+    }
+  } catch (e) {
+    console.warn('[notifications] user alerts check failed', e)
+  }
+
   return alerts
 }
 
@@ -175,6 +229,7 @@ const ALERT_ICON = {
   [ALERT_IDS.license]: ShieldAlert,
   [ALERT_IDS.backup]: HardDrive,
   [ALERT_IDS.documents]: FileText,
+  [ALERT_IDS.user]: CalendarClock,
 }
 
 function ToggleSwitch({ on, disabled, onToggle, accent }) {
@@ -210,9 +265,14 @@ function ToggleSwitch({ on, disabled, onToggle, accent }) {
 
 export default function NotificationBell({ g }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [loading, setLoading] = useState(true)
   const [alerts, setAlerts] = useState([])
   const [silent, setSilent] = useState(() => isNotificationsSilent())
@@ -229,12 +289,12 @@ export default function NotificationBell({ g }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const next = await fetchAlerts()
+      const next = await fetchAlerts(user?.id)
       setAlerts(next)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     load()
@@ -254,6 +314,8 @@ export default function NotificationBell({ g }) {
         setOpen(false)
         setSnoozeFor(null)
         setShowSettings(false)
+        setShowCreate(false)
+        setFormError('')
       }
     }
     document.addEventListener('mousedown', close)
@@ -261,10 +323,10 @@ export default function NotificationBell({ g }) {
   }, [])
 
   const now = Date.now()
-  const visibleAlerts = alerts.filter((a) => isAlertTypeEnabled(a.id))
-  const activeAlerts = visibleAlerts.filter((a) => !isAlertSnoozed(a.id, now))
-  const badgeCount = silent ? 0 : activeAlerts.reduce((s, a) => s + (a.count || 1), 0)
-  const showPulse = !silent && activeAlerts.length > 0
+  const visibleAlerts = alerts.filter((a) => isAlertTypeEnabled(a.typeId || a.id))
+  const activeAlerts = visibleAlerts.filter((a) => a.due !== false && !isAlertSnoozed(a.id, now))
+  const badgeCount = silent ? 0 : activeAlerts.reduce((s, a) => s + (a.count ?? 1), 0)
+  const showPulse = !silent && badgeCount > 0
 
   function toggleSilent() {
     const next = !silent
@@ -290,6 +352,47 @@ export default function NotificationBell({ g }) {
     setSnoozeMap(getSnoozeMap())
   }
 
+  function openCreate() {
+    setShowCreate(true)
+    setShowSettings(false)
+    setSnoozeFor(null)
+    setForm(EMPTY_FORM)
+    setFormError('')
+  }
+
+  function closeCreate() {
+    setShowCreate(false)
+    setFormError('')
+    setSaving(false)
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault()
+    setSaving(true)
+    setFormError('')
+    try {
+      await createUserAlert(form)
+      closeCreate()
+      await load()
+    } catch (err) {
+      setFormError(err?.message || 'Could not save alert.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteUserAlert(alert) {
+    if (!alert?.userAlertId || !alert.canDelete) return
+    try {
+      await deleteUserAlert(alert.userAlertId)
+      clearAlertSnooze(alert.id)
+      setSnoozeMap(getSnoozeMap())
+      setAlerts((prev) => prev.filter((a) => a.id !== alert.id))
+    } catch (err) {
+      console.warn('[notifications] delete user alert failed', err)
+    }
+  }
+
   return (
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
@@ -299,6 +402,8 @@ export default function NotificationBell({ g }) {
           if (!open) {
             load()
             setShowSettings(false)
+            setShowCreate(false)
+            setFormError('')
           }
         }}
         aria-label="Notifications"
@@ -338,7 +443,7 @@ export default function NotificationBell({ g }) {
           position: 'fixed',
           top: PANEL_TOP,
           right: 120,
-          width: 360,
+          width: 380,
           maxWidth: 'calc(100vw - 24px)',
           maxHeight: 'min(480px, calc(100vh - 110px))',
           overflow: 'hidden',
@@ -359,16 +464,18 @@ export default function NotificationBell({ g }) {
           }}>
             <div>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: g.drop.text }}>
-                {showSettings ? 'Alert settings' : 'Alerts'}
+                {showSettings ? 'Alert settings' : showCreate ? 'Create alert' : 'Alerts'}
               </p>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: g.drop.sub }}>
                 {showSettings
                   ? 'Choose which alerts you receive'
-                  : (silent ? 'Silent mode on' : `${activeAlerts.length} active`)}
+                  : showCreate
+                    ? 'Personal or shared reminder'
+                    : (silent ? 'Silent mode on' : `${activeAlerts.length} active`)}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {!showSettings && (
+              {!showSettings && !showCreate && (
                 <button
                   type="button"
                   onClick={toggleSilent}
@@ -386,9 +493,34 @@ export default function NotificationBell({ g }) {
                   {silent ? 'Notification Off' : 'Notification On'}
                 </button>
               )}
+              {!showSettings && (
+                <button
+                  type="button"
+                  onClick={() => (showCreate ? closeCreate() : openCreate())}
+                  title={showCreate ? 'Back to alerts' : 'Create alert'}
+                  aria-label="Create alert"
+                  style={{
+                    height: 28, borderRadius: 8, cursor: 'pointer',
+                    padding: showCreate ? '0 8px' : 0,
+                    width: showCreate ? 'auto' : 28,
+                    border: `1px solid ${showCreate ? g.accent : g.drop.border}`,
+                    background: showCreate ? (g.accentL || 'rgba(37,99,235,0.12)') : 'transparent',
+                    color: showCreate ? g.accent : g.drop.sub,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    fontSize: 11, fontWeight: 700,
+                  }}
+                >
+                  {showCreate ? <X size={14} /> : <Plus size={14} />}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => { setShowSettings((s) => !s); setSnoozeFor(null) }}
+                onClick={() => {
+                  setShowSettings((s) => !s)
+                  setSnoozeFor(null)
+                  setShowCreate(false)
+                  setFormError('')
+                }}
                 title={showSettings ? 'Back to alerts' : 'Alert settings'}
                 aria-label="Alert settings"
                 style={{
@@ -404,7 +536,13 @@ export default function NotificationBell({ g }) {
               </button>
               <button
                 type="button"
-                onClick={() => { setOpen(false); setSnoozeFor(null); setShowSettings(false) }}
+                onClick={() => {
+                  setOpen(false)
+                  setSnoozeFor(null)
+                  setShowSettings(false)
+                  setShowCreate(false)
+                  setFormError('')
+                }}
                 style={{
                   width: 28, height: 28, borderRadius: 8, border: 'none',
                   background: 'transparent', color: g.drop.sub, cursor: 'pointer',
@@ -418,7 +556,122 @@ export default function NotificationBell({ g }) {
 
           {/* Body */}
           <div style={{ overflowY: 'auto', flex: 1, padding: 10 }}>
-            {showSettings ? (
+            {showCreate ? (
+              <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 2px 6px' }}>
+                {(() => {
+                  const inputStyle = {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: `1px solid ${g.drop.border}`,
+                    background: g.drop.bg,
+                    color: g.drop.text,
+                    fontSize: 13,
+                    outline: 'none',
+                  }
+                  const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, marginBottom: 5, color: g.drop.text }
+                  return (
+                    <>
+                      <div>
+                        <label style={labelStyle}>Title</label>
+                        <input
+                          style={inputStyle}
+                          value={form.title}
+                          onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                          placeholder="e.g. BSNL sim recharge"
+                          autoFocus
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Due date</label>
+                        <input
+                          style={inputStyle}
+                          type="date"
+                          value={form.due_date}
+                          onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+                          required
+                        />
+                        <p style={{ margin: '4px 0 0', fontSize: 10, color: g.drop.sub }}>
+                          {form.due_date ? formatDate(form.due_date) : 'DD-MM-YYYY'}
+                        </p>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Alert before</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            style={{ ...inputStyle, width: 88 }}
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={form.alert_days_before}
+                            onChange={(e) => setForm((f) => ({ ...f, alert_days_before: e.target.value }))}
+                            required
+                          />
+                          <span style={{ fontSize: 13, color: g.drop.sub }}>days</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Alert type</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          {USER_ALERT_SCOPES.map((opt) => {
+                            const on = form.scope === opt.id
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setForm((f) => ({ ...f, scope: opt.id }))}
+                                style={{
+                                  padding: '8px 10px',
+                                  borderRadius: 8,
+                                  border: `1px solid ${on ? g.accent : g.drop.border}`,
+                                  background: on ? (g.accentL || 'rgba(37,99,235,0.12)') : 'transparent',
+                                  color: g.drop.text,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      {formError && (
+                        <p style={{ margin: 0, fontSize: 12, color: '#b91c1c' }}>{formError}</p>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <button
+                          type="button"
+                          onClick={closeCreate}
+                          style={{
+                            flex: 1, padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                            border: `1px solid ${g.drop.border}`, background: 'transparent',
+                            color: g.drop.text, fontSize: 13, fontWeight: 700,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          style={{
+                            flex: 1, padding: '9px 10px', borderRadius: 8, cursor: saving ? 'wait' : 'pointer',
+                            border: 'none', background: g.accent || '#2563eb', color: '#fff',
+                            fontSize: 13, fontWeight: 800,
+                            opacity: saving ? 0.75 : 1,
+                          }}
+                        >
+                          {saving ? 'Saving…' : 'Save alert'}
+                        </button>
+                      </div>
+                    </>
+                  )
+                })()}
+              </form>
+            ) : showSettings ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ALERT_TYPE_OPTIONS.map((opt) => {
                   const on = enabledTypes[opt.id] !== false
@@ -483,14 +736,26 @@ export default function NotificationBell({ g }) {
               </div>
             ) : visibleAlerts.length === 0 ? (
               <div style={{ padding: 28, textAlign: 'center', color: g.drop.sub, fontSize: 13 }}>
-                No alerts right now.
+                <p style={{ margin: 0 }}>No alerts right now.</p>
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  style={{
+                    marginTop: 12, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                    border: `1px solid ${g.drop.border}`, background: 'transparent',
+                    color: g.drop.text, fontSize: 12, fontWeight: 700,
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <Plus size={13} /> Create alert
+                </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {visibleAlerts.map((a) => {
                   const snoozed = isAlertSnoozed(a.id, now)
                   const sev = SEVERITY[a.severity] || SEVERITY.info
-                  const Icon = ALERT_ICON[a.id] || Bell
+                  const Icon = ALERT_ICON[a.typeId || a.id] || Bell
                   const until = snoozeMap[a.id]
                   return (
                     <div
@@ -533,8 +798,23 @@ export default function NotificationBell({ g }) {
                             </p>
                           )}
                         </div>
-                        <div style={{ flexShrink: 0, alignSelf: 'center' }}>
-                          {snoozed ? (
+                        <div style={{ flexShrink: 0, alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {a.canDelete && (
+                            <button
+                              type="button"
+                              title="Delete alert"
+                              aria-label="Delete alert"
+                              onClick={() => handleDeleteUserAlert(a)}
+                              style={{
+                                width: 28, height: 28, borderRadius: 7, cursor: 'pointer',
+                                border: `1px solid ${g.drop.border}`, background: 'transparent',
+                                color: g.drop.sub, display: 'grid', placeItems: 'center',
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                          {a.due === false ? null : snoozed ? (
                             <button
                               type="button"
                               onClick={() => handleClearSnooze(a.id)}
@@ -596,6 +876,18 @@ export default function NotificationBell({ g }) {
                     </div>
                   )
                 })}
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  style={{
+                    marginTop: 2, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                    border: `1px dashed ${g.drop.border}`, background: 'transparent',
+                    color: g.drop.text, fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <Plus size={14} /> Create alert
+                </button>
               </div>
             )}
           </div>

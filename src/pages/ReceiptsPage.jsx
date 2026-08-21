@@ -75,6 +75,11 @@ const MODES       = ['Cash', 'Cheque', 'DD', 'Net Banking', 'UPI']
 const FY_MONTHS   = ['April','May','June','July','August','September','October','November','December','January','February','March']
 const FY_MON_S    = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000
+/** Year-wise receipt flush is Super Admin + Admin (`admin1`) only. `admin` is User1. */
+const FY_FLUSH_ROLES = ['super_admin', 'admin1']
+function canFlushReceiptFY(role) {
+  return FY_FLUSH_ROLES.includes(role)
+}
 
 // ════════════════════════════════════════════════════════
 //  LIST PAGE
@@ -760,6 +765,8 @@ export default function ReceiptsPage() {
 // ════════════════════════════════════════════════════════
 
 function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefresh, onDeleteRefresh, toast }) {
+  const { profile } = useAuth()
+  const canFlushFY = canFlushReceiptFY(profile?.role)
   const [unlockingFY,  setUnlockingFY]  = useState(null)
   const [unlockPw,     setUnlockPw]     = useState('')
   const [unlockErr,    setUnlockErr]    = useState('')
@@ -780,7 +787,7 @@ function ReceiptFYManagerPopup({ fyLocks, fyStats, availableFYs, onClose, onRefr
     if (unlockingFY) setTimeout(() => pwRef.current?.focus(), 60)
   }, [unlockingFY])
 
-const lockFY = async (fy) => {
+  const lockFY = async (fy) => {
     const { error } = await supabase.from('receipt_financial_years').upsert({ fy, is_locked: true }, { onConflict: 'fy' })
     if (error) { toast?.('Lock failed: ' + error.message, 'error'); return }
     onRefresh()
@@ -800,6 +807,7 @@ const lockFY = async (fy) => {
   }
 
   const doDelete = async (fy) => {
+    if (!canFlushFY) { setDeleteErr('Only Super Admin or Admin can flush FY data.'); return }
     setDeleting(true); setDeleteErr('')
     try {
       const { error } = await supabase.from('receipt_financial_years').delete().eq('fy', fy)
@@ -817,6 +825,7 @@ const lockFY = async (fy) => {
     setUnlockPw(''); setUnlockErr('')
   }
   const openDelete = (fy) => {
+    if (!canFlushFY) return
     setUnlockingFY(null); setUnlockPw(''); setUnlockErr('')
     setDeletingFY(prev => prev === fy ? null : fy)
     setDeleteErr('')
@@ -901,7 +910,8 @@ const lockFY = async (fy) => {
                     <Lock size={11}/>
                     {locked ? (isUnlocking ? 'Cancel' : 'Unlock…') : 'Lock'}
                   </button>
-                  {/* Delete button */}
+                  {/* Year-wise flush — Super Admin / Admin only */}
+                  {canFlushFY && (
                   <button
                     onClick={() => !locked && openDelete(fy)}
                     disabled={locked}
@@ -918,6 +928,7 @@ const lockFY = async (fy) => {
                     <Trash2 size={11}/>
                     {locked ? 'Locked' : isDeleting ? 'Cancel' : 'Delete'}
                   </button>
+                  )}
                 </div>
 
                 {/* Unlock panel */}
@@ -946,7 +957,7 @@ const lockFY = async (fy) => {
                 )}
 
                 {/* Delete panel */}
-                {isDeleting && (
+                {canFlushFY && isDeleting && (
                   <div style={{ borderTop: '1px solid #f87171', padding: '10px 14px', background: 'rgba(239,68,68,0.07)' }}>
                     {count > 0 ? (
                       <div>
@@ -991,7 +1002,7 @@ const lockFY = async (fy) => {
         </div>
       </div>
 
-      {bulkDeleteFY && (
+      {canFlushFY && bulkDeleteFY && (
         <BulkDeleteModal
           fy={bulkDeleteFY}
           onClose={() => setBulkDeleteFY(null)}
@@ -1963,6 +1974,7 @@ function PasswordGate({ label, onConfirmed, onClose }) {
 //  BULK DELETE MODAL
 // ════════════════════════════════════════════════════════
 function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
+  const { profile } = useAuth()
   const [receipts,   setReceipts]   = useState([])
   const [loading,    setLoading]    = useState(true)
   const [selected,   setSelected]   = useState(new Set())
@@ -1986,6 +1998,10 @@ function BulkDeleteModal({ fy, onClose, onDeleted, toast }) {
   const toggle    = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const doDelete = async () => {
+    if (!canFlushReceiptFY(profile?.role)) {
+      toast('Only Super Admin or Admin can flush FY receipts.', 'error')
+      return
+    }
     if (!pw || deleting || noneSelected) return
     setDeleting(true); setPwErr('')
     const { data: { user } } = await supabase.auth.getUser()

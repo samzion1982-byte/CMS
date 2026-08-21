@@ -12,7 +12,7 @@ import { verifyMasterPassword } from '../lib/masterPassword'
 import { snapshotAuctionTrackerFY, snapshotCloseYearUndo, flushAllAuctionTracker } from '../lib/cmsRecycleBin'
 import { uploadAuctionDocument, deleteAuctionDocument } from '../lib/auctionDocumentsLib'
 import {
-  Gavel, Upload, RefreshCw, Loader2, FileSpreadsheet,
+  Gavel, Upload, Loader2, FileSpreadsheet,
   FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2, Calendar,
   PanelRight, Trash2,
 } from 'lucide-react'
@@ -46,18 +46,20 @@ function nextFY(fy) {
   return `${n}-${String((n + 1) % 100).padStart(2, '0')}`
 }
 
-function fyFromAuctionYear(y) {
-  return `${y}-${String((y + 1) % 100).padStart(2, '0')}`
+function isoDateLocal(d = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
-/** This calendar year's auction (e.g. 2026 → FY 2026-27). Spill-over is not for this year. */
-function currentAuctionFY(now = new Date()) {
-  return fyFromAuctionYear(now.getFullYear())
-}
-
-/** Last calendar year's auction — the year being / just closed (e.g. Aug 2026 → FY 2025-26). */
-function previousCloseAuctionFY(now = new Date()) {
-  return fyFromAuctionYear(now.getFullYear() - 1)
+/** Default spill-over window: FY start (1 Apr) through today (includes payments after 31 Mar). */
+function defaultSpillRangeForFY(fy, now = new Date()) {
+  const y = parseInt(String(fy || '').slice(0, 4), 10)
+  const today = isoDateLocal(now)
+  if (!Number.isFinite(y)) return { from: today, to: today }
+  const from = `${y}-04-01`
+  return { from, to: today < from ? from : today }
 }
 
 function fyOptions() {
@@ -110,7 +112,7 @@ function receiptFYsForAuctionCheck(fy) {
 }
 
 /** Paid totals (+ optional receipt details) for auction category.
- *  Check Status / Close Year: receipts tagged FY + next FY.
+ *  Close Year: receipts tagged FY + next FY.
  *  Spill-over: receipts whose receipt_date is in [dateFrom, dateTo] (inclusive).
  */
 async function fetchAuctionPaidForFY(fy, { withDetails = false, dateFrom, dateTo } = {}) {
@@ -242,7 +244,7 @@ async function parseAuctionFile(file) {
         const data = []
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const row = rows[i]
-          const memberId = String(row[ci.memberId] || '').trim()
+          const memberId = String(row[ci.memberId] || '').trim().toUpperCase()
           if (!memberId) continue
           const memberName          = String(row[ci.memberName] || '').trim()
           const previousPending     = ci.previousPending     >= 0 ? parseNum(row[ci.previousPending])     : 0
@@ -307,12 +309,15 @@ async function parseTotalPurchaseFile(file) {
         const ci = {
           memberId:   idxOf('member id', 'memberid'),
           memberName: idxOf('member name', 'name'),
-          currentYearPurchase: idxOf('current year purchase', 'current year', 'purchase'),
+          previousPending: idxOf('previous pending', 'prev. pending', 'prev pending'),
+          currentYearPurchase: idxOf('current year purchase', 'current year'),
         }
+        if (ci.currentYearPurchase === -1) ci.currentYearPurchase = idxOf('purchase')
         if (ci.memberId === -1) throw new Error('Column "Member ID" not found on Total Purchase sheet')
         if (ci.memberName === -1) throw new Error('Column "Member Name" not found on Total Purchase sheet')
         if (ci.currentYearPurchase === -1) throw new Error('Column "Current Year Purchase" not found on Total Purchase sheet')
 
+        const hasPrevCol = ci.previousPending >= 0
         const data = []
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const row = rows[i]
@@ -321,12 +326,14 @@ async function parseTotalPurchaseFile(file) {
           if (!memberId) continue
           if (/^grand\s*total$/i.test(nameRaw)) continue
           const current_year_purchase = parseNum(row[ci.currentYearPurchase])
+          const previous_pending = hasPrevCol ? parseNum(row[ci.previousPending]) : null
+          const prevAmt = previous_pending || 0
           data.push({
             member_id: memberId,
             member_name: nameRaw,
-            previous_pending: 0,
+            previous_pending,
             current_year_purchase,
-            total: current_year_purchase,
+            total: prevAmt + current_year_purchase,
           })
         }
         if (data.length === 0) throw new Error('No member rows found on Total Purchase sheet')
@@ -667,18 +674,15 @@ export default function AuctionReportPage() {
 
   const [filterFY,      setFilterFY]      = useState(() => getFY())
   const [trackerRows,   setTrackerRows]   = useState([])   // imported data from auction_tracker
-  const [reportRows,    setReportRows]    = useState([])   // after Check Status
+  const [reportRows,    setReportRows]    = useState([])   // after Spill-over Report
   const [generated,       setGenerated]       = useState(false)
   const [loadingImport,   setLoadingImport]   = useState(false)
-  const [loadingCheck,    setLoadingCheck]    = useState(false)
   const [loadingData,     setLoadingData]     = useState(false)
   const [exporting,       setExporting]       = useState(false)
-  const [preview,         setPreview]         = useState(null) // { rows, fileName, mode: 'initial'|'current_year' }
+  const [preview,         setPreview]         = useState(null) // { rows, fileName, mode, file }
   const [church,          setChurch]          = useState(null)
   const [paidDetailsMap,  setPaidDetailsMap]  = useState({})  // member_id → [{receipt_number,receipt_date,month_paid,payment_mode,amount}]
   const [expandedMember,  setExpandedMember]  = useState(null)
-  const [importModalOpen, setImportModalOpen] = useState(false)
-  const [importMode,      setImportMode]      = useState(null) // 'initial' | 'current_year'
   const [closeModalOpen,  setCloseModalOpen]  = useState(false)
   const [closePw,         setClosePw]         = useState('')
   const [closePwError,    setClosePwError]    = useState('')
@@ -692,10 +696,10 @@ export default function AuctionReportPage() {
   const [showRevertPw,    setShowRevertPw]    = useState(false)
   const [loadingRevert,   setLoadingRevert]   = useState(false)
   const [spillModalOpen,  setSpillModalOpen]  = useState(false)
-  const [spillFrom,       setSpillFrom]       = useState('')
-  const [spillTo,         setSpillTo]         = useState('')
+  const [spillFrom,       setSpillFrom]       = useState(() => defaultSpillRangeForFY(getFY()).from)
+  const [spillTo,         setSpillTo]         = useState(() => defaultSpillRangeForFY(getFY()).to)
   const [loadingSpill,    setLoadingSpill]    = useState(false)
-  const [reportKind,      setReportKind]      = useState('status') // 'status' | 'spillover'
+  const [reportKind,      setReportKind]      = useState('spillover') // 'spillover'
   const [spillRange,      setSpillRange]      = useState(null) // { from, to } when spillover generated
   const [docsPanelOpen,   setDocsPanelOpen]   = useState(true)
   const [docsRefreshKey,  setDocsRefreshKey]  = useState(0)
@@ -715,8 +719,6 @@ export default function AuctionReportPage() {
   const currYearColLabel = String(auctionYear)
   const isSpillReport = reportKind === 'spillover' && spillRange
   const spillRangeLabel = isSpillReport ? `${fmtDateIN(spillRange.from)} to ${fmtDateIN(spillRange.to)}` : ''
-  const spilloverFY = previousCloseAuctionFY()
-  const spilloverAllowed = filterFY === spilloverFY
 
   useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
 
@@ -733,7 +735,7 @@ export default function AuctionReportPage() {
         .order('member_name')
       if (error) throw error
       setTrackerRows(data || [])
-      setReportKind('status')
+      setReportKind('spillover')
       setSpillRange(null)
     } catch (e) {
       toast(e.message, 'error')
@@ -747,28 +749,34 @@ export default function AuctionReportPage() {
     setFilterFY(fy)
     setPreview(null)
     setSpillModalOpen(false)
-  }
-
-  // ── File pick & parse ──────────────────────────────────────────
-  const openImportPicker = (mode) => {
-    setImportMode(mode)
-    setImportModalOpen(false)
-    // defer so modal closes before native file dialog
-    setTimeout(() => fileRef.current?.click(), 0)
+    const range = defaultSpillRangeForFY(fy)
+    setSpillFrom(range.from)
+    setSpillTo(range.to)
   }
 
   const handleFilePick = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
-    const mode = importMode || 'initial'
-    setImportMode(null)
     if (!file) return
     setLoadingImport(true)
     try {
-      const rows = mode === 'current_year'
+      const xlsxMod = await import('xlsx')
+      const { read } = xlsxMod.default ?? xlsxMod
+      const buf = await file.arrayBuffer()
+      const wb = read(buf, { type: 'array' })
+      const hasTotalPurchase = (wb.SheetNames || []).some((n) => {
+        const l = String(n).toLowerCase()
+        return l.includes('total purchase') || l === 'total purchase'
+      })
+      const rows = hasTotalPurchase
         ? await parseTotalPurchaseFile(file)
         : await parseAuctionFile(file)
-      setPreview({ rows, fileName: file.name, mode, file })
+      setPreview({
+        rows,
+        fileName: file.name,
+        mode: hasTotalPurchase ? 'total_purchase' : 'tracker',
+        file,
+      })
     } catch (err) {
       toast(err.message, 'error')
     }
@@ -781,88 +789,62 @@ export default function AuctionReportPage() {
     setLoadingImport(true)
     try {
       const seen = new Map()
-      preview.rows.forEach(r => seen.set(r.member_id, r))
+      preview.rows.forEach(r => seen.set(String(r.member_id || '').trim().toUpperCase(), r))
       const fileRows = [...seen.values()]
 
-      if (preview.mode === 'current_year') {
-        // Snapshot current FY before merge (Recycle Bin restore)
-        await snapshotAuctionTrackerFY(filterFY, {
-          operation: 'current_year_upload',
-          notes: `Before current-year purchase upload (${preview.fileName})`,
-        })
+      await snapshotAuctionTrackerFY(filterFY, {
+        operation: 'total_purchase_upload',
+        notes: `Before Total Purchase import (${preview.fileName})`,
+      })
 
-        // Merge/update: refresh current_year_purchase; keep previous_pending
-        const { data: existing, error: loadErr } = await supabase
-          .from('auction_tracker')
-          .select('member_id,member_name,previous_pending,current_year_purchase,total')
-          .eq('financial_year', filterFY)
-        if (loadErr) throw loadErr
+      const { data: existing, error: loadErr } = await supabase
+        .from('auction_tracker')
+        .select('member_id,member_name,previous_pending,current_year_purchase,total')
+        .eq('financial_year', filterFY)
+      if (loadErr) throw loadErr
 
-        const existingMap = new Map((existing || []).map(r => [r.member_id, r]))
-        const upserts = fileRows.map(r => {
-          const prev = existingMap.get(r.member_id)
-          const previous_pending = prev ? (Number(prev.previous_pending) || 0) : 0
-          const current_year_purchase = Number(r.current_year_purchase) || 0
-          return {
-            member_id: r.member_id,
-            member_name: r.member_name || prev?.member_name || '',
-            previous_pending,
-            current_year_purchase,
-            total: previous_pending + current_year_purchase,
-            financial_year: filterFY,
-          }
-        })
-
-        const CHUNK = 500
-        for (let i = 0; i < upserts.length; i += CHUNK) {
-          const { error } = await supabase
-            .from('auction_tracker')
-            .upsert(upserts.slice(i, i + CHUNK), { onConflict: 'financial_year,member_id' })
-          if (error) throw error
+      const existingMap = new Map(
+        (existing || []).map(r => [String(r.member_id || '').trim().toUpperCase(), r]),
+      )
+      const upserts = fileRows.map(r => {
+        const key = String(r.member_id || '').trim().toUpperCase()
+        const prev = existingMap.get(key)
+        const fromFilePrev = r.previous_pending != null
+        const previous_pending = fromFilePrev
+          ? (Number(r.previous_pending) || 0)
+          : (prev ? (Number(prev.previous_pending) || 0) : 0)
+        const current_year_purchase = Number(r.current_year_purchase) || 0
+        return {
+          member_id: prev?.member_id || key,
+          member_name: r.member_name || prev?.member_name || '',
+          previous_pending,
+          current_year_purchase,
+          total: previous_pending + current_year_purchase,
+          financial_year: filterFY,
         }
+      })
 
-        await logCmsAudit({
-          action: 'saved', module: 'finance', entityType: 'auction_tracker',
-          entityId: filterFY,
-          summary: `Merged ${upserts.length} current-year purchase rows (FY ${filterFY})`,
-        })
-        toast(`Updated current year purchase for ${upserts.length} members (FY ${filterFY}). Previous state saved to Recycle Bin.`, 'success')
-      } else {
-        // Snapshot before replace (Recycle Bin restore)
-        await snapshotAuctionTrackerFY(filterFY, {
-          operation: 'initial_setup',
-          notes: `Before initial setup import (${preview.fileName})`,
-        })
-
-        // Initial setup: replace all rows for FY
-        const { error: delErr } = await supabase
+      const CHUNK = 500
+      for (let i = 0; i < upserts.length; i += CHUNK) {
+        const { error } = await supabase
           .from('auction_tracker')
-          .delete()
-          .eq('financial_year', filterFY)
-        if (delErr) throw delErr
-
-        const insRows = fileRows.map(r => ({ ...r, financial_year: filterFY }))
-        const CHUNK = 500
-        for (let i = 0; i < insRows.length; i += CHUNK) {
-          const { error } = await supabase
-            .from('auction_tracker')
-            .upsert(insRows.slice(i, i + CHUNK), { onConflict: 'financial_year,member_id' })
-          if (error) throw error
-        }
-
-        await logCmsAudit({
-          action: 'saved', module: 'finance', entityType: 'auction_tracker',
-          entityId: filterFY, summary: `Initial import ${insRows.length} auction tracker rows (FY ${filterFY})`,
-        })
-        toast(`${insRows.length} rows imported for FY ${filterFY}. Previous state saved to Recycle Bin (if any).`, 'success')
+          .upsert(upserts.slice(i, i + CHUNK), { onConflict: 'financial_year,member_id' })
+        if (error) throw error
       }
+
+      await logCmsAudit({
+        action: 'saved', module: 'finance', entityType: 'auction_tracker',
+        entityId: filterFY,
+        summary: `Imported ${upserts.length} Total Purchase rows (FY ${filterFY})`,
+      })
+      toast(`Imported ${upserts.length} members for FY ${filterFY} (Previous Pending + Current Year). Previous state is in Recycle Bin.`, 'success')
 
       if (preview.file) {
         try {
           await uploadAuctionDocument({
             fy: filterFY,
             file: preview.file,
-            kind: preview.mode === 'current_year' ? 'current_year' : 'initial',
+            kind: 'current_year',
           })
           setDocsRefreshKey((k) => k + 1)
         } catch (fileErr) {
@@ -880,39 +862,9 @@ export default function AuctionReportPage() {
     setLoadingImport(false)
   }
 
-  // ── Check Status ───────────────────────────────────────────────
-  const checkStatus = async () => {
-    if (!trackerRows.length) { toast('Import the Auction Payment Tracker first', 'error'); return }
-    setLoadingCheck(true)
-    setExpandedMember(null)
-    try {
-      const { paidMap, detailsMap } = await fetchAuctionPaidForFY(filterFY, { withDetails: true })
-      const rows = trackerRows.map(tr => ({
-        ...tr,
-        previous_pending:      Number(tr.previous_pending)      || 0,
-        current_year_purchase: Number(tr.current_year_purchase) || 0,
-        total:                 Number(tr.total)                 || 0,
-        paid:    paidMap[tr.member_id] || 0,
-        balance: (Number(tr.total) || 0) - (paidMap[tr.member_id] || 0),
-      }))
-      setReportRows(rows)
-      setPaidDetailsMap(detailsMap)
-      setGenerated(true)
-      setReportKind('status')
-      setSpillRange(null)
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-    setLoadingCheck(false)
-  }
-
   // ── Spill-over report (payments in a chosen date range only) ──
   const confirmSpilloverReport = async () => {
-    if (!spilloverAllowed) {
-      toast(`Spill-over is only for the previous closed auction year (FY ${spilloverFY})`, 'error')
-      return
-    }
-    if (!trackerRows.length) { toast('Import the Auction Payment Tracker first', 'error'); return }
+    if (!trackerRows.length) { toast('Import the Total Purchase file first', 'error'); return }
     if (!spillFrom || !spillTo) { toast('Select a date range', 'error'); return }
     if (spillFrom > spillTo) { toast('From date must be on or before To date', 'error'); return }
     setLoadingSpill(true)
@@ -1598,7 +1550,7 @@ export default function AuctionReportPage() {
       <PageHeader
         icon={Gavel}
         title="Auction Report"
-        subtitle="Import tracker or current-year purchase, check payment status, spill-over report, and export"
+        subtitle="Import Total Purchase, run Spill-over Report, and export"
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePick} />
@@ -1613,7 +1565,7 @@ export default function AuctionReportPage() {
           </a>
           <button
             className="action-btn"
-            onClick={() => setImportModalOpen(true)}
+            onClick={() => fileRef.current?.click()}
             disabled={loadingImport}
             style={{ background: 'var(--sidebar-bg)' }}
           >
@@ -1623,24 +1575,15 @@ export default function AuctionReportPage() {
 
           <button
             className="action-btn"
-            onClick={checkStatus}
-            disabled={loadingCheck || loadingSpill || !trackerRows.length}
+            onClick={() => {
+              const range = defaultSpillRangeForFY(filterFY)
+              if (!spillFrom) setSpillFrom(range.from)
+              if (!spillTo) setSpillTo(range.to)
+              setSpillModalOpen(true)
+            }}
+            disabled={loadingSpill || !trackerRows.length}
             style={{ background: '#2563eb' }}
-          >
-            {loadingCheck ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            {loadingCheck ? 'Checking…' : 'Check Status'}
-          </button>
-
-          <button
-            className="action-btn"
-            onClick={() => setSpillModalOpen(true)}
-            disabled={loadingSpill || loadingCheck || !trackerRows.length || !spilloverAllowed}
-            style={{ background: '#0e7490', opacity: !spilloverAllowed && trackerRows.length ? 0.45 : undefined }}
-            title={
-              !spilloverAllowed
-                ? `Spill-over is only for the previous closed auction year (FY ${spilloverFY}), not the current year (FY ${currentAuctionFY()})`
-                : 'Spill-over report — opening, payments in a date range, and remaining balance'
-            }
+            title="Opening, payments in a date range, and remaining balance"
           >
             {loadingSpill ? <Loader2 size={13} className="animate-spin" /> : <Calendar size={13} />}
             {loadingSpill ? 'Preparing…' : 'Spill-over Report'}
@@ -1727,70 +1670,10 @@ export default function AuctionReportPage() {
         {trackerRows.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 4 }}>
             {trackerRows.length} members imported · Auction {auctionYear}
-            {generated ? ` · ${reportRows.length} ${isSpillReport ? 'spill-over' : 'checked'}` : ' · Check Status or Spill-over Report'}
+            {generated ? ` · ${reportRows.length} spill-over` : ' · Spill-over Report'}
           </span>
         )}
       </div>
-
-      {/* ── Import mode popup ── */}
-      {importModalOpen && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed', inset: 0, zIndex: 80,
-            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-          }}
-          onClick={() => setImportModalOpen(false)}
-        >
-          <div
-            className="card"
-            style={{ width: '100%', maxWidth: 440, padding: 24, position: 'relative' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => setImportModalOpen(false)}
-              style={{ position: 'absolute', top: 12, right: 12, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
-            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>Import Auction Data</h3>
-            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-              Choose how you want to load data for FY <strong>{filterFY}</strong>.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button
-                type="button"
-                className="action-btn"
-                onClick={() => openImportPicker('initial')}
-                style={{ background: 'var(--sidebar-bg)', justifyContent: 'flex-start', padding: '14px 16px', height: 'auto', whiteSpace: 'normal', textAlign: 'left' }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>Initial setup</div>
-                  <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>
-                    Full tracker (Previous Pending + Current Year). Replaces all rows for this FY.
-                  </div>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="action-btn"
-                onClick={() => openImportPicker('current_year')}
-                style={{ background: '#2563eb', justifyContent: 'flex-start', padding: '14px 16px', height: 'auto', whiteSpace: 'normal', textAlign: 'left' }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>Upload current year purchase</div>
-                  <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 500 }}>
-                    From Total Purchase sheet. Merges / updates Current Year Purchase only.
-                  </div>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Spill-over date range ── */}
       {spillModalOpen && (
@@ -1822,7 +1705,8 @@ export default function AuctionReportPage() {
             </h3>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
               Tracker members for FY <strong>{filterFY}</strong>. Opening is Previous Pending.
-              Payments counted only when the receipt date is in this range. Does not close the year.
+              Payments are counted when the receipt date falls in this range (any financial year).
+              Defaults to 1 Apr of this FY through today. Does not close the year.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
@@ -1877,25 +1761,22 @@ export default function AuctionReportPage() {
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
                 Ready to import: {preview.fileName}
-                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: preview.mode === 'current_year' ? '#dbeafe' : '#e2e8f0', color: preview.mode === 'current_year' ? '#1d4ed8' : '#475569' }}>
-                  {preview.mode === 'current_year' ? 'Current year purchase' : 'Initial setup'}
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8' }}>
+                  {preview.mode === 'total_purchase' ? 'Total Purchase' : 'Auction Tracker'}
                 </span>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
                 {preview.rows.length} member rows found for FY <strong>{filterFY}</strong>.
-                {preview.mode === 'current_year'
-                  ? <> This will <strong>merge/update</strong> Current Year Purchase (Previous Pending is kept).</>
-                  : <> This will <strong>replace</strong> any existing data for this FY.</>}
+                This will <strong>merge/update</strong> by Member ID. Previous Pending and Current Year Purchase
+                are both saved. Blank Previous Pending is stored as 0. Older Total Purchase files without that
+                column keep existing Previous Pending.
               </div>
               {/* mini preview table */}
               <div style={{ overflowX: 'auto', marginBottom: 12 }}>
                 <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 500 }}>
                   <thead>
                     <tr style={{ background: 'var(--table-header-bg)' }}>
-                      {(preview.mode === 'current_year'
-                        ? ['Member ID', 'Member Name', currYearColLabel]
-                        : ['Member ID', 'Member Name', 'Prev. Pending', currYearColLabel, 'Total']
-                      ).map(h => (
+                      {['Member ID', 'Member Name', 'Prev. Pending', currYearColLabel, 'Total'].map(h => (
                         <th key={h} style={{ padding: '6px 10px', fontWeight: 700, color: 'var(--text-3)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -1905,17 +1786,13 @@ export default function AuctionReportPage() {
                       <tr key={i} style={{ borderTop: '1px solid var(--table-border)' }}>
                         <td style={{ padding: '5px 10px', fontFamily: 'monospace', fontSize: 12 }}>{r.member_id}</td>
                         <td style={{ padding: '5px 10px', fontSize: 12 }}>{r.member_name}</td>
-                        {preview.mode !== 'current_year' && (
-                          <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{r.previous_pending > 0 ? r.previous_pending.toLocaleString('en-IN') : '—'}</td>
-                        )}
+                        <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{r.previous_pending > 0 ? Number(r.previous_pending).toLocaleString('en-IN') : '—'}</td>
                         <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{r.current_year_purchase > 0 ? r.current_year_purchase.toLocaleString('en-IN') : '—'}</td>
-                        {preview.mode !== 'current_year' && (
-                          <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{r.total > 0 ? r.total.toLocaleString('en-IN') : '—'}</td>
-                        )}
+                        <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 600 }}>{r.total > 0 ? r.total.toLocaleString('en-IN') : '—'}</td>
                       </tr>
                     ))}
                     {preview.rows.length > 5 && (
-                      <tr><td colSpan={preview.mode === 'current_year' ? 3 : 5} style={{ padding: '5px 10px', color: 'var(--text-3)', fontSize: 11, fontStyle: 'italic' }}>…and {preview.rows.length - 5} more rows</td></tr>
+                      <tr><td colSpan={5} style={{ padding: '5px 10px', color: 'var(--text-3)', fontSize: 11, fontStyle: 'italic' }}>…and {preview.rows.length - 5} more rows</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1942,7 +1819,7 @@ export default function AuctionReportPage() {
           <Gavel size={40} style={{ color: 'var(--text-3)', margin: '0 auto 12px', display: 'block' }} />
           <p style={{ color: 'var(--text-2)', fontWeight: 600, margin: '0 0 6px' }}>No Auction Tracker data for FY {filterFY}</p>
           <p style={{ color: 'var(--text-3)', fontSize: 13, margin: 0 }}>
-            Import the "Auction Payment Tracker" Excel file to get started
+            Import the Prep Template Total Purchase sheet (Previous Pending is optional)
           </p>
         </div>
       )}
@@ -1953,8 +1830,8 @@ export default function AuctionReportPage() {
         </div>
       )}
 
-      {/* ── Report section (after Check Status) ── */}
-      {generated && !loadingCheck && !loadingSpill && (
+      {/* ── Report section ── */}
+      {generated && !loadingSpill && (
         <>
           {/* Summary cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
@@ -2072,9 +1949,7 @@ export default function AuctionReportPage() {
                               {details.length === 0 ? (
                                 <div style={{ padding: '10px 0', fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic' }}>
                                   No auction receipts found for this member
-                                  {isSpillReport
-                                    ? ` (${spillRangeLabel})`
-                                    : ` (FY ${filterFY} / ${nextFY(filterFY)})`}
+                                  {spillRangeLabel ? ` (${spillRangeLabel})` : ''}
                                 </div>
                               ) : (
                                 <table style={{ borderCollapse: 'collapse', fontSize: 12, marginTop: 8 }}>
@@ -2161,12 +2036,12 @@ export default function AuctionReportPage() {
         </>
       )}
 
-      {/* ── Tracker list (imported, before Check Status) ── */}
+      {/* ── Tracker list (imported, before Spill-over Report) ── */}
       {!generated && !loadingData && trackerRows.length > 0 && (
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--table-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>Imported Tracker — FY {filterFY}</h3>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{trackerRows.length} members · Check Status or Spill-over Report</span>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{trackerRows.length} members · Spill-over Report</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>

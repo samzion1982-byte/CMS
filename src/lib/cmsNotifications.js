@@ -11,6 +11,7 @@ export const ALERT_IDS = {
   license: 'license',
   backup: 'backup',
   documents: 'documents',
+  user: 'user',
 }
 
 /** Toggle rows in the Alerts settings panel. License is always on. */
@@ -37,6 +38,12 @@ export const ALERT_TYPE_OPTIONS = [
     id: ALERT_IDS.documents,
     label: 'Documents - Renewal',
     description: 'Subscription and warranty alerts from Documents',
+    locked: false,
+  },
+  {
+    id: ALERT_IDS.user,
+    label: 'My reminders',
+    description: 'Alerts you create, plus shared reminders from others',
     locked: false,
   },
 ]
@@ -83,6 +90,7 @@ export function getEnabledAlertTypes() {
     [ALERT_IDS.license]: true,
     [ALERT_IDS.backup]: true,
     [ALERT_IDS.documents]: true,
+    [ALERT_IDS.user]: true,
   }
   const stored = readJson(ENABLED_KEY, {})
   const merged = {
@@ -96,7 +104,10 @@ export function getEnabledAlertTypes() {
 
 export function isAlertTypeEnabled(alertId) {
   if (alertId === ALERT_IDS.license) return true
-  return getEnabledAlertTypes()[alertId] !== false
+  const typeId = typeof alertId === 'string' && alertId.startsWith('user:')
+    ? ALERT_IDS.user
+    : alertId
+  return getEnabledAlertTypes()[typeId] !== false
 }
 
 export function setAlertTypeEnabled(alertId, enabled) {

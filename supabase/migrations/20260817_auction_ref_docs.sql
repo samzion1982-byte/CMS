@@ -8,7 +8,9 @@ SET allowed_mime_types = (
       COALESCE(allowed_mime_types, ARRAY[]::text[])
       || ARRAY[
         'application/vnd.ms-excel.sheet.macroEnabled.12',
+        'application/vnd.ms-excel.sheet.macroenabled.12',
         'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+        'application/vnd.ms-excel.sheet.binary.macroenabled.12',
         'text/csv',
         'text/plain',
         'application/octet-stream'

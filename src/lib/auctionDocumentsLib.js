@@ -15,7 +15,7 @@ const KINDS = new Set(['initial', 'current_year', 'reference'])
 
 export function auctionDocKindLabel(kind) {
   if (kind === 'initial') return 'Initial setup'
-  if (kind === 'current_year') return 'Current year'
+  if (kind === 'current_year') return 'Total Purchase'
   return 'Reference'
 }
 
@@ -43,12 +43,15 @@ function isFolderEntry(item) {
 }
 
 function mimeForAuctionFile(file) {
-  if (file?.type) return file.type
   const ext = String(file?.name || '').split('.').pop()?.toLowerCase()
+  // Map by extension first. Browsers send xlsm as
+  // application/vnd.ms-excel.sheet.macroenabled.12, which the
+  // church-documents bucket rejects unless the allow-list is updated.
+  // xlsx MIME is already allowed and keeps the .xlsm filename.
   const map = {
     xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
-    xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+    xlsm: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    xlsb: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     xls: 'application/vnd.ms-excel',
     csv: 'text/csv',
     pdf: 'application/pdf',
@@ -58,7 +61,8 @@ function mimeForAuctionFile(file) {
     webp: 'image/webp',
     gif: 'image/gif',
   }
-  return map[ext] || 'application/octet-stream'
+  if (map[ext]) return map[ext]
+  return file?.type || 'application/octet-stream'
 }
 
 function missingOk(error) {
