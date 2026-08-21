@@ -47,6 +47,30 @@ export async function createUserAlert({ title, due_date, alert_days_before, scop
   return data
 }
 
+export async function updateUserAlert(id, { title, due_date, alert_days_before, scope }) {
+  if (!id) throw new Error('Missing alert.')
+  const trimmed = String(title || '').trim()
+  if (!trimmed) throw new Error('Enter a title.')
+  if (!due_date) throw new Error('Choose a due date.')
+  const days = normalizeAlertDays(alert_days_before)
+  if (!days) throw new Error('Alert before must be between 1 and 365 days.')
+  const nextScope = scope === 'all' ? 'all' : 'self'
+
+  const { data, error } = await supabase
+    .from('user_alerts')
+    .update({
+      title: trimmed,
+      due_date,
+      alert_days_before: days,
+      scope: nextScope,
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function deleteUserAlert(id) {
   if (!id) return
   const { error } = await supabase.from('user_alerts').delete().eq('id', id)

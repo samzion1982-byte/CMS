@@ -14,6 +14,7 @@ import {
   deleteUserAlert,
   isUserAlertDue,
   listUserAlerts,
+  updateUserAlert,
   USER_ALERT_SCOPES,
 } from '../../lib/userAlertsLib'
 import {
@@ -203,6 +204,9 @@ async function fetchAlerts(userId) {
         typeId: ALERT_IDS.user,
         userAlertId: row.id,
         canDelete: mine,
+        due_date: row.due_date,
+        alert_days_before: row.alert_days_before,
+        scope: row.scope,
         due,
         severity,
         title: row.title,
@@ -360,18 +364,35 @@ export default function NotificationBell({ g }) {
     setFormError('')
   }
 
+  function openEdit(alert) {
+    if (!alert?.userAlertId || !alert.canDelete) return
+    setShowCreate(true)
+    setShowSettings(false)
+    setSnoozeFor(null)
+    setForm({
+      id: alert.userAlertId,
+      title: alert.title || '',
+      due_date: String(alert.due_date || '').slice(0, 10),
+      alert_days_before: String(alert.alert_days_before || 10),
+      scope: alert.scope === 'all' ? 'all' : 'self',
+    })
+    setFormError('')
+  }
+
   function closeCreate() {
     setShowCreate(false)
     setFormError('')
     setSaving(false)
+    setForm(EMPTY_FORM)
   }
 
-  async function handleCreate(e) {
+  async function handleSaveAlert(e) {
     e.preventDefault()
     setSaving(true)
     setFormError('')
     try {
-      await createUserAlert(form)
+      if (form.id) await updateUserAlert(form.id, form)
+      else await createUserAlert(form)
       closeCreate()
       await load()
     } catch (err) {
@@ -464,13 +485,13 @@ export default function NotificationBell({ g }) {
           }}>
             <div>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: g.drop.text }}>
-                {showSettings ? 'Alert settings' : showCreate ? 'Create alert' : 'Alerts'}
+                {showSettings ? 'Alert settings' : showCreate ? (form.id ? 'Edit alert' : 'Create alert') : 'Alerts'}
               </p>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: g.drop.sub }}>
                 {showSettings
                   ? 'Choose which alerts you receive'
                   : showCreate
-                    ? 'Personal or shared reminder'
+                    ? (form.id ? 'Update your reminder' : 'Personal or shared reminder')
                     : (silent ? 'Silent mode on' : `${activeAlerts.length} active`)}
               </p>
             </div>
@@ -504,13 +525,13 @@ export default function NotificationBell({ g }) {
                     height: 28, borderRadius: 8, cursor: 'pointer',
                     padding: showCreate ? '0 8px' : 0,
                     width: showCreate ? 'auto' : 28,
-                    border: showCreate ? `1px solid ${g.accent}` : 'none',
-                    background: showCreate ? (g.accentL || 'rgba(37,99,235,0.12)') : g.accent,
-                    color: showCreate ? g.accent : '#fff',
+                    border: showCreate ? `1px solid ${g.drop.border}` : 'none',
+                    background: showCreate ? 'transparent' : g.drop.text,
+                    color: showCreate ? g.drop.sub : g.drop.bg,
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                     fontSize: 11, fontWeight: 700,
                     position: 'relative',
-                    ['--plus-glow']: g.accent,
+                    ['--plus-glow']: g.drop.text,
                   }}
                 >
                   {showCreate ? <X size={14} /> : <Plus size={14} />}
@@ -560,7 +581,7 @@ export default function NotificationBell({ g }) {
           {/* Body */}
           <div style={{ overflowY: 'auto', flex: 1, padding: 10 }}>
             {showCreate ? (
-              <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 2px 6px' }}>
+              <form onSubmit={handleSaveAlert} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 2px 6px' }}>
                 {(() => {
                   const inputStyle = {
                     width: '100%',
@@ -667,7 +688,7 @@ export default function NotificationBell({ g }) {
                             opacity: saving ? 0.75 : 1,
                           }}
                         >
-                          {saving ? 'Saving…' : 'Save alert'}
+                          {saving ? 'Saving…' : (form.id ? 'Save changes' : 'Save alert')}
                         </button>
                       </div>
                     </>
@@ -739,19 +760,7 @@ export default function NotificationBell({ g }) {
               </div>
             ) : visibleAlerts.length === 0 ? (
               <div style={{ padding: 28, textAlign: 'center', color: g.drop.sub, fontSize: 13 }}>
-                <p style={{ margin: 0 }}>No alerts right now.</p>
-                <button
-                  type="button"
-                  onClick={openCreate}
-                  style={{
-                    marginTop: 12, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                    border: `1px solid ${g.drop.border}`, background: 'transparent',
-                    color: g.drop.text, fontSize: 12, fontWeight: 700,
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  <Plus size={13} /> Create alert
-                </button>
+                No alerts right now.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -772,12 +781,18 @@ export default function NotificationBell({ g }) {
                       }}
                     >
                       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                        <div style={{
-                          width: 34, height: 34, borderRadius: 9, flexShrink: 0,
-                          background: snoozed ? g.drop.hov : '#fff',
-                          border: `1px solid ${snoozed ? g.drop.border : sev.border}`,
-                          display: 'grid', placeItems: 'center',
-                        }}>
+                        <div
+                          role={a.canDelete ? 'button' : undefined}
+                          title={a.canDelete ? 'Edit alert' : undefined}
+                          onClick={() => openEdit(a)}
+                          style={{
+                            width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+                            background: snoozed ? g.drop.hov : '#fff',
+                            border: `1px solid ${snoozed ? g.drop.border : sev.border}`,
+                            display: 'grid', placeItems: 'center',
+                            cursor: a.canDelete ? 'pointer' : 'default',
+                          }}
+                        >
                           <Icon size={15} color={snoozed ? g.drop.sub : sev.icon} />
                         </div>
                         <div
@@ -879,18 +894,6 @@ export default function NotificationBell({ g }) {
                     </div>
                   )
                 })}
-                <button
-                  type="button"
-                  onClick={openCreate}
-                  style={{
-                    marginTop: 2, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-                    border: `1px dashed ${g.drop.border}`, background: 'transparent',
-                    color: g.drop.text, fontSize: 12, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}
-                >
-                  <Plus size={14} /> Create alert
-                </button>
               </div>
             )}
           </div>
@@ -911,26 +914,13 @@ export default function NotificationBell({ g }) {
           transform-origin: top center;
         }
         .notif-create-plus {
-          box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 55%, transparent);
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #071428) 45%, transparent);
           animation: notifPlusPulse 1.8s ease-out infinite;
         }
-        .notif-create-plus::after {
-          content: '';
-          position: absolute;
-          inset: -40% -60%;
-          background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.55) 50%, transparent 65%);
-          animation: notifPlusShine 2.4s ease-in-out infinite;
-          pointer-events: none;
-        }
         @keyframes notifPlusPulse {
-          0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 50%, transparent); transform: scale(1); }
-          55%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--plus-glow, #22c55e) 0%, transparent); transform: scale(1.06); }
-          100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #22c55e) 0%, transparent); transform: scale(1); }
-        }
-        @keyframes notifPlusShine {
-          0%   { transform: translateX(-30%); opacity: 0; }
-          30%  { opacity: 1; }
-          100% { transform: translateX(30%); opacity: 0; }
+          0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #071428) 45%, transparent); transform: scale(1); }
+          55%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--plus-glow, #071428) 0%, transparent); transform: scale(1.06); }
+          100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #071428) 0%, transparent); transform: scale(1); }
         }
       `}</style>
     </div>
