@@ -329,6 +329,7 @@ export default function JournalTemplatesPage() {
   useEffect(() => { load() }, [load])
 
   async function handleDelete(id) {
+    if (!window.confirm('Delete this journal template?')) return
     setDeleting(id)
     try {
       const { error } = await supabase.from('journal_templates').delete().eq('id', id)

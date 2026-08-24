@@ -16,11 +16,18 @@ const NAV = [
   { group: 'MAIN', items: [
     { label: 'Dashboard',        path: '/dashboard',     icon: LayoutDashboard },
     { label: 'Members',          path: '/members',       icon: Users           },
-    { label: 'Asset Management', path: '/assets',        icon: Package        },
-    { label: 'Phone Directory',  path: '/directory',     icon: BookUser        },
+    { label: 'Asset Management', path: '/assets', icon: Package, children: [
+      { label: 'Assets',         path: '/assets' },
+      { label: 'Asset Settings', path: '/assets/settings' },
+    ]},
+    { label: 'Phone Directory',  path: '/directory', icon: BookUser, children: [
+      { label: 'Directory',           path: '/directory' },
+      { label: 'Directory Settings',  path: '/directory/settings' },
+    ]},
     { label: 'Events', icon: Calendar, children: [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },
+      { label: 'Event Settings', path: '/events/settings' },
     ]},
     { label: 'Announcements',    path: '/announcements', icon: Megaphone       },
   ]},
@@ -108,7 +115,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
       borderRight: '1px solid var(--sidebar-border)',
       display: 'flex',
       flexDirection: 'column',
-      height: `calc(100vh / 0.95 - ${HEADER_H}px)`,
+      height: `calc(100vh - ${HEADER_H}px)`,
       position: 'fixed',
       left: 0, top: HEADER_H,
       zIndex: 300,

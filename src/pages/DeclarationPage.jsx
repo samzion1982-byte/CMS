@@ -100,7 +100,7 @@ export default function DeclarationPage() {
   const [catsLoading,  setCatsLoading] = useState(true)
   const [declarations, setDeclarations]= useState([])
   const [listLoading,  setListLoading] = useState(false)
-  const [filterFY,     setFilterFY]    = useState(() => getFY())
+  const [filterFY,     setFilterFY]    = useState(() => getStoredFY())
   const [listSearch,   setListSearch]  = useState('')
   const [showModal,    setShowModal]   = useState(false)
   const [editId,       setEditId]      = useState(null)
@@ -133,8 +133,7 @@ export default function DeclarationPage() {
 
   useEffect(() => { loadFYData() }, [loadFYData])
 
-  // always land on the current FY when the page mounts (handles SPA navigation)
-  useEffect(() => { setFilterFY(getFY()) }, [])
+  useEffect(() => { saveStoredFY(filterFY) }, [filterFY])
 
   const updateFYActivity = useCallback(async (fy) => {
     if (!fy) return

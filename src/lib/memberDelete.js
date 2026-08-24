@@ -9,7 +9,7 @@ import { logCmsAudit } from './cmsAudit'
  * Delete a member (soft delete to deleted_members table)
  * Moves member data and photo to archive
  */
-export async function deleteMember(memberId, reason, userEmail) {
+export async function deleteMember(memberId, reason, userEmail, archivePhoto = true) {
   try {
     if (!memberId || !reason || !userEmail) {
       throw new Error('Missing required parameters: memberId, reason, or userEmail')
@@ -34,10 +34,11 @@ export async function deleteMember(memberId, reason, userEmail) {
 
     console.log('[deleteMember] RPC success, result:', data)
 
-    // 2. Move photo from active to deleted folder
-    console.log('[deleteMember] Starting photo move...')
-    const photoResult = await movePhotoToDeleted(memberId)
-    console.log('[deleteMember] Photo move result:', photoResult)
+    if (archivePhoto) {
+      console.log('[deleteMember] Starting photo move...')
+      const photoResult = await movePhotoToDeleted(memberId)
+      console.log('[deleteMember] Photo move result:', photoResult)
+    }
 
     await logCmsAudit({
       action: 'deleted',

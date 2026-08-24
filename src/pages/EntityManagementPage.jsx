@@ -497,7 +497,7 @@ export default function EntityManagementPage() {
       {entities.length > 0 && (
         <div style={{ marginTop: 20, padding: '12px 18px', borderRadius: 9, background: 'var(--table-header-bg)', border: '1px solid var(--card-border)' }}>
           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--text-2)' }}>Note:</strong> Accounting books cannot be deleted once created, because they hold financial records. You can deactivate a book to hide it from the switcher. Each book has its own Chart of Accounts and journal entries — data is never shared between books.
+            <strong style={{ color: 'var(--text-2)' }}>Note:</strong> Empty books can be deleted. Books with journal entries cannot — deactivate them instead to hide them from the switcher. Each book has its own Chart of Accounts and journal entries.
           </p>
         </div>
       )}

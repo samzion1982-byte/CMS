@@ -68,7 +68,6 @@ export default function MembersPage() {
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [showSaveDialog, setShowSaveDialog] = useState(false)
-  const [showDelDialog, setShowDelDialog] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showPrintModal,         setShowPrintModal]         = useState(false)
   const [showBulkPrintModal,     setShowBulkPrintModal]     = useState(false)
@@ -269,26 +268,7 @@ export default function MembersPage() {
         changes,
         actor: profile,
       })
-      toast(form.member_name+' saved.','success'); setTab('list'); loadMembers(alpha,searchCol,searchVal)
-    }
-  }
-
-  const doDelete = async () => {
-    const {error} = await supabase.from('members').update({is_active:false}).eq('member_id',selected.member_id)
-    setShowDelDialog(false)
-    if (error) toast('Delete failed.','error')
-    else {
-      await logCmsAudit({
-        action: 'deleted',
-        module: 'members',
-        entityType: 'member',
-        entityId: selected.member_id,
-        entityLabel: selected.member_name || selected.member_id,
-        summary: `Soft-deleted member ${selected.member_name || selected.member_id}`,
-        changes: [{ field: 'is_active', from: 'true', to: 'false' }],
-        actor: profile,
-      })
-      toast(selected.member_name+' deleted.','success'); setTab('list'); loadMembers()
+      toast(form.member_name+' saved.','success'); setTab('list'); loadMembers(alpha, searchCol, searchVal)
     }
   }
 
@@ -976,23 +956,7 @@ export default function MembersPage() {
         </div>
       )}
 
-      {/* ── Delete dialog (OLD - TO BE REMOVED) ── */}
-      {showDelDialog && (
-        <div style={{ position:'fixed', inset:0, background:'var(--overlay)', backdropFilter:'blur(4px)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div className="card animate-slide-up" style={{ padding:24, width:'100%', maxWidth:360 }}>
-            <h3 style={{ fontFamily:'var(--font-ui)', fontSize:15, fontWeight:700, color:'var(--text-1)', marginBottom:8 }}>Delete member?</h3>
-            <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:20 }}>
-              Delete <strong>{selected?.member_name}</strong> ({selected?.member_id})? This cannot be undone.
-            </p>
-            <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button className="btn btn-secondary btn-sm" onClick={()=>setShowDelDialog(false)}>Cancel</button>
-              <button className="btn btn-danger btn-sm" onClick={doDelete}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete Member Modal (NEW) ── */}
+      {/* ── Delete Member Modal ── */}
       <DeleteMemberModal
         member={selected}
         isOpen={showDeleteModal}

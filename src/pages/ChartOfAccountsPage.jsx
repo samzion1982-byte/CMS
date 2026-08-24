@@ -17,7 +17,6 @@ import {
   ChevronRight, ChevronDown, Plus, PlusCircle, Edit2, Trash2, ArrowLeft,
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
-import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import PageHeader from '../components/ui/PageHeader'
 
 // ── Level config ──────────────────────────────────────────────────
@@ -343,7 +342,6 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
   const [saving,      setSaving]      = useState(false)
   const [deleting,    setDeleting]    = useState(null)
   const [search,      setSearch]      = useState('')
-  const [showNewEntry, setShowNewEntry] = useState(false)
 
   // ── Drag-and-drop state ────────────────────────────────────────
   const [dragNode, setDragNode] = useState(null)
@@ -365,14 +363,14 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
 
   useEffect(() => {
     function onKey(e) {
-      // + key (Shift+= on most keyboards) — capture phase so it fires even when search input is focused
-      if (e.key === '+' && !e.ctrlKey && !e.altKey) {
-        e.preventDefault()
-        setShowNewEntry(true)
-      }
+      if (e.key !== '+' || e.ctrlKey || e.altKey || e.metaKey) return
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      e.preventDefault()
+      setModal({ mode: 'add', node: null, parentNode: null, initialName: '' })
     }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
   }, [])
 
   // ── Filter tree by search ──────────────────────────────────────
@@ -854,7 +852,6 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
           initialName={modal.initialName || ''}
         />
       )}
-      {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={() => {}} />}
 
     </div>
   )

@@ -472,6 +472,7 @@ export default function AccountingPage() {
   const [switchPwError,  setSwitchPwError]  = useState('')
 
   const [enabled,         setEnabled]         = useState(null) // null = loading
+  const [simpleEnabled,   setSimpleEnabled]   = useState(false)
   const [entryLocked,     setEntryLocked]     = useState(null) // null = loading
   const [entrySystem,     setEntrySystem]     = useState(null)
   const [setupDismissed,  setSetupDismissed]  = useState(() => !!sessionStorage.getItem('ac_setup_skipped'))
@@ -486,8 +487,13 @@ export default function AccountingPage() {
     if (!currentEntityId) { setLoading(false); return }
     setLoading(true)
     try {
-      const [on, setup] = await Promise.all([isAccountingEnabled(), getEntrySystemStatus()])
+      const [on, setup, church] = await Promise.all([
+        isAccountingEnabled(),
+        getEntrySystemStatus(),
+        supabase.from('churches').select('simple_accounting_enabled').limit(1).single(),
+      ])
       setEnabled(on)
+      setSimpleEnabled(!!church.data?.simple_accounting_enabled)
       setEntryLocked(setup.locked)
       setEntrySystem(setup.entry_system)
       if (!on) { setLoading(false); return }
@@ -543,13 +549,24 @@ export default function AccountingPage() {
           <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 8px' }}>Accounting Module is Disabled</h3>
           <p style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 420, margin: '0 auto 24px', lineHeight: 1.6 }}>
             The accounting module is currently turned off. Enable it from Church Setup if your church manages accounts here.
+            {simpleEnabled ? ' Simple Accounts is still available.' : ''}
           </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <button
             onClick={() => navigate('/church-setup')}
             style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
             <Settings size={15} /> Go to Church Setup
           </button>
+          {simpleEnabled && (
+            <button
+              onClick={() => navigate('/simple-accounts')}
+              style={{ background: 'transparent', color: 'var(--accent)', border: '1.5px solid var(--accent)', borderRadius: 8, padding: '10px 24px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Open Simple Accounts
+            </button>
+          )}
+          </div>
         </div>
       </div>
     )

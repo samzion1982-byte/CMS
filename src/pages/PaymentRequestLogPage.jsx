@@ -27,23 +27,33 @@ export default function PaymentRequestLogPage() {
   const toast = useToast()
 
   const [requests,      setRequests]      = useState([])
+  const [listTotal,     setListTotal]     = useState(0)
+  const [page,          setPage]          = useState(0)
   const [loading,       setLoading]       = useState(true)
   const [search,        setSearch]        = useState('')
   const [filterStatus,  setFilterStatus]  = useState('all')
+  const PAGE_SIZE = 50
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    let q = supabase
       .from('payment_requests')
-      .select('*, payment_request_logs(id, status, error_text, sent_at)')
+      .select('*, payment_request_logs(id, status, error_text, sent_at)', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(500)
-    if (!error) setRequests(data || [])
+    if (filterStatus !== 'all') q = q.eq('status', filterStatus)
+    const { data, error, count } = await q.range(from, to)
+    if (!error) {
+      setRequests(data || [])
+      setListTotal(count || 0)
+    }
     else toast(error.message, 'error')
     setLoading(false)
-  }, [toast])
+  }, [toast, page, filterStatus])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { setPage(0) }, [filterStatus])
 
   const counts = { all: requests.length }
   Object.keys(STATUS).forEach(s => { counts[s] = requests.filter(r => r.status === s).length })
@@ -117,7 +127,7 @@ export default function PaymentRequestLogPage() {
           No payment requests found.
         </div>
       ) : (
-        <div className="card" style={{ overflow: 'hidden' }}>
+        <div className="card" style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--page-bg)' }}>
@@ -213,6 +223,15 @@ export default function PaymentRequestLogPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {listTotal > PAGE_SIZE && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: 'var(--text-3)' }}>
+          <span>Showing {requests.length} of {listTotal}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+            <button className="btn btn-ghost btn-sm" disabled={(page + 1) * PAGE_SIZE >= listTotal} onClick={() => setPage(p => p + 1)}>Next</button>
+          </div>
         </div>
       )}
     </div>

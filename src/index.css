@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Merriweather:wght@400;700&family=Crimson+Text:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Merriweather:wght@400;700&family=Crimson+Text:wght@400;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -455,8 +455,8 @@
 
   --input-bg:                 #ffffff;
   --input-border:             #cdddd2;
-  --input-focus-border:       #2563eb;
-  --input-focus-ring:         rgba(37,99,235,0.12);
+  --input-focus-border:       #16a34a;
+  --input-focus-ring:         rgba(22,163,74,0.16);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -521,8 +521,8 @@
 
   --input-bg:                 #ffffff;
   --input-border:             #ddc0c8;
-  --input-focus-border:       #2563eb;
-  --input-focus-ring:         rgba(37,99,235,0.12);
+  --input-focus-border:       #be123c;
+  --input-focus-ring:         rgba(190,18,60,0.16);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -884,7 +884,7 @@
    BASE
    ═══════════════════════════════════════════════════════════════ */
 
-html { zoom: 0.95; }
+html { zoom: 1; }
 
 @layer base {
   body {
@@ -1314,8 +1314,12 @@ html { zoom: 0.95; }
 .simple-accounts-scope button:active:not(:disabled) { filter: brightness(0.78) !important; transform: none !important; }
 
 /* Prevent I-beam cursor AND blinking text caret on all non-interactive content */
-body { user-select: none; caret-color: transparent; }
-div, td, th, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
+body { caret-color: auto; }
+.app-main, table, td, th, pre, code, .card, [class*="log"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+div, p, h1, h2, h3, h4, h5, h6, li, span, label { cursor: default; }
 /* Restore correct cursors and text selection for interactive elements */
 a, button, [role="button"]             { cursor: pointer; }
 input, textarea, select                { cursor: text; user-select: text; caret-color: auto; }
@@ -1626,6 +1630,7 @@ input[type="radio"]                    { cursor: pointer; user-select: none; }
 
 @media (max-width: 768px) {
   .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .app-main { padding: 16px 12px !important; }
 }
 
 /* Hide browser-native password reveal / credentials autofill chrome */

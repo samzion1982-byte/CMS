@@ -14,6 +14,9 @@ export function ToastProvider({ children }) {
       {children}
       <div
         className="fixed bottom-6 right-6 flex flex-col gap-2"
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
         style={{ zIndex: 10050 }}
       >
         {toasts.map(t => (

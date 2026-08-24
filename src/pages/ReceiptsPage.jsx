@@ -92,6 +92,8 @@ export default function ReceiptsPage() {
   const [categories,    setCategories]    = useState([])
   const [catsLoading,   setCatsLoading]   = useState(true)
   const [receipts,      setReceipts]      = useState([])
+  const [listTotal,     setListTotal]     = useState(0)
+  const [listPage,      setListPage]      = useState(0)
   const [listLoading,   setListLoading]   = useState(false)
   const [filterFY,      setFilterFY]      = useState(getFY)
   const [listSearch,    setListSearch]    = useState('')
@@ -157,22 +159,26 @@ export default function ReceiptsPage() {
   const loadList = useCallback(async () => {
     setListLoading(true)
     try {
+      const PAGE = 50
+      const from = listPage * PAGE
       let q = supabase
         .from('receipts')
-        .select('id,receipt_number,receipt_date,member_id,member_name,payment_mode,month_paid,grand_total,financial_year')
+        .select('id,receipt_number,receipt_date,member_id,member_name,payment_mode,month_paid,grand_total,financial_year', { count: 'exact' })
         .order('receipt_number', { ascending: false })
       if (filterFY)          q = q.eq('financial_year', filterFY)
       if (listSearch.trim()) {
         const s = listSearch.trim()
         q = q.or(`receipt_number.ilike.%${s}%,member_name.ilike.%${s}%,member_id.ilike.%${s}%`)
       }
-      const { data, error } = await q
+      const { data, error, count } = await q.range(from, from + PAGE - 1)
       if (error) throw error
       setReceipts(data || [])
+      setListTotal(count || 0)
     } catch (e) { toast(e.message, 'error') }
     setListLoading(false)
-  }, [filterFY, listSearch, toast])
+  }, [filterFY, listSearch, listPage, toast])
   useEffect(() => { loadList() }, [loadList])
+  useEffect(() => { setListPage(0) }, [filterFY, listSearch])
 
   useEffect(() => {
     supabase.from('churches').select('receipt_date_mode').limit(1).single()
@@ -589,7 +595,7 @@ export default function ReceiptsPage() {
           )}
         </div>
         <span style={{ fontSize: 13, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-          {listLoading ? <Loader2 size={13} className="animate-spin inline"/> : `${receipts.length} receipt${receipts.length !== 1 ? 's' : ''}`}
+          {listLoading ? <Loader2 size={13} className="animate-spin inline"/> : `${listTotal} receipt${listTotal !== 1 ? 's' : ''}`}
         </span>
       </div>
 
@@ -664,6 +670,15 @@ export default function ReceiptsPage() {
           </table>
         )}
       </div>
+      {listTotal > 50 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
+          <span>Page {listPage + 1} of {Math.ceil(listTotal / 50)}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" disabled={listPage === 0} onClick={() => setListPage(p => p - 1)}>Prev</button>
+            <button className="btn btn-ghost btn-sm" disabled={(listPage + 1) * 50 >= listTotal} onClick={() => setListPage(p => p + 1)}>Next</button>
+          </div>
+        </div>
+      )}
 
       {/* FY Manager popup */}
       {showFYMgr && (

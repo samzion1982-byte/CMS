@@ -32,6 +32,7 @@ export default function OpeningBalancesPage() {
   const [allAccounts,     setAllAccounts]   = useState([])
   const [accounts,        setAccounts]      = useState([])   // postable (level 3/4) only
   const [balances,        setBalances]      = useState({})   // { [accountId]: { debit, credit } }
+  const [balanceSnap,     setBalanceSnap]   = useState('{}')
   const [autoEquityId,    setAutoEquityId]  = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState(new Set())
   const [loading,  setLoading]  = useState(true)
@@ -82,6 +83,7 @@ export default function OpeningBalancesPage() {
       }
 
       setBalances(map)
+      setBalanceSnap(JSON.stringify(map))
     } catch (e) { toast(e.message, 'error') }
     setLoading(false)
   }, [fy, toast])
@@ -132,6 +134,21 @@ export default function OpeningBalancesPage() {
   const totalCredit = leafAccounts.reduce((s, a) => s + (parseFloat(balances[a.id]?.credit) || 0), 0)
   const diff = Math.abs(totalDebit - totalCredit)
   const balanced = diff < 0.01
+  const dirty = JSON.stringify(balances) !== balanceSnap
+
+  function confirmDiscard() {
+    return !dirty || window.confirm('You have unsaved opening balances. Discard them?')
+  }
+
+  useEffect(() => {
+    const on = (e) => {
+      if (!dirty) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', on)
+    return () => window.removeEventListener('beforeunload', on)
+  }, [dirty])
 
   async function handleSave() {
     const systemStatus = await getEntrySystemStatus()
@@ -200,6 +217,7 @@ export default function OpeningBalancesPage() {
       if (lErr) throw lErr
 
       toast('Opening balances saved!', 'success')
+      setBalanceSnap(JSON.stringify(balances))
     } catch (e) { toast(e.message, 'error') }
     setSaving(false)
   }
@@ -230,13 +248,13 @@ export default function OpeningBalancesPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 28, paddingBottom: 22, borderBottom: '1px solid var(--card-border)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting')} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
+            <button onClick={() => { if (!confirmDiscard()) return; navigate('/accounting') }} style={{ padding: '6px 8px', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: '#fff' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>Accounts</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <button onClick={() => navigate('/accounting/settings')} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
+            <button onClick={() => { if (!confirmDiscard()) return; navigate('/accounting/settings') }} style={{ padding: '6px 8px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
               <ArrowLeft size={15} />
             </button>
             <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Setup</span>
@@ -257,7 +275,7 @@ export default function OpeningBalancesPage() {
               {fyOpen && (
                 <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, minWidth: 140 }}>
                   {FYS.map(f => (
-                    <button key={f} onClick={() => { setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
+                    <button key={f} onClick={() => { if (f !== fy && !confirmDiscard()) return; setFy(f); setFyOpen(false) }} style={{ display: 'block', width: '100%', padding: '9px 16px', fontSize: 13, textAlign: 'left', background: f === fy ? 'var(--sidebar-item-active-bg)' : 'transparent', color: f === fy ? 'var(--accent)' : 'var(--text-1)', fontWeight: f === fy ? 700 : 400, border: 'none', cursor: 'pointer' }}>
                       FY {f}
                     </button>
                   ))}

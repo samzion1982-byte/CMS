@@ -2,10 +2,11 @@
    DeleteMemberModal.jsx — Dialog to confirm & delete a member
    ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Trash2, AlertTriangle, Loader2, X } from 'lucide-react'
 import { deleteMember } from '../lib/memberDelete'
 import { useToast } from '../lib/toast'
+import { supabase } from '../lib/supabase'
 
 export default function DeleteMemberModal({ member, isOpen, onClose, onDeleted, userEmail }) {
   const toast = useToast()
@@ -13,6 +14,22 @@ export default function DeleteMemberModal({ member, isOpen, onClose, onDeleted, 
   const [isDeleting, setIsDeleting] = useState(false)
   const [photoExists, setPhotoExists] = useState(false)
   const [deletePhoto, setDeletePhoto] = useState(true)
+
+  useEffect(() => {
+    if (!isOpen || !member?.member_id) {
+      setPhotoExists(false)
+      return
+    }
+    let cancelled = false
+    supabase.storage
+      .from('member-photos')
+      .list('active', { search: `${member.member_id}.jpg` })
+      .then(({ data }) => {
+        if (!cancelled) setPhotoExists(!!data?.length)
+      })
+      .catch(() => { if (!cancelled) setPhotoExists(false) })
+    return () => { cancelled = true }
+  }, [isOpen, member?.member_id])
 
   if (!isOpen || !member) return null
 
@@ -24,7 +41,7 @@ export default function DeleteMemberModal({ member, isOpen, onClose, onDeleted, 
 
     setIsDeleting(true)
     try {
-      await deleteMember(member.member_id, reason, userEmail)
+      await deleteMember(member.member_id, reason, userEmail, photoExists ? deletePhoto : false)
       toast(`Member ${member.member_id} deleted successfully`, 'success')
       onDeleted()
       onClose()
@@ -90,7 +107,7 @@ export default function DeleteMemberModal({ member, isOpen, onClose, onDeleted, 
             />
           </div>
 
-          {/* Photo checkbox */}
+          {photoExists && (
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -104,6 +121,7 @@ export default function DeleteMemberModal({ member, isOpen, onClose, onDeleted, 
               Also move associated photo to archive
             </label>
           </div>
+          )}
         </div>
 
         {/* Actions */}

@@ -170,6 +170,12 @@ export default function BankReconciliationPage() {
             {accounts.length === 0 && <option value="">No bank/cash accounts found</option>}
             {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+          {accounts.length === 0 && (
+            <button type="button" onClick={() => navigate('/accounting/bank-accounts')}
+              style={{ marginTop: 8, height: 36, padding: '0 12px', borderRadius: 7, border: '1.5px solid var(--card-border)', background: 'var(--card-bg)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--accent)' }}>
+              Add bank account
+            </button>
+          )}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <button onClick={() => setShowAll(s => !s)}
@@ -177,7 +183,12 @@ export default function BankReconciliationPage() {
             {showAll ? 'Show Uncleared Only' : 'Show All'}
           </button>
           {unclearedCount > 0 && (
-            <button onClick={markAllReconciled} disabled={loading}
+            <button onClick={() => {
+              const n = lines.filter(l => !l.is_reconciled).length
+              if (!n) return
+              if (!window.confirm(`Mark ${n} uncleared line${n === 1 ? '' : 's'} as cleared for ${selAccount?.name || 'this account'}?`)) return
+              markAllReconciled()
+            }} disabled={loading}
               style={{ height: 36, padding: '0 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
               <CheckSquare size={13} /> Mark All Cleared
             </button>

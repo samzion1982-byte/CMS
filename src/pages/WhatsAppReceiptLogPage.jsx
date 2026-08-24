@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { useToast } from '../lib/toast'
 import { exportToExcel } from '../lib/exportExcel'
 import { CheckCircle, XCircle, Loader2, ChevronLeft, ChevronRight, MessageSquare, RefreshCw, Download } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
@@ -20,6 +21,7 @@ const fmtDT = iso => {
 
 export default function WhatsAppReceiptLogPage() {
   const { profile } = useAuth()
+  const toast = useToast()
   const [rows,       setRows]       = useState([])
   const [total,      setTotal]      = useState(0)
   const [page,       setPage]       = useState(0)
@@ -55,7 +57,7 @@ export default function WhatsAppReceiptLogPage() {
         status:          r.status === 'sent' ? 'Sent' : 'Failed',
       }))
       await exportToExcel(cols, rows, 'WhatsApp Receipts', `WhatsApp_Receipts_${new Date().toISOString().slice(0,10)}.xlsx`)
-    } catch (e) { console.error(e) }
+    } catch (e) { toast(e.message || 'Export failed', 'error') }
     setExporting(false)
   }
 
@@ -75,10 +77,10 @@ export default function WhatsAppReceiptLogPage() {
       setRows(data || [])
       setTotal(count || 0)
     } catch (e) {
-      console.error(e)
+      toast(e.message || 'Could not load WhatsApp logs', 'error')
     }
     setLoading(false)
-  }, [page, filterStatus])
+  }, [page, filterStatus, toast])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { setPage(0) }, [filterStatus])
@@ -142,7 +144,7 @@ export default function WhatsAppReceiptLogPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--table-header-bg, #f1f5f9)' }}>
-                {['Date / Time','Receipt No','Member','WhatsApp','API','Status'].map(h => (
+                {['Date / Time','Receipt No','Member','WhatsApp','API','Status','Error'].map(h => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, fontSize: 11,
                     color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em',
                     borderBottom: '1px solid var(--card-border)', whiteSpace: 'nowrap' }}>
@@ -152,9 +154,7 @@ export default function WhatsAppReceiptLogPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
-                return (
-                  <>
+              {rows.map((r, i) => (
                     <tr key={r.id}
                       style={{
                         background: i % 2 === 0 ? 'var(--card-bg)' : 'var(--table-alt-row, #f8fafc)',
@@ -195,10 +195,11 @@ export default function WhatsAppReceiptLogPage() {
                           {r.status === 'sent' ? 'Sent' : 'Failed'}
                         </span>
                       </td>
+                      <td style={{ padding: '10px 14px', fontSize: 11, color: '#b91c1c', maxWidth: 220 }}>
+                        {r.status === 'failed' ? (r.error_text || r.error || '—') : '—'}
+                      </td>
                     </tr>
-                  </>
-                )
-              })}
+              ))}
             </tbody>
           </table>
         )}

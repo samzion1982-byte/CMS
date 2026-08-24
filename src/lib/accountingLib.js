@@ -38,7 +38,8 @@ export function fmtAmt(n) {
 export function fmtDate(s) {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
-  return `${d}/${m}/${y}`
+  if (!y || !m || !d) return s
+  return `${d}-${m}-${y}`
 }
 
 // ── Accounting enabled check ──────────────────────────────────────

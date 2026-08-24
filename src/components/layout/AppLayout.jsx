@@ -91,7 +91,12 @@ export default function AppLayout({ children }) {
         // First-time setup — tag the blank login row created at sign-in
         await tagLoginWithDevice(pendingInfo.userId, meta)
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error(e)
+      setSavingDevice(false)
+      window.alert(e?.message || 'Could not save device info. Try again.')
+      return
+    }
     if (deviceForm.avatarName?.trim()) {
       localStorage.setItem('avatar_display_name', deviceForm.avatarName.trim())
     } else {
@@ -183,12 +188,18 @@ export default function AppLayout({ children }) {
             </div>
 
             <div style={{ padding: '0 22px 20px', display: 'flex', gap: 10 }}>
-              {isEditMode && (
-                <button onClick={() => { setShowDeviceSetup(false); setIsEditMode(false) }} disabled={savingDevice}
-                  style={{ flex: '0 0 auto', padding: '10px 18px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  Cancel
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  sessionStorage.removeItem(DEVICE_PENDING_KEY)
+                  setShowDeviceSetup(false)
+                  setIsEditMode(false)
+                }}
+                disabled={savingDevice}
+                style={{ flex: '0 0 auto', padding: '10px 18px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {isEditMode ? 'Cancel' : 'Skip for now'}
+              </button>
               <button onClick={handleSaveDevice} disabled={savingDevice || !deviceForm.userName || !deviceForm.city}
                 style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', background: !deviceForm.userName || !deviceForm.city ? 'rgba(37,99,235,0.4)' : 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: !deviceForm.userName || !deviceForm.city ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 {savingDevice

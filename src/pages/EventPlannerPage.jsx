@@ -2677,7 +2677,7 @@ export default function EventPlannerPage(){
           subtitle={view==='year'?undefined:(
             view==='month'?`${MONTH_NAMES[calMonth.getMonth()]} ${calMonth.getFullYear()}`:view==='week'?'Week View':view==='agenda'?'Agenda':view==='cards'?'All Events':view
           )}
-          style={{borderBottom:'none',marginBottom:0,padding:'13px 24px'}}
+          style={{borderBottom:'none',marginBottom:0,padding:'13px 24px',flexWrap:'wrap',gap:10}}
         >
           {/* Search */}
           <div style={{position:'relative',display:'flex',alignItems:'center',gap:4}}>
@@ -2745,7 +2745,7 @@ export default function EventPlannerPage(){
         </div>
 
         {/* 4×3 grid of mini months */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))',gap:14}}>
           {Array.from({length:12},(_,i)=>(
             <MiniMonth
               key={i}

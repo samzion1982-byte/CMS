@@ -1,7 +1,7 @@
 /**
  * Shared page title row: gradient icon badge + title + subtitle + optional actions.
  */
-const ICON_GRADIENT = 'linear-gradient(135deg, #2563eb, #4f46e5)'
+const ICON_GRADIENT = 'linear-gradient(135deg, var(--accent, #2563eb), var(--sidebar-light, #4f46e5))'
 
 export default function PageHeader({
   icon: Icon,

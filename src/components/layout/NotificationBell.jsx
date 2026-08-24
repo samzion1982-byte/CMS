@@ -434,6 +434,7 @@ export default function NotificationBell({ g }) {
 
   async function handleDeleteUserAlert(alert) {
     if (!alert?.userAlertId || !alert.canDelete) return
+    if (!window.confirm(`Delete reminder “${alert.title}”?`)) return
     try {
       await deleteUserAlert(alert.userAlertId)
       clearAlertSnooze(alert.id)
@@ -493,7 +494,7 @@ export default function NotificationBell({ g }) {
         <div style={{
           position: 'fixed',
           top: PANEL_TOP,
-          right: 120,
+          right: 16,
           width: 380,
           maxWidth: 'calc(100vw - 24px)',
           maxHeight: 'min(480px, calc(100vh - 110px))',
@@ -590,6 +591,7 @@ export default function NotificationBell({ g }) {
               </button>
               <button
                 type="button"
+                aria-label="Close notifications"
                 onClick={() => {
                   setOpen(false)
                   setSnoozeFor(null)

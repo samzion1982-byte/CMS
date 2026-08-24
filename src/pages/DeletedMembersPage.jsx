@@ -45,7 +45,7 @@ export default function DeletedMembersPage() {
       setPage(pageNum)
       setSelectedIds(new Set())
     } catch (err) {
-      toast.error(`Error loading deleted members: ${err.message}`)
+      toast(`Error loading deleted members: ${err.message}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -77,7 +77,7 @@ export default function DeletedMembersPage() {
       setMemberDetails(details)
       setShowRestoreModal(true)
     } catch (err) {
-      toast.error(`Error loading member details: ${err.message}`)
+      toast(`Error loading member details: ${err.message}`, 'error')
     }
   }
 
@@ -111,7 +111,7 @@ export default function DeletedMembersPage() {
       setShowDeleteConfirm(false)
       loadDeletedMembers(page, searchVal)
     } catch (err) {
-      toast.error(`Permanent delete failed: ${err.message}`)
+      toast(`Permanent delete failed: ${err.message}`, 'error')
     } finally {
       setDeleting(false)
     }

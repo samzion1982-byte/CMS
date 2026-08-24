@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { displayFirstName } from '../lib/auth'
 import { useTheme, THEMES } from '../lib/ThemeContext'
@@ -544,6 +545,7 @@ function SectionCard({ accentColor, accentBar = '#2563eb', headerTint, icon: Ico
    MAIN DASHBOARD
    ══════════════════════════════════════════════════════════════ */
 export default function DashboardPage() {
+  const navigate = useNavigate()
   const { session, user, profile, loading: authLoading } = useAuth()
   const [stats, setStats]                   = useState(null)
   const [totalMembersCount, setTotalMembersCount] = useState(0)
@@ -921,7 +923,7 @@ export default function DashboardPage() {
           <p style={{ flex: 1, fontSize: 12, color: 'var(--info)', margin: 0 }}>
             Total: <strong>{totalMembersCount}</strong> · Active: <strong>{stats.total}</strong> · Inactive: <strong>{inactiveMembersCount}</strong>
           </p>
-          <button onClick={() => window.location.href = '/members'}
+          <button onClick={() => navigate('/members')}
             style={{ fontSize: 12, color: 'var(--info)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
             Manage →
           </button>
