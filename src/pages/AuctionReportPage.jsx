@@ -1281,6 +1281,11 @@ export default function AuctionReportPage() {
         throw new Error(`Could not reopen FY ${fromFY}. Check that auction_seasons exists on this church.`)
       }
 
+      const closeDocs = await listCloseReportsForFY(fromFY)
+      for (const doc of closeDocs) {
+        try { await deleteAuctionDocument(doc) } catch (e) { console.warn('undo close: close report', doc.path, e) }
+      }
+
       if (clearNext) {
         const { error: balErr } = await supabase.from('auction_close_balances').delete().eq('financial_year', toFY)
         if (balErr && !String(balErr.message || '').includes('auction_close_balances')) throw balErr
@@ -1295,8 +1300,8 @@ export default function AuctionReportPage() {
         for (const doc of nextDocs) {
           try { await deleteAuctionDocument(doc) } catch (e) { console.warn('undo close: file', doc.path, e) }
         }
-        setDocsRefreshKey((k) => k + 1)
       }
+      setDocsRefreshKey((k) => k + 1)
 
       await logCmsAudit({
         action: 'saved', module: 'auction', entityType: 'auction_seasons',
@@ -2589,6 +2594,7 @@ export default function AuctionReportPage() {
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
               Reopens <strong>FY {revertPreview.fromFY}</strong> so you can Close Year again as Forfeit or Carry.
+              {' '}The generated close Excel for {revertPreview.fromFY} is removed from Closed reports.
               {revertPreview.fromFY} tracker history is kept.
               {revertPreview.nextCount > 0
                 ? ` FY ${revertPreview.toFY} already has ${revertPreview.nextCount} imported member(s) from after that close. Those ${revertPreview.toFY} tracker rows, season, and stored files will be removed (snapshotted to Recycle Bin). Then close ${revertPreview.fromFY} as Forfeit or Carry and import ${revertPreview.toFY} again.`

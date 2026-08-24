@@ -19,7 +19,7 @@ function fmtWhen(d) {
   }
 }
 
-function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load }) {
+function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load, showKind = false }) {
   if (!groups.length) {
     return (
       <p style={{ margin: '12px 4px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
@@ -63,9 +63,11 @@ function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load 
                 {doc.originalName}
               </div>
               <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
-                {auctionDocKindLabel(doc.kind)}
-                {doc.uploadedAt ? ` · ${fmtWhen(doc.uploadedAt)}` : ''}
-                {doc.size ? ` · ${formatAuctionDocSize(doc.size)}` : ''}
+                {[
+                  showKind ? auctionDocKindLabel(doc.kind) : null,
+                  doc.uploadedAt ? fmtWhen(doc.uploadedAt) : null,
+                  doc.size ? formatAuctionDocSize(doc.size) : null,
+                ].filter(Boolean).join(' · ')}
               </div>
             </div>
           </div>
