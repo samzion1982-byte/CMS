@@ -1953,10 +1953,9 @@ export default function AuctionReportPage() {
             disabled={flushing}
             style={{
               background: '#dc2626',
-              width: 34,
-              minWidth: 34,
-              padding: 0,
               justifyContent: 'center',
+              paddingLeft: 10,
+              paddingRight: 10,
             }}
             title="Flush — delete all auction tracker rows, seasons, and stored files. Receipts are not touched."
             aria-label="Flush auction records"
