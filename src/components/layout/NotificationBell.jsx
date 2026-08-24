@@ -13,6 +13,7 @@ import {
   createUserAlert,
   deleteUserAlert,
   isUserAlertDue,
+  listEnrolledUsersForAlerts,
   listUserAlerts,
   updateUserAlert,
   USER_ALERT_SCOPES,
@@ -42,7 +43,14 @@ function parseLicenseExpiry(validUpto) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-const EMPTY_FORM = { title: '', due_date: '', alert_days_before: '10', scope: 'self' }
+const EMPTY_FORM = {
+  title: '',
+  due_date: '',
+  alert_days_before: '10',
+  scope: 'self',
+  allUsers: false,
+  recipientIds: [],
+}
 
 async function fetchAlerts(userId) {
   const alerts = []
@@ -198,7 +206,12 @@ async function fetchAlerts(userId) {
         detail = `Due ${dueLabel} · alert ${before} day${before === 1 ? '' : 's'} before`
         severity = 'info'
       }
-      if (row.scope === 'all') detail += mine ? ' · for all' : ' · shared'
+      if (row.scope === 'all') {
+        detail += mine ? ' · for all' : ' · shared'
+      } else if (row.scope === 'selected') {
+        const n = row.recipientIds?.length || 0
+        detail += mine ? ` · for ${n} user${n === 1 ? '' : 's'}` : ' · shared'
+      }
       alerts.push({
         id: `user:${row.id}`,
         typeId: ALERT_IDS.user,
@@ -207,6 +220,7 @@ async function fetchAlerts(userId) {
         due_date: row.due_date,
         alert_days_before: row.alert_days_before,
         scope: row.scope,
+        recipientIds: row.recipientIds || [],
         due,
         severity,
         title: row.title,
@@ -275,6 +289,7 @@ export default function NotificationBell({ g }) {
   const [showSettings, setShowSettings] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [enrolledUsers, setEnrolledUsers] = useState([])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -305,6 +320,18 @@ export default function NotificationBell({ g }) {
     const id = setInterval(load, 5 * 60 * 1000)
     return () => clearInterval(id)
   }, [load])
+
+  useEffect(() => {
+    if (!showCreate) return
+    let cancelled = false
+    listEnrolledUsersForAlerts()
+      .then((rows) => { if (!cancelled) setEnrolledUsers(rows) })
+      .catch((e) => {
+        console.warn('[notifications] enrolled users failed', e)
+        if (!cancelled) setEnrolledUsers([])
+      })
+    return () => { cancelled = true }
+  }, [showCreate])
 
   useEffect(() => {
     const onPrefs = () => refreshPrefs()
@@ -369,12 +396,15 @@ export default function NotificationBell({ g }) {
     setShowCreate(true)
     setShowSettings(false)
     setSnoozeFor(null)
+    const shared = alert.scope === 'all' || alert.scope === 'selected'
     setForm({
       id: alert.userAlertId,
       title: alert.title || '',
       due_date: String(alert.due_date || '').slice(0, 10),
       alert_days_before: String(alert.alert_days_before || 10),
-      scope: alert.scope === 'all' ? 'all' : 'self',
+      scope: shared ? 'selected' : 'self',
+      allUsers: alert.scope === 'all',
+      recipientIds: alert.scope === 'selected' ? (alert.recipientIds || []) : [],
     })
     setFormError('')
   }
@@ -645,7 +675,12 @@ export default function NotificationBell({ g }) {
                               <button
                                 key={opt.id}
                                 type="button"
-                                onClick={() => setForm((f) => ({ ...f, scope: opt.id }))}
+                                onClick={() => setForm((f) => ({
+                                  ...f,
+                                  scope: opt.id,
+                                  allUsers: opt.id === 'selected' ? (f.scope === 'selected' ? f.allUsers : true) : false,
+                                  recipientIds: opt.id === 'selected' ? f.recipientIds : [],
+                                }))}
                                 style={{
                                   padding: '8px 10px',
                                   borderRadius: 8,
@@ -662,6 +697,66 @@ export default function NotificationBell({ g }) {
                             )
                           })}
                         </div>
+                        {form.scope === 'selected' && (
+                          <div style={{
+                            marginTop: 6,
+                            maxHeight: 168,
+                            overflowY: 'auto',
+                            borderRadius: 8,
+                            border: `1px solid ${g.drop.border}`,
+                            padding: 4,
+                          }}>
+                            <label style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '7px 8px', borderRadius: 6, cursor: 'pointer',
+                              background: form.allUsers ? (g.accentL || 'rgba(37,99,235,0.12)') : 'transparent',
+                              fontSize: 12, fontWeight: 800, color: g.drop.text,
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={!!form.allUsers}
+                                onChange={() => setForm((f) => ({
+                                  ...f,
+                                  allUsers: !f.allUsers,
+                                  recipientIds: !f.allUsers ? [] : f.recipientIds,
+                                }))}
+                              />
+                              All
+                            </label>
+                            {enrolledUsers.filter((u) => u.id !== user?.id).map((u) => {
+                              const checked = !form.allUsers && form.recipientIds.includes(u.id)
+                              return (
+                                <label
+                                  key={u.id}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+                                    opacity: form.allUsers ? 0.55 : 1,
+                                    fontSize: 12, fontWeight: 600, color: g.drop.text,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled={form.allUsers}
+                                    checked={form.allUsers || checked}
+                                    onChange={() => setForm((f) => {
+                                      const next = new Set(f.recipientIds)
+                                      if (next.has(u.id)) next.delete(u.id)
+                                      else next.add(u.id)
+                                      return { ...f, allUsers: false, recipientIds: [...next] }
+                                    })}
+                                  />
+                                  {u.label}
+                                </label>
+                              )
+                            })}
+                            {!enrolledUsers.length && (
+                              <p style={{ margin: '4px 8px 6px', fontSize: 11, color: g.drop.sub }}>
+                                No enrolled users found.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {formError && (
                         <p style={{ margin: 0, fontSize: 12, color: '#b91c1c' }}>{formError}</p>

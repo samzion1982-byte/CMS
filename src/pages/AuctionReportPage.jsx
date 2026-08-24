@@ -10,7 +10,7 @@ import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
 import { snapshotAuctionTrackerFY, snapshotCloseYearUndo, flushAllAuctionTracker } from '../lib/cmsRecycleBin'
-import { uploadAuctionDocument, deleteAuctionDocument, listUploadedDocsForFY, listCloseReportsForFY } from '../lib/auctionDocumentsLib'
+import { uploadAuctionDocument, deleteAuctionDocument, listUploadedDocsForFY, listCloseReportsForFY, deleteCloseReportsForFY } from '../lib/auctionDocumentsLib'
 import {
   getAuctionSeason,
   upsertAuctionSeason,
@@ -1177,9 +1177,11 @@ export default function AuctionReportPage() {
           for (const doc of existingClose) {
             await deleteAuctionDocument(doc)
           }
+          const [cy, cm, cd] = String(cutoff).split('-')
+          const cutLabel = (cy && cm && cd) ? `${cd}-${cm}-${cy}` : cutoff
           const file = new File(
             [blob],
-            `Auction_Close_${fromFY}_${cutoff}.xlsx`,
+            `Auction_Close_${cutLabel}.xlsx`,
             { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
           )
           await uploadAuctionDocument({ fy: fromFY, file, kind: 'close_report' })
@@ -1281,10 +1283,7 @@ export default function AuctionReportPage() {
         throw new Error(`Could not reopen FY ${fromFY}. Check that auction_seasons exists on this church.`)
       }
 
-      const closeDocs = await listCloseReportsForFY(fromFY)
-      for (const doc of closeDocs) {
-        try { await deleteAuctionDocument(doc) } catch (e) { console.warn('undo close: close report', doc.path, e) }
-      }
+      await deleteCloseReportsForFY(fromFY)
 
       if (clearNext) {
         const { error: balErr } = await supabase.from('auction_close_balances').delete().eq('financial_year', toFY)

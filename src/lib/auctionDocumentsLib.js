@@ -186,7 +186,68 @@ export async function listUploadedDocsForFY(fy) {
 export async function listCloseReportsForFY(fy) {
   const groups = await listAuctionDocuments()
   const g = (groups || []).find((x) => x.fy === fy)
-  return (g?.files || []).filter((f) => isCloseReportKind(f.kind))
+  return (g?.files || []).filter((f) => isCloseReportKind(f.kind) || looksLikeCloseWorkbook(f))
+}
+
+function looksLikeCloseWorkbook(doc) {
+  const name = String(doc?.originalName || doc?.storedName || '')
+  return /^Auction_Close_/i.test(name) || String(doc?.storedName || '').startsWith('close_report__')
+}
+
+async function listRawFilesInFyFolder(bucket, fy) {
+  const prefix = `${AUCTION_DOC_ROOT}/${fy}`
+  const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 200 })
+  if (error) {
+    if (missingOk(error)) return []
+    throw error
+  }
+  return (data || [])
+    .filter((f) => f?.name && f.name !== '.emptyFolderPlaceholder' && !isFolderEntry(f))
+    .map((f) => {
+      const parsed = parseAuctionDocName(f.name)
+      return {
+        fy,
+        bucket,
+        path: `${prefix}/${f.name}`,
+        storedName: f.name,
+        kind: parsed.kind,
+        originalName: parsed.originalName,
+        uploadedAt: parsed.uploadedAt || (f.created_at ? new Date(f.created_at) : null),
+        size: f.metadata?.size ?? null,
+        mime: f.metadata?.mimetype || null,
+      }
+    })
+}
+
+/** Remove generated Close Year Excel for this FY from both storage buckets. */
+export async function deleteCloseReportsForFY(fy) {
+  if (!fy) return 0
+  const listed = await listCloseReportsForFY(fy)
+  const raw = [
+    ...(await listRawFilesInFyFolder(AUCTION_DOC_BUCKET, fy)),
+    ...(await listRawFilesInFyFolder(AUCTION_DOC_LEGACY_BUCKET, fy).catch((e) => {
+      if (missingOk(e)) return []
+      throw e
+    })),
+  ].filter((f) => isCloseReportKind(f.kind) || looksLikeCloseWorkbook(f))
+
+  const byKey = new Map()
+  for (const doc of [...listed, ...raw]) {
+    byKey.set(`${doc.bucket}:${doc.path}`, doc)
+  }
+  const docs = [...byKey.values()]
+  const failed = []
+  for (const doc of docs) {
+    try {
+      await deleteAuctionDocument(doc)
+    } catch (e) {
+      failed.push(`${doc.originalName || doc.path}: ${e.message || e}`)
+    }
+  }
+  if (failed.length) {
+    throw new Error(`Could not remove close report: ${failed.join('; ')}`)
+  }
+  return docs.length
 }
 
 export async function uploadAuctionDocument({ fy, file, kind = 'reference' }) {
@@ -278,10 +339,12 @@ export async function deleteAuctionDocument(doc) {
       paths: [path],
       snapshotId: snap.id,
     }).catch((e) => console.warn('[quarantine] auction document', e))
-  } else {
-    const { error } = await supabase.storage.from(bucket).remove([path])
-    if (error) throw error
   }
+
+  // Recycle-bin move can fail (no admin client) while the snapshot still exists.
+  // Always remove the live path so Closed reports cannot keep a leftover copy.
+  const { error } = await supabase.storage.from(bucket).remove([path])
+  if (error && !missingOk(error)) throw error
 
   await logCmsAudit({
     action: 'deleted',

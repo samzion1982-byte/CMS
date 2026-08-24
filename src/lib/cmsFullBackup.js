@@ -14,7 +14,7 @@ export const FULL_BACKUP_TABLES = [
   'event_task_buckets', 'event_tasks', 'event_volunteers', 'task_library', 'event_plans',
   'assets', 'asset_locations', 'asset_item_types', 'asset_conditions',
   'fixed_assets', 'fixed_asset_documents',
-  'church_document_categories', 'church_documents', 'user_alerts',
+  'church_document_categories', 'church_documents', 'user_alerts', 'user_alert_recipients',
   'receipts', 'receipt_items', 'receipt_financial_years', 'payment_categories',
   'payment_requests', 'payment_pages', 'payment_page_versions',
   'declarations', 'declaration_items', 'decl_financial_years', 'funds',

@@ -152,6 +152,7 @@ const TABLE_FLUSH_META = {
   church_document_categories: { category: 'assets', sub: 'documents' },
   church_documents:        { category: 'assets', sub: 'documents' },
   user_alerts:             { category: 'other', sub: 'misc' },
+  user_alert_recipients:   { category: 'other', sub: 'misc' },
 
   receipts:                { category: 'receipts', sub: 'entry' },
   receipt_items:           { category: 'receipts', sub: 'entry' },
@@ -214,6 +215,7 @@ const FLUSH_TABLE_ORDER = {
   directory_contacts: 10,
   church_documents: 10,
   auction_close_balances: 10,
+  user_alert_recipients: 9,
   user_alerts: 10,
   simple_transactions: 10,
   receipts: 20,
