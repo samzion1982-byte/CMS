@@ -17,6 +17,7 @@ const MODULE_STYLE = {
   events:      { bg: '#faf5ff', color: '#6b21a8' },
   assets:      { bg: '#ecfeff', color: '#0e7490' },
   finance:     { bg: '#ecfdf5', color: '#065f46' },
+  auction:     { bg: '#fff7ed', color: '#9a3412' },
   directory:   { bg: '#f0fdfa', color: '#115e59' },
   announcements: { bg: '#fff7ed', color: '#c2410c' },
   recycle_bin: { bg: '#fff7ed', color: '#c2410c' },

@@ -811,7 +811,7 @@ export default function AuctionReportPage() {
       const xlsxMod = await import('xlsx')
       const { read } = xlsxMod.default ?? xlsxMod
       const buf = await file.arrayBuffer()
-      const wb = read(buf, { type: 'array' })
+      const wb = read(buf, { type: 'array', cellDates: true })
       const hasTotalPurchase = (wb.SheetNames || []).some((n) => {
         const l = String(n).toLowerCase()
         return l.includes('total purchase') || l === 'total purchase'
@@ -936,7 +936,7 @@ export default function AuctionReportPage() {
       })
 
       await logCmsAudit({
-        action: 'saved', module: 'finance', entityType: 'auction_tracker',
+        action: 'saved', module: 'auction', entityType: 'auction_tracker',
         entityId: filterFY,
         summary: `Imported ${upserts.length} Total Purchase rows (FY ${filterFY}, auction ${importAuctionDate})`,
       })
@@ -1188,7 +1188,7 @@ export default function AuctionReportPage() {
       }
 
       await logCmsAudit({
-        action: 'saved', module: 'finance', entityType: 'auction_seasons',
+        action: 'saved', module: 'auction', entityType: 'auction_seasons',
         entityId: fromFY,
         summary: `Closed auction FY ${fromFY} as ${closePolicy} (cutoff ${cutoff}). Next auction ${closeNextAuctionDate}.`,
       })
@@ -1264,7 +1264,7 @@ export default function AuctionReportPage() {
       })
       await reopenAuctionSeason(fromFY)
       await logCmsAudit({
-        action: 'saved', module: 'finance', entityType: 'auction_seasons',
+        action: 'saved', module: 'auction', entityType: 'auction_seasons',
         entityId: fromFY,
         summary: `Undid Close Year ${fromFY}. Season is open. Choose Carry or Forfeit on Close Year again.`,
       })
@@ -1776,8 +1776,8 @@ export default function AuctionReportPage() {
       setGenerated(false)
       setReportRows([])
       await loadTracker(filterFY)
-      if (!result.deleted) toast('No auction tracker rows to flush.', 'success')
-      else toast(`Flushed ${result.deleted} auction tracker rows (${result.fys.join(', ')}). Receipts and other records were not changed. Snapshots are in Recycle Bin.`, 'success')
+      if (!result.deleted && !result.seasons && !result.filesDeleted) toast('No auction report data to flush.', 'success')
+      else toast(`Flushed ${result.deleted} tracker rows, ${result.seasons || 0} season(s), ${result.filesDeleted || 0} file(s). Receipts were not changed.`, 'success')
     } catch (e) {
       setFlushPwError(e.message || 'Flush failed')
     }
@@ -1820,7 +1820,13 @@ export default function AuctionReportPage() {
         subtitle="Import Total Purchase, run Spill-over Report, and export"
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xls,.csv" style={{ display: 'none' }} onChange={handleFilePick} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xlsm,.xls,.csv,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            style={{ display: 'none' }}
+            onChange={handleFilePick}
+          />
           <a
             className="action-btn"
             href="/templates/Auction-Prep-Template.xlsm"
@@ -1917,7 +1923,7 @@ export default function AuctionReportPage() {
             }}
             disabled={flushing}
             style={{ background: '#dc2626' }}
-            title="Delete all auction tracker rows. Receipts and other CMS data are not touched."
+            title="Delete all auction tracker rows, seasons, and stored files. Receipts are not touched."
           >
             {flushing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
             Flush
@@ -2628,9 +2634,8 @@ export default function AuctionReportPage() {
               Flush auction records
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-              Deletes <strong>all auction tracker rows</strong> (every financial year).
+              Deletes <strong>all Auction Report data</strong>: tracker rows, season close policy, and stored files (Uploaded Documents and Closed reports).
               Receipts, members, and other CMS data are not touched.
-              Reference files in the documents panel are kept.
               A Recycle Bin snapshot is saved first.
             </p>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>

@@ -778,7 +778,7 @@ export async function listBackupSources() {
       tables: FULL_BACKUP_TABLES.map((name) => ({ name })),
       storage_buckets: [
         'member-photos', 'receipt-pdfs', 'church-logos', 'event-media', 'asset-photos',
-        'fixed-asset-docs', 'church-documents', 'family-records',
+        'fixed-asset-docs', 'church-documents', 'auction-reports', 'family-records',
         'announcement-cards', 'announcement-reports', 'member-reports', 'payment-pages',
       ].map((name) => ({ name, files: null, sync: true })),
       sync_buckets: 'all',

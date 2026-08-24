@@ -123,7 +123,7 @@ export default function AuctionDocsPanel({
 
   const openDoc = async (doc) => {
     try {
-      const url = await getAuctionDocumentUrl(doc.path)
+      const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
       const mime = String(doc.mime || '')
       const name = doc.originalName || doc.storedName
       const canEmbed = mime.includes('pdf') || mime.startsWith('image/')
@@ -137,7 +137,7 @@ export default function AuctionDocsPanel({
 
   const downloadDoc = async (doc) => {
     try {
-      const url = await getAuctionDocumentUrl(doc.path)
+      const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
       const a = document.createElement('a')
       a.href = url
       a.download = doc.originalName || 'auction-document'

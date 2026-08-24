@@ -77,6 +77,7 @@ const FLUSH_CATEGORIES = [
     key: 'receipts', label: 'Receipts', color: '#d97706',
     subs: [
       { key: 'entry',    label: 'Receipt Entry',    color: '#f59e0b' },
+      { key: 'auction',  label: 'Auction Reports',  color: '#d97706' },
       { key: 'payments', label: 'Payments & Pages', color: '#fbbf24' },
       { key: 'files',    label: 'Receipt Files',    color: '#fcd34d' },
     ],
@@ -157,7 +158,9 @@ const TABLE_FLUSH_META = {
   receipt_transfer_batches:{ category: 'receipts', sub: 'entry' },
   receipt_financial_years: { category: 'receipts', sub: 'entry' },
   payment_categories:      { category: 'receipts', sub: 'entry' },
-  auction_tracker:         { category: 'receipts', sub: 'entry' },
+  auction_tracker:         { category: 'receipts', sub: 'auction' },
+  auction_seasons:         { category: 'receipts', sub: 'auction' },
+  auction_close_balances:  { category: 'receipts', sub: 'auction' },
   member_payment_schedules:{ category: 'receipts', sub: 'payments' },
   payment_requests:        { category: 'receipts', sub: 'payments' },
 
@@ -210,6 +213,7 @@ const FLUSH_TABLE_ORDER = {
   event_task_buckets: 14,
   directory_contacts: 10,
   church_documents: 10,
+  auction_close_balances: 10,
   user_alerts: 10,
   simple_transactions: 10,
   receipts: 20,
@@ -219,6 +223,8 @@ const FLUSH_TABLE_ORDER = {
   event_plans: 20,
   directory_categories: 20,
   church_document_categories: 20,
+  auction_seasons: 18,
+  auction_tracker: 22,
   simple_categories: 20,
   simple_accounts: 22,
   baptism_records: 30,
@@ -643,6 +649,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
             id: `table::${tbl}`,
             label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)'
               : tbl === 'cms_audit_log' ? 'Audit Trail (cms_audit_log)'
+              : tbl === 'auction_tracker' ? 'Auction tracker'
+              : tbl === 'auction_seasons' ? 'Auction seasons'
+              : tbl === 'auction_close_balances' ? 'Auction close balances'
               : tbl,
             type: 'table',
             count: count || 0,
@@ -661,7 +670,9 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       { bucket: 'event-media',          folder: '',        label: 'Event Media (incl. quarantine)',     category: 'events',        sub: 'recorder' },
       { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos (incl. quarantine)',    category: 'assets',        sub: 'movable' },
       { bucket: 'fixed-asset-docs',     folder: '',        label: 'Fixed Asset Docs (incl. quarantine)', category: 'assets',       sub: 'fixed' },
-      { bucket: 'church-documents',     folder: '',        label: 'Church Documents (incl. quarantine)', category: 'assets',       sub: 'documents' },
+      { bucket: 'church-documents',     folder: '',            label: 'Church Documents (incl. quarantine)', category: 'assets',       sub: 'documents' },
+      { bucket: 'auction-reports',      folder: '',            label: 'Auction Reports (files)',             category: 'receipts',     sub: 'auction' },
+      { bucket: 'church-documents',     folder: 'auction-ref',  label: 'Auction Reports (legacy files)',      category: 'receipts',     sub: 'auction' },
       { bucket: 'church-logos',         folder: '',        label: 'Church Logos',              category: 'other',         sub: 'misc' },
       { bucket: 'member-reports',       folder: '',        label: 'Member Reports',            category: 'members',       sub: 'roster' },
       { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs (incl. quarantine)',    category: 'receipts',      sub: 'files' },
@@ -752,7 +763,10 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         setProgress(`Flushing ${item.label}…`)
         if (item.type === 'table') {
           const tbl = item.id.replace('table::', '')
-          const { error } = await adminSupabase.from(tbl).delete().not('id', 'is', null)
+          const q = (tbl === 'auction_seasons' || tbl === 'auction_close_balances')
+            ? adminSupabase.from(tbl).delete().not('financial_year', 'is', null)
+            : adminSupabase.from(tbl).delete().not('id', 'is', null)
+          const { error } = await q
           if (error) {
             console.error(`[flush] error on ${tbl}:`, error)
             const msg = error.message?.toLowerCase() ?? ''
@@ -767,7 +781,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
           }
           // Fresh setup: wiping recycle-bin rows also clears leftover quarantine media
           if (tbl === 'cms_recycle_bin') {
-            for (const bucket of ['event-media', 'asset-photos', 'receipt-pdfs', 'fixed-asset-docs', 'church-documents']) {
+            for (const bucket of ['event-media', 'asset-photos', 'receipt-pdfs', 'fixed-asset-docs', 'church-documents', 'auction-reports']) {
               const toDelete = []
               async function walk(dir) {
                 const { data } = await adminSupabase.storage.from(bucket).list(dir, { limit: 10000 })

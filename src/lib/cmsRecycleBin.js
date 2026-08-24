@@ -30,6 +30,7 @@ export const QUARANTINE_BUCKETS = [
   'receipt-pdfs',
   'fixed-asset-docs',
   'church-documents',
+  'auction-reports',
 ]
 
 /** List all file object paths under a storage folder (recursive, one bucket). */
@@ -358,7 +359,7 @@ export async function snapshotAuctionTrackerFY(fy, { operation = 'change', notes
   if (!data?.length) return null
 
   return captureTableSnapshot({
-    module: 'finance',
+    module: 'auction',
     tableName: 'auction_tracker',
     snapshotKey: `auction_tracker:FY:${fy}:${Date.now()}`,
     recordLabel: `Auction tracker FY ${fy} (${data.length} members)`,
@@ -370,7 +371,7 @@ export async function snapshotAuctionTrackerFY(fy, { operation = 'change', notes
 }
 
 /**
- * Snapshot every FY then delete all auction_tracker rows.
+ * Snapshot every FY then delete all auction tracker, season, and file records.
  * Does not touch receipts, receipt_items, or other CMS tables.
  */
 export async function flushAllAuctionTracker({ actor = null } = {}) {
@@ -387,13 +388,12 @@ export async function flushAllAuctionTracker({ actor = null } = {}) {
     if (!data || data.length < PAGE) break
     from += PAGE
   }
-  if (!rows.length) return { deleted: 0, fys: [] }
 
   const fys = [...new Set(rows.map((r) => r.financial_year).filter(Boolean))]
   for (const fy of fys) {
     const fyRows = rows.filter((r) => r.financial_year === fy)
     await captureTableSnapshot({
-      module: 'finance',
+      module: 'auction',
       tableName: 'auction_tracker',
       snapshotKey: `auction_tracker:FY:${fy}:flush:${Date.now()}`,
       recordLabel: `Auction tracker FY ${fy} (${fyRows.length} members)`,
@@ -404,6 +404,46 @@ export async function flushAllAuctionTracker({ actor = null } = {}) {
     })
   }
 
+  let seasonRows = []
+  let balRows = []
+  try {
+    const { data, error } = await supabase.from('auction_seasons').select('*')
+    if (!error) seasonRows = data || []
+  } catch { /* table may not exist yet */ }
+  if (seasonRows.length) {
+    await captureTableSnapshot({
+      module: 'auction',
+      tableName: 'auction_seasons',
+      snapshotKey: `auction_seasons:flush:${Date.now()}`,
+      recordLabel: `Auction seasons (${seasonRows.length})`,
+      rows: seasonRows,
+      meta: { operation: 'flush_all' },
+      notes: 'Snapshot before flush all auction seasons',
+      actor,
+    })
+  }
+  try {
+    const { data, error } = await supabase.from('auction_close_balances').select('*')
+    if (!error) balRows = data || []
+  } catch { /* table may not exist yet */ }
+  if (balRows.length) {
+    await captureTableSnapshot({
+      module: 'auction',
+      tableName: 'auction_close_balances',
+      snapshotKey: `auction_close_balances:flush:${Date.now()}`,
+      recordLabel: `Auction close balances (${balRows.length})`,
+      rows: balRows,
+      meta: { operation: 'flush_all' },
+      notes: 'Snapshot before flush all auction close balances',
+      actor,
+    })
+  }
+
+  const { error: balErr } = await supabase.from('auction_close_balances').delete().not('financial_year', 'is', null)
+  if (balErr && !String(balErr.message || '').includes('auction_close_balances')) throw balErr
+  const { error: seasonErr } = await supabase.from('auction_seasons').delete().not('financial_year', 'is', null)
+  if (seasonErr && !String(seasonErr.message || '').includes('auction_seasons')) throw seasonErr
+
   for (const fy of fys) {
     const { error: delErr } = await supabase
       .from('auction_tracker')
@@ -412,15 +452,23 @@ export async function flushAllAuctionTracker({ actor = null } = {}) {
     if (delErr) throw delErr
   }
 
+  let filesDeleted = 0
+  try {
+    const { flushAuctionDocumentStorage } = await import('./auctionDocumentsLib.js')
+    filesDeleted = await flushAuctionDocumentStorage()
+  } catch (e) {
+    console.warn('flushAuctionDocumentStorage', e)
+  }
+
   await logCmsAudit({
     action: 'deleted',
-    module: 'finance',
+    module: 'auction',
     entityType: 'auction_tracker',
     entityId: 'all',
-    summary: `Flushed auction tracker (${rows.length} rows; FY ${fys.join(', ')}). Receipts not touched.`,
+    summary: `Flushed auction reports (${rows.length} tracker rows; ${seasonRows?.length || 0} seasons; ${filesDeleted} files). Receipts not touched.`,
     actor,
   })
-  return { deleted: rows.length, fys }
+  return { deleted: rows.length, fys, seasons: seasonRows?.length || 0, filesDeleted }
 }
 
 /**
@@ -454,7 +502,7 @@ export async function snapshotCloseYearUndo({ fromFY, toFY, priorRows = [], extr
     const { data, error } = await supabase
       .from('cms_recycle_bin')
       .insert({
-        module: 'finance',
+        module: 'auction',
         table_name: 'auction_tracker',
         record_id: `auction_tracker:close_year:${fromFY}->${toFY}:${Date.now()}`,
         record_label: `Close year undo: ${fromFY} → ${toFY}`,
@@ -575,7 +623,7 @@ export async function restoreRecycleBinItem(id, actor = null) {
       .eq('id', id)
     await logCmsAudit({
       action: 'restored',
-      module: 'recycle_bin',
+      module: 'auction',
       entityType: 'auction_documents',
       entityId: item.record_id,
       entityLabel: item.record_label,
@@ -607,7 +655,7 @@ export async function restoreRecycleBinItem(id, actor = null) {
       .eq('id', id)
     await logCmsAudit({
       action: 'restored',
-      module: 'recycle_bin',
+      module: 'auction',
       entityType: 'auction_seasons',
       entityId: item.record_id,
       entityLabel: item.record_label,
@@ -633,19 +681,28 @@ export async function restoreRecycleBinItem(id, actor = null) {
       if (delErr) throw delErr
     } else if (item.table_name === 'auction_tracker') {
       throw new Error('Auction tracker snapshot is missing financial_year metadata')
+    } else if (item.table_name === 'auction_seasons') {
+      const { error: delErr } = await supabase.from('auction_seasons').delete().not('financial_year', 'is', null)
+      if (delErr) throw delErr
+    } else if (item.table_name === 'auction_close_balances') {
+      const { error: delErr } = await supabase.from('auction_close_balances').delete().not('financial_year', 'is', null)
+      if (delErr) throw delErr
     } else {
       throw new Error(`Bulk restore not supported for table ${item.table_name}`)
     }
 
     if (rows.length) {
       const CHUNK = 200
+      const conflict = item.table_name === 'auction_seasons'
+        ? 'financial_year'
+        : 'financial_year,member_id'
       for (let i = 0; i < rows.length; i += CHUNK) {
         const chunk = rows.slice(i, i + CHUNK)
         const { error: insErr } = await supabase.from(item.table_name).insert(chunk)
         if (insErr) {
           const { error: upErr } = await supabase
             .from(item.table_name)
-            .upsert(chunk, { onConflict: 'financial_year,member_id' })
+            .upsert(chunk, { onConflict: conflict })
           if (upErr) throw new Error(`Restore failed: ${upErr.message}`)
         }
       }

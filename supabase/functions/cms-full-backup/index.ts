@@ -82,7 +82,7 @@ const FALLBACK_TABLES = [
 
 const KNOWN_BUCKETS = [
   'announcement-cards', 'announcement-reports', 'asset-photos', 'church-logos',
-  'church-documents', 'fixed-asset-docs', 'family-records',
+  'church-documents', 'auction-reports', 'fixed-asset-docs', 'family-records',
   'event-media', 'member-photos', 'member-reports', 'payment-pages', 'receipt-pdfs',
 ]
 

@@ -150,6 +150,7 @@ export const AUDIT_MODULES = [
   { value: 'directory', label: 'Phone Directory' },
   { value: 'announcements', label: 'Announcements' },
   { value: 'finance', label: 'Finance' },
+  { value: 'auction', label: 'Auction Reports' },
   { value: 'recycle_bin', label: 'Recycle Bin' },
 ]
 
