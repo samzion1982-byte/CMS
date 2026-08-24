@@ -16,6 +16,7 @@ import {
   Calendar, MapPin, Phone, Mail, Church,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const ENTITY_TYPES = ['Church', 'Trust', 'School', 'Complex', 'Other']
 
@@ -239,6 +240,7 @@ export default function EntityManagementPage() {
   const [toggling,    setToggling]    = useState(null)   // id being toggled
   const [savingType,  setSavingType]  = useState(null)   // id whose type is saving
   const [deleting,    setDeleting]    = useState(null)   // id being deleted
+  const [confirmEntity, setConfirmEntity] = useState(null)
 
   const activeCount = entities.filter(e => e.is_active).length
 
@@ -265,7 +267,12 @@ export default function EntityManagementPage() {
   }
 
   async function handleDelete(entity) {
-    if (!window.confirm(`Delete "${entity.name}"? This cannot be undone.`)) return
+    setConfirmEntity(entity)
+  }
+
+  async function confirmDeleteEntity() {
+    const entity = confirmEntity
+    if (!entity) return
     setDeleting(entity.id)
     try {
       // Check for associated data first
@@ -276,11 +283,13 @@ export default function EntityManagementPage() {
       if ((coaCount || 0) > 0 || (jeCount || 0) > 0) {
         toast(`Cannot delete: this book has ${coaCount || 0} accounts and ${jeCount || 0} journal entries. Rename it instead.`, 'error')
         setDeleting(null)
+        setConfirmEntity(null)
         return
       }
       const { error } = await supabase.from('accounting_entities').delete().eq('id', entity.id)
       if (error) throw error
       toast('Book deleted.', 'success')
+      setConfirmEntity(null)
       await reload()
     } catch (e) { toast('Delete failed: ' + e.message, 'error') }
     setDeleting(null)
@@ -501,6 +510,17 @@ export default function EntityManagementPage() {
           </p>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmEntity}
+        title="Delete book?"
+        message={confirmEntity ? `Delete "${confirmEntity.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        danger
+        busy={!!deleting}
+        onCancel={() => { if (!deleting) setConfirmEntity(null) }}
+        onConfirm={confirmDeleteEntity}
+      />
     </div>
   )
 }

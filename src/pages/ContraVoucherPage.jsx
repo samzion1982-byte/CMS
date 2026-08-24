@@ -184,7 +184,22 @@ export default function ContraVoucherPage() {
 
   const isValid = fromId && toId && fromId !== toId && parseFloat(amount) > 0
   const busy    = saving || posting
+  const dirty = !!(fromId || toId || parseFloat(amount) > 0 || narration || refNo)
 
+  function leaveAccounting() {
+    if (dirty && !window.confirm('You have unsaved voucher details. Leave without saving?')) return
+    navigate('/accounting')
+  }
+
+  useEffect(() => {
+    const on = (e) => {
+      if (!dirty) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', on)
+    return () => window.removeEventListener('beforeunload', on)
+  }, [dirty])
 
   useEffect(() => {
     const promises = [getChartOfAccounts(true, currentEntityId), getAccountingSettings()]
@@ -278,7 +293,7 @@ export default function ContraVoucherPage() {
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <button onClick={() => navigate('/accounting')}
+          <button onClick={leaveAccounting}
             style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>

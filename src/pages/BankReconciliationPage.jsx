@@ -20,6 +20,7 @@ import {
   CheckCircle, AlertCircle, ChevronDown,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const LABEL_TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', textAlign: 'left' }
 
@@ -36,6 +37,7 @@ export default function BankReconciliationPage() {
   const [loading,     setLoading]     = useState(false)
   const [toggling,    setToggling]    = useState(null) // line id being toggled
   const [showAll,     setShowAll]     = useState(false) // false = unreconciled only
+  const [confirmMarkAll, setConfirmMarkAll] = useState(false)
   const { from: fyFrom, to: fyTo } = fyDateRange(fy)
 
   // Load bank/cash asset accounts
@@ -186,8 +188,7 @@ export default function BankReconciliationPage() {
             <button onClick={() => {
               const n = lines.filter(l => !l.is_reconciled).length
               if (!n) return
-              if (!window.confirm(`Mark ${n} uncleared line${n === 1 ? '' : 's'} as cleared for ${selAccount?.name || 'this account'}?`)) return
-              markAllReconciled()
+              setConfirmMarkAll(true)
             }} disabled={loading}
               style={{ height: 36, padding: '0 14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
               <CheckSquare size={13} /> Mark All Cleared
@@ -309,6 +310,16 @@ export default function BankReconciliationPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmMarkAll}
+        title="Mark all cleared?"
+        message={`Mark ${lines.filter(l => !l.is_reconciled).length} uncleared line${lines.filter(l => !l.is_reconciled).length === 1 ? '' : 's'} as cleared for ${selAccount?.name || 'this account'}?`}
+        confirmLabel="Mark cleared"
+        danger={false}
+        onCancel={() => setConfirmMarkAll(false)}
+        onConfirm={() => { setConfirmMarkAll(false); markAllReconciled() }}
+      />
     </div>
   )
 }

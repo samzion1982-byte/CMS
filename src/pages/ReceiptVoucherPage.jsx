@@ -139,6 +139,22 @@ export default function ReceiptVoucherPage() {
 
   const total   = useMemo(() => lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [lines])
   const isValid = debitCoaId && lines.some(l => l.account_id && parseFloat(l.amount) > 0)
+  const dirty = !!(debitCoaId || receivedFrom || lineNarration || lines.some(l => l.account_id || parseFloat(l.amount) > 0))
+
+  function leaveAccounting() {
+    if (dirty && !window.confirm('You have unsaved voucher details. Leave without saving?')) return
+    navigate('/accounting')
+  }
+
+  useEffect(() => {
+    const on = (e) => {
+      if (!dirty) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', on)
+    return () => window.removeEventListener('beforeunload', on)
+  }, [dirty])
   const busy    = saving || posting
 
   useEffect(() => { getFunds(true).then(setFunds).catch(() => {}) }, [])
@@ -278,7 +294,7 @@ export default function ReceiptVoucherPage() {
       {/* ══ ALWAYS VISIBLE: header + voucher details ══ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <button onClick={() => navigate('/accounting')}
+          <button onClick={leaveAccounting}
             style={{ background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '6px 8px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>

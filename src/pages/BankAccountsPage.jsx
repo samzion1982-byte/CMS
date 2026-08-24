@@ -13,6 +13,7 @@ import {
   X, CheckCircle, CreditCard, Hash, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const ACCOUNT_TYPES = ['Savings', 'Current', 'Cash Credit', 'Fixed Deposit', 'Overdraft', 'Cash']
 
@@ -303,6 +304,8 @@ export default function BankAccountsPage() {
   const [coaAccounts,  setCoaAccounts]  = useState([])
   const [modal,        setModal]        = useState(null)   // null | 'add' | { editing: account }
   const [filter,       setFilter]       = useState('active')  // 'active' | 'all'
+  const [confirmDel,   setConfirmDel]   = useState(null)
+  const [delBusy,      setDelBusy]      = useState(false)
 
   useEffect(() => {
     if (!currentEntityId) return
@@ -342,11 +345,22 @@ export default function BankAccountsPage() {
   }
 
   async function handleDelete(account) {
-    if (!window.confirm(`Delete "${account.bank_name}" account? This cannot be undone.`)) return
-    const { error } = await supabase.from('bank_accounts').delete().eq('id', account.id)
-    if (error) { toast('Delete failed: ' + error.message, 'error'); return }
-    setAccounts(prev => prev.filter(a => a.id !== account.id))
-    toast('Bank account deleted.', 'success')
+    setConfirmDel(account)
+  }
+
+  async function confirmDeleteAccount() {
+    const account = confirmDel
+    if (!account) return
+    setDelBusy(true)
+    try {
+      const { error } = await supabase.from('bank_accounts').delete().eq('id', account.id)
+      if (error) { toast('Delete failed: ' + error.message, 'error'); return }
+      setAccounts(prev => prev.filter(a => a.id !== account.id))
+      toast('Bank account deleted.', 'success')
+      setConfirmDel(null)
+    } finally {
+      setDelBusy(false)
+    }
   }
 
   const visible = accounts.filter(a => filter === 'all' ? true : a.is_active)
@@ -447,6 +461,17 @@ export default function BankAccountsPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        title="Delete bank account?"
+        message={confirmDel ? `Delete "${confirmDel.bank_name}" account? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        danger
+        busy={delBusy}
+        onCancel={() => { if (!delBusy) setConfirmDel(null) }}
+        onConfirm={confirmDeleteAccount}
+      />
     </div>
   )
 }

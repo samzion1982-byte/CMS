@@ -51,6 +51,8 @@ export default function MemberStatementPage() {
   const [members, setMembers]         = useState([])
   const [listLoading, setListLoading] = useState(true)
   const [listQ, setListQ]             = useState('')
+  const [listPage, setListPage]       = useState(0)
+  const LIST_PAGE = 50
 
   // ── detail state ─────────────────────────────────────────────
   const [selMember, setSelMember]         = useState(null)
@@ -177,6 +179,13 @@ export default function MemberStatementPage() {
     const q = listQ.trim().toLowerCase()
     return members.filter(m => m.member_name?.toLowerCase().includes(q) || m.member_id?.toLowerCase().includes(q) || m.city?.toLowerCase().includes(q))
   }, [members, listQ])
+
+  useEffect(() => { setListPage(0) }, [listQ])
+
+  const pagedMembers = useMemo(() => {
+    const from = listPage * LIST_PAGE
+    return filteredMembers.slice(from, from + LIST_PAGE)
+  }, [filteredMembers, listPage])
 
   const declTotal = declItems.reduce((s, d) => s + (d.pledged || 0), 0)
 
@@ -417,7 +426,7 @@ export default function MemberStatementPage() {
       <PageHeader
         icon={FileText}
         title="Member Statement"
-        subtitle={listLoading ? 'Loading…' : `${members.length} members`}
+        subtitle={listLoading ? 'Loading…' : `${filteredMembers.length} members`}
       />
 
       {/* Filter */}
@@ -452,13 +461,13 @@ export default function MemberStatementPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredMembers.map((m, i) => (
+              {pagedMembers.map((m, i) => (
                   <tr key={m.member_id}
                     onClick={() => openMember(m)}
                     style={{ borderTop: '1px solid var(--table-border)', cursor: 'pointer', background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--table-row-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)'}>
-                    <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{i + 1}</td>
+                    <td style={{ padding: '9px 14px', fontSize: 12, color: 'var(--text-3)' }}>{(listPage * LIST_PAGE) + i + 1}</td>
                     <td style={{ padding: '7px 14px' }}>
                       <span style={{ display: 'inline-block', background: 'var(--accent)', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>
                         {m.member_id}
@@ -473,6 +482,15 @@ export default function MemberStatementPage() {
           </table>
         )}
       </div>
+      {filteredMembers.length > LIST_PAGE && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: 'var(--text-3)' }}>
+          <span>Page {listPage + 1} of {Math.ceil(filteredMembers.length / LIST_PAGE)}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" disabled={listPage === 0} onClick={() => setListPage(p => p - 1)}>Prev</button>
+            <button className="btn btn-ghost btn-sm" disabled={(listPage + 1) * LIST_PAGE >= filteredMembers.length} onClick={() => setListPage(p => p + 1)}>Next</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

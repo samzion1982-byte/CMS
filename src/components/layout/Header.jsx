@@ -3,7 +3,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { useTheme, THEMES, FONTS } from '../../lib/ThemeContext'
 import { getChurch, LICENSE_CSV, VENDOR } from '../../lib/supabase'
 import { initials, ROLE_LABELS, displayFirstName } from '../../lib/auth'
-import { ChevronDown, LogOut, Edit } from 'lucide-react'
+import { ChevronDown, LogOut, Edit, Menu, X } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 
 export const HEADER_H = 88
@@ -425,7 +425,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
 }
 
 /* ── Header ──────────────────────────────────────────────────── */
-export default function Header({ onEditDevice }) {
+export default function Header({ onEditDevice, onMenuClick, mobile = false, mobileNavOpen = false }) {
   const { profile, signOut } = useAuth()
   const { theme, setTheme, font, setFont } = useTheme()
   const [church, setChurch]  = useState(null)
@@ -575,14 +575,14 @@ export default function Header({ onEditDevice }) {
       <header key={theme} style={{
         position: 'fixed',
         top: 0, left: 0, right: 0,
-        height: HEADER_H,
+        height: mobile ? 64 : HEADER_H,
         background: g.bg,
         borderBottom: `1px solid ${g.border}`,
         boxShadow: g.shadow,
         display: 'flex',
         alignItems: 'center',
-        padding: '0 28px 0 24px',
-        gap: 20,
+        padding: mobile ? '0 12px 0 10px' : '0 28px 0 24px',
+        gap: mobile ? 10 : 20,
         zIndex: 400,
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
@@ -599,20 +599,39 @@ export default function Header({ onEditDevice }) {
           pointerEvents: 'none',
         }} />
 
+        {mobile && (
+          <button
+            type="button"
+            className="no-print"
+            onClick={onMenuClick}
+            aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileNavOpen}
+            style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              border: '1.5px solid rgba(255,255,255,0.22)',
+              background: 'rgba(0,0,0,0.28)', color: '#fff',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+        )}
+
         {/* ── Branding ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0, animation: 'hdrSlideL 0.5s 0.05s ease both' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: mobile ? 10 : 20, flexShrink: 1, minWidth: 0, animation: 'hdrSlideL 0.5s 0.05s ease both' }}>
           {church?.logo_url && (
             <img
               src={church.logo_url}
               alt="Church logo"
-              style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: 14, flexShrink: 0,
+              style={{ width: mobile ? 40 : 64, height: mobile ? 40 : 64, objectFit: 'contain', borderRadius: mobile ? 10 : 14, flexShrink: 0,
                 filter: 'drop-shadow(0 3px 12px rgba(0,0,0,0.45))',
                 animation: 'logoSpin 0.55s 0.08s ease both',
               }}
             />
           )}
-          <div>
-            {church?.diocese && (
+          <div style={{ minWidth: 0 }}>
+            {church?.diocese && !mobile && (
               <p style={{
                 fontSize: 10.5, fontWeight: 600, color: g.text2,
                 margin: '0 0 4px', whiteSpace: 'nowrap',
@@ -623,13 +642,14 @@ export default function Header({ onEditDevice }) {
               </p>
             )}
             <h1 style={{
-              fontSize: 22, fontWeight: 800, color: g.text1, margin: 0,
+              fontSize: mobile ? 15 : 22, fontWeight: 800, color: g.text1, margin: 0,
               fontFamily: 'var(--font-ui)', lineHeight: 1.2,
               letterSpacing: '0.3px', whiteSpace: 'nowrap',
-            }}>
+              overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: mobile ? '42vw' : undefined,
+            }} title={church?.church_name || 'Church CMS'}>
               {church?.church_name || 'Church CMS'}
             </h1>
-            {(church?.address || church?.city) && (
+            {(church?.address || church?.city) && !mobile && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 <p style={{
                   fontSize: 12, color: g.text2, margin: 0,
@@ -648,19 +668,19 @@ export default function Header({ onEditDevice }) {
 
         {/* ── Right side ── */}
         <div style={{ display: 'flex', alignItems: 'center', animation: 'hdrSlideR 0.5s 0.12s ease both' }}>
-          <LiveClock g={g} />
-          <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 14px' }} />
+          {!mobile && <LiveClock g={g} />}
+          {!mobile && <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 14px' }} />}
           <NotificationBell g={g} />
-          <div style={{ width: 1, height: 36, background: g.divider, flexShrink: 0, margin: '0 14px' }} />
+          <div style={{ width: 1, height: mobile ? 28 : 36, background: g.divider, flexShrink: 0, margin: mobile ? '0 8px' : '0 14px' }} />
 
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: mobile ? 8 : 12 }}>
             <UserBadge
               profile={profile} ini={ini} firstName={firstName} roleLabel={roleLabel}
               g={g} theme={theme} setTheme={setTheme} font={font} setFont={setFont}
               onSignOut={signOut} onEditDevice={onEditDevice}
             />
 
-            <div ref={licenseRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginBottom: 6 }}>
+            <div ref={licenseRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginBottom: mobile ? 2 : 6 }}>
               <button
                 onClick={() => setLicenseOpen(o => !o)}
                 style={{

@@ -32,6 +32,7 @@ import AccountPicker from '../components/accounting/AccountPicker'
 import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -230,6 +231,8 @@ function JournalEntryList() {
   const [filterPost,  setFilterPost]  = useState('')
   const [showTrash,   setShowTrash]   = useState(false)
   const [permDeleteEntry, setPermDeleteEntry] = useState(null)
+  const [confirmDlg, setConfirmDlg] = useState(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
   const [page,        setPage]        = useState(0)
   const [dateSort,    setDateSort]    = useState('desc') // 'asc' | 'desc'
   const PAGE_SIZE = 25
@@ -452,7 +455,15 @@ function JournalEntryList() {
                                 style={{ padding: '4px 8px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <Eye size={11} />
                               </button>
-                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm('Move this posted entry to trash?')) return; try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); load() } catch(err){toast(err.message,'error')} }}
+                              <button onClick={ev => { ev.stopPropagation(); setConfirmDlg({
+                                title: 'Move to trash?',
+                                message: 'Move this posted entry to trash?',
+                                confirmLabel: 'Move to trash',
+                                onConfirm: async () => {
+                                  setConfirmBusy(true)
+                                  try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); setConfirmDlg(null); load() } catch(err){toast(err.message,'error')} finally { setConfirmBusy(false) }
+                                },
+                              }) }}
                                 style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <Trash2 size={11} />
                               </button>
@@ -461,9 +472,26 @@ function JournalEntryList() {
                             <>
                               <button onClick={ev => { ev.stopPropagation(); e.voucher_type === 'Receipt' ? navigate(`/accounting/receipt-voucher?edit=${e.id}`) : e.voucher_type === 'Payment' ? navigate(`/accounting/payment-voucher?edit=${e.id}`) : e.voucher_type === 'Contra' ? navigate(`/accounting/contra-voucher?edit=${e.id}`) : e.voucher_type === 'Journal' ? navigate(`/accounting/journal-voucher?edit=${e.id}`) : navigate(`/accounting/journal-entries/${e.id}`) }}
                                 style={{ padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
-                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm(`Post draft ${e.entry_number || ''}?\n\nThis cannot be undone from the list.`)) return; try { await postJournalEntry(e.id, profile?.email || 'admin'); toast('Posted!', 'success'); load() } catch(err){toast(err.message,'error')} }}
+                              <button onClick={ev => { ev.stopPropagation(); setConfirmDlg({
+                                title: 'Post draft?',
+                                message: `Post draft ${e.entry_number || ''}?\n\nThis cannot be undone from the list.`,
+                                confirmLabel: 'Post',
+                                danger: false,
+                                onConfirm: async () => {
+                                  setConfirmBusy(true)
+                                  try { await postJournalEntry(e.id, profile?.email || 'admin'); toast('Posted!', 'success'); setConfirmDlg(null); load() } catch(err){toast(err.message,'error')} finally { setConfirmBusy(false) }
+                                },
+                              }) }}
                                 style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Post</button>
-                              <button onClick={async ev => { ev.stopPropagation(); if(!window.confirm('Move this entry to trash?')) return; try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); load() } catch(err){toast(err.message,'error')} }}
+                              <button onClick={ev => { ev.stopPropagation(); setConfirmDlg({
+                                title: 'Move to trash?',
+                                message: 'Move this entry to trash?',
+                                confirmLabel: 'Move to trash',
+                                onConfirm: async () => {
+                                  setConfirmBusy(true)
+                                  try { await softDeleteJournalEntry(e.id, profile?.email || 'admin'); toast('Moved to trash.','success'); setConfirmDlg(null); load() } catch(err){toast(err.message,'error')} finally { setConfirmBusy(false) }
+                                },
+                              }) }}
                                 style={{ padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Del</button>
                             </>
                           )}
@@ -518,6 +546,16 @@ function JournalEntryList() {
 
       {showNewEntry && <JournalEntryModal onClose={() => setShowNewEntry(false)} onSaved={load} />}
       {permDeleteEntry && <PermanentDeleteModal entry={permDeleteEntry} onClose={() => setPermDeleteEntry(null)} onDeleted={load} />}
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message || ''}
+        confirmLabel={confirmDlg?.confirmLabel || 'Confirm'}
+        danger={confirmDlg?.danger !== false}
+        busy={confirmBusy}
+        onCancel={() => { if (!confirmBusy) setConfirmDlg(null) }}
+        onConfirm={() => confirmDlg?.onConfirm?.()}
+      />
     </div>
   )
 }
@@ -543,6 +581,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
   const [posting,       setPosting]       = useState(false)
   const [isPosted,      setIsPosted]      = useState(false)
   const [editingPosted, setEditingPosted] = useState(false)
+  const [confirmEditPosted, setConfirmEditPosted] = useState(false)
   const [auditLog,      setAuditLog]      = useState([])
   const [showPrint,     setShowPrint]     = useState(false)
 
@@ -752,10 +791,7 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
               </button>
             )}
             {isPosted && !editingPosted && (
-              <button onClick={() => {
-                if (!window.confirm('This entry is posted. Editing it will update financial records and is logged. Continue?')) return
-                setEditingPosted(true)
-              }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#fff7ed', color: '#c2410c', border: '1.5px solid #fdba74', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={() => setConfirmEditPosted(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', background: '#fff7ed', color: '#c2410c', border: '1.5px solid #fdba74', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 <Edit2 size={14} /> Edit Entry
               </button>
             )}
@@ -1090,6 +1126,16 @@ function JournalEntryForm({ entryId, defaultVoucherType = 'Journal' }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmEditPosted}
+        title="Edit posted entry?"
+        message="This entry is posted. Editing it will update financial records and is logged. Continue?"
+        confirmLabel="Continue"
+        danger={false}
+        onCancel={() => setConfirmEditPosted(false)}
+        onConfirm={() => { setConfirmEditPosted(false); setEditingPosted(true) }}
+      />
     </div>
   )
 }

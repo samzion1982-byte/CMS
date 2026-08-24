@@ -19,7 +19,7 @@ import {
   Grid3X3, Filter, X, SlidersHorizontal, Search, BarChart2,
   AlertCircle, Clock, Repeat, Settings, GripVertical, Download, FileSpreadsheet,
 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, getChurch } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { formatDate } from '../lib/date'
@@ -37,6 +37,7 @@ import {
 import { sendWhatsAppMessage } from '../lib/whatsapp'
 import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1397,12 +1398,30 @@ export default function EventPlannerPage(){
   const toast=useToast()
   const navigate=useNavigate()
 
-  // Settings (read from localStorage; written by EventSettingsPage)
+  // Settings (localStorage mirror; EventSettingsPage also persists to churches.event_planner_settings)
   const [settings,setSettings]=useState(()=>{
     try{return{weekStartDay:0,...JSON.parse(localStorage.getItem('epSettings')||'{}')} }
     catch{return{weekStartDay:0}}
   })
   const ws=settings.weekStartDay??0  // 0=Sunday (India default), 1=Monday
+
+  useEffect(()=>{
+    let cancelled=false
+    ;(async()=>{
+      try{
+        const church=await getChurch()
+        const fromDb=church?.event_planner_settings
+        if(cancelled||!fromDb||typeof fromDb!=='object') return
+        const next={weekStartDay:0,...fromDb}
+        setSettings(next)
+        try{localStorage.setItem('epSettings',JSON.stringify(next))}catch{}
+      }catch{}
+    })()
+    return()=>{cancelled=true}
+  },[])
+
+  const [confirmDlg,setConfirmDlg]=useState(null)
+  const [confirmBusy,setConfirmBusy]=useState(false)
 
   // view: 'year' | 'month' | 'week' | 'agenda' | 'cards' | 'board'
   const [view,       setView]       = useState('month')
@@ -1968,11 +1987,19 @@ export default function EventPlannerPage(){
   }
 
   async function handleDeleteEvent(event){
-    if(!window.confirm(`Delete "${event.name}"? All buckets and tasks will be removed.`))return
-    try{
-      await deleteEvent(event.id);toast('Event deleted','success')
-      if(selEvent?.id===event.id)backFromBoard();await loadEvents()
-    }catch{toast('Failed to delete event','error')}
+    setConfirmDlg({
+      title:'Delete event?',
+      message:`Delete "${event.name}"? All buckets and tasks will be removed.`,
+      onConfirm:async()=>{
+        setConfirmBusy(true)
+        try{
+          await deleteEvent(event.id);toast('Event deleted','success')
+          if(selEvent?.id===event.id)backFromBoard();await loadEvents()
+          setConfirmDlg(null)
+        }catch{toast('Failed to delete event','error')}
+        finally{setConfirmBusy(false)}
+      },
+    })
   }
 
   // ── CRUD: Buckets ───────────────────────────────────────────
@@ -1986,9 +2013,16 @@ export default function EventPlannerPage(){
 
   async function handleDeleteBucket(bucket){
     const cnt=tasks.filter(t=>t.bucket_id===bucket.id).length
-    if(!window.confirm(`Delete "${bucket.name}"?${cnt>0?` Also deletes ${cnt} task${cnt>1?'s':''}.`:''}`))return
-    try{await deleteBucket(bucket.id);toast('Bucket deleted','success');await loadBoard(selEvent.id)}
-    catch{toast('Failed to delete bucket','error')}
+    setConfirmDlg({
+      title:'Delete bucket?',
+      message:`Delete "${bucket.name}"?${cnt>0?` Also deletes ${cnt} task${cnt>1?'s':''}.`:''}`,
+      onConfirm:async()=>{
+        setConfirmBusy(true)
+        try{await deleteBucket(bucket.id);toast('Bucket deleted','success');await loadBoard(selEvent.id);setConfirmDlg(null)}
+        catch{toast('Failed to delete bucket','error')}
+        finally{setConfirmBusy(false)}
+      },
+    })
   }
 
   // ── CRUD: Tasks ─────────────────────────────────────────────
@@ -2252,8 +2286,16 @@ export default function EventPlannerPage(){
   }
 
   async function handleDeleteLibrary(task){
-    if(!window.confirm(`Delete library template "${task.title}"?`))return
-    try{await deleteLibraryTask(task.id);toast('Template deleted','success');await loadLibraryTasks()}catch{toast('Failed to delete template','error')}
+    setConfirmDlg({
+      title:'Delete template?',
+      message:`Delete library template "${task.title}"?`,
+      onConfirm:async()=>{
+        setConfirmBusy(true)
+        try{await deleteLibraryItem(task.id);toast('Template deleted','success');await loadLibraryTasks();setConfirmDlg(null)}
+        catch{toast('Failed to delete template','error')}
+        finally{setConfirmBusy(false)}
+      },
+    })
   }
 
   // ── Library management (new) ────────────────────────────────
@@ -2309,17 +2351,34 @@ export default function EventPlannerPage(){
   }
 
   async function handleDeleteLibraryItem(id){
+    if(typeof id==='string' && id.startsWith('lib-cat-')){
+      const category = id.slice('lib-cat-'.length)
+      const count = libraryTasks.filter(t=>t.category===category).length
+      setConfirmDlg({
+        title:'Delete category?',
+        message:`Delete category "${category}" and its ${count} item${count===1?'':'s'}?`,
+        onConfirm:async()=>{
+          setConfirmBusy(true)
+          setLibrarySaving(true)
+          try{
+            const { error } = await supabase.from('task_library').delete().eq('category', category)
+            if(error) throw error
+            await loadLibraryTasks()
+            toast('Item deleted','success')
+            setConfirmDlg(null)
+          }catch{
+            toast('Failed to delete','error')
+          }finally{
+            setLibrarySaving(false)
+            setConfirmBusy(false)
+          }
+        },
+      })
+      return
+    }
     setLibrarySaving(true)
     try{
-      if(typeof id==='string' && id.startsWith('lib-cat-')){
-        const category = id.slice('lib-cat-'.length)
-        const count = libraryTasks.filter(t=>t.category===category).length
-        if(!window.confirm(`Delete category "${category}" and its ${count} item${count===1?'':'s'}?`)) return
-        const { error } = await supabase.from('task_library').delete().eq('category', category)
-        if(error) throw error
-      } else {
-        await deleteLibraryItem(id,profile?.email)
-      }
+      await deleteLibraryItem(id,profile?.email)
       await loadLibraryTasks()
       toast('Item deleted','success')
     }catch{
@@ -2332,15 +2391,22 @@ export default function EventPlannerPage(){
   async function handleDeleteTask(taskId){
     const task = tasks.find(t => t.id === taskId)
     if (!task) return
-    if(!window.confirm(`Delete "${task.title}"?`))return
-    try{
-      await deleteTask(taskId)
-      setTasks(p=>p.filter(t=>t.id!==taskId))
-      toast('Task deleted','success')
-    }catch(err){
-      console.error('Failed to delete task:', err)
-      toast('Failed to delete task','error')
-    }
+    setConfirmDlg({
+      title:'Delete task?',
+      message:`Delete "${task.title}"?`,
+      onConfirm:async()=>{
+        setConfirmBusy(true)
+        try{
+          await deleteTask(taskId)
+          setTasks(p=>p.filter(t=>t.id!==taskId))
+          toast('Task deleted','success')
+          setConfirmDlg(null)
+        }catch(err){
+          console.error('Failed to delete task:', err)
+          toast('Failed to delete task','error')
+        }finally{setConfirmBusy(false)}
+      },
+    })
   }
 
   async function handleMoveTask(taskId, direction){
@@ -3316,6 +3382,17 @@ export default function EventPlannerPage(){
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message || ''}
+        confirmLabel="Delete"
+        danger
+        busy={confirmBusy}
+        onCancel={() => { if (!confirmBusy) setConfirmDlg(null) }}
+        onConfirm={() => confirmDlg?.onConfirm?.()}
+      />
     </div>
   )
 }

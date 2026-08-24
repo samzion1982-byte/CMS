@@ -62,7 +62,7 @@ const NAV = [
   ]},
 ]
 
-export default function Sidebar({ collapsed, sidebarW, onToggle }) {
+export default function Sidebar({ collapsed, sidebarW, onToggle, mobile = false, mobileOpen = false, onNavigate, headerH = HEADER_H }) {
   const { profile, pageGrants } = useAuth()
   const navigate    = useNavigate()
   const location    = useLocation()
@@ -108,19 +108,23 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
   }
 
   return (
-    <aside style={{
+    <aside
+      className={mobile ? 'cms-sidebar-mobile' : undefined}
+      style={{
       width: sidebarW,
       minWidth: sidebarW,
       background: `linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-bg-end) 100%)`,
       borderRight: '1px solid var(--sidebar-border)',
       display: 'flex',
       flexDirection: 'column',
-      height: `calc(100vh - ${HEADER_H}px)`,
+      height: `calc(100vh - ${headerH}px)`,
       position: 'fixed',
-      left: 0, top: HEADER_H,
-      zIndex: 300,
-      transition: 'width 0.25s ease, min-width 0.25s ease',
+      left: 0, top: headerH,
+      zIndex: mobile ? 360 : 300,
+      transition: 'width 0.25s ease, min-width 0.25s ease, transform 0.25s ease',
       overflow: 'hidden',
+      transform: mobile ? (mobileOpen ? 'translateX(0)' : 'translateX(-105%)') : undefined,
+      boxShadow: mobile && mobileOpen ? '8px 0 32px rgba(0,0,0,0.35)' : undefined,
     }}>
 
       <nav style={{
@@ -180,7 +184,11 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                         collapsed={collapsed}
                         hasChildren
                         isExpanded={isExpanded}
-                        onClick={() => collapsed ? navigate(visibleChildren[0].path) : toggleExpand(item.label)}
+                    onClick={() => {
+                      if (item.soon) return
+                      if (collapsed && !mobile) navigate(visibleChildren[0].path)
+                      else toggleExpand(item.label)
+                    }}
                       />
                       {!collapsed && isExpanded && visibleChildren.map(child => {
                         const childActive = location.pathname === child.path
@@ -189,7 +197,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                             key={child.path}
                             label={child.label}
                             isActive={childActive}
-                            onClick={() => navigate(child.path)}
+                            onClick={() => { navigate(child.path); onNavigate?.() }}
                           />
                         )
                       })}
@@ -205,7 +213,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle }) {
                     item={item}
                     isActive={isActive}
                     collapsed={collapsed}
-                    onClick={() => !item.soon && navigate(item.path)}
+                    onClick={() => { if (!item.soon) { navigate(item.path); onNavigate?.() } }}
                   />
                 )
               })}

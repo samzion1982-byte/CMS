@@ -9,6 +9,7 @@ import { logCmsAudit } from '../lib/cmsAudit'
 import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -112,6 +113,8 @@ export default function DeclarationPage() {
   const [lockedFYs,      setLockedFYs]      = useState(new Set())
   const [fyActivity,     setFyActivity]     = useState({})
   const [fyLockedAlert,  setFyLockedAlert]  = useState(null)
+  const [confirmDel, setConfirmDel] = useState(null)
+  const [delBusy, setDelBusy] = useState(false)
   const exportMenuRef = useRef(null)
 
   // Union of data-bearing, manually added FYs, and always the current FY
@@ -298,32 +301,43 @@ export default function DeclarationPage() {
   }, [showModal, openNew])
 
   const del = async row => {
-    if (!window.confirm(`Delete declaration for ${row.member_name} (FY ${row.financial_year})?`)) return
-    const { data: items } = await supabase
-      .from('declaration_items').select('*').eq('declaration_id', row.id)
-    await captureDeletedRecord({
-      module: 'finance',
-      tableName: 'declarations',
-      recordId: row.id,
-      recordLabel: `${row.member_name} (${row.financial_year})`,
-      row,
-      related: { declaration_items: items || [] },
-      actor: profile,
-    })
-    if (items?.length) {
-      await supabase.from('declaration_items').delete().eq('declaration_id', row.id)
+    setConfirmDel(row)
+  }
+
+  const confirmDeleteDeclaration = async () => {
+    const row = confirmDel
+    if (!row) return
+    setDelBusy(true)
+    try {
+      const { data: items } = await supabase
+        .from('declaration_items').select('*').eq('declaration_id', row.id)
+      await captureDeletedRecord({
+        module: 'finance',
+        tableName: 'declarations',
+        recordId: row.id,
+        recordLabel: `${row.member_name} (${row.financial_year})`,
+        row,
+        related: { declaration_items: items || [] },
+        actor: profile,
+      })
+      if (items?.length) {
+        await supabase.from('declaration_items').delete().eq('declaration_id', row.id)
+      }
+      const { error } = await supabase.from('declarations').delete().eq('id', row.id)
+      if (error) { toast(error.message, 'error'); return }
+      await logCmsAudit({
+        action: 'deleted', module: 'finance', entityType: 'declaration',
+        entityId: row.id, entityLabel: row.member_name,
+        summary: `Deleted declaration for ${row.member_name} (FY ${row.financial_year})`,
+        actor: profile,
+      })
+      toast('Declaration deleted', 'success')
+      setConfirmDel(null)
+      updateFYActivity(row.financial_year)
+      loadList(); loadFyStats()
+    } finally {
+      setDelBusy(false)
     }
-    const { error } = await supabase.from('declarations').delete().eq('id', row.id)
-    if (error) { toast(error.message, 'error'); return }
-    await logCmsAudit({
-      action: 'deleted', module: 'finance', entityType: 'declaration',
-      entityId: row.id, entityLabel: row.member_name,
-      summary: `Deleted declaration for ${row.member_name} (FY ${row.financial_year})`,
-      actor: profile,
-    })
-    toast('Declaration deleted', 'success')
-    updateFYActivity(row.financial_year)
-    loadList(); loadFyStats()
   }
 
   // ── click-outside closes export menu ─────────────────────────
@@ -664,6 +678,17 @@ export default function DeclarationPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        title="Delete declaration?"
+        message={confirmDel ? `Delete declaration for ${confirmDel.member_name} (FY ${confirmDel.financial_year})?` : ''}
+        confirmLabel="Delete"
+        danger
+        busy={delBusy}
+        onCancel={() => { if (!delBusy) setConfirmDel(null) }}
+        onConfirm={confirmDeleteDeclaration}
+      />
 
     </div>
   )

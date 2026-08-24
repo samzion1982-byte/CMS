@@ -33,6 +33,8 @@ import {
   setNotificationsSilent,
   snoozeAlert,
 } from '../../lib/cmsNotifications'
+import DatePartsInput from '../ui/DatePartsInput'
+import ConfirmDialog from '../ui/ConfirmDialog'
 
 const PANEL_TOP = 96 // HEADER_H (88) + 8
 
@@ -298,6 +300,8 @@ export default function NotificationBell({ g }) {
   const [snoozeMap, setSnoozeMap] = useState(() => getSnoozeMap())
   const [enabledTypes, setEnabledTypes] = useState(() => getEnabledAlertTypes())
   const [snoozeFor, setSnoozeFor] = useState(null) // alertId menu open
+  const [confirmDeleteAlert, setConfirmDeleteAlert] = useState(null)
+  const [deletingAlert, setDeletingAlert] = useState(false)
 
   const refreshPrefs = useCallback(() => {
     setSilent(isNotificationsSilent())
@@ -434,14 +438,23 @@ export default function NotificationBell({ g }) {
 
   async function handleDeleteUserAlert(alert) {
     if (!alert?.userAlertId || !alert.canDelete) return
-    if (!window.confirm(`Delete reminder “${alert.title}”?`)) return
+    setConfirmDeleteAlert(alert)
+  }
+
+  async function confirmDeleteUserAlert() {
+    const alert = confirmDeleteAlert
+    if (!alert?.userAlertId) return
+    setDeletingAlert(true)
     try {
       await deleteUserAlert(alert.userAlertId)
       clearAlertSnooze(alert.id)
       setSnoozeMap(getSnoozeMap())
       setAlerts((prev) => prev.filter((a) => a.id !== alert.id))
+      setConfirmDeleteAlert(null)
     } catch (err) {
       console.warn('[notifications] delete user alert failed', err)
+    } finally {
+      setDeletingAlert(false)
     }
   }
 
@@ -642,12 +655,10 @@ export default function NotificationBell({ g }) {
                       </div>
                       <div>
                         <label style={labelStyle}>Due date</label>
-                        <input
-                          style={inputStyle}
-                          type="date"
+                        <DatePartsInput
                           value={form.due_date}
-                          onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-                          required
+                          onChange={(iso) => setForm((f) => ({ ...f, due_date: iso }))}
+                          style={{ ...inputStyle, width: '100%' }}
                         />
                         <p style={{ margin: '4px 0 0', fontSize: 10, color: g.drop.sub }}>
                           {form.due_date ? formatDate(form.due_date) : 'DD-MM-YYYY'}
@@ -1020,6 +1031,17 @@ export default function NotificationBell({ g }) {
           100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--plus-glow, #071428) 0%, transparent); transform: scale(1); }
         }
       `}</style>
+
+      <ConfirmDialog
+        open={!!confirmDeleteAlert}
+        title="Delete reminder?"
+        message={confirmDeleteAlert ? `Delete reminder “${confirmDeleteAlert.title}”?` : ''}
+        confirmLabel="Delete"
+        danger
+        busy={deletingAlert}
+        onCancel={() => { if (!deletingAlert) setConfirmDeleteAlert(null) }}
+        onConfirm={confirmDeleteUserAlert}
+      />
     </div>
   )
 }

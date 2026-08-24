@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Settings, Calendar, ChevronLeft, ChevronDown, Check, Globe, Download, UploadCloud, Trash2, Plus, Pencil } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import {
@@ -30,6 +31,7 @@ import {
   importEventPlannerVolunteers,
 } from '../lib/eventPlannerLib'
 import { normalizeWhatsAppNumber } from '../lib/whatsapp'
+import { supabase, getChurch } from '../lib/supabase'
 
 // ── Country → week start day mapping ─────────────────────────────────────────
 // weekStart: 0 = Sunday, 1 = Monday, 6 = Saturday
@@ -111,7 +113,7 @@ const WS_LABEL = { 0:'Sunday', 1:'Monday', 2:'Tuesday', 3:'Wednesday', 4:'Thursd
 
 const STORAGE_KEY = 'epSettings'
 
-function loadSettings() {
+function loadLocalSettings() {
   try { return { weekStartDay: 0, country: 'India', ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') } }
   catch { return { weekStartDay: 0, country: 'India' } }
 }
@@ -151,8 +153,9 @@ export default function EventSettingsPage() {
   const toast    = useToast()
   const { profile } = useAuth()
   const [tab, setTab] = useState('settings')
-  const [form, setForm]   = useState(loadSettings)
+  const [form, setForm]   = useState(loadLocalSettings)
   const [saved, setSaved] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(true)
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -177,6 +180,8 @@ export default function EventSettingsPage() {
   const volunteerLookupTimer = useRef(null)
   const libraryFormNameRef = useRef(null)
   const importInputRef = useRef(null)
+  const [confirmDlg, setConfirmDlg] = useState(null) // { title, message, onConfirm }
+  const [confirmBusy, setConfirmBusy] = useState(false)
   const libraryCategories = Array.from(new Set(libraryTasks.map(t => t.category?.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 
   useEffect(() => {
@@ -337,18 +342,26 @@ export default function EventSettingsPage() {
   }
 
   async function handleDeleteVolunteer(id) {
-    if (!window.confirm('Delete this volunteer?')) return
-    setVolunteerSaving(true)
-    try {
-      await deleteEventVolunteer(id)
-      await loadVolunteerData()
-      toast('Deleted', 'success')
-    } catch (err) {
-      console.error(err)
-      toast('Failed to delete volunteer', 'error')
-    } finally {
-      setVolunteerSaving(false)
-    }
+    setConfirmDlg({
+      title: 'Delete volunteer?',
+      message: 'This volunteer will be removed from the planner list.',
+      onConfirm: async () => {
+        setConfirmBusy(true)
+        setVolunteerSaving(true)
+        try {
+          await deleteEventVolunteer(id)
+          await loadVolunteerData()
+          toast('Deleted', 'success')
+          setConfirmDlg(null)
+        } catch (err) {
+          console.error(err)
+          toast('Failed to delete volunteer', 'error')
+        } finally {
+          setVolunteerSaving(false)
+          setConfirmBusy(false)
+        }
+      },
+    })
   }
 
   function focusVolunteerNameInput(id) {
@@ -402,34 +415,50 @@ export default function EventSettingsPage() {
   }
 
   async function handleDeleteLibraryTask(id) {
-    if (!window.confirm('Delete this row?')) return
-    setLibrarySaving(true)
-    try {
-      await deleteLibraryItem(id)
-      await loadMasterData()
-      toast('Deleted', 'success')
-    } catch (err) {
-      console.error(err)
-      toast('Failed to delete', 'error')
-    } finally {
-      setLibrarySaving(false)
-    }
+    setConfirmDlg({
+      title: 'Delete this row?',
+      message: 'This library item will be permanently removed.',
+      onConfirm: async () => {
+        setConfirmBusy(true)
+        setLibrarySaving(true)
+        try {
+          await deleteLibraryItem(id)
+          await loadMasterData()
+          toast('Deleted', 'success')
+          setConfirmDlg(null)
+        } catch (err) {
+          console.error(err)
+          toast('Failed to delete', 'error')
+        } finally {
+          setLibrarySaving(false)
+          setConfirmBusy(false)
+        }
+      },
+    })
   }
 
   async function handleDeleteCategory(category) {
-    if (!window.confirm(`Delete all items in category "${category}"?`)) return
-    setLibrarySaving(true)
-    try {
-      const ids = libraryTasks.filter(t => t.category === category).map(t => t.id).filter(Boolean)
-      await Promise.all(ids.map(id => deleteLibraryItem(id)))
-      await loadMasterData()
-      toast('Deleted category', 'success')
-    } catch (err) {
-      console.error(err)
-      toast('Failed to delete category', 'error')
-    } finally {
-      setLibrarySaving(false)
-    }
+    setConfirmDlg({
+      title: 'Delete category?',
+      message: `Delete all items in category "${category}"?`,
+      onConfirm: async () => {
+        setConfirmBusy(true)
+        setLibrarySaving(true)
+        try {
+          const ids = libraryTasks.filter(t => t.category === category).map(t => t.id).filter(Boolean)
+          await Promise.all(ids.map(id => deleteLibraryItem(id)))
+          await loadMasterData()
+          toast('Deleted category', 'success')
+          setConfirmDlg(null)
+        } catch (err) {
+          console.error(err)
+          toast('Failed to delete category', 'error')
+        } finally {
+          setLibrarySaving(false)
+          setConfirmBusy(false)
+        }
+      },
+    })
   }
 
   async function handleExportMasterData() {
@@ -521,6 +550,27 @@ export default function EventSettingsPage() {
     } finally { setVolunteerImporting(false) }
   }
 
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setSettingsLoading(true)
+      try {
+        const church = await getChurch()
+        const remote = church?.event_planner_settings
+        if (!cancelled && remote && typeof remote === 'object') {
+          const next = { weekStartDay: 0, country: 'India', ...remote }
+          setForm(next)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        }
+      } catch (e) {
+        console.warn('[event settings] load remote failed', e)
+      } finally {
+        if (!cancelled) setSettingsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   function handleCountryChange(country) {
     const match = COUNTRIES.find(c => c.country === country)
     setForm(f => ({ ...f, country, weekStartDay: match ? match.weekStart : f.weekStartDay }))
@@ -532,10 +582,23 @@ export default function EventSettingsPage() {
     setSaved(false)
   }
 
-  function handleSave() {
+  async function handleSave() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form))
-    setSaved(true)
-    toast('Event settings saved', 'success')
+    try {
+      const church = await getChurch()
+      if (church?.id) {
+        const { error } = await supabase
+          .from('churches')
+          .update({ event_planner_settings: form })
+          .eq('id', church.id)
+        if (error) throw error
+      }
+      setSaved(true)
+      toast('Event settings saved', 'success')
+    } catch (e) {
+      toast(e.message || 'Saved on this device only — could not sync to church record', 'error')
+      setSaved(true)
+    }
   }
 
   const selectedOpt = WEEK_START_OPTIONS.find(o => o.value === form.weekStartDay)
@@ -1095,6 +1158,17 @@ export default function EventSettingsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title || ''}
+        message={confirmDlg?.message || ''}
+        confirmLabel="Delete"
+        danger
+        busy={confirmBusy}
+        onCancel={() => { if (!confirmBusy) setConfirmDlg(null) }}
+        onConfirm={() => confirmDlg?.onConfirm?.()}
+      />
 
     </div>
   )

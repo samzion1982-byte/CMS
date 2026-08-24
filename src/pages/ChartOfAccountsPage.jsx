@@ -18,6 +18,7 @@ import {
   BookOpen, Loader2, Save, X, FolderOpen, Folder, FileText, GripVertical, Download,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 // ── Level config ──────────────────────────────────────────────────
 
@@ -341,6 +342,7 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
   const [modal,       setModal]       = useState(null)   // { mode: 'add'|'edit', node, parentNode }
   const [saving,      setSaving]      = useState(false)
   const [deleting,    setDeleting]    = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null) // node
   const [search,      setSearch]      = useState('')
 
   // ── Drag-and-drop state ────────────────────────────────────────
@@ -532,12 +534,17 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
   }
 
   async function handleDelete(node) {
-    const label = LEVEL_LABEL[node.level]
-    if (!window.confirm(`Delete "${node.name}"?\n\nThis ${label.toLowerCase()} will be permanently removed.`)) return
+    setConfirmDelete(node)
+  }
+
+  async function confirmDeleteAccount() {
+    const node = confirmDelete
+    if (!node) return
     setDeleting(node.id)
     try {
       await deleteAccount(node.id, profile.email)
       toast(`"${node.name}" deleted.`, 'success')
+      setConfirmDelete(null)
       load()
     } catch (e) { toast(e.message, 'error') }
     setDeleting(null)
@@ -852,6 +859,17 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
           initialName={modal.initialName || ''}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={`Delete "${confirmDelete?.name || ''}"?`}
+        message={`This ${(LEVEL_LABEL[confirmDelete?.level] || 'account').toLowerCase()} will be permanently removed.`}
+        confirmLabel="Delete"
+        danger
+        busy={!!deleting}
+        onCancel={() => { if (!deleting) setConfirmDelete(null) }}
+        onConfirm={confirmDeleteAccount}
+      />
 
     </div>
   )

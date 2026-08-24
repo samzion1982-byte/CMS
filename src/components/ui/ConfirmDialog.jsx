@@ -1,3 +1,8 @@
+import { useEffect, useRef } from 'react'
+
+/**
+ * Confirm dialog with Escape support and basic focus restore.
+ */
 export default function ConfirmDialog({
   open,
   title,
@@ -9,6 +14,29 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
+  const confirmRef = useRef(null)
+  const prevFocus = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    prevFocus.current = document.activeElement
+    const t = setTimeout(() => confirmRef.current?.focus(), 20)
+    function onKey(e) {
+      if (e.key === 'Escape' && !busy) {
+        e.stopPropagation()
+        onCancel?.()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('keydown', onKey, true)
+      if (prevFocus.current && typeof prevFocus.current.focus === 'function') {
+        prevFocus.current.focus()
+      }
+    }
+  }, [open, busy, onCancel])
+
   if (!open) return null
   return (
     <div
@@ -39,6 +67,7 @@ export default function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
+            ref={confirmRef}
             type="button"
             className={danger ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm'}
             onClick={onConfirm}

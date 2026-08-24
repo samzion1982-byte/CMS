@@ -13,7 +13,8 @@ import FamilyRecordsModal from './FamilyRecordsModal'
 import DeleteMemberModal from './DeleteMemberModal'
 import { diffFields, logCmsAudit } from '../lib/cmsAudit'
 
-const BATCH_SIZE = 1000 // Supabase max per request
+const BATCH_SIZE = 50 // page size for roster list
+const FETCH_BATCH = 1000 // Supabase max per request (exports)
 // ZONES loaded from church_zones table at runtime (see useEffect in MembersPage)
 const SECTORS=['Government','Private','Self Employed','Business','Student','Home Maker','Retired','Not Working','Diocese - Government','Diocese - Private']
 const RELS=['Self','Spouse','Son','Daughter','Father','Mother','Brother','Sister','Son-in-law','Daughter-in-law','Grandson','Granddaughter','Others']
@@ -82,38 +83,27 @@ export default function MembersPage() {
   const [showMemberIdPopup, setShowMemberIdPopup] = useState(false)
   const memberIdSuggestTimer = useRef(null)
   const [zones, setZones] = useState([])
+  const [listPage, setListPage] = useState(0)
 
-  const loadMembers = useCallback(async (ac=alpha, col=searchCol, val=searchVal) => {
+  const loadMembers = useCallback(async (ac=alpha, col=searchCol, val=searchVal, page=listPage) => {
     setLoading(true)
-    const buildQuery = (from, to) => {
-      let q = supabase.from('members')
-        .select('*', { count: 'exact' })
-        .eq('is_active', true).order('member_id', { ascending: true })
-        .range(from, to)
-      if (ac) q = q.ilike('family_id', ac + '%')
-      if (val.trim()) {
-        if (col === 'all') q = q.or(`family_id.ilike.%${val}%,member_id.ilike.%${val}%,member_name.ilike.%${val}%,mobile.ilike.%${val}%`)
-        else if (col === 'member_id') q = q.ilike('member_id', `%${val}%`)
-        else q = q.ilike(col, `%${val}%`)
-      }
-      return q
+    const from = page * BATCH_SIZE
+    const to = from + BATCH_SIZE - 1
+    let q = supabase.from('members')
+      .select('*', { count: 'exact' })
+      .eq('is_active', true).order('member_id', { ascending: true })
+      .range(from, to)
+    if (ac) q = q.ilike('family_id', ac + '%')
+    if (val.trim()) {
+      if (col === 'all') q = q.or(`family_id.ilike.%${val}%,member_id.ilike.%${val}%,member_name.ilike.%${val}%,mobile.ilike.%${val}%`)
+      else if (col === 'member_id') q = q.ilike('member_id', `%${val}%`)
+      else q = q.ilike(col, `%${val}%`)
     }
-    // First batch also fetches total count
-    const { data: firstBatch, count } = await buildQuery(0, BATCH_SIZE - 1)
+    const { data, count } = await q
     const totalCount = count || 0
-    let allData = firstBatch || []
-    // Fetch remaining batches in parallel if needed
-    if (totalCount > BATCH_SIZE) {
-      const extraFetches = []
-      for (let from = BATCH_SIZE; from < totalCount; from += BATCH_SIZE) {
-        extraFetches.push(buildQuery(from, from + BATCH_SIZE - 1))
-      }
-      const results = await Promise.all(extraFetches)
-      results.forEach(r => { if (r.data) allData = allData.concat(r.data) })
-    }
+    const allData = data || []
     setMembers(allData); setTotal(totalCount); setLoading(false)
 
-    // Fetch which of these member_ids were restored from deleted_members
     if (allData.length) {
       const ids = allData.map(m => m.member_id)
       const { data: restored } = await supabase
@@ -122,8 +112,10 @@ export default function MembersPage() {
         .in('member_id', ids)
         .not('restored_at', 'is', null)
       setRestoredIds(new Set((restored || []).map(r => r.member_id)))
+    } else {
+      setRestoredIds(new Set())
     }
-  }, [])
+  }, [alpha, searchCol, searchVal, listPage])
 
   useEffect(() => {
     if (!perms.canAdd) return
@@ -137,10 +129,14 @@ export default function MembersPage() {
   }, [tab, perms.canAdd])
 
   useEffect(() => { getZones().then(rows => setZones(rows.map(z => z.zone_name))).catch(() => {}) }, [])
-  useEffect(() => { loadMembers(alpha, searchCol, searchVal) }, [alpha, searchCol])
+  useEffect(() => { setListPage(0) }, [alpha, searchCol])
+  useEffect(() => { loadMembers(alpha, searchCol, searchVal, listPage) }, [alpha, searchCol, listPage])
   useEffect(() => {
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => { loadMembers(alpha, searchCol, searchVal) }, 300)
+    searchTimer.current = setTimeout(() => {
+      setListPage(0)
+      loadMembers(alpha, searchCol, searchVal, 0)
+    }, 300)
   }, [searchVal])
 
   const selectRow = async id => {
@@ -293,11 +289,11 @@ export default function MembersPage() {
           }
           return q
         }
-        const { data: first, count } = await buildQ(0, BATCH_SIZE - 1)
+        const { data: first, count } = await buildQ(0, FETCH_BATCH - 1)
         let all = first || []
-        if ((count || 0) > BATCH_SIZE) {
+        if ((count || 0) > FETCH_BATCH) {
           const extras = []
-          for (let f = BATCH_SIZE; f < count; f += BATCH_SIZE) extras.push(buildQ(f, f + BATCH_SIZE - 1))
+          for (let f = FETCH_BATCH; f < count; f += FETCH_BATCH) extras.push(buildQ(f, f + FETCH_BATCH - 1))
           const results = await Promise.all(extras)
           results.forEach(r => { if (r.data) all = all.concat(r.data) })
         }
@@ -696,8 +692,16 @@ export default function MembersPage() {
               </table>
             </div>
             {members.length > 0 && (
-              <div style={{ padding:'9px 16px', borderTop:'1px solid var(--card-border)', fontSize:11, color:'var(--text-3)' }}>
-                Showing {members.length.toLocaleString()} of {total.toLocaleString()} members
+              <div style={{ padding:'9px 16px', borderTop:'1px solid var(--card-border)', fontSize:11, color:'var(--text-3)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+                <span>
+                  Showing {(listPage * BATCH_SIZE) + 1}–{Math.min((listPage + 1) * BATCH_SIZE, total).toLocaleString()} of {total.toLocaleString()}
+                </span>
+                {total > BATCH_SIZE && (
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button className="btn btn-ghost btn-sm" disabled={listPage === 0 || loading} onClick={() => setListPage(p => p - 1)}>Prev</button>
+                    <button className="btn btn-ghost btn-sm" disabled={(listPage + 1) * BATCH_SIZE >= total || loading} onClick={() => setListPage(p => p + 1)}>Next</button>
+                  </div>
+                )}
               </div>
             )}
           </div>

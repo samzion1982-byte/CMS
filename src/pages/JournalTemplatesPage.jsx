@@ -20,6 +20,7 @@ import {
   X, Save, Play, Copy,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const VOUCHER_OPTS = ['Journal', 'Receipt', 'Payment', 'Contra']
 const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -308,6 +309,7 @@ export default function JournalTemplatesPage() {
   const [editModal, setEditModal] = useState(null)  // null | template object (with id) or {} for new
   const [useModal,  setUseModal]  = useState(null)  // template to use
   const [deleting,  setDeleting]  = useState(null)  // id being deleted
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -329,13 +331,13 @@ export default function JournalTemplatesPage() {
   useEffect(() => { load() }, [load])
 
   async function handleDelete(id) {
-    if (!window.confirm('Delete this journal template?')) return
     setDeleting(id)
     try {
       const { error } = await supabase.from('journal_templates').delete().eq('id', id)
       if (error) throw error
       toast('Template deleted.', 'success')
       setTemplates(ts => ts.filter(t => t.id !== id))
+      setConfirmDeleteId(null)
     } catch (e) { toast(e.message, 'error') }
     setDeleting(null)
   }
@@ -431,7 +433,7 @@ export default function JournalTemplatesPage() {
                     style={{ padding: '7px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', color: 'var(--text-2)', display: 'flex', alignItems: 'center' }}>
                     <Edit2 size={13} />
                   </button>
-                  <button onClick={() => handleDelete(t.id)} disabled={deleting === t.id}
+                  <button onClick={() => setConfirmDeleteId(t.id)} disabled={deleting === t.id}
                     style={{ padding: '7px 12px', background: '#fee2e2', border: 'none', borderRadius: 7, cursor: 'pointer', color: '#dc2626', display: 'flex', alignItems: 'center' }}>
                     {deleting === t.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                   </button>
@@ -459,6 +461,17 @@ export default function JournalTemplatesPage() {
           onCreated={() => { setUseModal(null); navigate('/accounting/journal-entries') }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Delete template?"
+        message="This journal template will be permanently removed."
+        confirmLabel="Delete"
+        danger
+        busy={!!deleting}
+        onCancel={() => { if (!deleting) setConfirmDeleteId(null) }}
+        onConfirm={() => handleDelete(confirmDeleteId)}
+      />
     </div>
   )
 }

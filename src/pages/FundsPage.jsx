@@ -12,6 +12,7 @@ import {
   ArrowLeft, Plus, Trash2, Edit2, Loader2, X, Save, Wallet, PiggyBank,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const PRESET_COLORS = [
   '#2563eb', '#16a34a', '#7c3aed', '#0891b2', '#c2410c',
@@ -122,6 +123,7 @@ export default function FundsPage() {
   const [loading,  setLoading]  = useState(true)
   const [modal,    setModal]    = useState(null)  // null | {} (new) | fund object (edit)
   const [deleting, setDeleting] = useState(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,7 +137,6 @@ export default function FundsPage() {
   useEffect(() => { load() }, [load])
 
   async function handleDelete(id) {
-    if (!confirm('Delete this fund? Tagged transactions will have their fund tag removed.')) return
     setDeleting(id)
     try {
       const { error } = await supabase.from('funds').delete().eq('id', id)
@@ -146,6 +147,7 @@ export default function FundsPage() {
       })
       toast('Fund deleted.', 'success')
       setFunds(fs => fs.filter(f => f.id !== id))
+      setConfirmDeleteId(null)
     } catch (e) { toast(e.message, 'error') }
     setDeleting(null)
   }
@@ -219,7 +221,7 @@ export default function FundsPage() {
                   style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '7px 0', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 7, cursor: 'pointer', fontSize: 12, color: 'var(--text-2)' }}>
                   <Edit2 size={12} /> Edit
                 </button>
-                <button onClick={() => handleDelete(f.id)} disabled={deleting === f.id}
+                <button onClick={() => setConfirmDeleteId(f.id)} disabled={deleting === f.id}
                   style={{ padding: '7px 12px', background: '#fee2e2', border: 'none', borderRadius: 7, cursor: 'pointer', color: '#dc2626', display: 'flex', alignItems: 'center' }}>
                   {deleting === f.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                 </button>
@@ -246,6 +248,17 @@ export default function FundsPage() {
           onClose={() => setModal(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Delete fund?"
+        message="Tagged transactions will have their fund tag removed."
+        confirmLabel="Delete"
+        danger
+        busy={!!deleting}
+        onCancel={() => { if (!deleting) setConfirmDeleteId(null) }}
+        onConfirm={() => handleDelete(confirmDeleteId)}
+      />
     </div>
   )
 }

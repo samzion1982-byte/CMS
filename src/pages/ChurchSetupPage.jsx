@@ -5,6 +5,7 @@ import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
          Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Church } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
 import { getCategories, updateCategory, toggleCategory, reorderCategory } from '../lib/paymentCategories'
 import MasterPasswordInput from '../components/MasterPasswordInput'
@@ -64,6 +65,7 @@ export default function ChurchSetupPage() {
   const [mpStatusMsg, setMpStatusMsg] = useState('')
   const [mpError, setMpError] = useState('')
   const [mpClearing, setMpClearing] = useState(false)
+  const [confirmMpRestore, setConfirmMpRestore] = useState(false)
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -93,6 +95,15 @@ export default function ChurchSetupPage() {
     upi_id: '',
     site_url: '',
   })
+
+  const SETUP_TABS = [
+    { id: 'cs-identity', label: 'Identity' },
+    { id: 'cs-accounts', label: 'Accounts' },
+    { id: 'cs-whatsapp', label: 'WhatsApp' },
+    { id: 'cs-receipts', label: 'Receipts' },
+    { id: 'cs-license', label: 'License' },
+    { id: 'cs-zones', label: 'Zones' },
+  ]
 
   useEffect(() => { loadChurch() }, [])
 
@@ -171,9 +182,10 @@ export default function ChurchSetupPage() {
   }
 
   async function restoreDefaultMasterPassword() {
-    if (!window.confirm('Clear the custom master password and restore the built-in default? Gates will accept the default password again until you set a new one.')) {
-      return
-    }
+    setConfirmMpRestore(true)
+  }
+
+  async function confirmRestoreDefaultMasterPassword() {
     setMpError('')
     setMpStatusMsg('')
     setMpClearing(true)
@@ -182,6 +194,7 @@ export default function ChurchSetupPage() {
       setMpCustom(false)
       setMpStatusMsg('Custom password cleared. Built-in default is active again.')
       toast('Master password restored to built-in default.', 'success')
+      setConfirmMpRestore(false)
     } catch (e) {
       setMpError(e.message || 'Could not clear master password.')
     } finally {
@@ -540,6 +553,26 @@ export default function ChurchSetupPage() {
         )}
       </PageHeader>
 
+      {isSuperAdmin && (
+        <div className="no-print" style={{
+          display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16,
+          position: 'sticky', top: 0, zIndex: 20, padding: '8px 0 10px',
+          background: 'var(--page-bg)',
+        }}>
+          {SETUP_TABS.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => document.getElementById(t.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="btn btn-ghost btn-sm"
+              style={{ border: '1px solid var(--card-border)' }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Two-column layout for super_admin; section cards for Admin grants; zones for others */}
       {isSuperAdmin ? (
         <div style={{display:'flex', gap:24, alignItems:'flex-start'}}>
@@ -547,7 +580,7 @@ export default function ChurchSetupPage() {
           {/* ── LEFT: main church cards ── */}
           <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:24}}>
           {/* IDENTITY + LOCATION */}
-        <div className="card p-6">
+        <div id="cs-identity" className="card p-6">
           <p className="form-section form-section-blue">Church identity</p>
           <div className="flex gap-6">
             <div className="flex-1 space-y-4">
@@ -685,7 +718,7 @@ export default function ChurchSetupPage() {
         </div>
 
         {/* ACCOUNTS MODULE */}
-        <div className="card p-6">
+        <div id="cs-accounts" className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#16a34a',borderColor:'#86efac'}}>Accounts Module</p>
           {(() => {
             const masterOn = !!(church?.accounting_enabled || church?.simple_accounting_enabled)
@@ -773,7 +806,7 @@ export default function ChurchSetupPage() {
         </div>
 
         {/* WHATSAPP */}
-        <div className="card p-6">
+        <div id="cs-whatsapp" className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#15803d',borderColor:'#bbf7d0'}}>WhatsApp</p>
           <div className="space-y-3">
             <div className="field-group">
@@ -823,7 +856,7 @@ export default function ChurchSetupPage() {
         </div>
 
             {/* RECEIPTS & PAYMENTS */}
-            <div className="card p-6">
+            <div id="cs-receipts" className="card p-6">
               <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Receipts & Payments</p>
               <div className="space-y-5">
 
@@ -900,7 +933,9 @@ export default function ChurchSetupPage() {
             </div>
 
             {/* ZONAL AREAS */}
+            <div id="cs-zones">
             <ZonesPanel profile={profile} toast={toast} />
+            </div>
 
             {/* PAYMENT CATEGORIES */}
             <PaymentCategoriesPanel profile={profile} toast={toast} />
@@ -909,7 +944,7 @@ export default function ChurchSetupPage() {
 
           {/* ── RIGHT: license (sticky) ── */}
           <div style={{width:280, flexShrink:0, position:'sticky', top:16, display:'flex', flexDirection:'column', gap:16}}>
-            <div className="card p-5">
+            <div id="cs-license" className="card p-5">
               <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
               <p className="text-xs text-slate-400 mb-3">Enter the AUTH CODE provided by {VENDOR.name}.</p>
               <div className="flex gap-2 mb-3">
@@ -1417,6 +1452,17 @@ export default function ChurchSetupPage() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={confirmMpRestore}
+        title="Restore default master password?"
+        message="Clear the custom master password and restore the built-in default? Gates will accept the default password again until you set a new one."
+        confirmLabel="Restore default"
+        danger
+        busy={mpClearing}
+        onCancel={() => { if (!mpClearing) setConfirmMpRestore(false) }}
+        onConfirm={confirmRestoreDefaultMasterPassword}
+      />
+
     </div>
   )
 }
@@ -1433,6 +1479,7 @@ function ZonesPanel({ profile, toast }) {
   const [editName,   setEditName]   = useState('')
   const [savingId,   setSavingId]   = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [confirmZone, setConfirmZone] = useState(null)
   const [expanded,   setExpanded]   = useState(false)
   const editRef = useRef(null)
 
@@ -1479,12 +1526,18 @@ function ZonesPanel({ profile, toast }) {
   }
 
   const remove = async (z) => {
-    if (!window.confirm(`Remove zone "${z.zone_name}"? Members already assigned to it will keep their zone value.`)) return
+    setConfirmZone(z)
+  }
+
+  const confirmRemoveZone = async () => {
+    const z = confirmZone
+    if (!z) return
     setDeletingId(z.id)
     try {
       await deleteZone(z.id)
       setZones(prev => prev.filter(x => x.id !== z.id))
       toast(`Zone "${z.zone_name}" removed`, 'success')
+      setConfirmZone(null)
     } catch (err) { toast(err.message, 'error') }
     setDeletingId(null)
   }
@@ -1624,6 +1677,17 @@ function ZonesPanel({ profile, toast }) {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={!!confirmZone}
+        title="Remove zone?"
+        message={confirmZone ? `Remove zone "${confirmZone.zone_name}"? Members already assigned to it will keep their zone value.` : ''}
+        confirmLabel="Remove"
+        danger
+        busy={!!deletingId}
+        onCancel={() => { if (!deletingId) setConfirmZone(null) }}
+        onConfirm={confirmRemoveZone}
+      />
     </div>
   )
 }

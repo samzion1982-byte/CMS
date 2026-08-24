@@ -6,6 +6,7 @@ import Sidebar from './Sidebar'
 import Header, { HEADER_H } from './Header'
 
 const DEVICE_PENDING_KEY = 'device_setup_pending'
+const MOBILE_MQ = '(max-width: 900px)'
 
 export default function AppLayout({ children }) {
   const { user } = useAuth()
@@ -13,6 +14,11 @@ export default function AppLayout({ children }) {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar_collapsed') === 'true'
   )
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia(MOBILE_MQ).matches
+  })
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const [showDeviceSetup, setShowDeviceSetup] = useState(false)
   const [isEditMode,      setIsEditMode]      = useState(false)
@@ -20,7 +26,17 @@ export default function AppLayout({ children }) {
   const [savingDevice,    setSavingDevice]    = useState(false)
   const [deviceForm,      setDeviceForm]      = useState({ userName: '', orgName: '', area: '', city: '', avatarName: '' })
 
-  // ── New-device detection on mount ──────────────────────────────
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ)
+    const onChange = () => {
+      setIsMobile(mq.matches)
+      if (!mq.matches) setMobileNavOpen(false)
+    }
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   useEffect(() => {
     function tryRead() {
       const raw = sessionStorage.getItem(DEVICE_PENDING_KEY)
@@ -45,10 +61,8 @@ export default function AppLayout({ children }) {
     return () => { clearInterval(iv); clearTimeout(to) }
   }, [])
 
-  // ── Edit-mode trigger (called from Header dropdown) ─────────────
   const openEditMode = async () => {
     const devId = getOrCreateDeviceId()
-    // Prefer this device; after a cache flush fall back to any prior registration for the user
     const existing = (await checkDeviceRegistered(devId))
       || (user?.id ? await checkDeviceRegisteredByUser(user.id) : null)
     const loc = existing?.location || ''
@@ -65,7 +79,6 @@ export default function AppLayout({ children }) {
     setShowDeviceSetup(true)
   }
 
-  // ── Save handler ────────────────────────────────────────────────
   const handleSaveDevice = async () => {
     setSavingDevice(true)
     const location = [deviceForm.area, deviceForm.city].filter(Boolean).join(', ')
@@ -85,10 +98,8 @@ export default function AppLayout({ children }) {
         org: deviceForm.orgName,
       }
       if (isEditMode) {
-        // Backfill / refresh the current open session
         await updateActiveLoginDevice(pendingInfo.userId, meta)
       } else {
-        // First-time setup — tag the blank login row created at sign-in
         await tagLoginWithDevice(pendingInfo.userId, meta)
       }
     } catch (e) {
@@ -110,27 +121,55 @@ export default function AppLayout({ children }) {
   }
 
   const toggle = () => {
+    if (isMobile) {
+      setMobileNavOpen(o => !o)
+      return
+    }
     const next = !collapsed
     setCollapsed(next)
     localStorage.setItem('sidebar_collapsed', String(next))
   }
 
-  const sidebarW = collapsed ? 60 : 240
+  const sidebarW = isMobile ? 0 : (collapsed ? 60 : 240)
+  const headerH = isMobile ? 64 : HEADER_H
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--page-bg)' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--page-bg)' }} className={isMobile ? 'cms-mobile' : undefined}>
       <div className="no-print" style={{ display: 'contents' }}>
-        <Header onEditDevice={openEditMode} />
+        <Header
+          onEditDevice={openEditMode}
+          onMenuClick={toggle}
+          mobile={isMobile}
+          mobileNavOpen={mobileNavOpen}
+        />
       </div>
       <div className="no-print" style={{ display: 'contents' }}>
-        <Sidebar collapsed={collapsed} sidebarW={sidebarW} onToggle={toggle} />
+        <Sidebar
+          collapsed={isMobile ? false : collapsed}
+          sidebarW={isMobile ? 260 : (collapsed ? 60 : 240)}
+          onToggle={toggle}
+          mobile={isMobile}
+          mobileOpen={mobileNavOpen}
+          onNavigate={() => setMobileNavOpen(false)}
+          headerH={headerH}
+        />
       </div>
+      {isMobile && mobileNavOpen && (
+        <div
+          className="no-print cms-nav-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, top: headerH, zIndex: 350,
+            background: 'rgba(15,23,42,0.45)',
+          }}
+        />
+      )}
       <main className="app-main" style={{
         flex: 1,
         marginLeft: sidebarW,
-        marginTop: HEADER_H,
-        minHeight: `calc(100vh - ${HEADER_H}px)`,
-        padding: '28px 32px',
+        marginTop: headerH,
+        minHeight: `calc(100vh - ${headerH}px)`,
+        padding: isMobile ? '16px 14px' : '28px 32px',
         width: '100%',
         transition: 'margin-left 0.25s ease',
         minWidth: 0,
@@ -138,7 +177,6 @@ export default function AppLayout({ children }) {
         {children}
       </main>
 
-      {/* ── Device Registration / Edit Popup ──────────────────────── */}
       {showDeviceSetup && pendingInfo && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,8,30,0.82)', backdropFilter: 'blur(6px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ width: '100%', maxWidth: 420, background: 'linear-gradient(180deg,rgba(15,20,56,0.98) 0%,rgba(10,14,42,0.99) 100%)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.7)' }}>

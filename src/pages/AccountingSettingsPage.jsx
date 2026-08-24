@@ -30,6 +30,7 @@ import { useEntity } from '../lib/EntityContext'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
 import PageHeader from '../components/ui/PageHeader'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 
 const SETUP_FY_OPTIONS = fyOptions('2020-21')
 function isValidFY(v) { return /^\d{4}-\d{2}$/.test(v.trim()) }
@@ -418,6 +419,7 @@ export default function AccountingSettingsPage() {
   const ENTITY_TYPES = ['Church', 'Trust', 'School', 'Complex', 'Other']
   const [entityModal,      setEntityModal]      = useState(null)  // null | 'add' | { editing: entity }
   const [entityDeleting,   setEntityDeleting]   = useState(null)
+  const [confirmEntity,    setConfirmEntity]    = useState(null)
   const [entityToggling,   setEntityToggling]   = useState(null)
   const [entitySavingType, setEntitySavingType] = useState(null)
   const activeEntityCount = entities.filter(e => e.is_active).length
@@ -555,7 +557,12 @@ export default function AccountingSettingsPage() {
   }
 
   async function handleEntityDelete(entity) {
-    if (!window.confirm(`Delete "${entity.name}"? This cannot be undone.`)) return
+    setConfirmEntity(entity)
+  }
+
+  async function confirmEntityDelete() {
+    const entity = confirmEntity
+    if (!entity) return
     setEntityDeleting(entity.id)
     try {
       const [{ count: coaCount }, { count: jeCount }] = await Promise.all([
@@ -564,12 +571,15 @@ export default function AccountingSettingsPage() {
       ])
       if ((coaCount || 0) > 0 || (jeCount || 0) > 0) {
         toast(`Cannot delete: this book has ${coaCount || 0} accounts and ${jeCount || 0} journal entries. Rename it instead.`, 'error')
-        setEntityDeleting(null); return
+        setEntityDeleting(null)
+        setConfirmEntity(null)
+        return
       }
       const { error } = await supabase.from('accounting_entities').delete().eq('id', entity.id)
       if (error) throw error
       await reloadEntities()
       toast('Book deleted.', 'success')
+      setConfirmEntity(null)
     } catch (e) { toast('Delete failed: ' + e.message, 'error') }
     setEntityDeleting(null)
   }
@@ -1604,6 +1614,17 @@ export default function AccountingSettingsPage() {
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmEntity}
+        title="Delete book?"
+        message={confirmEntity ? `Delete "${confirmEntity.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        danger
+        busy={!!entityDeleting}
+        onCancel={() => { if (!entityDeleting) setConfirmEntity(null) }}
+        onConfirm={confirmEntityDelete}
+      />
     </div>
   )
 }
