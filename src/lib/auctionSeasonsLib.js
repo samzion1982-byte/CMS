@@ -65,26 +65,26 @@ export async function replaceCloseBalances(fy, rows) {
   }
 }
 
-export async function reopenAuctionSeason(fy, { keepAuctionDate = true, auctionDate = null } = {}) {
-  await replaceCloseBalances(fy, [])
-  const patch = {
-    status: 'open',
-    close_policy: null,
-    next_auction_date: null,
-    close_cutoff_date: null,
-    closed_at: null,
-  }
-  if (!keepAuctionDate && auctionDate) patch.auction_date = auctionDate
+export async function reopenAuctionSeason(fy, { auctionDate = null } = {}) {
   const existing = await getAuctionSeason(fy)
-  if (!existing?.auction_date && auctionDate) patch.auction_date = auctionDate
-  if (!existing?.auction_date && !auctionDate && !patch.auction_date) {
-    // reopen requires a date column NOT NULL — keep existing
+  if (!existing) {
+    throw new Error(`No closed season found for FY ${fy}. Close Year may not have saved.`)
   }
-  if (existing) {
-    return upsertAuctionSeason(fy, {
-      auction_date: existing.auction_date,
-      ...patch,
+  await replaceCloseBalances(fy, [])
+  const { data, error } = await supabase
+    .from('auction_seasons')
+    .update({
+      status: 'open',
+      close_policy: null,
+      next_auction_date: null,
+      close_cutoff_date: null,
+      closed_at: null,
+      auction_date: auctionDate || existing.auction_date,
+      updated_at: new Date().toISOString(),
     })
-  }
-  return null
+    .eq('financial_year', fy)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
 }

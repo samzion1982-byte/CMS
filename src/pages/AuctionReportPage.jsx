@@ -743,6 +743,7 @@ export default function AuctionReportPage() {
   const [reportKind,      setReportKind]      = useState('spillover') // 'spillover'
   const [spillRange,      setSpillRange]      = useState(null) // { from, to } when spillover generated
   const [season,          setSeason]          = useState(null)
+  const [prevSeason,      setPrevSeason]      = useState(null)
   const [importAuctionDate, setImportAuctionDate] = useState('')
   const [docsPanelOpen,   setDocsPanelOpen]   = useState(true)
   const [docsRefreshKey,  setDocsRefreshKey]  = useState(0)
@@ -782,6 +783,8 @@ export default function AuctionReportPage() {
       setSpillRange(null)
       const s = await getAuctionSeason(fy)
       setSeason(s)
+      const prev = await getAuctionSeason(previousFY(fy))
+      setPrevSeason(prev)
       const range = spillRangeFromSeason(s, fy)
       setSpillFrom(range.from)
       setSpillTo(range.to)
@@ -1226,14 +1229,17 @@ export default function AuctionReportPage() {
         return
       }
       const toFY = nextFY(fromFY)
-      const { count: nextCount } = await supabase
+      const { count, error: countErr } = await supabase
         .from('auction_tracker')
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .eq('financial_year', toFY)
+      if (countErr) throw countErr
+      const nextSeason = await getAuctionSeason(toFY)
       setRevertPreview({
         fromFY,
         toFY,
-        nextCount: nextCount || 0,
+        nextCount: count || 0,
+        hasNextSeason: !!nextSeason,
         policy: s.close_policy,
       })
       setRevertModalOpen(true)
@@ -1254,7 +1260,8 @@ export default function AuctionReportPage() {
     setLoadingRevert(true)
     setRevertPwError('')
     try {
-      const { fromFY, toFY, nextCount } = revertPreview
+      const { fromFY, toFY, nextCount, hasNextSeason } = revertPreview
+      const clearNext = (nextCount > 0) || hasNextSeason
       await snapshotCloseYearUndo({
         fromFY,
         toFY,
@@ -1262,16 +1269,49 @@ export default function AuctionReportPage() {
         extra: { season: await getAuctionSeason(fromFY) },
         notes: `Before undo close ${fromFY}`,
       })
-      await reopenAuctionSeason(fromFY)
+
+      if (clearNext) {
+        await snapshotAuctionTrackerFY(toFY, {
+          operation: 'undo_close_year_clear_next',
+          notes: `Before undo close ${fromFY}: clearing imported FY ${toFY}`,
+        })
+      }
+
+      const reopened = await reopenAuctionSeason(fromFY)
+      if (!reopened || reopened.status !== 'open') {
+        throw new Error(`Could not reopen FY ${fromFY}. Check that auction_seasons exists on this church.`)
+      }
+
+      if (clearNext) {
+        const { error: balErr } = await supabase.from('auction_close_balances').delete().eq('financial_year', toFY)
+        if (balErr && !String(balErr.message || '').includes('auction_close_balances')) throw balErr
+        const { error: seasonErr } = await supabase.from('auction_seasons').delete().eq('financial_year', toFY)
+        if (seasonErr && !String(seasonErr.message || '').includes('auction_seasons')) throw seasonErr
+        const { error: trErr } = await supabase.from('auction_tracker').delete().eq('financial_year', toFY)
+        if (trErr) throw trErr
+        const nextDocs = [
+          ...(await listUploadedDocsForFY(toFY)),
+          ...(await listCloseReportsForFY(toFY)),
+        ]
+        for (const doc of nextDocs) {
+          try { await deleteAuctionDocument(doc) } catch (e) { console.warn('undo close: file', doc.path, e) }
+        }
+        setDocsRefreshKey((k) => k + 1)
+      }
+
       await logCmsAudit({
         action: 'saved', module: 'auction', entityType: 'auction_seasons',
         entityId: fromFY,
-        summary: `Undid Close Year ${fromFY}. Season is open. Choose Carry or Forfeit on Close Year again.`,
+        summary: clearNext
+          ? `Undid Close Year ${fromFY} and removed the ${toFY} import. Close ${fromFY} again as Forfeit or Carry, then import ${toFY}.`
+          : `Undid Close Year ${fromFY}. Season is open. Close again to choose Forfeit or Carry.`,
       })
-      const warn = nextCount > 0
-        ? ` FY ${toFY} already has ${nextCount} tracker row(s). Re-import that year after you close again if pending must follow Carry.`
-        : ''
-      toast(`Close Year undone for FY ${fromFY}. Close again to choose Forfeit or Carry.${warn}`, 'success')
+      toast(
+        clearNext
+          ? `FY ${fromFY} is open again. Removed the ${toFY} import${nextCount ? ` (${nextCount} members)` : ''} so you can close ${fromFY} as Forfeit or Carry, then import ${toFY} again.`
+          : `FY ${fromFY} is open again. Close Year and choose Forfeit or Carry.`,
+        'success',
+      )
       setRevertModalOpen(false)
       setRevertPreview(null)
       setRevertPw('')
@@ -1874,10 +1914,20 @@ export default function AuctionReportPage() {
             }}
             disabled={loadingClose || loadingRevert || !trackerRows.length}
             style={{ background: '#b45309' }}
-            title="Close Year — freeze this auction (Forfeit or Carry). Alt+Click to undo Close."
+            title="Close Year — freeze this auction (Forfeit or Carry)."
           >
             {(loadingClose || loadingRevert) ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
-            {loadingClose ? 'Preparing…' : loadingRevert ? 'Revert…' : 'Close Year'}
+            {loadingClose ? 'Preparing…' : 'Close Year'}
+          </button>
+          <button
+            className="action-btn"
+            onClick={openRevertCloseYearModal}
+            disabled={loadingClose || loadingRevert}
+            style={{ background: '#0f766e' }}
+            title="Reopen the closed year. If the next year was already imported, that import is removed so you can close again as Forfeit or Carry."
+          >
+            {loadingRevert ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+            {loadingRevert ? 'Undo…' : 'Undo Close'}
           </button>
 
           {generated && (
@@ -1945,6 +1995,7 @@ export default function AuctionReportPage() {
             {trackerRows.length} members imported · Auction {auctionYear}
             {season?.auction_date ? ` · ${fmtDateIN(season.auction_date)}` : ''}
             {season?.status === 'closed' ? ` · Closed (${season.close_policy === 'forfeit' ? 'Forfeit' : 'Carry'})` : ''}
+            {season?.status !== 'closed' && prevSeason?.status === 'closed' ? ` · Previous ${previousFY(filterFY)} closed (${prevSeason.close_policy === 'forfeit' ? 'Forfeit' : 'Carry'})` : ''}
             {generated ? ` · ${reportRows.length} spill-over` : ' · Spill-over Report'}
           </span>
         )}
@@ -2556,15 +2607,16 @@ export default function AuctionReportPage() {
               Undo Close Year
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-              Reopens <strong>FY {revertPreview.fromFY}</strong> (clears Forfeit/Carry and the carry snapshot).
-              Tracker history for that year is kept. Close Year again to choose Carry if Forfeit was a mistake.
+              Reopens <strong>FY {revertPreview.fromFY}</strong> so you can Close Year again as Forfeit or Carry.
+              {revertPreview.fromFY} tracker history is kept.
               {revertPreview.nextCount > 0
-                ? ` FY ${revertPreview.toFY} already has ${revertPreview.nextCount} tracker row(s). After you re-close as Carry, re-import ${revertPreview.toFY} so pending can merge from the new snapshot.`
+                ? ` FY ${revertPreview.toFY} already has ${revertPreview.nextCount} imported member(s) from after that close. Those ${revertPreview.toFY} tracker rows, season, and stored files will be removed (snapshotted to Recycle Bin). Then close ${revertPreview.fromFY} as Forfeit or Carry and import ${revertPreview.toFY} again.`
                 : ''}
             </p>
             <div style={{ background: 'rgba(15,118,110,0.08)', border: '1px solid rgba(15,118,110,0.25)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
               Undo close: <strong>{revertPreview.fromFY}</strong>
               {revertPreview.policy ? ` · was ${revertPreview.policy === 'forfeit' ? 'Forfeit' : 'Carry'}` : ''}
+              {revertPreview.nextCount > 0 ? ` · remove ${revertPreview.toFY} import` : ''}
             </div>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>
               Master Password
