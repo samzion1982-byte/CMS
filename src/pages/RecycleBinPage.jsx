@@ -139,7 +139,7 @@ export default function RecycleBinPage() {
     const toFy = row?.payload?.meta?.to_fy || row?.payload?.meta?.financial_year
     const fromFy = row?.payload?.meta?.from_fy
     const msg = isCloseUndo
-      ? `Undo Close Year${fromFy ? ` ${fromFy}` : ''}?\n\nThis replaces FY ${toFy || '?'} with the pre-close state (${count} row(s) — often empty, which clears the carried balances).`
+      ? `Undo Close Year${fromFy ? ` ${fromFy}` : ''}?\n\nThis reopens the season (clears Forfeit/Carry). Tracker history is kept. Next-year rows are not deleted.`
       : isBulk
         ? `Restore auction tracker snapshot "${row.record_label || row.record_id}"?\n\nThis replaces the current FY data with ${count} saved member row(s).`
         : `Restore "${row.record_label || row.record_id}" back into ${row.table_name}?`
@@ -149,7 +149,7 @@ export default function RecycleBinPage() {
       await restoreRecycleBinItem(row.id, profile)
       toast(
         isCloseUndo
-          ? `Close Year undone — FY ${toFy || ''} restored to prior state.`
+          ? `Close Year undone — FY ${fromFy || ''} is open again.`
           : isBulk
             ? `Restored ${count} auction tracker rows.`
             : 'Record restored successfully.',

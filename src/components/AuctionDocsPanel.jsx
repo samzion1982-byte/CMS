@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  Download, Eye, FileSpreadsheet, FolderOpen, Loader2, Trash2, Upload, X,
+  Download, Eye, FileSpreadsheet, FolderOpen, Loader2, Trash2, X,
 } from 'lucide-react'
 import {
   auctionDocKindLabel,
-  deleteAuctionDocument,
   formatAuctionDocSize,
   getAuctionDocumentUrl,
   listAuctionDocuments,
-  uploadAuctionDocument,
+  splitAuctionDocGroups,
 } from '../lib/auctionDocumentsLib'
 
 function fmtWhen(d) {
@@ -20,27 +19,102 @@ function fmtWhen(d) {
   }
 }
 
+function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load }) {
+  if (!groups.length) {
+    return (
+      <p style={{ margin: '12px 4px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
+        {emptyText}
+      </p>
+    )
+  }
+  return groups.map((g) => (
+    <div key={g.fy} style={{ marginBottom: 12 }}>
+      <div style={{
+        fontSize: 11,
+        fontWeight: 800,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: 'var(--text-3)',
+        padding: '6px 4px 4px',
+      }}>
+        FY {g.fy}
+      </div>
+      {g.files.map((doc) => (
+        <div
+          key={doc.path}
+          style={{
+            border: '1px solid var(--table-border)',
+            borderRadius: 8,
+            padding: '8px 8px 8px 10px',
+            marginBottom: 6,
+            background: 'var(--card-bg)',
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <FileSpreadsheet size={15} style={{ color: '#0f766e', marginTop: 2, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: 'var(--text-1)',
+                wordBreak: 'break-word',
+                lineHeight: 1.35,
+              }}>
+                {doc.originalName}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
+                {auctionDocKindLabel(doc.kind)}
+                {doc.uploadedAt ? ` · ${fmtWhen(doc.uploadedAt)}` : ''}
+                {doc.size ? ` · ${formatAuctionDocSize(doc.size)}` : ''}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'flex-end' }}>
+            <button type="button" title="View / open" onClick={() => onOpen(doc)} style={iconBtn}>
+              <Eye size={13} />
+            </button>
+            <button type="button" title="Download" onClick={() => onDownload(doc)} style={iconBtn}>
+              <Download size={13} />
+            </button>
+            <button
+              type="button"
+              title="Delete (master password)"
+              onClick={() => onRequestDelete?.(doc, load)}
+              style={{ ...iconBtn, color: '#dc2626' }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  ))
+}
+
 export default function AuctionDocsPanel({
-  selectedFY,
   onClose,
   refreshKey = 0,
   onRequestDelete,
 }) {
-  const fileRef = useRef(null)
-  const [groups, setGroups] = useState([])
+  const [tab, setTab] = useState('uploaded')
+  const [uploaded, setUploaded] = useState([])
+  const [closed, setClosed] = useState([])
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
-  const [preview, setPreview] = useState(null) // { url, name, mime }
+  const [preview, setPreview] = useState(null)
 
   const load = async () => {
     setLoading(true)
     setError('')
     try {
-      setGroups(await listAuctionDocuments())
+      const groups = await listAuctionDocuments()
+      const split = splitAuctionDocGroups(groups)
+      setUploaded(split.uploaded)
+      setClosed(split.closed)
     } catch (e) {
       setError(e.message || 'Could not load documents')
-      setGroups([])
+      setUploaded([])
+      setClosed([])
     }
     setLoading(false)
   }
@@ -53,8 +127,8 @@ export default function AuctionDocsPanel({
       const mime = String(doc.mime || '')
       const name = doc.originalName || doc.storedName
       const canEmbed = mime.includes('pdf') || mime.startsWith('image/')
-        || /\.(pdf|png|jpe?g|gif|webp)$/i.test(name)
-      if (canEmbed) setPreview({ url, name, mime })
+        || /\.(pdf|png|jpe?g|gif|webp|xlsx|xlsm)$/i.test(name)
+      if (canEmbed && (mime.includes('pdf') || mime.startsWith('image/'))) setPreview({ url, name, mime })
       else window.open(url, '_blank', 'noopener,noreferrer')
     } catch (e) {
       setError(e.message || 'Could not open file')
@@ -75,20 +149,24 @@ export default function AuctionDocsPanel({
     }
   }
 
-  const onPickReference = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setUploading(true)
-    setError('')
-    try {
-      await uploadAuctionDocument({ fy: selectedFY, file, kind: 'reference' })
-      await load()
-    } catch (err) {
-      setError(err.message || 'Upload failed')
-    }
-    setUploading(false)
-  }
+  const tabBtn = (id, label) => (
+    <button
+      type="button"
+      onClick={() => setTab(id)}
+      style={{
+        flex: 1,
+        border: 'none',
+        background: tab === id ? '#0f766e' : 'transparent',
+        color: tab === id ? '#fff' : 'var(--text-2)',
+        fontSize: 11,
+        fontWeight: 700,
+        padding: '8px 6px',
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <aside
@@ -114,37 +192,22 @@ export default function AuctionDocsPanel({
       }}>
         <FolderOpen size={16} style={{ color: '#0f766e', flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>Uploaded documents</div>
-          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>Year-wise reference files</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>Files</div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>One file per year</div>
         </div>
         <button
           type="button"
           onClick={onClose}
           style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
-          aria-label="Close documents panel"
+          aria-label="Close files panel"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--table-border)' }}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".xlsx,.xlsm,.xls,.csv,.pdf,.png,.jpg,.jpeg"
-          style={{ display: 'none' }}
-          onChange={onPickReference}
-        />
-        <button
-          type="button"
-          className="action-btn"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          style={{ width: '100%', background: '#0f766e', justifyContent: 'center' }}
-        >
-          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-          {uploading ? 'Saving…' : `Add file for ${selectedFY}`}
-        </button>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--table-border)' }}>
+        {tabBtn('uploaded', 'Uploaded Documents')}
+        {tabBtn('closed', 'Closed reports')}
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 10px 14px' }}>
@@ -156,75 +219,26 @@ export default function AuctionDocsPanel({
         {error && (
           <p style={{ margin: '8px 4px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{error}</p>
         )}
-        {!loading && !groups.length && !error && (
-          <p style={{ margin: '12px 4px', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>
-            No files stored yet. Importing a tracker (or adding a file here) keeps a copy for this year.
-          </p>
+        {!loading && tab === 'uploaded' && (
+          <DocList
+            groups={uploaded}
+            emptyText="No file for any year yet. Use Import File. One Total Purchase per year. If it is wrong, delete it then import again."
+            onOpen={openDoc}
+            onDownload={downloadDoc}
+            onRequestDelete={onRequestDelete}
+            load={load}
+          />
         )}
-        {groups.map((g) => (
-          <div key={g.fy} style={{ marginBottom: 12 }}>
-            <div style={{
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              color: g.fy === selectedFY ? '#0f766e' : 'var(--text-3)',
-              padding: '6px 4px 4px',
-            }}>
-              FY {g.fy}
-            </div>
-            {g.files.map((doc) => (
-              <div
-                key={doc.path}
-                style={{
-                  border: '1px solid var(--table-border)',
-                  borderRadius: 8,
-                  padding: '8px 8px 8px 10px',
-                  marginBottom: 6,
-                  background: 'var(--card-bg)',
-                }}
-              >
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <FileSpreadsheet size={15} style={{ color: '#0f766e', marginTop: 2, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: 'var(--text-1)',
-                      wordBreak: 'break-word',
-                      lineHeight: 1.35,
-                    }}>
-                      {doc.originalName}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
-                      {auctionDocKindLabel(doc.kind)}
-                      {doc.uploadedAt ? ` · ${fmtWhen(doc.uploadedAt)}` : ''}
-                      {doc.size ? ` · ${formatAuctionDocSize(doc.size)}` : ''}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" title="View / open" onClick={() => openDoc(doc)}
-                    style={iconBtn}>
-                    <Eye size={13} />
-                  </button>
-                  <button type="button" title="Download" onClick={() => downloadDoc(doc)}
-                    style={iconBtn}>
-                    <Download size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    title="Delete (master password)"
-                    onClick={() => onRequestDelete?.(doc, load)}
-                    style={{ ...iconBtn, color: '#dc2626' }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
+        {!loading && tab === 'closed' && (
+          <DocList
+            groups={closed}
+            emptyText="No closed-year reports yet. They appear here after Close Year."
+            onOpen={openDoc}
+            onDownload={downloadDoc}
+            onRequestDelete={onRequestDelete}
+            load={load}
+          />
+        )}
       </div>
 
       {preview && (

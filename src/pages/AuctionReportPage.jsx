@@ -10,7 +10,14 @@ import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
 import { snapshotAuctionTrackerFY, snapshotCloseYearUndo, flushAllAuctionTracker } from '../lib/cmsRecycleBin'
-import { uploadAuctionDocument, deleteAuctionDocument } from '../lib/auctionDocumentsLib'
+import { uploadAuctionDocument, deleteAuctionDocument, listUploadedDocsForFY, listCloseReportsForFY } from '../lib/auctionDocumentsLib'
+import {
+  getAuctionSeason,
+  upsertAuctionSeason,
+  listCloseBalances,
+  replaceCloseBalances,
+  reopenAuctionSeason,
+} from '../lib/auctionSeasonsLib'
 import {
   Gavel, Upload, Loader2, FileSpreadsheet,
   FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2, Calendar,
@@ -46,11 +53,43 @@ function nextFY(fy) {
   return `${n}-${String((n + 1) % 100).padStart(2, '0')}`
 }
 
+function previousFY(fy) {
+  const y = parseInt(String(fy || '').slice(0, 4), 10)
+  if (!Number.isFinite(y)) return getFY()
+  return `${y - 1}-${String(y % 100).padStart(2, '0')}`
+}
+
 function isoDateLocal(d = new Date()) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+function addYearsIso(iso, years = 1) {
+  const [y, m, d] = String(iso || '').split('-').map(Number)
+  if (!y || !m || !d) return isoDateLocal()
+  return `${y + years}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+function dayBeforeIso(iso) {
+  const d = new Date(String(iso) + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return isoDateLocal()
+  d.setDate(d.getDate() - 1)
+  return isoDateLocal(d)
+}
+
+function memberKey(id) {
+  return String(id || '').trim().toUpperCase()
+}
+
+function spillRangeFromSeason(season, fy) {
+  const today = isoDateLocal()
+  const from = season?.auction_date || defaultSpillRangeForFY(fy).from
+  let to = today
+  if (season?.status === 'closed' && season.close_cutoff_date) to = season.close_cutoff_date
+  if (to < from) to = from
+  return { from, to }
 }
 
 /** Default spill-over window: FY start (1 Apr) through today (includes payments after 31 Mar). */
@@ -168,7 +207,7 @@ async function fetchAuctionPaidForFY(fy, { withDetails = false, dateFrom, dateTo
   allItems.forEach(item => {
     const rec = recMap[item.receipt_id]
     if (!rec) return
-    const mId = rec.member_id
+    const mId = memberKey(rec.member_id)
     paidMap[mId] = (paidMap[mId] || 0) + (item.total || 0)
     if (withDetails) {
       if (!detailsMap[mId]) detailsMap[mId] = []
@@ -686,7 +725,9 @@ export default function AuctionReportPage() {
   const [closeModalOpen,  setCloseModalOpen]  = useState(false)
   const [closePw,         setClosePw]         = useState('')
   const [closePwError,    setClosePwError]    = useState('')
-  const [closePreview,    setClosePreview]    = useState(null) // { fromFY, toFY, rows, totalCarry }
+  const [closePreview,    setClosePreview]    = useState(null) // Stage 1 close report
+  const [closePolicy,     setClosePolicy]     = useState('carry')
+  const [closeNextAuctionDate, setCloseNextAuctionDate] = useState('')
   const [loadingClose,    setLoadingClose]    = useState(false)
   const [showClosePw,     setShowClosePw]     = useState(false)
   const [revertModalOpen, setRevertModalOpen] = useState(false)
@@ -701,6 +742,8 @@ export default function AuctionReportPage() {
   const [loadingSpill,    setLoadingSpill]    = useState(false)
   const [reportKind,      setReportKind]      = useState('spillover') // 'spillover'
   const [spillRange,      setSpillRange]      = useState(null) // { from, to } when spillover generated
+  const [season,          setSeason]          = useState(null)
+  const [importAuctionDate, setImportAuctionDate] = useState('')
   const [docsPanelOpen,   setDocsPanelOpen]   = useState(true)
   const [docsRefreshKey,  setDocsRefreshKey]  = useState(0)
   const [flushModalOpen,  setFlushModalOpen]  = useState(false)
@@ -737,6 +780,11 @@ export default function AuctionReportPage() {
       setTrackerRows(data || [])
       setReportKind('spillover')
       setSpillRange(null)
+      const s = await getAuctionSeason(fy)
+      setSeason(s)
+      const range = spillRangeFromSeason(s, fy)
+      setSpillFrom(range.from)
+      setSpillTo(range.to)
     } catch (e) {
       toast(e.message, 'error')
     }
@@ -777,6 +825,8 @@ export default function AuctionReportPage() {
         mode: hasTotalPurchase ? 'total_purchase' : 'tracker',
         file,
       })
+      const s = season || await getAuctionSeason(filterFY)
+      setImportAuctionDate(s?.auction_date || `${auctionYearFromFY(filterFY)}-09-01`)
     } catch (err) {
       toast(err.message, 'error')
     }
@@ -786,11 +836,32 @@ export default function AuctionReportPage() {
   // ── Confirm import → save to Supabase ─────────────────────────
   const confirmImport = async () => {
     if (!preview) return
+    if (!importAuctionDate) {
+      toast('Enter the current year auction date', 'error')
+      return
+    }
     setLoadingImport(true)
     try {
+      const existingSeason = await getAuctionSeason(filterFY)
+      if (existingSeason?.status === 'closed') {
+        throw new Error(`FY ${filterFY} is already closed. Undo Close Year first (Alt+Click Close Year), then import.`)
+      }
+      const existingFiles = await listUploadedDocsForFY(filterFY)
+      if (existingFiles.length) {
+        throw new Error(`FY ${filterFY} already has an uploaded file. Delete it (master password), then import the correct file.`)
+      }
+
       const seen = new Map()
-      preview.rows.forEach(r => seen.set(String(r.member_id || '').trim().toUpperCase(), r))
+      preview.rows.forEach(r => seen.set(memberKey(r.member_id), r))
       const fileRows = [...seen.values()]
+
+      const prevSeason = await getAuctionSeason(previousFY(filterFY))
+      const prevClosedCarry = prevSeason?.status === 'closed' && prevSeason.close_policy === 'carry'
+      const carryRows = prevClosedCarry
+        ? await listCloseBalances(previousFY(filterFY))
+        : []
+      const carryMap = new Map(carryRows.map(r => [memberKey(r.member_id), r]))
+      const forfeitPrev = prevSeason?.status === 'closed' && prevSeason.close_policy === 'forfeit'
 
       await snapshotAuctionTrackerFY(filterFY, {
         operation: 'total_purchase_upload',
@@ -804,25 +875,48 @@ export default function AuctionReportPage() {
       if (loadErr) throw loadErr
 
       const existingMap = new Map(
-        (existing || []).map(r => [String(r.member_id || '').trim().toUpperCase(), r]),
+        (existing || []).map(r => [memberKey(r.member_id), r]),
       )
+
       const upserts = fileRows.map(r => {
-        const key = String(r.member_id || '').trim().toUpperCase()
+        const key = memberKey(r.member_id)
         const prev = existingMap.get(key)
-        const fromFilePrev = r.previous_pending != null
-        const previous_pending = fromFilePrev
-          ? (Number(r.previous_pending) || 0)
-          : (prev ? (Number(prev.previous_pending) || 0) : 0)
         const current_year_purchase = Number(r.current_year_purchase) || 0
+        let previous_pending = 0
+        if (forfeitPrev) {
+          previous_pending = 0
+        } else if (prevClosedCarry) {
+          previous_pending = Number(carryMap.get(key)?.balance) || 0
+        } else if (r.previous_pending != null) {
+          previous_pending = Number(r.previous_pending) || 0
+        } else {
+          previous_pending = prev ? (Number(prev.previous_pending) || 0) : 0
+        }
         return {
           member_id: prev?.member_id || key,
-          member_name: r.member_name || prev?.member_name || '',
+          member_name: r.member_name || prev?.member_name || carryMap.get(key)?.member_name || '',
           previous_pending,
           current_year_purchase,
           total: previous_pending + current_year_purchase,
           financial_year: filterFY,
         }
       })
+
+      if (carryMap.size) {
+        for (const [key, c] of carryMap) {
+          if (upserts.some(u => memberKey(u.member_id) === key)) continue
+          const prev = existingMap.get(key)
+          const previous_pending = Number(c.balance) || 0
+          upserts.push({
+            member_id: prev?.member_id || key,
+            member_name: c.member_name || prev?.member_name || '',
+            previous_pending,
+            current_year_purchase: prev ? (Number(prev.current_year_purchase) || 0) : 0,
+            total: previous_pending + (prev ? (Number(prev.current_year_purchase) || 0) : 0),
+            financial_year: filterFY,
+          })
+        }
+      }
 
       const CHUNK = 500
       for (let i = 0; i < upserts.length; i += CHUNK) {
@@ -832,12 +926,21 @@ export default function AuctionReportPage() {
         if (error) throw error
       }
 
+      await upsertAuctionSeason(filterFY, {
+        auction_date: importAuctionDate,
+        status: 'open',
+        close_policy: null,
+        next_auction_date: null,
+        close_cutoff_date: null,
+        closed_at: null,
+      })
+
       await logCmsAudit({
         action: 'saved', module: 'finance', entityType: 'auction_tracker',
         entityId: filterFY,
-        summary: `Imported ${upserts.length} Total Purchase rows (FY ${filterFY})`,
+        summary: `Imported ${upserts.length} Total Purchase rows (FY ${filterFY}, auction ${importAuctionDate})`,
       })
-      toast(`Imported ${upserts.length} members for FY ${filterFY} (Previous Pending + Current Year). Previous state is in Recycle Bin.`, 'success')
+      toast(`Imported ${upserts.length} members for FY ${filterFY}. Auction date ${fmtDateIN(importAuctionDate)}.`, 'success')
 
       if (preview.file) {
         try {
@@ -853,6 +956,7 @@ export default function AuctionReportPage() {
       }
 
       setPreview(null)
+      setImportAuctionDate('')
       setGenerated(false)
       setReportRows([])
       await loadTracker(filterFY)
@@ -875,16 +979,21 @@ export default function AuctionReportPage() {
         dateFrom: spillFrom,
         dateTo: spillTo,
       })
-      const rows = trackerRows.map(tr => ({
-        ...tr,
-        previous_pending:      Number(tr.previous_pending)      || 0,
-        current_year_purchase: Number(tr.current_year_purchase) || 0,
-        total:                 Number(tr.total)                 || 0,
-        paid:    paidMap[tr.member_id] || 0,
-        balance: (Number(tr.total) || 0) - (paidMap[tr.member_id] || 0),
-      }))
+      const detailsById = {}
+      const rows = trackerRows.map(tr => {
+        const paid = paidMap[memberKey(tr.member_id)] || 0
+        detailsById[tr.member_id] = detailsMap[memberKey(tr.member_id)] || []
+        return {
+          ...tr,
+          previous_pending:      Number(tr.previous_pending)      || 0,
+          current_year_purchase: Number(tr.current_year_purchase) || 0,
+          total:                 Number(tr.total)                 || 0,
+          paid,
+          balance: (Number(tr.total) || 0) - paid,
+        }
+      })
       setReportRows(rows)
-      setPaidDetailsMap(detailsMap)
+      setPaidDetailsMap(detailsById)
       setGenerated(true)
       setReportKind('spillover')
       setSpillRange({ from: spillFrom, to: spillTo })
@@ -895,10 +1004,15 @@ export default function AuctionReportPage() {
     setLoadingSpill(false)
   }
 
-  // ── Close auction year (carry balance → next FY previous_pending) ──
+  // ── Close auction year (Forfeit vs Carry; freeze this FY) ──
   const openCloseYearModal = async () => {
     if (!trackerRows.length) {
       toast('No tracker rows for this FY to close', 'error')
+      return
+    }
+    const s = season || await getAuctionSeason(filterFY)
+    if (s?.status === 'closed') {
+      toast('This year is already closed. Alt+Click Close Year to undo, then close again.', 'error')
       return
     }
     setLoadingClose(true)
@@ -907,27 +1021,52 @@ export default function AuctionReportPage() {
     try {
       const fromFY = filterFY
       const toFY = nextFY(fromFY)
-      const { paidMap } = await fetchAuctionPaidForFY(fromFY)
-      const rows = trackerRows.map(tr => {
+      const auctionDate = s?.auction_date || `${auctionYearFromFY(fromFY)}-09-01`
+      const nextDate = addYearsIso(auctionDate, 1)
+      setCloseNextAuctionDate(nextDate)
+      setClosePolicy('carry')
+      const cutoff = dayBeforeIso(nextDate)
+      const { paidMap, detailsMap } = await fetchAuctionPaidForFY(fromFY, {
+        withDetails: true,
+        dateFrom: auctionDate,
+        dateTo: cutoff,
+      })
+      const detailsById = {}
+      const allRows = trackerRows.map(tr => {
+        const paid = paidMap[memberKey(tr.member_id)] || 0
         const total = Number(tr.total) || 0
-        const paid = paidMap[tr.member_id] || 0
+        detailsById[tr.member_id] = detailsMap[memberKey(tr.member_id)] || []
         const balance = total - paid
         return {
-          member_id: tr.member_id,
-          member_name: tr.member_name,
+          ...tr,
+          previous_pending: Number(tr.previous_pending) || 0,
+          current_year_purchase: Number(tr.current_year_purchase) || 0,
           total,
           paid,
           balance,
-          previous_pending: Math.max(0, balance),
+          member_id: tr.member_id,
+          member_name: tr.member_name,
         }
       })
-      const carryRows = rows.filter(r => r.previous_pending > 0)
+      const carryRows = allRows.filter(r => r.balance > 0).map(r => ({
+        member_id: r.member_id,
+        member_name: r.member_name,
+        balance: r.balance,
+        previous_pending: r.balance,
+        total: r.total,
+        paid: r.paid,
+      }))
       setClosePreview({
         fromFY,
         toFY,
+        auctionDate,
+        nextAuctionDate: nextDate,
+        cutoff,
+        allRows,
+        detailsById,
         rows: carryRows,
-        allCount: rows.length,
-        totalCarry: carryRows.reduce((s, r) => s + r.previous_pending, 0),
+        allCount: allRows.length,
+        totalCarry: carryRows.reduce((s, r) => s + r.balance, 0),
       })
       setCloseModalOpen(true)
     } catch (e) {
@@ -938,6 +1077,14 @@ export default function AuctionReportPage() {
 
   const confirmCloseYear = async () => {
     if (!closePreview) return
+    if (!closeNextAuctionDate) {
+      setClosePwError('Enter the next auction date.')
+      return
+    }
+    if (!closePolicy) {
+      setClosePwError('Choose Forfeit or Carry forward.')
+      return
+    }
     const ok = await verifyMasterPassword(closePw)
     if (!ok) {
       setClosePwError('Incorrect master password.')
@@ -947,52 +1094,110 @@ export default function AuctionReportPage() {
     setLoadingClose(true)
     setClosePwError('')
     try {
-      const { fromFY, toFY, rows } = closePreview
-
-      // Always save Close Year undo token (even if toFY was empty — Recycle Bin restore clears carry)
-      const { data: priorToFY, error: priorErr } = await supabase
+      const { fromFY, toFY, auctionDate } = closePreview
+      const thisAuctionDate = auctionDate || closePreview.auctionDate
+      const cutoff = dayBeforeIso(closeNextAuctionDate)
+      const { paidMap, detailsMap } = await fetchAuctionPaidForFY(fromFY, {
+        withDetails: true,
+        dateFrom: thisAuctionDate,
+        dateTo: cutoff,
+      })
+      const detailsById = {}
+      const allRows = trackerRows.map(tr => {
+        const paid = paidMap[memberKey(tr.member_id)] || 0
+        const total = Number(tr.total) || 0
+        detailsById[tr.member_id] = detailsMap[memberKey(tr.member_id)] || []
+        return {
+          ...tr,
+          previous_pending: Number(tr.previous_pending) || 0,
+          current_year_purchase: Number(tr.current_year_purchase) || 0,
+          total,
+          paid,
+          balance: total - paid,
+          member_id: tr.member_id,
+          member_name: tr.member_name,
+        }
+      })
+      const { count: nextCount, error: nextErr } = await supabase
         .from('auction_tracker')
-        .select('*')
+        .select('id', { count: 'exact', head: true })
         .eq('financial_year', toFY)
-      if (priorErr) throw priorErr
+      if (nextErr) throw nextErr
 
       await snapshotCloseYearUndo({
         fromFY,
         toFY,
-        priorRows: priorToFY || [],
-        notes: `Before close-year carry from ${fromFY} → ${toFY}`,
+        priorRows: [],
+        extra: {
+          season: season,
+          closeBalances: await listCloseBalances(fromFY),
+          nextTrackerCount: nextCount || 0,
+        },
+        notes: `Before close ${fromFY} (${closePolicy}) cutoff ${cutoff}`,
       })
 
-      const existingMap = new Map((priorToFY || []).map(r => [r.member_id, r]))
+      const carryRows = closePolicy === 'carry'
+        ? allRows.filter(r => r.balance > 0).map(r => ({
+            member_id: r.member_id,
+            member_name: r.member_name,
+            balance: r.balance,
+          }))
+        : []
+      await upsertAuctionSeason(fromFY, {
+        auction_date: thisAuctionDate,
+        next_auction_date: closeNextAuctionDate,
+        close_cutoff_date: cutoff,
+        status: 'closed',
+        close_policy: closePolicy,
+        closed_at: new Date().toISOString(),
+      })
+      await replaceCloseBalances(fromFY, carryRows)
 
-      const upserts = rows.map(r => {
-        const prev = existingMap.get(r.member_id)
-        const current_year_purchase = prev ? (Number(prev.current_year_purchase) || 0) : 0
-        const previous_pending = r.previous_pending
-        return {
-          member_id: r.member_id,
-          member_name: r.member_name || prev?.member_name || '',
-          previous_pending,
-          current_year_purchase,
-          total: previous_pending + current_year_purchase,
-          financial_year: toFY,
+      setReportRows(allRows)
+      setPaidDetailsMap(detailsById)
+      setGenerated(true)
+      setReportKind('spillover')
+      setSpillRange({ from: thisAuctionDate, to: cutoff })
+
+      try {
+        const blob = await exportExcel({
+          rowsOverride: allRows,
+          detailsOverride: detailsById,
+          includeDefaulters: true,
+          download: false,
+          reportTitle: `Auction Close Report — ${closePolicy === 'forfeit' ? 'Forfeit' : 'Carry'}`,
+          dateFrom: thisAuctionDate,
+          dateTo: cutoff,
+          fy: fromFY,
+        })
+        if (blob) {
+          const existingClose = await listCloseReportsForFY(fromFY)
+          for (const doc of existingClose) {
+            await deleteAuctionDocument(doc)
+          }
+          const file = new File(
+            [blob],
+            `Auction_Close_${fromFY}_${cutoff}.xlsx`,
+            { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+          )
+          await uploadAuctionDocument({ fy: fromFY, file, kind: 'close_report' })
+          setDocsRefreshKey((k) => k + 1)
         }
-      })
-
-      const CHUNK = 500
-      for (let i = 0; i < upserts.length; i += CHUNK) {
-        const { error } = await supabase
-          .from('auction_tracker')
-          .upsert(upserts.slice(i, i + CHUNK), { onConflict: 'financial_year,member_id' })
-        if (error) throw error
+      } catch (fileErr) {
+        toast(`Year closed, but the close report was not stored: ${fileErr.message}`, 'error')
       }
 
       await logCmsAudit({
-        action: 'saved', module: 'finance', entityType: 'auction_tracker',
-        entityId: `${fromFY}->${toFY}`,
-        summary: `Closed auction FY ${fromFY}: carried ${upserts.length} balances (${closePreview.totalCarry}) into ${toFY} as previous pending`,
+        action: 'saved', module: 'finance', entityType: 'auction_seasons',
+        entityId: fromFY,
+        summary: `Closed auction FY ${fromFY} as ${closePolicy} (cutoff ${cutoff}). Next auction ${closeNextAuctionDate}.`,
       })
-      toast(`Closed FY ${fromFY}. ${upserts.length} balances carried to ${toFY}. Undo available in Recycle Bin (or Alt+Click Close Year).`, 'success')
+      toast(
+        closePolicy === 'forfeit'
+          ? `Closed FY ${fromFY} (Forfeit). Next season starts clean when you import. Alt+Click Close Year to undo.`
+          : `Closed FY ${fromFY} (Carry). Import the new Total Purchase for FY ${toFY} to open next year. Alt+Click Close Year to undo.`,
+        'success',
+      )
       setCloseModalOpen(false)
       setClosePreview(null)
       setClosePw('')
@@ -1003,44 +1208,34 @@ export default function AuctionReportPage() {
     setLoadingClose(false)
   }
 
-  // ── Secret: Alt+Click Close Year → Revert Close Year ───────────
   const openRevertCloseYearModal = async () => {
     setLoadingRevert(true)
     setRevertPw('')
     setRevertPwError('')
     try {
-      // Viewing closed source FY: clear next FY. Viewing next FY: treat it as toFY.
       let fromFY = filterFY
-      let toFY = nextFY(filterFY)
+      let s = await getAuctionSeason(fromFY)
+      if (s?.status !== 'closed') {
+        const prev = previousFY(filterFY)
+        s = await getAuctionSeason(prev)
+        if (s?.status === 'closed') fromFY = prev
+      }
+      if (s?.status !== 'closed') {
+        toast('This year is not closed. Nothing to undo.', 'error')
+        setLoadingRevert(false)
+        return
+      }
+      const toFY = nextFY(fromFY)
       const { count: nextCount } = await supabase
         .from('auction_tracker')
         .select('id', { count: 'exact', head: true })
         .eq('financial_year', toFY)
-
-      if (!(nextCount > 0)) {
-        // Maybe user is on the destination FY — try previous FY as source
-        const y = parseInt(String(filterFY || '').slice(0, 4), 10)
-        if (Number.isFinite(y)) {
-          const prevFY = `${y - 1}-${String(y % 100).padStart(2, '0')}`
-          const { count: hereCount } = await supabase
-            .from('auction_tracker')
-            .select('id', { count: 'exact', head: true })
-            .eq('financial_year', filterFY)
-          if (hereCount > 0) {
-            fromFY = prevFY
-            toFY = filterFY
-            setRevertPreview({ fromFY, toFY, nextCount: hereCount })
-            setRevertModalOpen(true)
-            setLoadingRevert(false)
-            return
-          }
-        }
-        toast(`No next-FY tracker data to clear (nothing after FY ${filterFY})`, 'error')
-        setLoadingRevert(false)
-        return
-      }
-
-      setRevertPreview({ fromFY, toFY, nextCount })
+      setRevertPreview({
+        fromFY,
+        toFY,
+        nextCount: nextCount || 0,
+        policy: s.close_policy,
+      })
       setRevertModalOpen(true)
     } catch (e) {
       toast(e.message, 'error')
@@ -1059,27 +1254,24 @@ export default function AuctionReportPage() {
     setLoadingRevert(true)
     setRevertPwError('')
     try {
-      const { fromFY, toFY } = revertPreview
-
-      // Snapshot current toFY so this revert is itself undoable via Recycle Bin
-      await snapshotAuctionTrackerFY(toFY, {
-        operation: 'revert_close_year',
-        notes: `Before revert close-year: clearing ${toFY} (was carried from ${fromFY})`,
+      const { fromFY, toFY, nextCount } = revertPreview
+      await snapshotCloseYearUndo({
+        fromFY,
+        toFY,
+        priorRows: [],
+        extra: { season: await getAuctionSeason(fromFY) },
+        notes: `Before undo close ${fromFY}`,
       })
-
-      const { data: deleted, error } = await supabase
-        .from('auction_tracker')
-        .delete()
-        .eq('financial_year', toFY)
-        .select('member_id')
-      if (error) throw error
-
+      await reopenAuctionSeason(fromFY)
       await logCmsAudit({
-        action: 'deleted', module: 'finance', entityType: 'auction_tracker',
-        entityId: `${toFY}<-${fromFY}`,
-        summary: `Reverted Close Year ${fromFY}: cleared ${deleted?.length || 0} tracker rows from ${toFY}`,
+        action: 'saved', module: 'finance', entityType: 'auction_seasons',
+        entityId: fromFY,
+        summary: `Undid Close Year ${fromFY}. Season is open. Choose Carry or Forfeit on Close Year again.`,
       })
-      toast(`Reverted Close Year. Cleared FY ${toFY} (${deleted?.length || 0} rows). FY ${fromFY} is open again.`, 'success')
+      const warn = nextCount > 0
+        ? ` FY ${toFY} already has ${nextCount} tracker row(s). Re-import that year after you close again if pending must follow Carry.`
+        : ''
+      toast(`Close Year undone for FY ${fromFY}. Close again to choose Forfeit or Carry.${warn}`, 'success')
       setRevertModalOpen(false)
       setRevertPreview(null)
       setRevertPw('')
@@ -1104,8 +1296,16 @@ export default function AuctionReportPage() {
   }
 
   // ── Excel export — two sheets: Summary + Detailed ────────────────
-  const exportExcel = async () => {
-    if (!reportRows.length) return
+  const exportExcel = async (opts = {}) => {
+    if (opts && typeof opts.preventDefault === 'function') opts = {}
+    const rows = opts.rowsOverride || reportRows
+    const details = opts.detailsOverride || paidDetailsMap
+    const includeDefaulters = !!opts.includeDefaulters
+    const doDownload = opts.download !== false
+    const dateFrom = opts.dateFrom || spillRange?.from
+    const dateTo = opts.dateTo || spillRange?.to
+    const fyLabel = opts.fy || filterFY
+    if (!rows.length) return null
     setExporting(true)
     try {
       const ExcelJS    = (await import('exceljs')).default
@@ -1114,9 +1314,19 @@ export default function AuctionReportPage() {
       const dateStr    = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
       const NCOLS      = 9
 
-      const isSpill = reportKind === 'spillover' && spillRange
-      const rangeLabel = isSpill ? `${fmtDateIN(spillRange.from)} to ${fmtDateIN(spillRange.to)}` : ''
-      const reportName = isSpill ? 'Auction Spill-over Report' : 'Auction Payment Report'
+      const isSpill = !!(dateFrom && dateTo)
+      const rangeLabel = isSpill ? `${fmtDateIN(dateFrom)} to ${fmtDateIN(dateTo)}` : ''
+      const reportName = opts.reportTitle || (isSpill ? 'Auction Spill-over Report' : 'Auction Payment Report')
+      const sheetSummary = {
+        totalMembers:     rows.length,
+        totalPrevPending: rows.reduce((s, r) => s + (Number(r.previous_pending) || 0), 0),
+        totalCurrYear:    rows.reduce((s, r) => s + (Number(r.current_year_purchase) || 0), 0),
+        totalDue:         rows.reduce((s, r) => s + (Number(r.total) || 0), 0),
+        totalPaid:        rows.reduce((s, r) => s + (Number(r.paid) || 0), 0),
+        totalBalance:     rows.reduce((s, r) => s + (Number(r.balance) || 0), 0),
+        countCleared:     rows.filter(r => (Number(r.balance) || 0) <= 0).length,
+        countPending:     rows.filter(r => (Number(r.balance) || 0) > 0).length,
+      }
 
       // ── colours ──
       const C_HDR   = '1E3A5F'
@@ -1146,7 +1356,7 @@ export default function AuctionReportPage() {
 
         const titles = [
           { text: churchName,                                    bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
-          { text: `${sheetTitle} — FY ${filterFY}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true,  size: 12, bg: C_SUB, fg: C_WHITE },
+          { text: `${sheetTitle} — FY ${fyLabel}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true,  size: 12, bg: C_SUB, fg: C_WHITE },
           { text: `Generated: ${dateStr}`,                       bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
         ]
         titles.forEach(({ text, bold, size, bg, fg }, idx) => {
@@ -1174,9 +1384,9 @@ export default function AuctionReportPage() {
       // ── shared: grand total row ──
       const addTotalRow = (ws) => {
         const tr = ws.addRow([
-          '', 'TOTAL', '', summary.totalPrevPending || null, summary.totalCurrYear || null,
-          summary.totalDue || null, summary.totalPaid || null, summary.totalBalance || null,
-          `${summary.countCleared}✓ / ${summary.countPending}✗`,
+          '', 'TOTAL', '', sheetSummary.totalPrevPending || null, sheetSummary.totalCurrYear || null,
+          sheetSummary.totalDue || null, sheetSummary.totalPaid || null, sheetSummary.totalBalance || null,
+          `${sheetSummary.countCleared}✓ / ${sheetSummary.countPending}✗`,
         ])
         tr.height = 22
         tr.eachCell({ includeEmpty: true }, (cell, ci) => {
@@ -1219,8 +1429,8 @@ export default function AuctionReportPage() {
       // ════════════════════════════════
       const wsSummary = wb.addWorksheet('Summary')
       buildSheetHeader(wsSummary, `${reportName} (Summary)`)
-      reportRows.forEach((row, i) => {
-        addMemberRow(wsSummary, row, i, i === reportRows.length - 1)
+      rows.forEach((row, i) => {
+        addMemberRow(wsSummary, row, i, i === rows.length - 1)
       })
       addTotalRow(wsSummary)
 
@@ -1230,12 +1440,12 @@ export default function AuctionReportPage() {
       const wsDetail = wb.addWorksheet('Detailed')
       buildSheetHeader(wsDetail, `${reportName} (Detailed)`)
 
-      reportRows.forEach((row, i) => {
-        const details = paidDetailsMap[row.member_id] || []
-        const isLast  = i === reportRows.length - 1 && details.length === 0
+      rows.forEach((row, i) => {
+        const recs = details[row.member_id] || []
+        const isLast  = i === rows.length - 1 && recs.length === 0
         addMemberRow(wsDetail, row, i, isLast)
 
-        if (!details.length) return
+        if (!recs.length) return
 
         // receipt sub-header
         const sh = wsDetail.addRow(['', 'Receipt No', 'Date', 'Month(s) Paid', 'Mode', '', 'Amount (₹)', '', ''])
@@ -1248,8 +1458,8 @@ export default function AuctionReportPage() {
         })
 
         // receipt detail rows
-        details.forEach((d, di) => {
-          const isLastDetail = di === details.length - 1
+        recs.forEach((d, di) => {
+          const isLastDetail = di === recs.length - 1
           const rr = wsDetail.addRow(['', d.receipt_number, fmtDate(d.receipt_date), d.month_paid || '', d.payment_mode || '', '', d.amount || null, '', ''])
           rr.height = 16
           rr.eachCell({ includeEmpty: true }, (cell, ci) => {
@@ -1262,7 +1472,7 @@ export default function AuctionReportPage() {
         })
 
         // receipt subtotal
-        const st = wsDetail.addRow(['', '', `Total Paid (${details.length} receipt${details.length !== 1 ? 's' : ''})`, '', '', '', row.paid || null, '', ''])
+        const st = wsDetail.addRow(['', '', `Total Paid (${recs.length} receipt${recs.length !== 1 ? 's' : ''})`, '', '', '', row.paid || null, '', ''])
         wsDetail.mergeCells(st.number, 2, st.number, 6)
         st.height = 17
         st.eachCell({ includeEmpty: true }, (cell, ci) => {
@@ -1302,11 +1512,11 @@ export default function AuctionReportPage() {
       }
 
       let monthKeys
-      if (isSpill && spillRange?.from && spillRange?.to) {
-        monthKeys = monthsInRange(spillRange.from, spillRange.to)
+      if (isSpill && dateFrom && dateTo) {
+        monthKeys = monthsInRange(dateFrom, dateTo)
       } else {
         const seen = new Set()
-        Object.values(paidDetailsMap).forEach(arr => {
+        Object.values(details).forEach(arr => {
           (arr || []).forEach(d => { const k = monthKey(d.receipt_date); if (k) seen.add(k) })
         })
         monthKeys = [...seen].sort()
@@ -1334,7 +1544,7 @@ export default function AuctionReportPage() {
 
       const mwTitles = [
         { text: churchName, bold: true,  size: 14, bg: C_HDR, fg: C_WHITE },
-        { text: `${reportName} (Monthwise Breakup) — FY ${filterFY}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
+        { text: `${reportName} (Monthwise Breakup) — FY ${fyLabel}${rangeLabel ? ` · ${rangeLabel}` : ''}`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
         { text: `Generated: ${dateStr}`, bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
       ]
       mwTitles.forEach(({ text, bold, size, bg, fg }, idx) => {
@@ -1392,9 +1602,9 @@ export default function AuctionReportPage() {
       const closeCol = mwN - 1
       const statusCol = mwN
 
-      reportRows.forEach((row, i) => {
+      rows.forEach((row, i) => {
         const byMonth = {}
-        ;(paidDetailsMap[row.member_id] || []).forEach(d => {
+        ;(details[row.member_id] || []).forEach(d => {
           const k = monthKey(d.receipt_date)
           if (!k) return
           byMonth[k] = (byMonth[k] || 0) + (Number(d.amount) || 0)
@@ -1417,7 +1627,7 @@ export default function AuctionReportPage() {
         grandDue += totalDue
         grandPaid += paid
         grandClosing += closing
-        const isLast = i === reportRows.length - 1
+        const isLast = i === rows.length - 1
         const isAlt = i % 2 === 1
         const dr = wsMonth.addRow([
           i + 1, row.member_id, row.member_name,
@@ -1463,18 +1673,75 @@ export default function AuctionReportPage() {
         }
       }
 
-      // ── download ──
+      if (includeDefaulters) {
+        const defRows = rows.filter(r => (Number(r.balance) || 0) > 0)
+        const wsDef = wb.addWorksheet('Defaulters')
+        wsDef.columns = [
+          { width: 18 }, { width: 32 }, { width: 16 }, { width: 16 }, { width: 16 },
+        ]
+        const defTitles = [
+          { text: churchName, bold: true, size: 14, bg: C_HDR, fg: C_WHITE },
+          { text: `Defaulters — FY ${fyLabel}${rangeLabel ? ` · ${rangeLabel}` : ''} (balance > 0)`, bold: true, size: 12, bg: C_SUB, fg: C_WHITE },
+          { text: `Generated: ${dateStr}`, bold: false, size: 10, bg: 'EEF3FA', fg: '374151' },
+        ]
+        defTitles.forEach(({ text, bold, size, bg, fg }, idx) => {
+          const r = wsDef.addRow([text, '', '', '', ''])
+          wsDef.mergeCells(r.number, 1, r.number, 5)
+          const cell = wsDef.getCell(r.number, 1)
+          cell.value = text
+          cell.font = { bold, size, name: 'Calibri', color: { argb: fg } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+          cell.border = { top: idx === 0 ? outerMed : innerThn, bottom: idx === defTitles.length - 1 ? innerThn : innerThn, left: outerMed, right: outerMed }
+          r.height = size * 2.1
+        })
+        const dhr = wsDef.addRow(['Member ID', 'Name', 'Due (₹)', 'Paid (₹)', 'Balance (₹)'])
+        dhr.height = 22
+        dhr.eachCell({ includeEmpty: true }, (cell, ci) => {
+          cell.font = { bold: true, color: { argb: C_WHITE }, size: 11, name: 'Calibri' }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HDR } }
+          cell.alignment = { vertical: 'middle', horizontal: ci <= 2 ? 'left' : 'right' }
+          cell.border = border(true, false, ci === 1, ci === 5)
+        })
+        defRows.forEach((row, i) => {
+          const dr = wsDef.addRow([
+            row.member_id, row.member_name,
+            Number(row.total) || null, Number(row.paid) || null, Number(row.balance) || null,
+          ])
+          dr.height = 18
+          dr.eachCell({ includeEmpty: true }, (cell, ci) => {
+            cell.font = { size: 10, name: 'Calibri' }
+            cell.alignment = { vertical: 'middle', horizontal: ci <= 2 ? 'left' : 'right' }
+            cell.border = border(false, i === defRows.length - 1, ci === 1, ci === 5)
+            if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_ALT } }
+            if (ci >= 3 && cell.value != null) cell.numFmt = numFmt
+            if (ci === 5) cell.font = { ...cell.font, color: { argb: 'DC2626' } }
+          })
+        })
+        if (!defRows.length) {
+          const empty = wsDef.addRow(['None', 'No members with balance due at cut-off', '', '', ''])
+          wsDef.mergeCells(empty.number, 1, empty.number, 5)
+        }
+      }
+
       const buf = await wb.xlsx.writeBuffer()
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      const safeChurch = churchName.replace(/[^a-zA-Z0-9]/g, '_')
-      a.href = url; a.download = `${isSpill ? 'Auction_Spillover' : 'Auction_Report'}_${safeChurch}_FY${filterFY}${isSpill ? `_${spillRange.from}_to_${spillRange.to}` : ''}.xlsx`; a.click()
-      URL.revokeObjectURL(url)
+      if (doDownload) {
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement('a')
+        const safeChurch = churchName.replace(/[^a-zA-Z0-9]/g, '_')
+        a.href = url
+        a.download = `${includeDefaulters ? 'Auction_Close' : (isSpill ? 'Auction_Spillover' : 'Auction_Report')}_${safeChurch}_FY${fyLabel}${isSpill ? `_${dateFrom}_to_${dateTo}` : ''}.xlsx`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      return blob
     } catch (e) {
       toast(e.message, 'error')
+      return null
+    } finally {
+      setExporting(false)
     }
-    setExporting(false)
   }
 
   // ── PDF export ─────────────────────────────────────────────────
@@ -1576,9 +1843,9 @@ export default function AuctionReportPage() {
           <button
             className="action-btn"
             onClick={() => {
-              const range = defaultSpillRangeForFY(filterFY)
-              if (!spillFrom) setSpillFrom(range.from)
-              if (!spillTo) setSpillTo(range.to)
+              const range = spillRangeFromSeason(season, filterFY)
+              setSpillFrom(range.from)
+              setSpillTo(range.to)
               setSpillModalOpen(true)
             }}
             disabled={loadingSpill || !trackerRows.length}
@@ -1601,7 +1868,7 @@ export default function AuctionReportPage() {
             }}
             disabled={loadingClose || loadingRevert || !trackerRows.length}
             style={{ background: '#b45309' }}
-            title="Close Year — carry unpaid into next FY. Alt+Click to Revert Close Year."
+            title="Close Year — freeze this auction (Forfeit or Carry). Alt+Click to undo Close."
           >
             {(loadingClose || loadingRevert) ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
             {loadingClose ? 'Preparing…' : loadingRevert ? 'Revert…' : 'Close Year'}
@@ -1611,7 +1878,7 @@ export default function AuctionReportPage() {
             <>
               <button
                 className="action-btn"
-                onClick={exportExcel}
+                onClick={() => exportExcel()}
                 disabled={exporting}
                 style={{ background: '#16a34a' }}
               >
@@ -1670,6 +1937,8 @@ export default function AuctionReportPage() {
         {trackerRows.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 4 }}>
             {trackerRows.length} members imported · Auction {auctionYear}
+            {season?.auction_date ? ` · ${fmtDateIN(season.auction_date)}` : ''}
+            {season?.status === 'closed' ? ` · Closed (${season.close_policy === 'forfeit' ? 'Forfeit' : 'Carry'})` : ''}
             {generated ? ` · ${reportRows.length} spill-over` : ' · Spill-over Report'}
           </span>
         )}
@@ -1705,8 +1974,10 @@ export default function AuctionReportPage() {
             </h3>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
               Tracker members for FY <strong>{filterFY}</strong>. Opening is Previous Pending.
-              Payments are counted when the receipt date falls in this range (any financial year).
-              Defaults to 1 Apr of this FY through today. Does not close the year.
+              Payments are counted when the receipt date falls in this range.
+              From defaults to this auction’s date{season?.auction_date ? ` (${fmtDateIN(season.auction_date)})` : ''};
+              To is today{season?.status === 'closed' && season.close_cutoff_date ? `, or the close cut-off (${fmtDateIN(season.close_cutoff_date)})` : ''}.
+              Does not close the year.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
@@ -1768,8 +2039,22 @@ export default function AuctionReportPage() {
               <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
                 {preview.rows.length} member rows found for FY <strong>{filterFY}</strong>.
                 This will <strong>merge/update</strong> by Member ID. Previous Pending and Current Year Purchase
-                are both saved. Blank Previous Pending is stored as 0. Older Total Purchase files without that
-                column keep existing Previous Pending.
+                are both saved. If the previous year was closed as Carry, pending comes from that snapshot
+                (Excel pending is ignored). Forfeit starts Previous Pending at 0.
+                One uploaded file is allowed per year — delete the existing file first if you need to replace it.
+              </div>
+              <div style={{ marginBottom: 12, maxWidth: 280 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>
+                  This auction’s date
+                </label>
+                <input
+                  type="date"
+                  value={importAuctionDate}
+                  onChange={(e) => setImportAuctionDate(e.target.value)}
+                  className="field-input"
+                  style={{ width: '100%' }}
+                  required
+                />
               </div>
               {/* mini preview table */}
               <div style={{ overflowX: 'auto', marginBottom: 12 }}>
@@ -1798,7 +2083,7 @@ export default function AuctionReportPage() {
                 </table>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="action-btn" onClick={confirmImport} disabled={loadingImport}
+                <button className="action-btn" onClick={confirmImport} disabled={loadingImport || !importAuctionDate}
                   style={{ background: 'var(--sidebar-bg)' }}>
                   {loadingImport ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
                   {loadingImport ? 'Importing…' : `Confirm Import (${preview.rows.length} rows)`}
@@ -2079,7 +2364,6 @@ export default function AuctionReportPage() {
 
       {docsPanelOpen && (
         <AuctionDocsPanel
-          selectedFY={filterFY}
           refreshKey={docsRefreshKey}
           onClose={() => setDocsPanelOpen(false)}
           onRequestDelete={(doc, reload) => {
@@ -2120,14 +2404,51 @@ export default function AuctionReportPage() {
               Close Auction Year
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-              Carry unpaid balances from <strong>FY {closePreview.fromFY}</strong> (Auction {auctionYearFromFY(closePreview.fromFY)})
-              into <strong>FY {closePreview.toFY}</strong> as <strong>Previous Pending</strong>.
-              Source FY data is kept. Cleared members are not carried.
-              An undo token is always saved to Recycle Bin (works even if {closePreview.toFY} was empty).
+              Freeze <strong>FY {closePreview.fromFY}</strong> (Auction {auctionYearFromFY(closePreview.fromFY)}
+              {closePreview.auctionDate ? ` · ${fmtDateIN(closePreview.auctionDate)}` : ''}).
+              Cut-off is the day before the next auction. This does not create next-year purchases —
+              the next year starts when you import that Total Purchase.
+              Wrong Forfeit: undo Close (Alt+Click), then close again as Carry.
             </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>
+                  Next auction date
+                </label>
+                <input
+                  type="date"
+                  value={closeNextAuctionDate}
+                  onChange={e => setCloseNextAuctionDate(e.target.value)}
+                  className="field-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 6 }}>
+                  Cut-off
+                </label>
+                <div className="field-input" style={{ display: 'flex', alignItems: 'center', background: 'var(--table-header-bg)' }}>
+                  {closeNextAuctionDate ? fmtDateIN(dayBeforeIso(closeNextAuctionDate)) : '—'}
+                </div>
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 8 }}>
+                Unpaid balances
+              </div>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8, cursor: 'pointer', fontSize: 13 }}>
+                <input type="radio" name="closePolicy" checked={closePolicy === 'forfeit'} onChange={() => setClosePolicy('forfeit')} style={{ marginTop: 3 }} />
+                <span><strong>Forfeit (start clean)</strong> — next year Previous Pending is 0. Defaulters are recorded but not carried.</span>
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13 }}>
+                <input type="radio" name="closePolicy" checked={closePolicy === 'carry'} onChange={() => setClosePolicy('carry')} style={{ marginTop: 3 }} />
+                <span><strong>Carry forward</strong> — unpaid (not overpay) becomes Previous Pending when you import next year’s file.</span>
+              </label>
+            </div>
             <div style={{ background: 'rgba(180,83,9,0.08)', border: '1px solid rgba(180,83,9,0.25)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
-              <div><strong>{closePreview.rows.length}</strong> of {closePreview.allCount} members have a balance to carry</div>
-              <div style={{ marginTop: 4 }}>Total Previous Pending to create:{' '}
+              <div><strong>{closePreview.rows.length}</strong> of {closePreview.allCount} members have a balance due</div>
+              <div style={{ marginTop: 4 }}>
+                {closePolicy === 'carry' ? 'Amount that will carry:' : 'Due at cut-off (not carried):'}{' '}
                 <strong style={{ color: '#b45309' }}>
                   ₹{closePreview.totalCarry.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </strong>
@@ -2138,8 +2459,8 @@ export default function AuctionReportPage() {
                 <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
                   <thead>
                     <tr style={{ background: 'var(--table-header-bg)' }}>
-                      {['Member ID', 'Name', 'Balance → Prev.'].map(h => (
-                        <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Balance → Prev.' ? 'right' : 'left', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{h}</th>
+                      {['Member ID', 'Name', 'Balance'].map(h => (
+                        <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Balance' ? 'right' : 'left', fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -2149,7 +2470,7 @@ export default function AuctionReportPage() {
                         <td style={{ padding: '5px 8px', fontFamily: 'monospace' }}>{r.member_id}</td>
                         <td style={{ padding: '5px 8px' }}>{r.member_name}</td>
                         <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>
-                          {r.previous_pending.toLocaleString('en-IN')}
+                          {(r.balance ?? r.previous_pending).toLocaleString('en-IN')}
                         </td>
                       </tr>
                     ))}
@@ -2182,11 +2503,11 @@ export default function AuctionReportPage() {
               <button
                 className="action-btn"
                 onClick={confirmCloseYear}
-                disabled={loadingClose || closePreview.rows.length === 0}
+                disabled={loadingClose || !closeNextAuctionDate || !closePolicy}
                 style={{ background: '#b45309' }}
               >
                 {loadingClose ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
-                {loadingClose ? 'Closing…' : `Confirm Close → ${closePreview.toFY}`}
+                {loadingClose ? 'Closing…' : `Confirm Close (${closePolicy === 'forfeit' ? 'Forfeit' : 'Carry'})`}
               </button>
               <button
                 className="action-btn"
@@ -2226,15 +2547,18 @@ export default function AuctionReportPage() {
             </button>
             <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Undo2 size={16} style={{ color: '#0f766e' }} />
-              Revert Close Year
+              Undo Close Year
             </h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--text-2)', lineHeight: 1.45 }}>
-              Clears all auction tracker rows for <strong>FY {revertPreview.toFY}</strong>
-              ({revertPreview.nextCount} members) so <strong>FY {revertPreview.fromFY}</strong> stays the open year.
-              Source FY data is not changed. Current {revertPreview.toFY} is snapshotted to Recycle Bin first.
+              Reopens <strong>FY {revertPreview.fromFY}</strong> (clears Forfeit/Carry and the carry snapshot).
+              Tracker history for that year is kept. Close Year again to choose Carry if Forfeit was a mistake.
+              {revertPreview.nextCount > 0
+                ? ` FY ${revertPreview.toFY} already has ${revertPreview.nextCount} tracker row(s). After you re-close as Carry, re-import ${revertPreview.toFY} so pending can merge from the new snapshot.`
+                : ''}
             </p>
             <div style={{ background: 'rgba(15,118,110,0.08)', border: '1px solid rgba(15,118,110,0.25)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
-              Undo: <strong>{revertPreview.fromFY}</strong> ← clear carry on <strong>{revertPreview.toFY}</strong>
+              Undo close: <strong>{revertPreview.fromFY}</strong>
+              {revertPreview.policy ? ` · was ${revertPreview.policy === 'forfeit' ? 'Forfeit' : 'Carry'}` : ''}
             </div>
             <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-3)', display: 'block', marginBottom: 7 }}>
               Master Password
@@ -2262,7 +2586,7 @@ export default function AuctionReportPage() {
                 style={{ background: '#0f766e' }}
               >
                 {loadingRevert ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-                {loadingRevert ? 'Reverting…' : `Clear FY ${revertPreview.toFY}`}
+                {loadingRevert ? 'Reverting…' : `Undo Close ${revertPreview.fromFY}`}
               </button>
               <button
                 className="action-btn"

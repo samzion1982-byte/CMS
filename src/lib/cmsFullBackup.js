@@ -23,7 +23,7 @@ export const FULL_BACKUP_TABLES = [
   'simple_accounts', 'simple_categories', 'simple_transactions',
   'announcements_log', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
   'directory_categories', 'directory_contacts',
-  'auction_tracker',
+  'auction_tracker', 'auction_seasons', 'auction_close_balances',
   'cms_audit_log', 'login_logs',
 ]
 

@@ -11,11 +11,21 @@ export const AUCTION_DOC_BUCKET = 'church-documents'
 export const AUCTION_DOC_ROOT = 'auction-ref'
 export const AUCTION_DOC_MAX_BYTES = 10 * 1024 * 1024
 
-const KINDS = new Set(['initial', 'current_year', 'reference'])
+const KINDS = new Set(['initial', 'current_year', 'reference', 'close_report'])
+const UPLOAD_KINDS = new Set(['initial', 'current_year', 'reference'])
+
+export function isCloseReportKind(kind) {
+  return kind === 'close_report'
+}
+
+export function isUploadedDocKind(kind) {
+  return UPLOAD_KINDS.has(kind) || (!kind)
+}
 
 export function auctionDocKindLabel(kind) {
   if (kind === 'initial') return 'Initial setup'
   if (kind === 'current_year') return 'Total Purchase'
+  if (kind === 'close_report') return 'Closed year report'
   return 'Reference'
 }
 
@@ -28,7 +38,7 @@ export function formatAuctionDocSize(bytes) {
 }
 
 export function parseAuctionDocName(storedName) {
-  const m = String(storedName || '').match(/^(initial|current_year|reference)__(\d+)__(.+)$/)
+  const m = String(storedName || '').match(/^(initial|current_year|reference|close_report)__(\d+)__(.+)$/)
   if (!m) return { kind: 'reference', originalName: storedName, uploadedAt: null }
   const ts = Number(m[2])
   return {
@@ -114,6 +124,30 @@ export async function listAuctionDocuments() {
 
   groups.sort((a, b) => String(b.fy).localeCompare(String(a.fy)))
   return groups
+}
+
+export function splitAuctionDocGroups(groups) {
+  const uploaded = []
+  const closed = []
+  for (const g of groups || []) {
+    const up = (g.files || []).filter((f) => !isCloseReportKind(f.kind))
+    const cl = (g.files || []).filter((f) => isCloseReportKind(f.kind))
+    if (up.length) uploaded.push({ fy: g.fy, files: up })
+    if (cl.length) closed.push({ fy: g.fy, files: cl })
+  }
+  return { uploaded, closed }
+}
+
+export async function listUploadedDocsForFY(fy) {
+  const groups = await listAuctionDocuments()
+  const g = (groups || []).find((x) => x.fy === fy)
+  return (g?.files || []).filter((f) => !isCloseReportKind(f.kind))
+}
+
+export async function listCloseReportsForFY(fy) {
+  const groups = await listAuctionDocuments()
+  const g = (groups || []).find((x) => x.fy === fy)
+  return (g?.files || []).filter((f) => isCloseReportKind(f.kind))
 }
 
 export async function uploadAuctionDocument({ fy, file, kind = 'reference' }) {

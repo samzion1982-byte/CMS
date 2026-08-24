@@ -427,7 +427,7 @@ export async function flushAllAuctionTracker({ actor = null } = {}) {
  * Always-save Close Year undo token (even when target FY had 0 rows).
  * Recycle Bin restore replaces toFY with prior_rows (often empty = clear carry).
  */
-export async function snapshotCloseYearUndo({ fromFY, toFY, priorRows = [], actor = null, notes = null } = {}) {
+export async function snapshotCloseYearUndo({ fromFY, toFY, priorRows = [], extra = {}, actor = null, notes = null } = {}) {
   if (!fromFY || !toFY) return null
   try {
     let actorEmail = actor?.email || null
@@ -457,21 +457,24 @@ export async function snapshotCloseYearUndo({ fromFY, toFY, priorRows = [], acto
         module: 'finance',
         table_name: 'auction_tracker',
         record_id: `auction_tracker:close_year:${fromFY}->${toFY}:${Date.now()}`,
-        record_label: `Close year undo: ${fromFY} → ${toFY} (${rows.length} prior rows)`,
+        record_label: `Close year undo: ${fromFY} → ${toFY}`,
         payload: {
           kind: 'close_year_undo',
           rows,
           meta: {
-            financial_year: toFY,
+            financial_year: fromFY,
             from_fy: fromFY,
             to_fy: toFY,
             operation: 'close_year',
+            season: extra?.season || null,
+            close_balances: extra?.closeBalances || [],
+            next_tracker_count: extra?.nextTrackerCount || 0,
           },
         },
         deleted_by_email: actorEmail,
         deleted_by_name: actorName,
         deleted_by_role: actorRole,
-        notes: notes || `Undo Close Year ${fromFY} → ${toFY}: restore replaces FY ${toFY} with prior state (${rows.length} rows)`,
+        notes: notes || `Undo Close Year ${fromFY}: restore season to open`,
         status: 'deleted',
       })
       .select('id')
@@ -582,8 +585,40 @@ export async function restoreRecycleBinItem(id, actor = null) {
     return item
   }
 
-  // ── Bulk table snapshot / close-year undo (auction_tracker FY) ──
-  if (payload.kind === 'table_snapshot' || payload.kind === 'close_year_undo') {
+  // ── Close-year undo: reopen season (do not wipe tracker history) ──
+  if (payload.kind === 'close_year_undo') {
+    const fromFy = payload.meta?.from_fy
+    if (fromFy) {
+      const { reopenAuctionSeason } = await import('./auctionSeasonsLib.js')
+      await reopenAuctionSeason(fromFy)
+    }
+    let emailTs = actor?.email || null
+    if (!emailTs) {
+      const { data: { user } } = await supabase.auth.getUser()
+      emailTs = user?.email || null
+    }
+    await supabase
+      .from('cms_recycle_bin')
+      .update({
+        status: 'restored',
+        restored_at: new Date().toISOString(),
+        restored_by_email: emailTs,
+      })
+      .eq('id', id)
+    await logCmsAudit({
+      action: 'restored',
+      module: 'recycle_bin',
+      entityType: 'auction_seasons',
+      entityId: item.record_id,
+      entityLabel: item.record_label,
+      summary: `Undid Close Year${fromFy ? ` ${fromFy}` : ''}: season is open again (Forfeit/Carry cleared). Re-close to choose Carry if needed.`,
+      actor,
+    })
+    return item
+  }
+
+  // ── Bulk table snapshot (auction_tracker FY) ──
+  if (payload.kind === 'table_snapshot') {
     const rows = Array.isArray(payload.rows) ? payload.rows : []
     if (payload.kind === 'table_snapshot' && !rows.length) {
       throw new Error('Snapshot payload has no rows')
@@ -631,16 +666,13 @@ export async function restoreRecycleBinItem(id, actor = null) {
       })
       .eq('id', id)
 
-    const fromFy = payload.meta?.from_fy
     await logCmsAudit({
       action: 'restored',
       module: 'recycle_bin',
       entityType: item.table_name,
       entityId: item.record_id,
       entityLabel: item.record_label,
-      summary: payload.kind === 'close_year_undo'
-        ? `Undid Close Year${fromFy ? ` ${fromFy}` : ''}: restored FY ${fy} to prior state (${rows.length} rows)`
-        : `Restored ${item.module}/${item.table_name} snapshot (${rows.length} rows) from Recycle Bin`,
+      summary: `Restored ${item.module}/${item.table_name} snapshot (${rows.length} rows) from Recycle Bin`,
       actor,
     })
     return item
