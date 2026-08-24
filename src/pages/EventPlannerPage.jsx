@@ -38,6 +38,7 @@ import { sendWhatsAppMessage } from '../lib/whatsapp'
 import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/exportExcel'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1643,6 +1644,21 @@ export default function EventPlannerPage(){
       document.removeEventListener('contextmenu',onCtx)
     }
   },[])
+
+  // "+" opens New Event (planner views only; skip when typing or any modal is open)
+  useEffect(() => {
+    function onKey(e) {
+      if (!isPlusHotkey(e)) return
+      if (view === 'board') return
+      if (eventModal !== null || bucketModal || taskModal || assignModal || carryModal || libraryModal || confirmDlg || summaryModal) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
+      e.preventDefault()
+      setTooltip(null)
+      setEventModal({})
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [view, eventModal, bucketModal, taskModal, assignModal, carryModal, libraryModal, confirmDlg, summaryModal])
   
   useEffect(()=>{
     supabase.from('members').select('id,first_name,last_name').eq('is_active', true).order('first_name').then(({data,error})=>{
