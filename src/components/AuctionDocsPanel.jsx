@@ -92,7 +92,6 @@ function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load 
 }
 
 export default function AuctionDocsPanel({
-  onClose,
   refreshKey = 0,
   onRequestDelete,
 }) {
@@ -195,14 +194,6 @@ export default function AuctionDocsPanel({
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-1)' }}>Files</div>
           <div style={{ fontSize: 11, color: 'var(--text-3)' }}>One file per year</div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
-          aria-label="Close files panel"
-        >
-          <X size={16} />
-        </button>
       </div>
 
       <div style={{ display: 'flex', borderBottom: '1px solid var(--table-border)' }}>

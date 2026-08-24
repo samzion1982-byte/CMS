@@ -21,7 +21,7 @@ import {
 import {
   Gavel, Upload, Loader2, FileSpreadsheet,
   FileText, CheckCircle, XCircle, AlertCircle, Info, ChevronDown, Download, X, Lock, Undo2, Calendar,
-  PanelRight, Trash2,
+  Trash2,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import AuctionDocsPanel from '../components/AuctionDocsPanel'
@@ -745,7 +745,6 @@ export default function AuctionReportPage() {
   const [season,          setSeason]          = useState(null)
   const [prevSeason,      setPrevSeason]      = useState(null)
   const [importAuctionDate, setImportAuctionDate] = useState('')
-  const [docsPanelOpen,   setDocsPanelOpen]   = useState(true)
   const [docsRefreshKey,  setDocsRefreshKey]  = useState(0)
   const [flushModalOpen,  setFlushModalOpen]  = useState(false)
   const [flushPw,         setFlushPw]         = useState('')
@@ -1914,20 +1913,10 @@ export default function AuctionReportPage() {
             }}
             disabled={loadingClose || loadingRevert || !trackerRows.length}
             style={{ background: '#b45309' }}
-            title="Close Year — freeze this auction (Forfeit or Carry)."
+            title="Close Year — freeze this auction (Forfeit or Carry). Alt+Click to undo Close."
           >
             {(loadingClose || loadingRevert) ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
-            {loadingClose ? 'Preparing…' : 'Close Year'}
-          </button>
-          <button
-            className="action-btn"
-            onClick={openRevertCloseYearModal}
-            disabled={loadingClose || loadingRevert}
-            style={{ background: '#0f766e' }}
-            title="Reopen the closed year. If the next year was already imported, that import is removed so you can close again as Forfeit or Carry."
-          >
-            {loadingRevert ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
-            {loadingRevert ? 'Undo…' : 'Undo Close'}
+            {loadingClose ? 'Preparing…' : loadingRevert ? 'Undo…' : 'Close Year'}
           </button>
 
           {generated && (
@@ -1955,16 +1944,6 @@ export default function AuctionReportPage() {
 
           <button
             className="action-btn"
-            onClick={() => setDocsPanelOpen((v) => !v)}
-            style={{ background: docsPanelOpen ? '#0f766e' : '#64748b' }}
-            title="Show uploaded documents by year"
-          >
-            <PanelRight size={13} />
-            Documents
-          </button>
-
-          <button
-            className="action-btn"
             onClick={() => {
               setFlushPw('')
               setFlushPwError('')
@@ -1972,11 +1951,17 @@ export default function AuctionReportPage() {
               setFlushModalOpen(true)
             }}
             disabled={flushing}
-            style={{ background: '#dc2626' }}
-            title="Delete all auction tracker rows, seasons, and stored files. Receipts are not touched."
+            style={{
+              background: '#dc2626',
+              width: 34,
+              minWidth: 34,
+              padding: 0,
+              justifyContent: 'center',
+            }}
+            title="Flush — delete all auction tracker rows, seasons, and stored files. Receipts are not touched."
+            aria-label="Flush auction records"
           >
-            {flushing ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-            Flush
+            {flushing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
           </button>
         </div>
       </PageHeader>
@@ -2419,10 +2404,8 @@ export default function AuctionReportPage() {
 
       </div>
 
-      {docsPanelOpen && (
-        <AuctionDocsPanel
+      <AuctionDocsPanel
           refreshKey={docsRefreshKey}
-          onClose={() => setDocsPanelOpen(false)}
           onRequestDelete={(doc, reload) => {
             setDeleteDocPw('')
             setDeleteDocPwError('')
@@ -2430,7 +2413,6 @@ export default function AuctionReportPage() {
             setDeleteDocModal({ doc, reload })
           }}
         />
-      )}
       </div>
 
       {/* ── Close auction year (master password) ── */}
