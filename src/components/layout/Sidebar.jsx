@@ -55,6 +55,30 @@ const NAV = [
   ]},
 ]
 
+const GROUP_STORAGE_KEY = 'cms-sidebar-expanded-groups'
+
+function loadExpandedGroups() {
+  try {
+    const raw = localStorage.getItem(GROUP_STORAGE_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) return new Set(arr)
+    }
+  } catch { /* ignore */ }
+  return new Set(NAV.map(g => g.group))
+}
+
+function persistExpandedGroups(set) {
+  try { localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify([...set])) } catch { /* ignore */ }
+}
+
+function groupContainsPath(group, pathname) {
+  return (group.items || []).some(item => {
+    if (item.path && (pathname === item.path || pathname.startsWith(item.path + '/'))) return true
+    return item.children?.some(c => pathname === c.path || pathname.startsWith(c.path + '/'))
+  })
+}
+
 export default function Sidebar({ collapsed, sidebarW, onToggle, mobile = false, mobileOpen = false, onNavigate, headerH = HEADER_H }) {
   const { profile, pageGrants } = useAuth()
   const navigate    = useNavigate()
@@ -65,6 +89,7 @@ export default function Sidebar({ collapsed, sidebarW, onToggle, mobile = false,
   const [accountingEnabled,       setAccountingEnabled]       = useState(false)
   const [simpleAccountingEnabled, setSimpleAccountingEnabled] = useState(false)
   const [expandedItems, setExpandedItems] = useState(new Set())
+  const [expandedGroups, setExpandedGroups] = useState(loadExpandedGroups)
 
   const loadFlags = useCallback(() => {
     supabase.from('churches').select('accounting_enabled, simple_accounting_enabled').limit(1).single()
@@ -92,10 +117,31 @@ export default function Sidebar({ collapsed, sidebarW, onToggle, mobile = false,
     })
   }, [location.pathname])
 
+  // Keep the section that contains the current page expanded
+  useEffect(() => {
+    const active = NAV.find(g => groupContainsPath(g, location.pathname))
+    if (!active) return
+    setExpandedGroups(prev => {
+      if (prev.has(active.group)) return prev
+      const next = new Set([...prev, active.group])
+      persistExpandedGroups(next)
+      return next
+    })
+  }, [location.pathname])
+
   const toggleExpand = (label) => {
     setExpandedItems(prev => {
       const next = new Set(prev)
       if (next.has(label)) next.delete(label); else next.add(label)
+      return next
+    })
+  }
+
+  const toggleGroup = (groupName) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupName)) next.delete(groupName); else next.add(groupName)
+      persistExpandedGroups(next)
       return next
     })
   }
@@ -148,22 +194,47 @@ export default function Sidebar({ collapsed, sidebarW, onToggle, mobile = false,
           if (!visibleItems.length) return null
 
           const isMain = group.group === 'MAIN'
+          const groupOpen = collapsed || expandedGroups.has(group.group)
           return (
-            <div key={group.group} style={{ marginBottom: 26 }}>
+            <div key={group.group} style={{ marginBottom: groupOpen ? 26 : 10 }}>
               {!collapsed && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px', marginBottom: 6 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 800, letterSpacing: '0.14em',
-                    textTransform: 'uppercase', color: 'var(--sidebar-group)',
-                    fontFamily: 'var(--font-ui)',
-                  }}>
-                    {group.group}
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 2px', marginBottom: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.group)}
+                    title={groupOpen ? `Collapse ${group.group}` : `Expand ${group.group}`}
+                    aria-expanded={groupOpen}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      flex: 1, minWidth: 0, gap: 8,
+                      padding: '4px 6px',
+                      border: 'none', borderRadius: 6,
+                      background: 'transparent', cursor: 'pointer', outline: 'none',
+                      color: 'var(--sidebar-group)',
+                      fontFamily: 'var(--font-ui)',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                    }}>
+                      {group.group}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      style={{
+                        flexShrink: 0,
+                        opacity: 0.55,
+                        transform: groupOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
+                        transition: 'transform 0.2s ease',
+                      }}
+                    />
+                  </button>
                   {isMain && <CollapseBtn collapsed={collapsed} onToggle={onToggle} />}
                 </div>
               )}
 
-              {visibleItems.map(item => {
+              {groupOpen && visibleItems.map(item => {
                 if (item.children) {
                   const visibleChildren = item.children.filter(c => canAccessPath(c.path, role, pageGrants))
                   if (!visibleChildren.length) return null
