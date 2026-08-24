@@ -10,6 +10,7 @@ import { captureDeletedRecord } from '../lib/cmsRecycleBin'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -290,14 +291,14 @@ export default function DeclarationPage() {
   // "+" hotkey opens new declaration (ignored when typing in any field)
   useEffect(() => {
     const handler = e => {
-      if (e.key !== '+') return
-      const tag = document.activeElement?.tagName?.toUpperCase()
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (!isPlusHotkey(e)) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
       if (showModal) return
+      e.preventDefault()
       openNew()
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
   }, [showModal, openNew])
 
   const del = async row => {

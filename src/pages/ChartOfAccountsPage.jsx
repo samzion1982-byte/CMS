@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── Level config ──────────────────────────────────────────────────
 
@@ -365,14 +366,13 @@ export default function ChartOfAccountsPage({ isModal = false, onClose } = {}) {
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key !== '+' || e.ctrlKey || e.altKey || e.metaKey) return
-      const tag = e.target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return
+      if (!isPlusHotkey(e)) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
       e.preventDefault()
       setModal({ mode: 'add', node: null, parentNode: null, initialName: '' })
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [])
 
   // ── Filter tree by search ──────────────────────────────────────

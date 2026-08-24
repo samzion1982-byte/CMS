@@ -26,6 +26,7 @@ import JournalEntryModal from '../components/accounting/JournalEntryModal'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
 import PageHeader from '../components/ui/PageHeader'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── Balance Bar (Cash | Bank | Total) ────────────────────────────
 
@@ -516,9 +517,8 @@ export default function AccountingPage() {
   // + key opens new entry modal (capture phase — works even when buttons/links have focus)
   useEffect(() => {
     function onKey(e) {
-      if (e.key !== '+') return
-      const tag = document.activeElement?.tagName?.toUpperCase()
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (!isPlusHotkey(e)) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
       if (showNewEntry) return
       e.preventDefault()
       setShowNewEntry(true)

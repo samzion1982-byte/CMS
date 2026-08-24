@@ -12,6 +12,7 @@ import BulkPrintModal  from './BulkPrintModal'
 import FamilyRecordsModal from './FamilyRecordsModal'
 import DeleteMemberModal from './DeleteMemberModal'
 import { diffFields, logCmsAudit } from '../lib/cmsAudit'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 const BATCH_SIZE = 50 // page size for roster list
 const FETCH_BATCH = 1000 // Supabase max per request (exports)
@@ -121,11 +122,13 @@ export default function MembersPage() {
     if (!perms.canAdd) return
     const onKey = e => {
       if (tab !== 'list') return
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
-      if (e.key === '+') newMember()
+      if (isTypingTarget(e.target) || isTypingTarget()) return
+      if (!isPlusHotkey(e)) return
+      e.preventDefault()
+      newMember()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [tab, perms.canAdd])
 
   useEffect(() => { getZones().then(rows => setZones(rows.map(z => z.zone_name))).catch(() => {}) }, [])

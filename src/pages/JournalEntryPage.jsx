@@ -33,6 +33,7 @@ import { exportToExcelWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── Voucher type badge ────────────────────────────────────────────
 
@@ -215,9 +216,8 @@ function JournalEntryList() {
   // + key opens new entry modal — capture phase so it fires even when filters are focused
   useEffect(() => {
     function handler(e) {
-      if (e.key !== '+') return
-      const tag = document.activeElement?.tagName?.toUpperCase()
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (!isPlusHotkey(e)) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
       if (showNewEntry) return
       e.preventDefault()
       setShowNewEntry(true)

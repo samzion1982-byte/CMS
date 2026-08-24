@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   LayoutDashboard, Users, FileText, IndianRupee,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
-  PiggyBank, Tag, List, Settings, Wallet, Calendar, BookMarked, Package, Shield, History,
+  PiggyBank, Tag, List, Wallet, Calendar, BookMarked, Package, Shield, History,
   Database, ArchiveRestore, BookUser,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
@@ -16,18 +16,11 @@ const NAV = [
   { group: 'MAIN', items: [
     { label: 'Dashboard',        path: '/dashboard',     icon: LayoutDashboard },
     { label: 'Members',          path: '/members',       icon: Users           },
-    { label: 'Asset Management', path: '/assets', icon: Package, children: [
-      { label: 'Assets',         path: '/assets' },
-      { label: 'Asset Settings', path: '/assets/settings' },
-    ]},
-    { label: 'Phone Directory',  path: '/directory', icon: BookUser, children: [
-      { label: 'Directory',           path: '/directory' },
-      { label: 'Directory Settings',  path: '/directory/settings' },
-    ]},
+    { label: 'Asset Management', path: '/assets',        icon: Package        },
+    { label: 'Phone Directory',  path: '/directory',     icon: BookUser       },
     { label: 'Events', icon: Calendar, children: [
       { label: 'Event Planner',  path: '/events/planner'  },
       { label: 'Event Recorder', path: '/events/recorder' },
-      { label: 'Event Settings', path: '/events/settings' },
     ]},
     { label: 'Announcements',    path: '/announcements', icon: Megaphone       },
   ]},

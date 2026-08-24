@@ -17,6 +17,7 @@ import { exportToExcelWithTitle, exportMultiSheetWithTitle } from '../lib/export
 import FixedAssetsVault from '../components/assets/FixedAssetsVault'
 import ChurchDocumentsVault from '../components/assets/ChurchDocumentsVault'
 import { canAccessAssetTab } from '../lib/cmsPermissions'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 import {
   ASSET_CATEGORIES, PHOTO_MAX_BYTES,
   getAssets, saveAsset, hardDeleteAsset, moveStockOut, moveStockIn, returnStockToHand,
@@ -1289,6 +1290,20 @@ export default function AssetsPage() {
 
   useEffect(() => { loadMasters().catch(e => toast(e.message, 'error')) }, [loadMasters, toast])
   useEffect(() => { loadAssets() }, [loadAssets])
+
+  // "+" opens Add Asset (movable tab only; ignore while typing / modal open)
+  useEffect(() => {
+    function onKey(e) {
+      if (!isPlusHotkey(e)) return
+      if (tab !== 'movable') return
+      if (modal || moveAsset) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
+      e.preventDefault()
+      setModal({})
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [tab, modal, moveAsset])
 
   function assetGroupKey(a) {
     return [

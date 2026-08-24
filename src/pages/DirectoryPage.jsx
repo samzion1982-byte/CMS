@@ -16,6 +16,7 @@ import { fmtDate } from '../lib/auth'
 import { exportMultiSheetWithTitle } from '../lib/exportExcel'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import { verifyMasterPassword } from '../lib/masterPassword'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 import {
   getDirectoryCategories,
   getDirectoryContacts,
@@ -808,16 +809,13 @@ export default function DirectoryPage() {
   useEffect(() => {
     function onKey(e) {
       if (modal || deleteTarget) return
-      if (e.ctrlKey || e.metaKey || e.altKey) return
-      const tag = (e.target?.tagName || '').toLowerCase()
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return
-      if (e.key === '+' || (e.key === '=' && e.shiftKey) || e.code === 'NumpadAdd') {
-        e.preventDefault()
-        setModal({ mode: 'add' })
-      }
+      if (isTypingTarget(e.target) || isTypingTarget()) return
+      if (!isPlusHotkey(e)) return
+      e.preventDefault()
+      setModal({ mode: 'add' })
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [modal, deleteTarget])
 
   useEffect(() => {

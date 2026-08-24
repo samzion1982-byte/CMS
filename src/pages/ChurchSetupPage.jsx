@@ -96,15 +96,6 @@ export default function ChurchSetupPage() {
     site_url: '',
   })
 
-  const SETUP_TABS = [
-    { id: 'cs-identity', label: 'Identity' },
-    { id: 'cs-accounts', label: 'Accounts' },
-    { id: 'cs-whatsapp', label: 'WhatsApp' },
-    { id: 'cs-receipts', label: 'Receipts' },
-    { id: 'cs-license', label: 'License' },
-    { id: 'cs-zones', label: 'Zones' },
-  ]
-
   useEffect(() => { loadChurch() }, [])
 
   async function loadChurch() {
@@ -553,26 +544,6 @@ export default function ChurchSetupPage() {
         )}
       </PageHeader>
 
-      {isSuperAdmin && (
-        <div className="no-print" style={{
-          display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16,
-          position: 'sticky', top: 0, zIndex: 20, padding: '8px 0 10px',
-          background: 'var(--page-bg)',
-        }}>
-          {SETUP_TABS.map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => document.getElementById(t.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="btn btn-ghost btn-sm"
-              style={{ border: '1px solid var(--card-border)' }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Two-column layout for super_admin; section cards for Admin grants; zones for others */}
       {isSuperAdmin ? (
         <div style={{display:'flex', gap:24, alignItems:'flex-start'}}>
@@ -580,7 +551,7 @@ export default function ChurchSetupPage() {
           {/* ── LEFT: main church cards ── */}
           <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:24}}>
           {/* IDENTITY + LOCATION */}
-        <div id="cs-identity" className="card p-6">
+        <div className="card p-6">
           <p className="form-section form-section-blue">Church identity</p>
           <div className="flex gap-6">
             <div className="flex-1 space-y-4">
@@ -718,7 +689,7 @@ export default function ChurchSetupPage() {
         </div>
 
         {/* ACCOUNTS MODULE */}
-        <div id="cs-accounts" className="card p-6">
+        <div className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#16a34a',borderColor:'#86efac'}}>Accounts Module</p>
           {(() => {
             const masterOn = !!(church?.accounting_enabled || church?.simple_accounting_enabled)
@@ -806,7 +777,7 @@ export default function ChurchSetupPage() {
         </div>
 
         {/* WHATSAPP */}
-        <div id="cs-whatsapp" className="card p-6">
+        <div className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#15803d',borderColor:'#bbf7d0'}}>WhatsApp</p>
           <div className="space-y-3">
             <div className="field-group">
@@ -856,7 +827,7 @@ export default function ChurchSetupPage() {
         </div>
 
             {/* RECEIPTS & PAYMENTS */}
-            <div id="cs-receipts" className="card p-6">
+            <div className="card p-6">
               <p className="form-section form-section-blue" style={{color:'#7c3aed',borderColor:'#ddd6fe'}}>Receipts & Payments</p>
               <div className="space-y-5">
 
@@ -933,9 +904,7 @@ export default function ChurchSetupPage() {
             </div>
 
             {/* ZONAL AREAS */}
-            <div id="cs-zones">
             <ZonesPanel profile={profile} toast={toast} />
-            </div>
 
             {/* PAYMENT CATEGORIES */}
             <PaymentCategoriesPanel profile={profile} toast={toast} />
@@ -944,7 +913,7 @@ export default function ChurchSetupPage() {
 
           {/* ── RIGHT: license (sticky) ── */}
           <div style={{width:280, flexShrink:0, position:'sticky', top:16, display:'flex', flexDirection:'column', gap:16}}>
-            <div id="cs-license" className="card p-5">
+            <div className="card p-5">
               <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
               <p className="text-xs text-slate-400 mb-3">Enter the AUTH CODE provided by {VENDOR.name}.</p>
               <div className="flex gap-2 mb-3">

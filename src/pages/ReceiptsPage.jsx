@@ -21,6 +21,7 @@ import { logCmsAudit } from '../lib/cmsAudit'
 import PageHeader from '../components/ui/PageHeader'
 import { captureDeletedRecord, quarantineStoragePaths } from '../lib/cmsRecycleBin'
 import MasterPasswordInput from '../components/MasterPasswordInput'
+import { isPlusHotkey, isTypingTarget } from '../lib/plusHotkey'
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -425,13 +426,13 @@ export default function ReceiptsPage() {
   // "+" hotkey → new receipt (skips when focus is inside an input)
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== '+' && e.key !== '=') return
-      const tag = document.activeElement?.tagName?.toLowerCase()
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+      if (!isPlusHotkey(e)) return
+      if (isTypingTarget(e.target) || isTypingTarget()) return
+      e.preventDefault()
       openNew()
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [openNew])
 
   return (
