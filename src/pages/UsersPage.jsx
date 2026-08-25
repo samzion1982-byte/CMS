@@ -95,20 +95,46 @@ export default function UsersPage() {
   const [deactivateLoading, setDeactivateLoading] = useState(null)
   const [permDeleteLoading, setPermDeleteLoading] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
-  const [pwRevealed, setPwRevealed] = useState(false)
+  const [pwRevealedIds, setPwRevealedIds] = useState({})
+  const [pwRevealPrompt, setPwRevealPrompt] = useState(null)
+  const [hotkeyErr, setHotkeyErr] = useState(false)
+  const hotkeyInputRef = useRef(null)
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  useEffect(() => {
-    if (profile?.role !== 'super_admin') return
-    const onKey = (e) => {
-      if (e.key !== 'F10' && e.code !== 'F10') return
+  function closeRevealPrompt() {
+    setPwRevealPrompt(null)
+    setHotkeyErr(false)
+  }
+
+  function onRevealHotkey(e) {
+    if (!pwRevealPrompt) return
+    if (e.key === 'Escape') {
       e.preventDefault()
-      e.stopPropagation()
-      setPwRevealed(v => !v)
+      closeRevealPrompt()
+      return
     }
+    if (e.key === 'Tab' || e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return
+    e.preventDefault()
+    e.stopPropagation()
+    const ok = e.key === 'F10' || e.code === 'F10'
+    if (ok) {
+      setPwRevealedIds(m => ({ ...m, [pwRevealPrompt.id]: true }))
+      closeRevealPrompt()
+      return
+    }
+    setHotkeyErr(true)
+  }
+
+  useEffect(() => {
+    if (!pwRevealPrompt) return
+    const t = setTimeout(() => hotkeyInputRef.current?.focus(), 30)
+    const onKey = (e) => onRevealHotkey(e)
     document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [profile?.role])
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [pwRevealPrompt])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -368,7 +394,6 @@ export default function UsersPage() {
             {slotsUsed < MAX_SLOTS
               ? <span style={{ color: 'var(--success)', fontWeight: 600 }}> · {openSlots} available</span>
               : <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · All slots in use</span>}
-            <span style={{ color: 'var(--text-3)', fontWeight: 500 }}> · Use Hotkey to {pwRevealed ? 'Hide' : 'Reveal'} Password</span>
           </>
         }
       >
@@ -396,6 +421,7 @@ export default function UsersPage() {
           {users.map((u, idx) => {
             const rc = roleConf(u.role)
             const busy = toggleLoading === u.id || deactivateLoading === u.id
+            const pwShown = !!pwRevealedIds[u.id]
             return (
               <article
                 key={u.id}
@@ -490,17 +516,33 @@ export default function UsersPage() {
                   }}>
                     <div style={{
                       fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
+                      color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6,
                     }}>
                       <Lock size={11} /> Password
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: 'none',
-                        color: 'var(--text-3)',
-                      }}>
-                        · {pwRevealed ? 'Use Hotkey to Hide Password' : 'Use Hotkey to Reveal Password'}
-                      </span>
+                      <button
+                        type="button"
+                        title={pwShown ? 'Hide password' : 'Reveal password'}
+                        onClick={() => {
+                          if (pwShown) {
+                            setPwRevealedIds(m => {
+                              const next = { ...m }
+                              delete next[u.id]
+                              return next
+                            })
+                            return
+                          }
+                          setHotkeyErr(false)
+                          setPwRevealPrompt({ id: u.id, name: u.full_name })
+                        }}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center',
+                        }}
+                      >
+                        {pwShown ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
                     </div>
-                    {pwRevealed && u.storedPassword ? (
+                    {pwShown && u.storedPassword ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <code style={{
                           flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700,
@@ -527,7 +569,7 @@ export default function UsersPage() {
                           <Copy size={13} />
                         </button>
                       </div>
-                    ) : pwRevealed && !u.storedPassword ? (
+                    ) : pwShown && !u.storedPassword ? (
                       <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.4 }}>
                         Not on file yet. Reset to store it.
                       </p>
@@ -838,6 +880,39 @@ export default function UsersPage() {
                 ? <><Loader2 size={14} className="animate-spin" /> Deleting…</>
                 : 'Permanently delete'}
             </button>
+          </div>
+        </ModalShell>
+      )}
+
+      {pwRevealPrompt && (
+        <ModalShell onClose={closeRevealPrompt}>
+          <h3 style={{ ...modalTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Eye size={18} /> Reveal password
+          </h3>
+          <p style={modalBody}>
+            Use Hotkey to Reveal Password for <strong>{pwRevealPrompt.name}</strong>.
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>Hotkey</label>
+            <input
+              ref={hotkeyInputRef}
+              className="field-input"
+              autoFocus
+              readOnly
+              value=""
+              placeholder="Press hotkey…"
+              onKeyDown={onRevealHotkey}
+              autoComplete="off"
+              style={{ caretColor: 'transparent', letterSpacing: 2 }}
+            />
+            {hotkeyErr && (
+              <p style={{ margin: '6px 0 0', fontSize: 12, fontWeight: 600, color: 'var(--danger)' }}>
+                Incorrect hotkey. Try again.
+              </p>
+            )}
+          </div>
+          <div style={modalActions}>
+            <button type="button" className="btn btn-secondary" onClick={closeRevealPrompt}>Cancel</button>
           </div>
         </ModalShell>
       )}
