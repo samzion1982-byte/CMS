@@ -32,17 +32,6 @@ const T = {
     accentL: 'rgba(45,212,191,0.18)',
     drop: { bg:'#e6faf8', text:'#042f2e', sub:'#4a8a80', border:'#a7e8e0', hov:'#ccf5f0' },
   },
-  midnight: {
-    bg:      'linear-gradient(135deg, #050810 0%, #08102a 16%, #111840 33%, #151e52 50%, #111840 66%, #08102a 83%, #050810 100%)',
-    border:  'rgba(148,163,184,0.09)',
-    shadow:  '0 2px 24px rgba(0,0,0,0.7)',
-    text1:   '#f1f5f9',
-    text2:   'rgba(241,245,249,0.55)',
-    divider: 'rgba(148,163,184,0.16)',
-    accent:  '#818cf8',
-    accentL: 'rgba(129,140,248,0.18)',
-    drop: { bg:'#0f172a', text:'#f1f5f9', sub:'#94a3b8', border:'rgba(148,163,184,0.14)', hov:'rgba(148,163,184,0.07)' },
-  },
   forest: {
     bg:      'linear-gradient(135deg, #071a0f 0%, #0e3018 16%, #1a5c2e 33%, #1f6e36 50%, #1a5c2e 66%, #0e3018 83%, #071a0f 100%)',
     border:  'rgba(255,255,255,0.09)',
@@ -120,39 +109,35 @@ const T = {
     accentL: 'rgba(244,114,182,0.18)',
     drop: { bg:'#fdf2f8', text:'#2e1520', sub:'#8a4a68', border:'#f0c0d8', hov:'#f8dcea' },
   },
-  slate: {
-    bg:      'linear-gradient(135deg, #010409 0%, #0d1117 16%, #161b22 33%, #1c2128 50%, #161b22 66%, #0d1117 83%, #010409 100%)',
-    border:  'rgba(88,166,255,0.1)',
-    shadow:  '0 2px 24px rgba(0,0,0,0.8)',
-    text1:   '#e6edf3',
-    text2:   'rgba(230,237,243,0.55)',
-    divider: 'rgba(48,54,61,0.8)',
-    accent:  '#58a6ff',
-    accentL: 'rgba(88,166,255,0.15)',
-    drop: { bg:'#161b22', text:'#e6edf3', sub:'#8b949e', border:'rgba(48,54,61,1)', hov:'rgba(88,166,255,0.08)' },
-  },
-  ember: {
-    bg:      'linear-gradient(135deg, #080200 0%, #100500 16%, #2a1006 33%, #381508 50%, #2a1006 66%, #100500 83%, #080200 100%)',
-    border:  'rgba(249,115,22,0.12)',
-    shadow:  '0 2px 24px rgba(0,0,0,0.7)',
-    text1:   '#fef3c7',
-    text2:   'rgba(254,243,199,0.55)',
-    divider: 'rgba(249,115,22,0.18)',
-    accent:  '#f97316',
-    accentL: 'rgba(249,115,22,0.18)',
-    drop: { bg:'#271408', text:'#fef3c7', sub:'#e0c0a0', border:'rgba(249,115,22,0.2)', hov:'rgba(249,115,22,0.1)' },
-  },
-  cyan: {
-    bg:      'linear-gradient(135deg, #000509 0%, #00090f 16%, #031828 33%, #042038 50%, #031828 66%, #00090f 83%, #000509 100%)',
-    border:  'rgba(6,182,212,0.12)',
-    shadow:  '0 2px 24px rgba(0,0,0,0.7)',
-    text1:   '#ecfeff',
-    text2:   'rgba(236,254,255,0.55)',
-    divider: 'rgba(6,182,212,0.18)',
-    accent:  '#06b6d4',
-    accentL: 'rgba(6,182,212,0.18)',
-    drop: { bg:'#052030', text:'#ecfeff', sub:'#a5d8e8', border:'rgba(6,182,212,0.2)', hov:'rgba(6,182,212,0.1)' },
-  },
+}
+
+function ThemeSwatches({ theme, setTheme, g }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5 }}>
+      {Object.entries(THEMES).map(([key, t]) => {
+        const sel = theme === key
+        return (
+          <button key={key} onClick={() => setTheme(key)}
+            onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
+            onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
+            style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            padding: '7px 4px', borderRadius: 10,
+            border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
+            background: sel ? g.drop.hov : 'transparent',
+            boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
+            transform: sel ? 'translateY(-1px)' : 'none',
+            cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+          }}>
+            <span style={{ fontSize: 15 }}>{t.icon}</span>
+            <span style={{ fontSize: 8, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
+              {t.name}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 /* ── Live clock ──────────────────────────────────────────────── */
@@ -245,7 +230,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
           position: 'fixed',
           top: HEADER_H + 8,
           right: 16,
-          width: 290,
+          width: 320,
           maxHeight: 'calc(100vh - 110px)',
           overflowY: 'auto',
           scrollbarWidth: 'none',
@@ -351,40 +336,7 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 10px', fontFamily: 'var(--font-ui)' }}>
               Appearance
             </p>
-            {[false, true].map(isDark => {
-              const group = Object.entries(THEMES).filter(([, t]) => t.dark === isDark)
-              return (
-                <div key={isDark ? 'dark' : 'light'} style={{ marginBottom: isDark ? 0 : 10 }}>
-                  <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 6px', opacity: 0.7, fontFamily: 'var(--font-ui)' }}>
-                    {isDark ? '● Dark' : '○ Light'}
-                  </p>
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    {group.map(([key, t]) => {
-                      const sel = theme === key
-                      return (
-                        <button key={key} onClick={() => setTheme(key)}
-                          onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
-                          onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
-                          style={{
-                          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                          padding: '7px 4px', borderRadius: 10,
-                          border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
-                          background: sel ? g.drop.hov : 'transparent',
-                          boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
-                          transform: sel ? 'translateY(-1px)' : 'none',
-                          cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
-                        }}>
-                          <span style={{ fontSize: 15 }}>{t.icon}</span>
-                          <span style={{ fontSize: 8, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
-                            {t.name}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
+            <ThemeSwatches theme={theme} setTheme={setTheme} g={g} />
           </div>
 
           {/* Font picker */}

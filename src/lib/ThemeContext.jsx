@@ -4,19 +4,15 @@ import { supabase, adminSupabase } from './supabase'
 const ThemeContext = createContext()
 
 export const THEMES = {
-  royal:    { name: 'Royal',    icon: '👑', dark: false },
-  ocean:    { name: 'Ocean',    icon: '🌊', dark: false },
-  forest:   { name: 'Forest',   icon: '🌿', dark: false },
-  crimson:  { name: 'Crimson',  icon: '🍷', dark: false },
-  amber:    { name: 'Amber',    icon: '☀️', dark: false },
-  sky:      { name: 'Sky',      icon: '☁️', dark: false },
-  sage:     { name: 'Sage',     icon: '🍃', dark: false },
-  copper:   { name: 'Copper',   icon: '🪙', dark: false },
-  blush:    { name: 'Blush',    icon: '🌸', dark: false },
-  midnight: { name: 'Midnight', icon: '🌙', dark: true  },
-  slate:    { name: 'Slate',    icon: '🪨', dark: true  },
-  ember:    { name: 'Ember',    icon: '🔥', dark: true  },
-  cyan:     { name: 'Cyan',     icon: '🩵', dark: true  },
+  royal:   { name: 'Royal',   icon: '👑' },
+  ocean:   { name: 'Ocean',   icon: '🌊' },
+  forest:  { name: 'Forest',  icon: '🌿' },
+  crimson: { name: 'Crimson', icon: '🍷' },
+  amber:   { name: 'Amber',   icon: '☀️' },
+  sky:     { name: 'Sky',     icon: '☁️' },
+  sage:    { name: 'Sage',    icon: '🍃' },
+  copper:  { name: 'Copper',  icon: '🪙' },
+  blush:   { name: 'Blush',   icon: '🌸' },
 }
 
 export const FONTS = {
@@ -41,7 +37,9 @@ function applyFontToDOM(f) {
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
     const saved = localStorage.getItem('cms_theme')
-    return (saved && THEMES[saved]) ? saved : 'royal'
+    const t = (saved && THEMES[saved]) ? saved : 'royal'
+    if (saved !== t) applyToDOM(t)
+    return t
   })
 
   const [font, setFontState] = useState(() => {
