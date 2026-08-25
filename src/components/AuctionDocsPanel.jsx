@@ -23,6 +23,75 @@ function cellText(v) {
   return String(v)
 }
 
+function buildWorkbookPreviewHtml(fileName, sheets) {
+  const title = String(fileName || 'Auction file').replace(/[<>]/g, '')
+  const data = JSON.stringify(sheets).replace(/</g, '\\u003c')
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${title.replace(/"/g, '&quot;')}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: Segoe UI, system-ui, sans-serif; background: #f1f5f9; color: #0f172a; }
+    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; background: #0f766e; color: #fff; }
+    header h1 { margin: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    .tabs button { border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; background: transparent; color: #475569; white-space: nowrap; }
+    .tabs button.on { background: #0f766e; color: #fff; }
+    .note { margin: 0; padding: 8px 12px; font-size: 12px; color: #64748b; background: #fff; }
+    .wrap { overflow: auto; height: calc(100vh - 90px); background: #fff; }
+    table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+    td { border: 1px solid #e2e8f0; padding: 4px 8px; white-space: nowrap; }
+    tr:first-child td { font-weight: 700; background: #ecfdf5; }
+  </style>
+</head>
+<body>
+  <header><h1></h1></header>
+  <div class="tabs" id="tabs"></div>
+  <p class="note" id="note" hidden></p>
+  <div class="wrap"><table id="grid"></table></div>
+  <script>
+    const fileName = ${JSON.stringify(title)};
+    const sheets = ${data};
+    document.querySelector('h1').textContent = fileName;
+    document.title = fileName;
+    const tabs = document.getElementById('tabs');
+    const grid = document.getElementById('grid');
+    const note = document.getElementById('note');
+    let active = 0;
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function render(i) {
+      active = i;
+      [...tabs.children].forEach((b, n) => b.classList.toggle('on', n === i));
+      const sheet = sheets[i] || { rows: [] };
+      note.hidden = !sheet.truncated;
+      note.textContent = sheet.truncated ? 'Showing the first ${PREVIEW_MAX_ROWS} rows.' : '';
+      const rows = sheet.rows || [];
+      const colCount = rows.reduce((m, r) => Math.max(m, (r || []).length), 1);
+      grid.innerHTML = rows.map((row, ri) => {
+        const cells = Array.from({ length: colCount }, (_, ci) => '<td>' + escapeHtml((row || [])[ci]) + '</td>').join('');
+        return '<tr>' + cells + '</tr>';
+      }).join('') || '<tr><td>This sheet is empty.</td></tr>';
+    }
+    (sheets.length ? sheets : [{ name: 'Sheet', rows: [] }]).forEach((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = s.name || ('Sheet ' + (i + 1));
+      b.onclick = () => render(i);
+      tabs.appendChild(b);
+    });
+    if (sheets.length < 2) tabs.style.display = 'none';
+    render(0);
+  </script>
+</body>
+</html>`
+}
+
 function fmtWhen(d) {
   if (!d) return ''
   try {
@@ -85,7 +154,7 @@ function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load,
             </div>
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'flex-end' }}>
-            <button type="button" title="View in browser" onClick={() => onOpen(doc)} style={iconBtn}>
+            <button type="button" title="View in new tab" onClick={() => onOpen(doc)} style={iconBtn}>
               <Eye size={13} />
             </button>
             <button type="button" title="Download" onClick={() => onDownload(doc)} style={iconBtn}>
@@ -116,7 +185,6 @@ export default function AuctionDocsPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -142,32 +210,42 @@ export default function AuctionDocsPanel({
       const name = doc.originalName || doc.storedName
       const isSpreadsheet = /\.(xlsx|xlsm|xls|xlsb|csv)$/i.test(name)
       if (isSpreadsheet) {
-        setPreviewLoading(true)
-        setError('')
-        const { bytes, name: fileName } = await fetchAuctionDocumentBytes(doc)
-        const xlsxMod = await import('xlsx')
-        const { read, utils } = xlsxMod.default ?? xlsxMod
-        const wb = read(bytes, { type: 'array', cellDates: true })
-        const sheets = (wb.SheetNames || []).map((sheetName) => {
-          const aoa = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false })
-          const rows = aoa.slice(0, PREVIEW_MAX_ROWS).map((row) => {
-            const cells = Array.isArray(row) ? row : []
-            return cells.slice(0, PREVIEW_MAX_COLS).map(cellText)
+        const tab = window.open('', '_blank')
+        if (!tab) {
+          setError('Allow pop-ups to preview the file in a new tab.')
+          return
+        }
+        try {
+          tab.document.write('<p style="font-family:Segoe UI,sans-serif;padding:24px;color:#475569">Opening workbook…</p>')
+          setError('')
+          const { bytes, name: fileName } = await fetchAuctionDocumentBytes(doc)
+          const xlsxMod = await import('xlsx')
+          const { read, utils } = xlsxMod.default ?? xlsxMod
+          const wb = read(bytes, { type: 'array', cellDates: true })
+          const sheets = (wb.SheetNames || []).map((sheetName) => {
+            const aoa = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false })
+            const rows = aoa.slice(0, PREVIEW_MAX_ROWS).map((row) => {
+              const cells = Array.isArray(row) ? row : []
+              return cells.slice(0, PREVIEW_MAX_COLS).map(cellText)
+            })
+            return { name: sheetName, rows, truncated: aoa.length > PREVIEW_MAX_ROWS }
           })
-          return { name: sheetName, rows, truncated: aoa.length > PREVIEW_MAX_ROWS }
-        })
-        setPreview({ kind: 'workbook', name: fileName, sheets, sheet: 0, doc })
+          tab.document.open()
+          tab.document.write(buildWorkbookPreviewHtml(fileName, sheets))
+          tab.document.close()
+        } catch (e) {
+          try { tab.close() } catch { /* ignore */ }
+          throw e
+        }
         return
       }
       const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
       const canEmbed = mime.includes('pdf') || mime.startsWith('image/')
         || /\.(pdf|png|jpe?g|gif|webp)$/i.test(name)
       if (canEmbed) setPreview({ url, name, mime })
-      else window.open(url, '_blank', 'noopener,noreferrer')
+      else window.open(url, '_blank')
     } catch (e) {
       setError(e.message || 'Could not open file')
-    } finally {
-      setPreviewLoading(false)
     }
   }
 
@@ -263,24 +341,10 @@ export default function AuctionDocsPanel({
         )}
       </div>
 
-      {previewLoading && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 99,
-            background: 'rgba(15, 23, 42, 0.35)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div className="card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-            <Loader2 size={16} className="animate-spin" /> Opening workbook…
-          </div>
-        </div>
-      )}
-
       {preview && (
         <div
           style={{
-            position: 'fixed', inset: 0, zIndex: 100,
+            position: 'fixed', inset: 0, zIndex: 10050,
             background: 'rgba(15, 23, 42, 0.55)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
           }}
@@ -288,96 +352,18 @@ export default function AuctionDocsPanel({
         >
           <div
             className="card"
-            style={{ width: 'min(1100px, 96vw)', height: 'min(86vh, 800px)', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            style={{ width: 'min(920px, 96vw)', height: 'min(80vh, 720px)', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--table-border)' }}>
               <div style={{ flex: 1, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {preview.name}
               </div>
-              {preview.doc && (
-                <button
-                  type="button"
-                  title="Download"
-                  onClick={() => downloadDoc(preview.doc)}
-                  style={{ ...iconBtn, width: 'auto', padding: '0 8px', gap: 6, fontSize: 11, fontWeight: 700 }}
-                >
-                  <Download size={13} /> Download
-                </button>
-              )}
               <button type="button" onClick={() => setPreview(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}>
                 <X size={16} />
               </button>
             </div>
-            {preview.kind === 'workbook' ? (
-              <>
-                {(preview.sheets || []).length > 1 && (
-                  <div style={{ display: 'flex', gap: 4, padding: '8px 12px', overflowX: 'auto', borderBottom: '1px solid var(--table-border)' }}>
-                    {preview.sheets.map((s, i) => (
-                      <button
-                        key={s.name}
-                        type="button"
-                        onClick={() => setPreview((p) => ({ ...p, sheet: i }))}
-                        style={{
-                          border: 'none',
-                          borderRadius: 6,
-                          padding: '5px 10px',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          background: preview.sheet === i ? '#0f766e' : 'transparent',
-                          color: preview.sheet === i ? '#fff' : 'var(--text-2)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {s.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg, #f8fafc)' }}>
-                  {(() => {
-                    const sheet = preview.sheets?.[preview.sheet] || preview.sheets?.[0]
-                    if (!sheet?.rows?.length) {
-                      return <p style={{ padding: 16, fontSize: 13, color: 'var(--text-3)' }}>This sheet is empty.</p>
-                    }
-                    const colCount = Math.max(1, ...sheet.rows.map((r) => r.length))
-                    return (
-                      <>
-                        {sheet.truncated && (
-                          <p style={{ margin: 0, padding: '8px 12px', fontSize: 11, color: 'var(--text-3)' }}>
-                            Showing first {PREVIEW_MAX_ROWS} rows. Download to see the full file.
-                          </p>
-                        )}
-                        <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%' }}>
-                          <tbody>
-                            {sheet.rows.map((row, ri) => (
-                              <tr key={ri}>
-                                {Array.from({ length: colCount }, (_, ci) => (
-                                  <td
-                                    key={ci}
-                                    style={{
-                                      border: '1px solid var(--table-border)',
-                                      padding: '4px 8px',
-                                      whiteSpace: 'nowrap',
-                                      background: ri === 0 ? 'rgba(15,118,110,0.08)' : 'var(--card-bg)',
-                                      fontWeight: ri === 0 ? 700 : 400,
-                                      color: 'var(--text-1)',
-                                    }}
-                                  >
-                                    {row[ci] || ''}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </>
-                    )
-                  })()}
-                </div>
-              </>
-            ) : String(preview.mime || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(preview.name) ? (
+            {String(preview.mime || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(preview.name) ? (
               <img src={preview.url} alt={preview.name} style={{ flex: 1, objectFit: 'contain', background: '#0f172a' }} />
             ) : (
               <iframe title={preview.name} src={preview.url} style={{ flex: 1, border: 'none', width: '100%' }} />
