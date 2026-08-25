@@ -65,13 +65,18 @@ function mimeCandidatesForAuctionFile(file) {
   const ext = String(file?.name || '').split('.').pop()?.toLowerCase()
   const native = String(file?.type || '').trim()
   const ordered = []
-  if (ext === 'xlsm' || ext === 'xlsb') {
+  // Do not store .xlsm as xlsx MIME — browsers then save it as .xlsx and Excel rejects it.
+  if (ext === 'xlsm') {
     ordered.push(
-      XLSX_MIME,
       XLSM_MIME,
       'application/vnd.ms-excel.sheet.macroenabled.12',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.macroEnabled.12',
-      native,
+      'application/octet-stream',
+    )
+  } else if (ext === 'xlsb') {
+    ordered.push(
+      'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+      'application/vnd.ms-excel.sheet.binary.macroenabled.12',
       'application/octet-stream',
     )
   } else if (ext === 'xlsx') {
@@ -84,6 +89,54 @@ function mimeCandidatesForAuctionFile(file) {
     ordered.push(native, 'application/octet-stream')
   }
   return [...new Set(ordered.filter(Boolean))]
+}
+
+function sniffSpreadsheetExt(bytes) {
+  if (!bytes || bytes.length < 8) return null
+  if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0) return 'xls'
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4B) return null
+  const sample = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 512 * 1024)))
+  if (/vbaProject\.bin/i.test(sample) || /macroEnabled\.12/i.test(sample)) return 'xlsm'
+  return 'xlsx'
+}
+
+function mimeForSpreadsheetName(name) {
+  const ext = String(name || '').split('.').pop()?.toLowerCase()
+  if (ext === 'xlsm') return XLSM_MIME
+  if (ext === 'xlsb') return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'
+  if (ext === 'xls') return 'application/vnd.ms-excel'
+  if (ext === 'csv') return 'text/csv'
+  if (ext === 'xlsx') return XLSX_MIME
+  return 'application/octet-stream'
+}
+
+function withExtension(fileName, ext) {
+  const base = String(fileName || 'auction-document').replace(/\.[^.]+$/, '') || 'auction-document'
+  return `${base}.${ext}`
+}
+
+/** Fetch the stored workbook and save it under the original name (correct .xlsx / .xlsm). */
+export async function downloadAuctionDocumentFile(doc) {
+  const bucket = doc?.bucket || AUCTION_DOC_BUCKET
+  const path = doc?.path
+  if (!path) throw new Error('Missing file path.')
+  const { data, error } = await supabase.storage.from(bucket).download(path)
+  if (error || !data) throw error || new Error('Could not download file.')
+  const bytes = new Uint8Array(await data.arrayBuffer())
+  const sniffed = sniffSpreadsheetExt(bytes)
+  let name = doc.originalName || doc.storedName || 'auction-document.xlsx'
+  const nameExt = String(name).split('.').pop()?.toLowerCase()
+  if (sniffed && nameExt !== sniffed) name = withExtension(name, sniffed)
+  const blob = new Blob([bytes], { type: mimeForSpreadsheetName(name) })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  return name
 }
 
 function missingOk(error) {

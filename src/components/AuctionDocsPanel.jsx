@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import {
   auctionDocKindLabel,
+  downloadAuctionDocumentFile,
   formatAuctionDocSize,
   getAuctionDocumentUrl,
   listAuctionDocuments,
@@ -124,12 +125,17 @@ export default function AuctionDocsPanel({
 
   const openDoc = async (doc) => {
     try {
-      const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
       const mime = String(doc.mime || '')
       const name = doc.originalName || doc.storedName
+      const isSpreadsheet = /\.(xlsx|xlsm|xls|xlsb|csv)$/i.test(name)
+      if (isSpreadsheet) {
+        await downloadAuctionDocumentFile(doc)
+        return
+      }
+      const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
       const canEmbed = mime.includes('pdf') || mime.startsWith('image/')
-        || /\.(pdf|png|jpe?g|gif|webp|xlsx|xlsm)$/i.test(name)
-      if (canEmbed && (mime.includes('pdf') || mime.startsWith('image/'))) setPreview({ url, name, mime })
+        || /\.(pdf|png|jpe?g|gif|webp)$/i.test(name)
+      if (canEmbed) setPreview({ url, name, mime })
       else window.open(url, '_blank', 'noopener,noreferrer')
     } catch (e) {
       setError(e.message || 'Could not open file')
@@ -138,13 +144,7 @@ export default function AuctionDocsPanel({
 
   const downloadDoc = async (doc) => {
     try {
-      const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = doc.originalName || 'auction-document'
-      a.target = '_blank'
-      a.rel = 'noopener'
-      a.click()
+      await downloadAuctionDocumentFile(doc)
     } catch (e) {
       setError(e.message || 'Could not download file')
     }
