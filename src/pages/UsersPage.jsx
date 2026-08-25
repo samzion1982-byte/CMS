@@ -95,8 +95,20 @@ export default function UsersPage() {
   const [deactivateLoading, setDeactivateLoading] = useState(null)
   const [permDeleteLoading, setPermDeleteLoading] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
-  const [revealedPw, setRevealedPw] = useState({})
+  const [pwRevealed, setPwRevealed] = useState(false)
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    if (profile?.role !== 'super_admin') return
+    const onKey = (e) => {
+      if (e.key !== 'F10' && e.code !== 'F10') return
+      e.preventDefault()
+      e.stopPropagation()
+      setPwRevealed(v => !v)
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [profile?.role])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -356,6 +368,7 @@ export default function UsersPage() {
             {slotsUsed < MAX_SLOTS
               ? <span style={{ color: 'var(--success)', fontWeight: 600 }}> · {openSlots} available</span>
               : <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · All slots in use</span>}
+            <span style={{ color: 'var(--text-3)', fontWeight: 500 }}> · Press F10 to {pwRevealed ? 'hide' : 'reveal'} passwords</span>
           </>
         }
       >
@@ -477,31 +490,24 @@ export default function UsersPage() {
                   }}>
                     <div style={{
                       fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5,
+                      color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
                     }}>
-                      <Lock size={11} /> Password · Super Admin only
+                      <Lock size={11} /> Password
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: 'none',
+                        color: 'var(--text-3)',
+                      }}>
+                        · {pwRevealed ? 'F10 to hide' : 'F10 to reveal'}
+                      </span>
                     </div>
-                    {u.storedPassword ? (
+                    {pwRevealed && u.storedPassword ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <code style={{
                           flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700,
-                          color: 'var(--text-1)', letterSpacing: revealedPw[u.id] ? 0 : 1.5,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          fontFamily: revealedPw[u.id] ? 'inherit' : 'ui-monospace, monospace',
+                          color: 'var(--text-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>
-                          {revealedPw[u.id] ? u.storedPassword : '••••••••'}
+                          {u.storedPassword}
                         </code>
-                        <button
-                          type="button"
-                          title={revealedPw[u.id] ? 'Hide password' : 'View password'}
-                          onClick={() => setRevealedPw(m => ({ ...m, [u.id]: !m[u.id] }))}
-                          style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            color: 'var(--text-3)', display: 'flex', padding: 2,
-                          }}
-                        >
-                          {revealedPw[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
                         <button
                           type="button"
                           title="Copy password"
@@ -521,10 +527,18 @@ export default function UsersPage() {
                           <Copy size={13} />
                         </button>
                       </div>
-                    ) : (
+                    ) : pwRevealed && !u.storedPassword ? (
                       <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.4 }}>
-                        Not on file yet. Reset to store it for viewing.
+                        Not on file yet. Reset to store it.
                       </p>
+                    ) : (
+                      <code style={{
+                        display: 'block', margin: '0 0 6px', fontSize: 13, fontWeight: 700,
+                        color: 'var(--text-1)', letterSpacing: 1.5,
+                        fontFamily: 'ui-monospace, monospace',
+                      }}>
+                        ••••••••
+                      </code>
                     )}
                     <button
                       type="button"
