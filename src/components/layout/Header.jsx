@@ -98,27 +98,27 @@ const T = {
     accentL: 'rgba(234,138,74,0.18)',
     drop: { bg:'#fff4ed', text:'#2a140c', sub:'#8a5a40', border:'#e8c0a0', hov:'#f5ddd0' },
   },
-  coral: {
-    bg:      'linear-gradient(135deg, #1a0706 0%, #3b1410 16%, #c2410c 33%, #ea580c 50%, #c2410c 66%, #3b1410 83%, #1a0706 100%)',
+  honey: {
+    bg:      'linear-gradient(135deg, #1a0e04 0%, #3d2208 16%, #a16207 33%, #ca8a04 50%, #a16207 66%, #3d2208 83%, #1a0e04 100%)',
     border:  'rgba(255,255,255,0.09)',
-    shadow:  '0 2px 24px rgba(26,7,6,0.65)',
+    shadow:  '0 2px 24px rgba(26,14,4,0.65)',
     text1:   '#ffffff',
     text2:   'rgba(255,255,255,0.62)',
     divider: 'rgba(255,255,255,0.15)',
-    accent:  '#fb923c',
-    accentL: 'rgba(251,146,60,0.18)',
-    drop: { bg:'#fff5f2', text:'#3b1410', sub:'#a06050', border:'#f0c8bc', hov:'#fde8e2' },
+    accent:  '#e8b86d',
+    accentL: 'rgba(232,184,109,0.18)',
+    drop: { bg:'#fff8ee', text:'#3d2208', sub:'#8a6a40', border:'#ead8b0', hov:'#f5ebd4' },
   },
-  steel: {
-    bg:      'linear-gradient(135deg, #0a1018 0%, #1a2332 16%, #334155 33%, #475569 50%, #334155 66%, #1a2332 83%, #0a1018 100%)',
+  frost: {
+    bg:      'linear-gradient(135deg, #06141c 0%, #0c2838 16%, #1a5870 33%, #2a7a96 50%, #1a5870 66%, #0c2838 83%, #06141c 100%)',
     border:  'rgba(255,255,255,0.09)',
-    shadow:  '0 2px 24px rgba(10,16,24,0.65)',
+    shadow:  '0 2px 24px rgba(6,20,28,0.65)',
     text1:   '#ffffff',
     text2:   'rgba(255,255,255,0.62)',
     divider: 'rgba(255,255,255,0.15)',
-    accent:  '#94a3b8',
-    accentL: 'rgba(148,163,184,0.18)',
-    drop: { bg:'#eef2f6', text:'#0f172a', sub:'#64748b', border:'#c5d0dc', hov:'#e2e8f0' },
+    accent:  '#7dd3fc',
+    accentL: 'rgba(125,211,252,0.18)',
+    drop: { bg:'#eef8fc', text:'#0c2838', sub:'#5a7a90', border:'#b8d4e4', hov:'#dceef6' },
   },
 }
 
@@ -140,7 +140,7 @@ function ThemeSwatches({ theme, setTheme, g }) {
             transform: sel ? 'translateY(-1px)' : 'none',
             cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
           }}>
-            <span style={{ fontSize: 15 }}>{t.icon}</span>
+                <span style={{ fontSize: 15, fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif', lineHeight: 1 }}>{t.icon}</span>
             <span style={{ fontSize: 8, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
               {t.name}
             </span>

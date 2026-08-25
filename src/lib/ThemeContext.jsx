@@ -11,12 +11,17 @@ export const THEMES = {
   amber:   { name: 'Amber',   icon: '☀️' },
   sky:     { name: 'Sky',     icon: '☁️' },
   sage:    { name: 'Sage',    icon: '🍃' },
-  copper:  { name: 'Copper',  icon: '🪙' },
-  coral:   { name: 'Coral',   icon: '🪸' },
-  steel:   { name: 'Steel',   icon: '🩶' },
+  copper:  { name: 'Copper',  icon: '🔶' },
+  honey:   { name: 'Honey',   icon: '🍯' },
+  frost:   { name: 'Frost',   icon: '❄️' },
 }
 
-const THEME_ALIASES = { blush: 'coral', violet: 'steel' }
+const THEME_ALIASES = {
+  blush: 'honey',
+  violet: 'frost',
+  coral: 'honey',
+  steel: 'frost',
+}
 
 function resolveTheme(t) {
   const mapped = THEME_ALIASES[t] || t

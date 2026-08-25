@@ -5,7 +5,7 @@
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN TOKENS — CSS VARIABLES
-   Ten light themes — royal, ocean, forest, crimson, amber, sky, sage, copper, coral, steel
+   Ten light themes — royal, ocean, forest, crimson, amber, sky, sage, copper, honey, frost
    ═══════════════════════════════════════════════════════════════ */
 
 :root,
@@ -548,45 +548,45 @@
   --scrollbar-thumb:          #c49a7e;
 }
 
-[data-theme="coral"] {
-  /* Warm coral / salmon — distinct from Copper bronze */
-  --sidebar-bg:               #3b1410;
-  --sidebar-light:            #c2410c;
-  --sidebar-bg-end:           #1a0706;
+[data-theme="honey"] {
+  /* Warm honey gold — brown-gold, distinct from Amber sun and Copper bronze */
+  --sidebar-bg:               #3d2208;
+  --sidebar-light:            #ca8a04;
+  --sidebar-bg-end:           #1a0e04;
   --sidebar-border:           rgba(255,255,255,0.07);
-  --sidebar-text:             rgba(254,215,170,0.75);
+  --sidebar-text:             rgba(253,230,138,0.75);
   --sidebar-text-active:      #ffffff;
   --sidebar-item-hover:       rgba(255,255,255,0.07);
-  --sidebar-item-active-bg:   rgba(234,88,12,0.16);
-  --sidebar-item-active-border: #fb923c;
+  --sidebar-item-active-bg:   rgba(202,138,4,0.16);
+  --sidebar-item-active-border: #e8b86d;
   --sidebar-group:            rgba(255,255,255,0.28);
   --sidebar-profile-bg:       rgba(255,255,255,0.06);
   --sidebar-profile-border:   rgba(255,255,255,0.1);
 
   --topbar-bg:                #ffffff;
-  --topbar-border:            #eedcd6;
-  --topbar-shadow:            0 1px 4px rgba(59,20,16,0.07);
+  --topbar-border:            #eadfc8;
+  --topbar-shadow:            0 1px 4px rgba(61,34,8,0.07);
 
-  --page-bg:                  #fdf6f4;
+  --page-bg:                  #faf6ee;
   --card-bg:                  #ffffff;
-  --card-border:              #ecd9d3;
-  --card-shadow:              0 1px 6px rgba(59,20,16,0.06);
-  --card-header-bg:           #fdf8f6;
+  --card-border:              #eadfc8;
+  --card-shadow:              0 1px 6px rgba(61,34,8,0.06);
+  --card-header-bg:           #fbf8f1;
 
-  --accent:                   #ea580c;
-  --accent-hover:             #c2410c;
-  --accent-subtle:            #fff5f2;
+  --accent:                   #b45309;
+  --accent-hover:             #92400e;
+  --accent-subtle:            #fff8ee;
   --accent-text:              #ffffff;
-  --accent-ring:              rgba(234,88,12,0.18);
+  --accent-ring:              rgba(180,83,9,0.18);
 
-  --text-1:                   #3b1410;
-  --text-2:                   #8a4a3c;
-  --text-3:                   #b08070;
+  --text-1:                   #3d2208;
+  --text-2:                   #7a5420;
+  --text-3:                   #a88858;
 
   --input-bg:                 #ffffff;
-  --input-border:             #e8cfc6;
-  --input-focus-border:       #ea580c;
-  --input-focus-ring:         rgba(234,88,12,0.14);
+  --input-border:             #e4d4b4;
+  --input-focus-border:       #b45309;
+  --input-focus-ring:         rgba(180,83,9,0.14);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -601,58 +601,58 @@
   --info-subtle:              #e0f2fe;
   --info-border:              #bae6fd;
 
-  --pill-primary-bg:          #fff5f2;
-  --pill-primary-text:        #c2410c;
-  --pill-primary-border:      #fdba74;
+  --pill-primary-bg:          #fff8ee;
+  --pill-primary-text:        #92400e;
+  --pill-primary-border:      #fde68a;
 
-  --table-header-bg:          #fdf8f6;
-  --table-row-hover:          #f8e8e2;
-  --table-border:             #ecd9d3;
+  --table-header-bg:          #fbf8f1;
+  --table-row-hover:          #f3ead4;
+  --table-border:             #eadfc8;
 
-  --overlay:                  rgba(26,7,6,0.65);
-  --scrollbar-track:          #ecd9d3;
-  --scrollbar-thumb:          #d4a090;
+  --overlay:                  rgba(26,14,4,0.65);
+  --scrollbar-track:          #eadfc8;
+  --scrollbar-thumb:          #c4a070;
 }
 
-[data-theme="steel"] {
-  /* Cool steel gray-blue — distinct from Royal navy and Sky cyan */
-  --sidebar-bg:               #1a2332;
-  --sidebar-light:            #475569;
-  --sidebar-bg-end:           #0a1018;
+[data-theme="frost"] {
+  /* Icy frost blue — paler and colder than Sky */
+  --sidebar-bg:               #0c2838;
+  --sidebar-light:            #2a7a96;
+  --sidebar-bg-end:           #06141c;
   --sidebar-border:           rgba(255,255,255,0.07);
-  --sidebar-text:             rgba(203,213,225,0.75);
+  --sidebar-text:             rgba(186,230,253,0.75);
   --sidebar-text-active:      #ffffff;
   --sidebar-item-hover:       rgba(255,255,255,0.07);
-  --sidebar-item-active-bg:   rgba(100,116,139,0.18);
-  --sidebar-item-active-border: #94a3b8;
+  --sidebar-item-active-bg:   rgba(14,165,233,0.16);
+  --sidebar-item-active-border: #7dd3fc;
   --sidebar-group:            rgba(255,255,255,0.28);
   --sidebar-profile-bg:       rgba(255,255,255,0.06);
   --sidebar-profile-border:   rgba(255,255,255,0.1);
 
   --topbar-bg:                #ffffff;
-  --topbar-border:            #dce3ea;
-  --topbar-shadow:            0 1px 4px rgba(15,23,42,0.07);
+  --topbar-border:            #d4e6ee;
+  --topbar-shadow:            0 1px 4px rgba(12,40,56,0.07);
 
-  --page-bg:                  #f4f6f8;
+  --page-bg:                  #f2f8fb;
   --card-bg:                  #ffffff;
-  --card-border:              #dce3ea;
-  --card-shadow:              0 1px 6px rgba(15,23,42,0.06);
-  --card-header-bg:           #f8fafc;
+  --card-border:              #d4e6ee;
+  --card-shadow:              0 1px 6px rgba(12,40,56,0.06);
+  --card-header-bg:           #f6fbfd;
 
-  --accent:                   #475569;
-  --accent-hover:             #334155;
-  --accent-subtle:            #eef2f6;
+  --accent:                   #0284c7;
+  --accent-hover:             #0369a1;
+  --accent-subtle:            #eef8fc;
   --accent-text:              #ffffff;
-  --accent-ring:              rgba(71,85,105,0.18);
+  --accent-ring:              rgba(2,132,199,0.18);
 
-  --text-1:                   #0f172a;
-  --text-2:                   #475569;
-  --text-3:                   #94a3b8;
+  --text-1:                   #0c2838;
+  --text-2:                   #3d6580;
+  --text-3:                   #7a9eb0;
 
   --input-bg:                 #ffffff;
-  --input-border:             #d0d8e0;
-  --input-focus-border:       #475569;
-  --input-focus-ring:         rgba(71,85,105,0.14);
+  --input-border:             #c8dce6;
+  --input-focus-border:       #0284c7;
+  --input-focus-ring:         rgba(2,132,199,0.14);
 
   --danger:                   #dc2626;
   --danger-subtle:            #fef2f2;
@@ -663,21 +663,21 @@
   --warning:                  #d97706;
   --warning-subtle:           #fffbeb;
   --warning-border:           #fde68a;
-  --info:                     #2563eb;
-  --info-subtle:              #eff6ff;
-  --info-border:              #bfdbfe;
+  --info:                     #0284c7;
+  --info-subtle:              #e0f2fe;
+  --info-border:              #bae6fd;
 
-  --pill-primary-bg:          #eef2f6;
-  --pill-primary-text:        #334155;
-  --pill-primary-border:      #cbd5e1;
+  --pill-primary-bg:          #eef8fc;
+  --pill-primary-text:        #0369a1;
+  --pill-primary-border:      #7dd3fc;
 
-  --table-header-bg:          #f8fafc;
-  --table-row-hover:          #e8eef4;
-  --table-border:             #dce3ea;
+  --table-header-bg:          #f6fbfd;
+  --table-row-hover:          #e4f0f6;
+  --table-border:             #d4e6ee;
 
-  --overlay:                  rgba(10,16,24,0.65);
-  --scrollbar-track:          #dce3ea;
-  --scrollbar-thumb:          #94a3b8;
+  --overlay:                  rgba(6,20,28,0.65);
+  --scrollbar-track:          #d4e6ee;
+  --scrollbar-thumb:          #7aa8bc;
 }
 
 /* ═══════════════════════════════════════════════════════════════
