@@ -368,6 +368,23 @@ export async function getAuctionDocumentUrl(path, bucket = AUCTION_DOC_BUCKET) {
   return pub.data.publicUrl
 }
 
+/** Public URL Google can fetch (signed token is in the query string). */
+export async function getAuctionDocumentShareUrl(path, bucket = AUCTION_DOC_BUCKET) {
+  const useBucket = bucket || AUCTION_DOC_BUCKET
+  // Google fetches this URL from their servers — public object URL works best.
+  const publicUrl = supabase.storage.from(useBucket).getPublicUrl(path).data.publicUrl
+  if (publicUrl) return publicUrl
+  const { data, error } = await supabase.storage
+    .from(useBucket)
+    .createSignedUrl(path, 60 * 60 * 6)
+  if (!error && data?.signedUrl) return data.signedUrl
+  return publicUrl
+}
+
+export function googleSpreadsheetViewerUrl(fileUrl) {
+  return `https://docs.google.com/gview?url=${encodeURIComponent(fileUrl)}`
+}
+
 export async function deleteAuctionDocument(doc) {
   const path = doc?.path
   if (!path || !path.startsWith(`${AUCTION_DOC_ROOT}/`)) {

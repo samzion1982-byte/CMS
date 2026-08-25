@@ -5,92 +5,13 @@ import {
 import {
   auctionDocKindLabel,
   downloadAuctionDocumentFile,
-  fetchAuctionDocumentBytes,
   formatAuctionDocSize,
+  getAuctionDocumentShareUrl,
   getAuctionDocumentUrl,
+  googleSpreadsheetViewerUrl,
   listAuctionDocuments,
   splitAuctionDocGroups,
 } from '../lib/auctionDocumentsLib'
-
-const PREVIEW_MAX_ROWS = 400
-const PREVIEW_MAX_COLS = 40
-
-function cellText(v) {
-  if (v == null || v === '') return ''
-  if (v instanceof Date && !Number.isNaN(v.getTime())) {
-    return v.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  }
-  return String(v)
-}
-
-function buildWorkbookPreviewHtml(fileName, sheets) {
-  const title = String(fileName || 'Auction file').replace(/[<>]/g, '')
-  const data = JSON.stringify(sheets).replace(/</g, '\\u003c')
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>${title.replace(/"/g, '&quot;')}</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { margin: 0; font-family: Segoe UI, system-ui, sans-serif; background: #f1f5f9; color: #0f172a; }
-    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
-      padding: 12px 16px; background: #0f766e; color: #fff; }
-    header h1 { margin: 0; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-    .tabs { display: flex; gap: 4px; padding: 8px 12px; overflow-x: auto; background: #fff; border-bottom: 1px solid #e2e8f0; }
-    .tabs button { border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; background: transparent; color: #475569; white-space: nowrap; }
-    .tabs button.on { background: #0f766e; color: #fff; }
-    .note { margin: 0; padding: 8px 12px; font-size: 12px; color: #64748b; background: #fff; }
-    .wrap { overflow: auto; height: calc(100vh - 90px); background: #fff; }
-    table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
-    td { border: 1px solid #e2e8f0; padding: 4px 8px; white-space: nowrap; }
-    tr:first-child td { font-weight: 700; background: #ecfdf5; }
-  </style>
-</head>
-<body>
-  <header><h1></h1></header>
-  <div class="tabs" id="tabs"></div>
-  <p class="note" id="note" hidden></p>
-  <div class="wrap"><table id="grid"></table></div>
-  <script>
-    const fileName = ${JSON.stringify(title)};
-    const sheets = ${data};
-    document.querySelector('h1').textContent = fileName;
-    document.title = fileName;
-    const tabs = document.getElementById('tabs');
-    const grid = document.getElementById('grid');
-    const note = document.getElementById('note');
-    let active = 0;
-    function escapeHtml(s) {
-      return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-    function render(i) {
-      active = i;
-      [...tabs.children].forEach((b, n) => b.classList.toggle('on', n === i));
-      const sheet = sheets[i] || { rows: [] };
-      note.hidden = !sheet.truncated;
-      note.textContent = sheet.truncated ? 'Showing the first ${PREVIEW_MAX_ROWS} rows.' : '';
-      const rows = sheet.rows || [];
-      const colCount = rows.reduce((m, r) => Math.max(m, (r || []).length), 1);
-      grid.innerHTML = rows.map((row, ri) => {
-        const cells = Array.from({ length: colCount }, (_, ci) => '<td>' + escapeHtml((row || [])[ci]) + '</td>').join('');
-        return '<tr>' + cells + '</tr>';
-      }).join('') || '<tr><td>This sheet is empty.</td></tr>';
-    }
-    (sheets.length ? sheets : [{ name: 'Sheet', rows: [] }]).forEach((s, i) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = s.name || ('Sheet ' + (i + 1));
-      b.onclick = () => render(i);
-      tabs.appendChild(b);
-    });
-    if (sheets.length < 2) tabs.style.display = 'none';
-    render(0);
-  </script>
-</body>
-</html>`
-}
 
 function fmtWhen(d) {
   if (!d) return ''
@@ -154,7 +75,7 @@ function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load,
             </div>
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'flex-end' }}>
-            <button type="button" title="View in new tab" onClick={() => onOpen(doc)} style={iconBtn}>
+            <button type="button" title="View in Google Sheets" onClick={() => onOpen(doc)} style={iconBtn}>
               <Eye size={13} />
             </button>
             <button type="button" title="Download" onClick={() => onDownload(doc)} style={iconBtn}>
@@ -212,27 +133,14 @@ export default function AuctionDocsPanel({
       if (isSpreadsheet) {
         const tab = window.open('', '_blank')
         if (!tab) {
-          setError('Allow pop-ups to preview the file in a new tab.')
+          setError('Allow pop-ups to open Google Sheets.')
           return
         }
         try {
-          tab.document.write('<p style="font-family:Segoe UI,sans-serif;padding:24px;color:#475569">Opening workbook…</p>')
+          tab.document.write('<p style="font-family:Segoe UI,sans-serif;padding:24px;color:#475569">Opening in Google Sheets…</p>')
           setError('')
-          const { bytes, name: fileName } = await fetchAuctionDocumentBytes(doc)
-          const xlsxMod = await import('xlsx')
-          const { read, utils } = xlsxMod.default ?? xlsxMod
-          const wb = read(bytes, { type: 'array', cellDates: true })
-          const sheets = (wb.SheetNames || []).map((sheetName) => {
-            const aoa = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false })
-            const rows = aoa.slice(0, PREVIEW_MAX_ROWS).map((row) => {
-              const cells = Array.isArray(row) ? row : []
-              return cells.slice(0, PREVIEW_MAX_COLS).map(cellText)
-            })
-            return { name: sheetName, rows, truncated: aoa.length > PREVIEW_MAX_ROWS }
-          })
-          tab.document.open()
-          tab.document.write(buildWorkbookPreviewHtml(fileName, sheets))
-          tab.document.close()
+          const fileUrl = await getAuctionDocumentShareUrl(doc.path, doc.bucket)
+          tab.location.href = googleSpreadsheetViewerUrl(fileUrl)
         } catch (e) {
           try { tab.close() } catch { /* ignore */ }
           throw e
