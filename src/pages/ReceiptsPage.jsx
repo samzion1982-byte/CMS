@@ -134,7 +134,17 @@ export default function ReceiptsPage() {
   // always start on current FY when the page mounts (handles SPA navigation)
   useEffect(() => { setFilterFY(getFY()) }, [])
 
-  useEffect(() => { getChurch().then(setChurch).catch(() => {}) }, [])
+  const loadChurch = useCallback(() => {
+    getChurch().then(setChurch).catch(() => {})
+  }, [])
+  useEffect(() => { loadChurch() }, [loadChurch])
+  useEffect(() => {
+    window.addEventListener('church-settings-updated', loadChurch)
+    return () => window.removeEventListener('church-settings-updated', loadChurch)
+  }, [loadChurch])
+
+  // Same rule as Church Setup: Advanced = accounting_enabled and not Simple.
+  const isAdvancedAccounts = !!church?.accounting_enabled && !church?.simple_accounting_enabled
 
   const loadFyStats = useCallback(async () => {
     const cur = getFY()
@@ -444,8 +454,8 @@ export default function ReceiptsPage() {
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
 
-          {/* Transfer to Accounts — visible only when Advanced Accounts enabled */}
-          {church?.accounting_enabled && (
+          {/* Transfer to Accounts — Advanced Accounts only */}
+          {isAdvancedAccounts && (
             <button className="action-btn" onClick={() => setShowTransfer(true)}
               style={{ background: '#0891b2', color: '#fff', border: 'none', height: 34 }}
               title="Transfer receipt entries to Accounting journals">
@@ -763,7 +773,7 @@ export default function ReceiptsPage() {
         />
       )}
 
-      {showTransfer && (
+      {showTransfer && isAdvancedAccounts && (
         <TransferToAccountsModal
           profile={profile}
           fy={filterFY}
