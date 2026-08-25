@@ -1,4 +1,4 @@
--- Expand profiles.theme to every current light theme, including honey and frost.
+-- Keep profiles.theme limited to the eight current light themes.
 DO $$
 DECLARE
   conname text;
@@ -18,14 +18,14 @@ BEGIN
   END LOOP;
 END $$;
 
-UPDATE public.profiles SET theme = 'honey' WHERE theme IN ('blush', 'coral');
-UPDATE public.profiles SET theme = 'frost' WHERE theme IN ('violet', 'steel');
+UPDATE public.profiles SET theme = 'amber' WHERE theme IN ('blush', 'coral', 'honey');
+UPDATE public.profiles SET theme = 'sky'   WHERE theme IN ('violet', 'steel', 'frost');
 
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_theme_check
   CHECK (
     theme IS NULL OR theme IN (
-      'royal', 'ocean', 'forest', 'crimson', 'amber',
-      'sky', 'sage', 'copper', 'honey', 'frost'
+      'royal', 'ocean', 'forest', 'crimson',
+      'amber', 'sky', 'sage', 'copper'
     )
   );

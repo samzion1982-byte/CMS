@@ -98,33 +98,11 @@ const T = {
     accentL: 'rgba(234,138,74,0.18)',
     drop: { bg:'#fff4ed', text:'#2a140c', sub:'#8a5a40', border:'#e8c0a0', hov:'#f5ddd0' },
   },
-  honey: {
-    bg:      'linear-gradient(135deg, #241c04 0%, #4a3c0a 16%, #c9a227 33%, #f5d76e 50%, #c9a227 66%, #4a3c0a 83%, #241c04 100%)',
-    border:  'rgba(255,255,255,0.10)',
-    shadow:  '0 2px 24px rgba(36,28,4,0.55)',
-    text1:   '#ffffff',
-    text2:   'rgba(255,255,255,0.68)',
-    divider: 'rgba(255,255,255,0.16)',
-    accent:  '#fde68a',
-    accentL: 'rgba(253,230,138,0.22)',
-    drop: { bg:'#fffce8', text:'#4a3c0a', sub:'#8a7a40', border:'#eadc9a', hov:'#f7efc8' },
-  },
-  frost: {
-    bg:      'linear-gradient(135deg, #12151c 0%, #2a3140 16%, #6b7280 33%, #9ca3af 50%, #6b7280 66%, #2a3140 83%, #12151c 100%)',
-    border:  'rgba(255,255,255,0.12)',
-    shadow:  '0 2px 24px rgba(18,21,28,0.6)',
-    text1:   '#ffffff',
-    text2:   'rgba(255,255,255,0.68)',
-    divider: 'rgba(255,255,255,0.16)',
-    accent:  '#e5e7eb',
-    accentL: 'rgba(229,231,235,0.22)',
-    drop: { bg:'#f4f4f5', text:'#18181b', sub:'#71717a', border:'#d4d4d8', hov:'#e4e4e7' },
-  },
 }
 
 function ThemeSwatches({ theme, setTheme, g }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
       {Object.entries(THEMES).map(([key, t]) => {
         const sel = theme === key
         return (

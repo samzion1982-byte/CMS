@@ -12,15 +12,15 @@ export const THEMES = {
   sky:     { name: 'Sky',     icon: '☁️' },
   sage:    { name: 'Sage',    icon: '🍃' },
   copper:  { name: 'Copper',  icon: '🔶' },
-  honey:   { name: 'Honey',   icon: '🍯' },
-  frost:   { name: 'Frost',   icon: '❄️' },
 }
 
 const THEME_ALIASES = {
-  blush: 'honey',
-  violet: 'frost',
-  coral: 'honey',
-  steel: 'frost',
+  blush: 'amber',
+  coral: 'amber',
+  honey: 'amber',
+  violet: 'sky',
+  steel: 'sky',
+  frost: 'sky',
 }
 
 function resolveTheme(t) {
