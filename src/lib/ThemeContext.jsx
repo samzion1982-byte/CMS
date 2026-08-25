@@ -12,8 +12,15 @@ export const THEMES = {
   sky:     { name: 'Sky',     icon: '☁️' },
   sage:    { name: 'Sage',    icon: '🍃' },
   copper:  { name: 'Copper',  icon: '🪙' },
-  blush:   { name: 'Blush',   icon: '🌸' },
-  violet:  { name: 'Violet',  icon: '💜' },
+  coral:   { name: 'Coral',   icon: '🪸' },
+  steel:   { name: 'Steel',   icon: '🩶' },
+}
+
+const THEME_ALIASES = { blush: 'coral', violet: 'steel' }
+
+function resolveTheme(t) {
+  const mapped = THEME_ALIASES[t] || t
+  return THEMES[mapped] ? mapped : null
 }
 
 export const FONTS = {
@@ -38,7 +45,7 @@ function applyFontToDOM(f) {
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
     const saved = localStorage.getItem('cms_theme')
-    const t = (saved && THEMES[saved]) ? saved : 'royal'
+    const t = resolveTheme(saved) || 'royal'
     if (saved !== t) applyToDOM(t)
     return t
   })
@@ -53,7 +60,8 @@ export function ThemeProvider({ children }) {
   const userFontLockRef = useRef(0)
 
   const setTheme = useCallback(async (t) => {
-    if (!THEMES[t]) return
+    t = resolveTheme(t)
+    if (!t) return
     userThemeLockRef.current = Date.now()
     setThemeState(t)
     applyToDOM(t)
@@ -83,7 +91,8 @@ export function ThemeProvider({ children }) {
   }, [])
 
   const applyProfileTheme = useCallback((t) => {
-    if (!t || !THEMES[t]) return
+    t = resolveTheme(t)
+    if (!t) return
     // Ignore stale DB theme for a few seconds after the user picks one
     if (Date.now() - userThemeLockRef.current < 8000) {
       const local = localStorage.getItem('cms_theme')

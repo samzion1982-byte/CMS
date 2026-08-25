@@ -1,4 +1,4 @@
--- Expand profiles.theme to every current light theme, including violet.
+-- Expand profiles.theme to every current light theme, including coral and steel.
 DO $$
 DECLARE
   conname text;
@@ -18,11 +18,14 @@ BEGIN
   END LOOP;
 END $$;
 
+UPDATE public.profiles SET theme = 'coral' WHERE theme = 'blush';
+UPDATE public.profiles SET theme = 'steel' WHERE theme = 'violet';
+
 ALTER TABLE public.profiles
   ADD CONSTRAINT profiles_theme_check
   CHECK (
     theme IS NULL OR theme IN (
       'royal', 'ocean', 'forest', 'crimson', 'amber',
-      'sky', 'sage', 'copper', 'blush', 'violet'
+      'sky', 'sage', 'copper', 'coral', 'steel'
     )
   );
