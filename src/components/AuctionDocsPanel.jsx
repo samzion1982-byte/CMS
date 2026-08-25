@@ -5,11 +5,23 @@ import {
 import {
   auctionDocKindLabel,
   downloadAuctionDocumentFile,
+  fetchAuctionDocumentBytes,
   formatAuctionDocSize,
   getAuctionDocumentUrl,
   listAuctionDocuments,
   splitAuctionDocGroups,
 } from '../lib/auctionDocumentsLib'
+
+const PREVIEW_MAX_ROWS = 400
+const PREVIEW_MAX_COLS = 40
+
+function cellText(v) {
+  if (v == null || v === '') return ''
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    return v.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  return String(v)
+}
 
 function fmtWhen(d) {
   if (!d) return ''
@@ -73,7 +85,7 @@ function DocList({ groups, emptyText, onOpen, onDownload, onRequestDelete, load,
             </div>
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'flex-end' }}>
-            <button type="button" title="View / open" onClick={() => onOpen(doc)} style={iconBtn}>
+            <button type="button" title="View in browser" onClick={() => onOpen(doc)} style={iconBtn}>
               <Eye size={13} />
             </button>
             <button type="button" title="Download" onClick={() => onDownload(doc)} style={iconBtn}>
@@ -104,6 +116,7 @@ export default function AuctionDocsPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -129,7 +142,21 @@ export default function AuctionDocsPanel({
       const name = doc.originalName || doc.storedName
       const isSpreadsheet = /\.(xlsx|xlsm|xls|xlsb|csv)$/i.test(name)
       if (isSpreadsheet) {
-        await downloadAuctionDocumentFile(doc)
+        setPreviewLoading(true)
+        setError('')
+        const { bytes, name: fileName } = await fetchAuctionDocumentBytes(doc)
+        const xlsxMod = await import('xlsx')
+        const { read, utils } = xlsxMod.default ?? xlsxMod
+        const wb = read(bytes, { type: 'array', cellDates: true })
+        const sheets = (wb.SheetNames || []).map((sheetName) => {
+          const aoa = utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false })
+          const rows = aoa.slice(0, PREVIEW_MAX_ROWS).map((row) => {
+            const cells = Array.isArray(row) ? row : []
+            return cells.slice(0, PREVIEW_MAX_COLS).map(cellText)
+          })
+          return { name: sheetName, rows, truncated: aoa.length > PREVIEW_MAX_ROWS }
+        })
+        setPreview({ kind: 'workbook', name: fileName, sheets, sheet: 0, doc })
         return
       }
       const url = await getAuctionDocumentUrl(doc.path, doc.bucket)
@@ -139,6 +166,8 @@ export default function AuctionDocsPanel({
       else window.open(url, '_blank', 'noopener,noreferrer')
     } catch (e) {
       setError(e.message || 'Could not open file')
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -204,9 +233,9 @@ export default function AuctionDocsPanel({
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 10px 14px' }}>
-        {loading && (
+        {previewLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, color: 'var(--text-3)', fontSize: 12 }}>
-            <Loader2 size={14} className="animate-spin" /> Loading…
+            <Loader2 size={14} className="animate-spin" /> Opening…
           </div>
         )}
         {error && (
@@ -234,6 +263,20 @@ export default function AuctionDocsPanel({
         )}
       </div>
 
+      {previewLoading && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 99,
+            background: 'rgba(15, 23, 42, 0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div className="card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <Loader2 size={16} className="animate-spin" /> Opening workbook…
+          </div>
+        </div>
+      )}
+
       {preview && (
         <div
           style={{
@@ -245,18 +288,96 @@ export default function AuctionDocsPanel({
         >
           <div
             className="card"
-            style={{ width: 'min(920px, 96vw)', height: 'min(80vh, 720px)', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            style={{ width: 'min(1100px, 96vw)', height: 'min(86vh, 800px)', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--table-border)' }}>
               <div style={{ flex: 1, fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {preview.name}
               </div>
+              {preview.doc && (
+                <button
+                  type="button"
+                  title="Download"
+                  onClick={() => downloadDoc(preview.doc)}
+                  style={{ ...iconBtn, width: 'auto', padding: '0 8px', gap: 6, fontSize: 11, fontWeight: 700 }}
+                >
+                  <Download size={13} /> Download
+                </button>
+              )}
               <button type="button" onClick={() => setPreview(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}>
                 <X size={16} />
               </button>
             </div>
-            {String(preview.mime || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(preview.name) ? (
+            {preview.kind === 'workbook' ? (
+              <>
+                {(preview.sheets || []).length > 1 && (
+                  <div style={{ display: 'flex', gap: 4, padding: '8px 12px', overflowX: 'auto', borderBottom: '1px solid var(--table-border)' }}>
+                    {preview.sheets.map((s, i) => (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => setPreview((p) => ({ ...p, sheet: i }))}
+                        style={{
+                          border: 'none',
+                          borderRadius: 6,
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          background: preview.sheet === i ? '#0f766e' : 'transparent',
+                          color: preview.sheet === i ? '#fff' : 'var(--text-2)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ flex: 1, overflow: 'auto', background: 'var(--bg, #f8fafc)' }}>
+                  {(() => {
+                    const sheet = preview.sheets?.[preview.sheet] || preview.sheets?.[0]
+                    if (!sheet?.rows?.length) {
+                      return <p style={{ padding: 16, fontSize: 13, color: 'var(--text-3)' }}>This sheet is empty.</p>
+                    }
+                    const colCount = Math.max(1, ...sheet.rows.map((r) => r.length))
+                    return (
+                      <>
+                        {sheet.truncated && (
+                          <p style={{ margin: 0, padding: '8px 12px', fontSize: 11, color: 'var(--text-3)' }}>
+                            Showing first {PREVIEW_MAX_ROWS} rows. Download to see the full file.
+                          </p>
+                        )}
+                        <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: '100%' }}>
+                          <tbody>
+                            {sheet.rows.map((row, ri) => (
+                              <tr key={ri}>
+                                {Array.from({ length: colCount }, (_, ci) => (
+                                  <td
+                                    key={ci}
+                                    style={{
+                                      border: '1px solid var(--table-border)',
+                                      padding: '4px 8px',
+                                      whiteSpace: 'nowrap',
+                                      background: ri === 0 ? 'rgba(15,118,110,0.08)' : 'var(--card-bg)',
+                                      fontWeight: ri === 0 ? 700 : 400,
+                                      color: 'var(--text-1)',
+                                    }}
+                                  >
+                                    {row[ci] || ''}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )
+                  })()}
+                </div>
+              </>
+            ) : String(preview.mime || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(preview.name) ? (
               <img src={preview.url} alt={preview.name} style={{ flex: 1, objectFit: 'contain', background: '#0f172a' }} />
             ) : (
               <iframe title={preview.name} src={preview.url} style={{ flex: 1, border: 'none', width: '100%' }} />

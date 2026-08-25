@@ -115,8 +115,7 @@ function withExtension(fileName, ext) {
   return `${base}.${ext}`
 }
 
-/** Fetch the stored workbook and save it under the original name (correct .xlsx / .xlsm). */
-export async function downloadAuctionDocumentFile(doc) {
+export async function fetchAuctionDocumentBytes(doc) {
   const bucket = doc?.bucket || AUCTION_DOC_BUCKET
   const path = doc?.path
   if (!path) throw new Error('Missing file path.')
@@ -127,6 +126,12 @@ export async function downloadAuctionDocumentFile(doc) {
   let name = doc.originalName || doc.storedName || 'auction-document.xlsx'
   const nameExt = String(name).split('.').pop()?.toLowerCase()
   if (sniffed && nameExt !== sniffed) name = withExtension(name, sniffed)
+  return { bytes, name }
+}
+
+/** Fetch the stored workbook and save it under the original name (correct .xlsx / .xlsm). */
+export async function downloadAuctionDocumentFile(doc) {
+  const { bytes, name } = await fetchAuctionDocumentBytes(doc)
   const blob = new Blob([bytes], { type: mimeForSpreadsheetName(name) })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
