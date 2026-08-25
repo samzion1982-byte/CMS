@@ -100,29 +100,77 @@ const T = {
   },
 }
 
+function chipIdleShadow(g) {
+  return `0 1px 0 rgba(255,255,255,0.82) inset, 0 -3px 0 rgba(0,0,0,0.12) inset, 0 3px 0 ${g.drop.border}, 0 6px 10px rgba(0,0,0,0.12)`
+}
+
+function chipHoverShadow() {
+  return '0 1px 0 rgba(255,255,255,0.9) inset, 0 -3px 0 rgba(0,0,0,0.1) inset, 0 6px 0 rgba(0,0,0,0.16), 0 12px 18px rgba(0,0,0,0.16)'
+}
+
+function chipSelShadow(g) {
+  return `0 1px 0 rgba(255,255,255,0.5) inset, 0 -4px 0 rgba(0,0,0,0.28) inset, 0 2px 0 ${g.drop.text}44, 0 0 0 2px ${g.accent}, 0 8px 16px rgba(0,0,0,0.22)`
+}
+
+function PickerChip({ selected, g, onClick, previewBg, children, style: extra }) {
+  const idleBg = previewBg
+    || `linear-gradient(180deg, #ffffff 0%, ${g.drop.bg} 46%, ${g.drop.hov} 100%)`
+  const selBg = `linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.08) 36%, transparent 52%), linear-gradient(165deg, ${g.accent} 0%, ${g.drop.text} 100%)`
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={e => {
+        if (selected) return
+        e.currentTarget.style.transform = 'translateY(-3px)'
+        e.currentTarget.style.boxShadow = chipHoverShadow()
+      }}
+      onMouseLeave={e => {
+        if (selected) return
+        e.currentTarget.style.transform = 'none'
+        e.currentTarget.style.boxShadow = chipIdleShadow(g)
+      }}
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 3,
+        padding: '8px 4px 9px',
+        borderRadius: 10,
+        border: selected ? `1.5px solid ${g.accent}` : `1.5px solid ${g.drop.border}`,
+        background: selected ? selBg : idleBg,
+        boxShadow: selected ? chipSelShadow(g) : chipIdleShadow(g),
+        transform: selected ? 'translateY(1px)' : 'none',
+        cursor: 'pointer',
+        outline: 'none',
+        transition: 'transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease',
+        ...extra,
+      }}
+    >
+      <span style={{
+        position: 'absolute', inset: '0 0 48% 0', pointerEvents: 'none',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 100%)',
+      }} />
+      {children}
+    </button>
+  )
+}
+
 function ThemeSwatches({ theme, setTheme, g }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
       {Object.entries(THEMES).map(([key, t]) => {
         const sel = theme === key
+        const label = sel || T[key]?.bg ? '#fff' : g.drop.sub
         return (
-          <button key={key} onClick={() => setTheme(key)}
-            onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
-            onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
-            style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-            padding: '7px 4px', borderRadius: 10,
-            border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
-            background: sel ? g.drop.hov : 'transparent',
-            boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
-            transform: sel ? 'translateY(-1px)' : 'none',
-            cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
-          }}>
-                <span style={{ fontSize: 15, fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif', lineHeight: 1 }}>{t.icon}</span>
-            <span style={{ fontSize: 8, fontWeight: sel ? 700 : 600, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)' }}>
+          <PickerChip key={key} selected={sel} g={g} previewBg={T[key]?.bg} onClick={() => setTheme(key)}>
+            <span style={{ fontSize: 15, fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif', lineHeight: 1, position: 'relative', filter: sel ? 'drop-shadow(0 1px 1px rgba(0,0,0,0.35))' : 'none' }}>{t.icon}</span>
+            <span style={{ fontSize: 8, fontWeight: sel ? 800 : 600, color: label, fontFamily: 'var(--font-ui)', position: 'relative', textShadow: T[key]?.bg || sel ? '0 1px 2px rgba(0,0,0,0.45)' : 'none' }}>
               {t.name}
             </span>
-          </button>
+          </PickerChip>
         )
       })}
     </div>
@@ -333,27 +381,16 @@ function UserBadge({ profile, ini, firstName, roleLabel, g, theme, setTheme, fon
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: g.drop.sub, margin: '0 0 10px', fontFamily: 'var(--font-ui)' }}>
               Typography
             </p>
-            <div style={{ display: 'flex', gap: 5 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
               {Object.entries(FONTS).map(([key, f]) => {
                 const sel = font === key
                 return (
-                  <button key={key} onClick={() => setFont(key)}
-                    onMouseEnter={e => { if (!sel) { e.currentTarget.style.transform = 'translateY(-3px) scale(1.07)'; e.currentTarget.style.boxShadow = `0 6px 16px rgba(0,0,0,0.14)`; e.currentTarget.style.borderColor = g.accent; e.currentTarget.style.background = g.drop.hov }}}
-                    onMouseLeave={e => { if (!sel) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = g.drop.border; e.currentTarget.style.background = 'transparent' }}}
-                    style={{
-                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                    padding: '7px 3px', borderRadius: 8,
-                    border: `1.5px solid ${sel ? g.drop.text : g.drop.border}`,
-                    background: sel ? g.drop.hov : 'transparent',
-                    boxShadow: sel ? `inset 0 -3px 0 ${g.drop.text}` : 'none',
-                    transform: sel ? 'translateY(-1px)' : 'none',
-                    cursor: 'pointer', outline: 'none', transition: 'all 0.18s cubic-bezier(0.34,1.56,0.64,1)',
-                  }}>
-                    <span style={{ fontSize: 18, fontFamily: f.family, fontWeight: 700, color: g.drop.text, lineHeight: 1 }}>{f.sample}</span>
-                    <span style={{ fontSize: 8, fontWeight: sel ? 700 : 500, color: sel ? g.drop.text : g.drop.sub, fontFamily: 'var(--font-ui)', marginTop: 2 }}>
+                  <PickerChip key={key} selected={sel} g={g} onClick={() => setFont(key)}>
+                    <span style={{ fontSize: 18, fontFamily: f.family, fontWeight: 700, color: sel ? '#fff' : g.drop.text, lineHeight: 1, position: 'relative', textShadow: sel ? '0 1px 2px rgba(0,0,0,0.4)' : 'none' }}>{f.sample}</span>
+                    <span style={{ fontSize: 8, fontWeight: sel ? 800 : 500, color: sel ? '#fff' : g.drop.sub, fontFamily: 'var(--font-ui)', marginTop: 2, position: 'relative', textShadow: sel ? '0 1px 2px rgba(0,0,0,0.4)' : 'none' }}>
                       {f.name}
                     </span>
-                  </button>
+                  </PickerChip>
                 )
               })}
             </div>
