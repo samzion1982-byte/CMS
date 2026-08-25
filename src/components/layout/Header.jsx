@@ -109,6 +109,17 @@ const T = {
     accentL: 'rgba(244,114,182,0.18)',
     drop: { bg:'#fdf2f8', text:'#2e1520', sub:'#8a4a68', border:'#f0c0d8', hov:'#f8dcea' },
   },
+  violet: {
+    bg:      'linear-gradient(135deg, #12081c 0%, #24123a 16%, #5b21b6 33%, #6d28d9 50%, #5b21b6 66%, #24123a 83%, #12081c 100%)',
+    border:  'rgba(255,255,255,0.09)',
+    shadow:  '0 2px 24px rgba(18,8,28,0.65)',
+    text1:   '#ffffff',
+    text2:   'rgba(255,255,255,0.62)',
+    divider: 'rgba(255,255,255,0.15)',
+    accent:  '#c4b5fd',
+    accentL: 'rgba(196,181,253,0.18)',
+    drop: { bg:'#f5f0ff', text:'#1e1033', sub:'#6b5a88', border:'#d4c4f0', hov:'#ebe0ff' },
+  },
 }
 
 function ThemeSwatches({ theme, setTheme, g }) {

@@ -5,7 +5,7 @@
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN TOKENS — CSS VARIABLES
-   Nine light themes — royal, ocean, forest, crimson, amber, sky, sage, copper, blush
+   Ten light themes — royal, ocean, forest, crimson, amber, sky, sage, copper, blush, violet
    ═══════════════════════════════════════════════════════════════ */
 
 :root,
@@ -612,6 +612,72 @@
   --overlay:                  rgba(24,10,18,0.65);
   --scrollbar-track:          #ecdce5;
   --scrollbar-thumb:          #c49aaf;
+}
+
+[data-theme="violet"] {
+  /* Deep violet / lavender */
+  --sidebar-bg:               #24123a;
+  --sidebar-light:            #6d28d9;
+  --sidebar-bg-end:           #12081c;
+  --sidebar-border:           rgba(255,255,255,0.07);
+  --sidebar-text:             rgba(196,181,253,0.75);
+  --sidebar-text-active:      #ffffff;
+  --sidebar-item-hover:       rgba(255,255,255,0.07);
+  --sidebar-item-active-bg:   rgba(124,58,237,0.18);
+  --sidebar-item-active-border: #c4b5fd;
+  --sidebar-group:            rgba(255,255,255,0.28);
+  --sidebar-profile-bg:       rgba(255,255,255,0.06);
+  --sidebar-profile-border:   rgba(255,255,255,0.1);
+
+  --topbar-bg:                #ffffff;
+  --topbar-border:            #e4dcf3;
+  --topbar-shadow:            0 1px 4px rgba(36,18,58,0.07);
+
+  --page-bg:                  #f7f4fc;
+  --card-bg:                  #ffffff;
+  --card-border:              #e6def4;
+  --card-shadow:              0 1px 6px rgba(36,18,58,0.06);
+  --card-header-bg:           #faf8fd;
+
+  --accent:                   #7c3aed;
+  --accent-hover:             #6d28d9;
+  --accent-subtle:            #f5f0ff;
+  --accent-text:              #ffffff;
+  --accent-ring:              rgba(124,58,237,0.18);
+
+  --text-1:                   #1e1033;
+  --text-2:                   #5b4a78;
+  --text-3:                   #8b7aa8;
+
+  --input-bg:                 #ffffff;
+  --input-border:             #ddd4ee;
+  --input-focus-border:       #7c3aed;
+  --input-focus-ring:         rgba(124,58,237,0.14);
+
+  --danger:                   #dc2626;
+  --danger-subtle:            #fef2f2;
+  --danger-border:            #fecaca;
+  --success:                  #16a34a;
+  --success-subtle:           #f0fdf4;
+  --success-border:           #bbf7d0;
+  --warning:                  #d97706;
+  --warning-subtle:           #fffbeb;
+  --warning-border:           #fde68a;
+  --info:                     #7c3aed;
+  --info-subtle:              #f5f0ff;
+  --info-border:              #ddd6fe;
+
+  --pill-primary-bg:          #f5f0ff;
+  --pill-primary-text:        #6d28d9;
+  --pill-primary-border:      #ddd6fe;
+
+  --table-header-bg:          #faf8fd;
+  --table-row-hover:          #efe8fb;
+  --table-border:             #e6def4;
+
+  --overlay:                  rgba(18,8,28,0.65);
+  --scrollbar-track:          #e6def4;
+  --scrollbar-thumb:          #a78bfa;
 }
 
 /* ═══════════════════════════════════════════════════════════════

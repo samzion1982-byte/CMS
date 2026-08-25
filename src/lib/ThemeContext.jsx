@@ -13,6 +13,7 @@ export const THEMES = {
   sage:    { name: 'Sage',    icon: '🍃' },
   copper:  { name: 'Copper',  icon: '🪙' },
   blush:   { name: 'Blush',   icon: '🌸' },
+  violet:  { name: 'Violet',  icon: '💜' },
 }
 
 export const FONTS = {
