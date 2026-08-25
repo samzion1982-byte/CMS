@@ -311,9 +311,9 @@ export default function AuctionDocsPanel({
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '8px 10px 14px' }}>
-        {previewLoading && (
+        {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, color: 'var(--text-3)', fontSize: 12 }}>
-            <Loader2 size={14} className="animate-spin" /> Opening…
+            <Loader2 size={14} className="animate-spin" /> Loading…
           </div>
         )}
         {error && (
