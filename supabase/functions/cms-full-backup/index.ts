@@ -83,7 +83,8 @@ const FALLBACK_TABLES = [
 const KNOWN_BUCKETS = [
   'announcement-cards', 'announcement-reports', 'asset-photos', 'church-logos',
   'church-documents', 'auction-reports', 'fixed-asset-docs', 'family-records',
-  'event-media', 'member-photos', 'member-reports', 'payment-pages', 'receipt-pdfs',
+  'event-media', 'member-photos', 'member-reports', 'payment-pages', 'print-corner',
+  'receipt-pdfs',
 ]
 
 function json(body, status = 200) {

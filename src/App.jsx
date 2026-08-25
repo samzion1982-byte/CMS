@@ -68,6 +68,8 @@ import EventSettingsPage          from './pages/EventSettingsPage'
 import AssetsPage                 from './pages/AssetsPage'
 import AssetsSettingsPage         from './pages/AssetsSettingsPage'
 import DirectoryPage              from './pages/DirectoryPage'
+import PrintCornerPage            from './pages/PrintCornerPage'
+import PrintCornerSettingsPage    from './pages/PrintCornerSettingsPage'
 import DirectorySettingsPage      from './pages/DirectorySettingsPage'
 import BankReconciliationPage     from './pages/BankReconciliationPage'
 import BudgetVsActualPage         from './pages/BudgetVsActualPage'
@@ -451,6 +453,14 @@ function AppRoutes() {
       <Route
         path="/announcements"
         element={<PrivateRoute><AppLayout><AnnouncementsPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/print-corner"
+        element={<PrivateRoute><AppLayout><PrintCornerPage /></AppLayout></PrivateRoute>}
+      />
+      <Route
+        path="/print-corner/settings"
+        element={<PrivateRoute><AppLayout><PrintCornerSettingsPage /></AppLayout></PrivateRoute>}
       />
       <Route
         path="/announcements-log"

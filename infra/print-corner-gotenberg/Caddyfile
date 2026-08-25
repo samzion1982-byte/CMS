@@ -1,0 +1,23 @@
+# HTTPS + API key gate in front of Gotenberg.
+# Requests must include:  X-Gotenberg-Key: <same value as GOTENBERG_API_KEY in .env>
+#
+# For first setup without a domain, use GOTENBERG_DOMAIN=localhost and HTTP only (see docs).
+
+{
+	email {$CADDY_ADMIN_EMAIL:admin@example.com}
+}
+
+{$GOTENBERG_DOMAIN} {
+	@authorized header X-Gotenberg-Key {$GOTENBERG_API_KEY}
+	handle @authorized {
+		reverse_proxy gotenberg:3000
+	}
+	handle {
+		respond "Unauthorized" 401
+	}
+}
+
+# Optional: redirect bare HTTP to HTTPS when using a real domain
+# :80 {
+# 	redir https://{host}{uri} permanent
+# }

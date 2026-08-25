@@ -24,6 +24,7 @@ const BUCKETS = [
   { id: 'announcement-reports', public: false },
   { id: 'payment-pages', public: true },
   { id: 'receipt-pdfs', public: false },
+  { id: 'print-corner', public: false },
 ]
 
 /** Minimal bootstrap so a blank project can accept the app; full migrations applied when SQL is provided. */

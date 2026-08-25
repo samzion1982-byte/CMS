@@ -7,7 +7,8 @@ import { ChevronLeft, ChevronRight, ChevronDown,
   BarChart3, Megaphone, Church, UserCog, Upload, ClipboardList, LogIn,
   BookOpen, MessageSquare, CreditCard, Send, Landmark,
   PiggyBank, Tag, List, Wallet, Calendar, BookMarked, Package, Shield, History,
-  Database, ArchiveRestore, BookUser,
+  Database, ArchiveRestore,   BookUser,
+  Printer,
 } from 'lucide-react'
 import { HEADER_H } from './Header'
 import { canAccessNavItem, canAccessPath } from '../../lib/cmsPermissions'
@@ -23,6 +24,7 @@ const NAV = [
       { label: 'Event Recorder', path: '/events/recorder' },
     ]},
     { label: 'Announcements',    path: '/announcements', icon: Megaphone       },
+    { label: 'Print Corner',     path: '/print-corner',  icon: Printer         },
   ]},
   { group: 'FINANCE', adminOnly: true, items: [
     { label: 'Declaration',       path: '/declaration',       icon: FileText    },

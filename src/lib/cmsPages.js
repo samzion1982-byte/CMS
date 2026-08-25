@@ -30,6 +30,8 @@ export const CMS_PERMISSION_TREE = [
       { key: 'members',       label: 'Members',           kind: 'page', match: '/members' },
       { key: 'directory',     label: 'Phone Directory',   kind: 'page', match: '/directory' },
       { key: 'announcements', label: 'Announcements',     kind: 'page', match: '/announcements', exclude: ['/announcements-log'] },
+      { key: 'print-corner',  label: 'Print Corner',    kind: 'page', match: '/print-corner', exclude: ['/print-corner/settings'] },
+      { key: 'print-corner-settings', label: 'Print Corner Settings', kind: 'page', match: '/print-corner/settings', sensitive: true },
       {
         key: 'folder-events',
         label: 'Events',

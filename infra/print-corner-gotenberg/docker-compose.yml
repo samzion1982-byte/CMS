@@ -1,0 +1,41 @@
+# Print Corner — Gotenberg on Oracle VM (or any Linux host)
+# Gotenberg listens on localhost only; Caddy terminates HTTPS and checks API key.
+#
+# Copy this folder to the VM, e.g. /opt/print-corner-gotenberg/
+# Create .env from .env.example before: docker compose up -d
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    # Do not publish 3000 to the public internet — Caddy is the only entry point.
+    ports:
+      - "127.0.0.1:3000:3000"
+    command:
+      - "gotenberg"
+      - "--api-timeout=120s"
+      - "--libreoffice-restart-after=10"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GOTENBERG_API_KEY: ${GOTENBERG_API_KEY:?Set GOTENBERG_API_KEY in .env}
+      GOTENBERG_DOMAIN: ${GOTENBERG_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gotenberg
+
+volumes:
+  caddy_data:
+  caddy_config:
