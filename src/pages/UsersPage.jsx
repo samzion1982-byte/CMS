@@ -368,7 +368,7 @@ export default function UsersPage() {
             {slotsUsed < MAX_SLOTS
               ? <span style={{ color: 'var(--success)', fontWeight: 600 }}> · {openSlots} available</span>
               : <span style={{ color: 'var(--danger)', fontWeight: 600 }}> · All slots in use</span>}
-            <span style={{ color: 'var(--text-3)', fontWeight: 500 }}> · Press F10 to {pwRevealed ? 'hide' : 'reveal'} passwords</span>
+            <span style={{ color: 'var(--text-3)', fontWeight: 500 }}> · Use Hotkey to {pwRevealed ? 'Hide' : 'Reveal'} Password</span>
           </>
         }
       >
@@ -497,7 +497,7 @@ export default function UsersPage() {
                         fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: 'none',
                         color: 'var(--text-3)',
                       }}>
-                        · {pwRevealed ? 'F10 to hide' : 'F10 to reveal'}
+                        · {pwRevealed ? 'Use Hotkey to Hide Password' : 'Use Hotkey to Reveal Password'}
                       </span>
                     </div>
                     {pwRevealed && u.storedPassword ? (
