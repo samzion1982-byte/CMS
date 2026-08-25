@@ -8,7 +8,7 @@ import { invokeEdgeFunction } from '../lib/cmsFullBackup'
 import {
   Save, RotateCcw, Edit2, Power, Trash2,
   Eye, EyeOff, Loader2, UserPlus, UserCog,
-  Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle, Lock, X,
+  Phone, Mail, Calendar, CheckCircle, XCircle, Activity, Key, AlertTriangle, Lock, X, Copy,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '../lib/auth'
@@ -40,6 +40,15 @@ const ROLES = [
   { value: 'demo',   label: ROLE_LABELS.demo,   emoji: '🧪', color: '#d97706', bg: 'rgba(217,119,6,0.12)', border: 'rgba(217,119,6,0.38)' },
   { value: 'user4',  label: ROLE_LABELS.user4,  emoji: '👥', color: '#0e7490', bg: 'rgba(14,116,144,0.12)', border: 'rgba(14,116,144,0.38)' },
 ]
+
+async function upsertStoredPassword(userId, password) {
+  const { error } = await supabase.from('cms_user_passwords').upsert({
+    user_id: userId,
+    password,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' })
+  return error
+}
 
 async function deleteStoredPassword(userId) {
   await supabase.from('cms_user_passwords').delete().eq('user_id', userId)
@@ -86,6 +95,7 @@ export default function UsersPage() {
   const [deactivateLoading, setDeactivateLoading] = useState(null)
   const [permDeleteLoading, setPermDeleteLoading] = useState(false)
   const [form, setForm] = useState({ ...EMPTY_FORM })
+  const [revealedPw, setRevealedPw] = useState({})
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(async () => {
@@ -99,9 +109,15 @@ export default function UsersPage() {
       toast('Failed to load users: ' + error.message, 'error')
       console.error(error)
       setUsers([])
-    } else {
-      setUsers(data || [])
+      setLoading(false)
+      return
     }
+    const list = data || []
+    const { data: vault } = await supabase
+      .from('cms_user_passwords')
+      .select('user_id, password')
+    const pwById = Object.fromEntries((vault || []).map(r => [r.user_id, r.password]))
+    setUsers(list.map(u => ({ ...u, storedPassword: pwById[u.id] || '' })))
     setLoading(false)
   }, [toast])
 
@@ -221,7 +237,13 @@ export default function UsersPage() {
       return
     }
 
-    toast(form.name + ' created successfully.', 'success')
+    const vaultErr = await upsertStoredPassword(newUserId, form.password)
+    if (vaultErr) {
+      console.error(vaultErr)
+      toast(form.name + ' created, but the password could not be saved for viewing.', 'error')
+    } else {
+      toast(form.name + ' created successfully.', 'success')
+    }
     closePanel()
     load()
     setSaving(false)
@@ -294,7 +316,13 @@ export default function UsersPage() {
       })
       if (invoked.missing) throw new Error('Deploy Edge Function cms-admin first (Auth Admin is no longer in the browser).')
       if (!invoked.ok) throw new Error(invoked.errorMessage || 'Auth update failed')
-      toast(`Password for ${resetDialog.name} has been reset.`, 'success')
+      const vaultErr = await upsertStoredPassword(resetDialog.id, resetPassword)
+      if (vaultErr) {
+        console.error(vaultErr)
+        toast(`Password for ${resetDialog.name} was reset, but it could not be saved for viewing.`, 'error')
+      } else {
+        toast(`Password for ${resetDialog.name} has been reset.`, 'success')
+      }
       setResetDialog(null)
       setResetPassword('')
       load()
@@ -443,7 +471,6 @@ export default function UsersPage() {
                     </span>
                   </div>
 
-                  {/* Passwords are not stored for viewing */}
                   <div style={{
                     padding: '8px 11px', borderRadius: 12, flex: '1 1 220px', maxWidth: 360,
                     background: 'var(--page-bg)', border: '1px solid var(--card-border)',
@@ -452,11 +479,53 @@ export default function UsersPage() {
                       fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
                       color: 'var(--text-3)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5,
                     }}>
-                      <Lock size={11} /> Password
+                      <Lock size={11} /> Password · Super Admin only
                     </div>
-                    <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.4 }}>
-                      Passwords are not stored for viewing. Reset if forgotten.
-                    </p>
+                    {u.storedPassword ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <code style={{
+                          flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700,
+                          color: 'var(--text-1)', letterSpacing: revealedPw[u.id] ? 0 : 1.5,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          fontFamily: revealedPw[u.id] ? 'inherit' : 'ui-monospace, monospace',
+                        }}>
+                          {revealedPw[u.id] ? u.storedPassword : '••••••••'}
+                        </code>
+                        <button
+                          type="button"
+                          title={revealedPw[u.id] ? 'Hide password' : 'View password'}
+                          onClick={() => setRevealedPw(m => ({ ...m, [u.id]: !m[u.id] }))}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--text-3)', display: 'flex', padding: 2,
+                          }}
+                        >
+                          {revealedPw[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          title="Copy password"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(u.storedPassword)
+                              toast('Password copied.', 'success')
+                            } catch {
+                              toast('Could not copy password.', 'error')
+                            }
+                          }}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--text-3)', display: 'flex', padding: 2,
+                          }}
+                        >
+                          <Copy size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.4 }}>
+                        Not on file yet. Reset to store it for viewing.
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => setResetDialog({ id: u.id, name: u.full_name, email: u.email })}

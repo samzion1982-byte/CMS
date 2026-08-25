@@ -68,6 +68,12 @@ serve(async (req) => {
       if (password.length < 8) return json({ error: 'Password must be at least 8 characters' }, 400)
       const { error } = await admin.auth.admin.updateUserById(userId, { password })
       if (error) return json({ error: error.message }, 400)
+      const { error: vaultErr } = await admin.from('cms_user_passwords').upsert({
+        user_id: userId,
+        password,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      if (vaultErr) return json({ ok: true, vault_warning: vaultErr.message })
       return json({ ok: true })
     }
 
