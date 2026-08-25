@@ -76,10 +76,11 @@ const FLUSH_CATEGORIES = [
   {
     key: 'receipts', label: 'Receipts', color: '#d97706',
     subs: [
-      { key: 'entry',    label: 'Receipt Entry',    color: '#f59e0b' },
-      { key: 'auction',  label: 'Auction Reports',  color: '#d97706' },
-      { key: 'payments', label: 'Payments & Pages', color: '#fbbf24' },
-      { key: 'files',    label: 'Receipt Files',    color: '#fcd34d' },
+      { key: 'entry',     label: 'Receipt Entry',    color: '#f59e0b' },
+      { key: 'auction',   label: 'Auction Reports',  color: '#d97706' },
+      { key: 'transfers', label: 'Transfer Report',  color: '#ea580c' },
+      { key: 'payments',  label: 'Payments & Pages', color: '#fbbf24' },
+      { key: 'files',     label: 'Receipt Files',    color: '#fcd34d' },
     ],
   },
   {
@@ -156,7 +157,7 @@ const TABLE_FLUSH_META = {
 
   receipts:                { category: 'receipts', sub: 'entry' },
   receipt_items:           { category: 'receipts', sub: 'entry' },
-  receipt_transfer_batches:{ category: 'receipts', sub: 'entry' },
+  receipt_transfer_batches:{ category: 'receipts', sub: 'transfers' },
   receipt_financial_years: { category: 'receipts', sub: 'entry' },
   payment_categories:      { category: 'receipts', sub: 'entry' },
   auction_tracker:         { category: 'receipts', sub: 'auction' },
@@ -227,6 +228,7 @@ const FLUSH_TABLE_ORDER = {
   church_document_categories: 20,
   auction_seasons: 18,
   auction_tracker: 22,
+  receipt_transfer_batches: 24,
   simple_categories: 20,
   simple_accounts: 22,
   baptism_records: 30,
@@ -654,6 +656,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
               : tbl === 'auction_tracker' ? 'Auction tracker'
               : tbl === 'auction_seasons' ? 'Auction seasons'
               : tbl === 'auction_close_balances' ? 'Auction close balances'
+              : tbl === 'receipt_transfer_batches' ? 'Transfer Report (batches)'
               : tbl,
             type: 'table',
             count: count || 0,
