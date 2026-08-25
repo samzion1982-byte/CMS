@@ -29,6 +29,27 @@ const fmtDate = d =>
 const fmtDateTime = ts =>
   ts ? new Date(ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
+/** PostgREST caps each request at 1000 rows — page until the FY is fully loaded. */
+async function fetchAllReceiptsForFy(fy) {
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from('receipts')
+      .select('id, transfer_batch_id, payment_mode, grand_total, receipt_number, receipt_date')
+      .eq('financial_year', fy)
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
+}
+
 // ── styles ───────────────────────────────────────────────────────────────
 
 const TH = {
@@ -58,9 +79,9 @@ export default function TransferReportPage() {
   const [batches,  setBatches]  = useState([])     // transfer batches
   const [pending,  setPending]  = useState([])     // pending receipts (lightweight)
 
-  // ── load FY options from receipts ──────────────────────────────────
+  // ── load FY options ────────────────────────────────────────────
   useEffect(() => {
-    supabase.from('receipts').select('financial_year').then(({ data }) => {
+    supabase.rpc('get_receipt_financial_years').then(({ data }) => {
       const uniq = [...new Set((data || []).map(r => r.financial_year).filter(Boolean))].sort().reverse()
       setFYS(uniq.length ? uniq : [getFY()])
     })
@@ -70,11 +91,8 @@ export default function TransferReportPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [receiptRes, batchRes] = await Promise.all([
-        supabase
-          .from('receipts')
-          .select('id, transfer_batch_id, payment_mode, grand_total, receipt_number, receipt_date')
-          .eq('financial_year', fy),
+      const [receipts, batchRes] = await Promise.all([
+        fetchAllReceiptsForFy(fy),
         supabase
           .from('receipt_transfer_batches')
           .select('*')
@@ -82,10 +100,8 @@ export default function TransferReportPage() {
           .order('transferred_at', { ascending: false }),
       ])
 
-      if (receiptRes.error) throw receiptRes.error
-      if (batchRes.error)   throw batchRes.error
+      if (batchRes.error) throw batchRes.error
 
-      const receipts = receiptRes.data || []
       const batchList = batchRes.data || []
 
       // compute stats
@@ -357,8 +373,8 @@ export default function TransferReportPage() {
               </div>
             )}
           </div>
-          <button onClick={exportExcel} disabled={exporting || loading || !stats}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#16a34a', border: 'none', borderRadius: 8, cursor: exporting || loading || !stats ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#fff', opacity: exporting || loading || !stats ? 0.6 : 1 }}>
+          <button onClick={exportExcel} disabled={exporting || loading || !stats || batches.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#16a34a', border: 'none', borderRadius: 8, cursor: exporting || loading || !stats || batches.length === 0 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#fff', opacity: exporting || loading || !stats || batches.length === 0 ? 0.6 : 1 }}>
             {exporting ? <Loader2 size={14} style={{ animation: 'spin .7s linear infinite' }} /> : <FileSpreadsheet size={14} />}
             {exporting ? 'Exporting…' : 'Excel Export'}
           </button>
@@ -374,6 +390,14 @@ export default function TransferReportPage() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
           <Loader2 size={28} style={{ animation: 'spin .7s linear infinite', color: 'var(--accent)' }} />
         </div>
+      ) : stats && batches.length === 0 ? (
+        <section style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, padding: '48px 24px', textAlign: 'center' }}>
+          <ArrowRightLeft size={32} style={{ color: 'var(--text-3)', marginBottom: 12 }} />
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', marginBottom: 6 }}>No transfer report for {fyLabel(fy)}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', maxWidth: 440, margin: '0 auto', lineHeight: 1.5 }}>
+            This page shows receipts after they are transferred to Accounts. Receipts that have not been transferred stay in Receipt Entry.
+          </div>
+        </section>
       ) : stats ? (
         <>
           {/* ── summary cards ── */}

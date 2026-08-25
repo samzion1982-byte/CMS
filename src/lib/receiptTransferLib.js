@@ -14,24 +14,34 @@ function fyFromDate(dateStr) {
 // ── Fetch untransferred receipts in a date/receipt-no range ───────
 
 export async function getUntransferredReceipts({ fromDate, toDate, fromReceiptNo, toReceiptNo } = {}) {
-  let q = supabase
-    .from('receipts')
-    .select(`
-      id, receipt_number, receipt_date, financial_year,
-      payment_mode, grand_total,
-      receipt_items(category_id, total)
-    `)
-    .is('transfer_batch_id', null)
-    .order('receipt_number', { ascending: true })
+  const PAGE = 1000
+  const all = []
+  let from = 0
+  for (;;) {
+    let q = supabase
+      .from('receipts')
+      .select(`
+        id, receipt_number, receipt_date, financial_year,
+        payment_mode, grand_total,
+        receipt_items(category_id, total)
+      `)
+      .is('transfer_batch_id', null)
+      .order('receipt_number', { ascending: true })
+      .order('id', { ascending: true })
 
-  if (fromDate)      q = q.gte('receipt_date', fromDate)
-  if (toDate)        q = q.lte('receipt_date', toDate)
-  if (fromReceiptNo) q = q.gte('receipt_number', fromReceiptNo)
-  if (toReceiptNo)   q = q.lte('receipt_number', toReceiptNo)
+    if (fromDate)      q = q.gte('receipt_date', fromDate)
+    if (toDate)        q = q.lte('receipt_date', toDate)
+    if (fromReceiptNo) q = q.gte('receipt_number', fromReceiptNo)
+    if (toReceiptNo)   q = q.lte('receipt_number', toReceiptNo)
 
-  const { data, error } = await q
-  if (error) throw error
-  return data || []
+    const { data, error } = await q.range(from, from + PAGE - 1)
+    if (error) throw error
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
 }
 
 // ── Get first/last untransferred receipt numbers for a date range ──
@@ -389,6 +399,47 @@ export async function executeTransfer({
   return { batch, cashJournal, bankJournal }
 }
 
+async function undoTransferJournals(client, batch) {
+  const toDelete = [batch.cash_journal_id, batch.bank_journal_id].filter(Boolean)
+  for (const jeId of toDelete) {
+    const { data: je } = await client.from('journal_entries').select('*').eq('id', jeId).maybeSingle()
+    if (je?.is_posted) {
+      const { data: lines } = await client.from('journal_entry_lines').select('*').eq('journal_entry_id', jeId)
+      for (const line of (lines || [])) {
+        let q = client.from('account_balances').select('*').eq('account_id', line.account_id).eq('financial_year', je.financial_year)
+        if (je.entity_id) q = q.eq('entity_id', je.entity_id)
+        else q = q.is('entity_id', null)
+        const { data: bal } = await q.maybeSingle()
+        if (!bal) continue
+        const newD = Number(bal.total_debit)  - Number(line.debit_amount  || 0)
+        const newC = Number(bal.total_credit) - Number(line.credit_amount || 0)
+        await client.from('account_balances').upsert({
+          account_id:      line.account_id,
+          financial_year:  je.financial_year,
+          entity_id:       je.entity_id,
+          opening_balance: Number(bal.opening_balance),
+          total_debit:     Math.max(0, newD),
+          total_credit:    Math.max(0, newC),
+          closing_balance: Number(bal.opening_balance) + Math.max(0, newD) - Math.max(0, newC),
+          last_updated_at: new Date().toISOString(),
+        }, { onConflict: 'account_id,financial_year,entity_id' })
+      }
+    }
+    if (jeId) await client.from('journal_entries').delete().eq('id', jeId)
+  }
+}
+
+/** Wipe all transfer batches and their Cash/Bank JVs. Receipts are unlinked, not deleted. */
+export async function flushAllReceiptTransfers(client = supabase) {
+  const { data: batches, error } = await client.from('receipt_transfer_batches').select('*')
+  if (error) throw error
+  for (const batch of batches || []) {
+    await undoTransferJournals(client, batch)
+  }
+  const { error: dErr } = await client.from('receipt_transfer_batches').delete().not('id', 'is', null)
+  if (dErr) throw dErr
+}
+
 // ── Reverse a transfer batch (requires delete password) ───────────
 
 export async function reverseTransfer(batchId, password, performedBy) {
@@ -406,36 +457,7 @@ export async function reverseTransfer(batchId, password, performedBy) {
   if (bFetchErr) throw bFetchErr
   if (batch.is_reversed) throw new Error('This transfer has already been reversed.')
 
-  // Delete journal entries (CASCADE deletes lines; also reverse balance cache)
-  const toDelete = [batch.cash_journal_id, batch.bank_journal_id].filter(Boolean)
-  for (const jeId of toDelete) {
-    const { data: je } = await supabase.from('journal_entries').select('*').eq('id', jeId).single()
-    if (je?.is_posted) {
-      const { data: lines } = await supabase.from('journal_entry_lines').select('*').eq('journal_entry_id', jeId)
-      if (lines?.length) {
-        // Reverse balance cache
-        for (const line of lines) {
-          let q = supabase.from('account_balances').select('*').eq('account_id', line.account_id).eq('financial_year', je.financial_year)
-          if (je.entity_id) q = q.eq('entity_id', je.entity_id)
-          const { data: bal } = await q.maybeSingle()
-          if (!bal) continue
-          const newD = Number(bal.total_debit)  - Number(line.debit_amount  || 0)
-          const newC = Number(bal.total_credit) - Number(line.credit_amount || 0)
-          await supabase.from('account_balances').upsert({
-            account_id:     line.account_id,
-            financial_year: je.financial_year,
-            entity_id:      je.entity_id,
-            opening_balance:Number(bal.opening_balance),
-            total_debit:    Math.max(0, newD),
-            total_credit:   Math.max(0, newC),
-            closing_balance:Number(bal.opening_balance) + Math.max(0, newD) - Math.max(0, newC),
-            last_updated_at:new Date().toISOString(),
-          }, { onConflict: 'account_id,financial_year,entity_id' })
-        }
-      }
-    }
-    await supabase.from('journal_entries').delete().eq('id', jeId)
-  }
+  await undoTransferJournals(supabase, batch)
 
   // Clear transfer_batch_id on receipts
   await supabase

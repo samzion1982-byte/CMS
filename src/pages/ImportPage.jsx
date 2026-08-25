@@ -19,6 +19,7 @@ import {
 } from '../lib/directoryLib'
 import MasterPasswordInput from '../components/MasterPasswordInput'
 import PageHeader from '../components/ui/PageHeader'
+import { flushAllReceiptTransfers } from '../lib/receiptTransferLib'
 
 // ── TABLES TO EXCLUDE FROM FLUSH ALL & STATS TILES ───────────────────────────
 // Add any table names here that should never appear in the Flush All modal
@@ -656,7 +657,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
               : tbl === 'auction_tracker' ? 'Auction tracker'
               : tbl === 'auction_seasons' ? 'Auction seasons'
               : tbl === 'auction_close_balances' ? 'Auction close balances'
-              : tbl === 'receipt_transfer_batches' ? 'Transfer Report (batches)'
+              : tbl === 'receipt_transfer_batches' ? 'Transfer Report'
               : tbl,
             type: 'table',
             count: count || 0,
@@ -768,6 +769,10 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         setProgress(`Flushing ${item.label}…`)
         if (item.type === 'table') {
           const tbl = item.id.replace('table::', '')
+          if (tbl === 'receipt_transfer_batches') {
+            await flushAllReceiptTransfers(adminSupabase)
+            continue
+          }
           const q = (tbl === 'auction_seasons' || tbl === 'auction_close_balances')
             ? adminSupabase.from(tbl).delete().not('financial_year', 'is', null)
             : adminSupabase.from(tbl).delete().not('id', 'is', null)
