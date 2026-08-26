@@ -413,7 +413,8 @@ export default function PrintCornerPage() {
 
   function mergeMemberFields(member) {
     if (!member) return
-    setFieldValues(prev => applyMemberToFieldValues({ ...prev }, member))
+    const keys = variables.map(v => v.key).filter(Boolean)
+    setFieldValues(prev => applyMemberToFieldValues({ ...prev }, member, keys))
   }
 
   function pickMember(m) {

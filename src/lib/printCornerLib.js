@@ -558,57 +558,87 @@ function memberAddressLine(member) {
   ].filter(Boolean).join(', ')
 }
 
-/** Map member row → template placeholder keys. */
-export function applyMemberToFieldValues(out, member) {
-  if (!out || !member) return out || {}
+function normalizeMemberFieldKey(key) {
+  return String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+/** Resolve a template placeholder key to a value from a member row (case/spacing tolerant). */
+export function memberFieldForKey(key, member) {
+  if (!member || key == null || key === '') return null
   const address = memberAddressLine(member)
-  const pairs = [
-    ['member_id', member.member_id],
-    ['Member_id', member.member_id],
-    ['family_id', member.family_id],
-    ['member_name', member.member_name],
-    ['Member_name', member.member_name],
-    ['name', member.member_name],
-    ['Name', member.member_name],
-    ['title', member.title],
-    ['father_name', member.father_name],
-    ['Father_name', member.father_name],
-    ['spouse_name', member.spouse_name],
-    ['gender', member.gender],
-    ['aadhaar', member.aadhaar],
-    ['mobile', member.mobile],
-    ['whatsapp', member.whatsapp || member.mobile],
-    ['email', member.email],
-    ['dob', formatPrintCornerDate(member.dob_actual || member.dob_certificate)],
-    ['dob_actual', formatPrintCornerDate(member.dob_actual)],
-    ['dob_certificate', formatPrintCornerDate(member.dob_certificate)],
-    ['date_of_marriage', formatPrintCornerDate(member.date_of_marriage)],
-    ['marital_status', member.marital_status],
-    ['baptism_date', formatPrintCornerDate(member.baptism_date)],
-    ['confirmation_date', formatPrintCornerDate(member.confirmation_date)],
-    ['qualification', member.qualification],
-    ['profession', member.profession],
-    ['zonal_area', member.zonal_area],
-    ['zone', member.zonal_area],
-    ['city', member.city],
-    ['state', member.state],
-    ['address_street', member.address_street],
-    ['member_address', address],
-    ['residential_address', address],
-  ]
+  const byNorm = {
+    member_id: member.member_id,
+    memberid: member.member_id,
+    family_id: member.family_id,
+    member_name: member.member_name,
+    membername: member.member_name,
+    name: member.member_name,
+    full_name: member.member_name,
+    fullname: member.member_name,
+    title: member.title,
+    father_name: member.father_name,
+    spouse_name: member.spouse_name,
+    gender: member.gender,
+    aadhaar: member.aadhaar,
+    mobile: member.mobile,
+    whatsapp: member.whatsapp || member.mobile,
+    email: member.email,
+    dob: formatPrintCornerDate(member.dob_actual || member.dob_certificate),
+    dob_actual: formatPrintCornerDate(member.dob_actual),
+    dob_certificate: formatPrintCornerDate(member.dob_certificate),
+    date_of_marriage: formatPrintCornerDate(member.date_of_marriage),
+    marital_status: member.marital_status,
+    baptism_date: formatPrintCornerDate(member.baptism_date),
+    confirmation_date: formatPrintCornerDate(member.confirmation_date),
+    qualification: member.qualification,
+    profession: member.profession,
+    zonal_area: member.zonal_area,
+    zone: member.zonal_area,
+    city: member.city,
+    state: member.state,
+    address_street: member.address_street,
+    member_address: address,
+    residential_address: address,
+  }
+  const norm = normalizeMemberFieldKey(key)
+  if (norm in byNorm) return byNorm[norm]
+  if (Object.prototype.hasOwnProperty.call(member, key) && member[key] != null) return member[key]
+  if (Object.prototype.hasOwnProperty.call(member, norm) && member[norm] != null) return member[norm]
+  return null
+}
+
+/** Map member row → template placeholder keys (exact wizard keys when provided). */
+export function applyMemberToFieldValues(out, member, templateKeys = null) {
+  if (!out || !member) return out || {}
   const next = { ...out }
-  for (const [key, val] of pairs) {
+  const keys = templateKeys?.length
+    ? templateKeys
+    : Object.keys(out)
+  for (const key of keys) {
+    const val = memberFieldForKey(key, member)
     if (val != null && String(val).trim() !== '') {
       next[key] = String(val)
     }
   }
   if (member.member_id) {
+    for (const key of keys) {
+      if (normalizeMemberFieldKey(key) === 'member_id') {
+        next[key] = String(member.member_id)
+      }
+    }
     next.member_id = String(member.member_id)
     next.Member_id = String(member.member_id)
+    next.Member_Id = String(member.member_id)
   }
   if (member.member_name) {
+    for (const key of keys) {
+      if (normalizeMemberFieldKey(key) === 'member_name' || normalizeMemberFieldKey(key) === 'name') {
+        next[key] = String(member.member_name)
+      }
+    }
     next.member_name = String(member.member_name)
     next.Member_name = String(member.member_name)
+    next.Member_Name = String(member.member_name)
   }
   return next
 }
@@ -632,7 +662,9 @@ export function defaultFieldValuesFromTemplate(template, church = null, member =
     if ('secretary_name' in out) out.secretary_name = church.secretary_name || ''
     if ('treasurer_name' in out) out.treasurer_name = church.treasurer_name || ''
   }
-  if (member) applyMemberToFieldValues(out, member)
+  if (member) {
+    applyMemberToFieldValues(out, member, Object.keys(out))
+  }
   // Sensible date default when template asks for {date}
   if ('date' in out && !out.date) {
     out.date = formatPrintCornerDate(new Date().toISOString().slice(0, 10))
