@@ -611,34 +611,12 @@ export function memberFieldForKey(key, member) {
 export function applyMemberToFieldValues(out, member, templateKeys = null) {
   if (!out || !member) return out || {}
   const next = { ...out }
-  const keys = templateKeys?.length
-    ? templateKeys
-    : Object.keys(out)
+  const keys = templateKeys?.length ? templateKeys : Object.keys(out)
   for (const key of keys) {
     const val = memberFieldForKey(key, member)
     if (val != null && String(val).trim() !== '') {
       next[key] = String(val)
     }
-  }
-  if (member.member_id) {
-    for (const key of keys) {
-      if (normalizeMemberFieldKey(key) === 'member_id') {
-        next[key] = String(member.member_id)
-      }
-    }
-    next.member_id = String(member.member_id)
-    next.Member_id = String(member.member_id)
-    next.Member_Id = String(member.member_id)
-  }
-  if (member.member_name) {
-    for (const key of keys) {
-      if (normalizeMemberFieldKey(key) === 'member_name' || normalizeMemberFieldKey(key) === 'name') {
-        next[key] = String(member.member_name)
-      }
-    }
-    next.member_name = String(member.member_name)
-    next.Member_name = String(member.member_name)
-    next.Member_Name = String(member.member_name)
   }
   return next
 }

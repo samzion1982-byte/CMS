@@ -414,7 +414,11 @@ export default function PrintCornerPage() {
   function mergeMemberFields(member) {
     if (!member) return
     const keys = variables.map(v => v.key).filter(Boolean)
-    setFieldValues(prev => applyMemberToFieldValues({ ...prev }, member, keys))
+    setFieldValues(prev => {
+      const base = {}
+      for (const key of keys) base[key] = prev[key] ?? ''
+      return applyMemberToFieldValues(base, member, keys)
+    })
   }
 
   function pickMember(m) {
@@ -1178,8 +1182,10 @@ export default function PrintCornerPage() {
 
           {!bulkMode && (
             <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-              {Object.entries(fieldValues).filter(([, val]) => val).map(([k, val]) => (
-                <div key={k} style={{ marginBottom: 4 }}><strong>{k}:</strong> {val}</div>
+              {variables.filter(v => String(fieldValues[v.key] ?? '').trim()).map(v => (
+                <div key={v.key} style={{ marginBottom: 4 }}>
+                  <strong>{v.label || v.key}:</strong> {fieldValues[v.key]}
+                </div>
               ))}
             </div>
           )}
