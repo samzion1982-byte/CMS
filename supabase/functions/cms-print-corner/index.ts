@@ -616,10 +616,9 @@ async function loadMemberPhotoImage(
     .maybeSingle()
 
   if (!member) return { img: null, debug: 'member_not_found' }
-  if (!member.photo_url) return { img: null, debug: 'no_photo_url' }
 
   const resolvedId = String(member.member_id || id).trim()
-  const url = String(member.photo_url)
+  const url = member.photo_url ? String(member.photo_url) : ''
   const tryPaths: string[] = []
   const seenPaths = new Set<string>()
   const addPath = (p: string) => {
@@ -677,7 +676,7 @@ async function loadMemberPhotoImage(
 
   const fetched = await fetchSignatureImage(url)
   if (fetched) return { img: fetched, debug: 'url' }
-  return { img: null, debug: 'fetch_failed' }
+  return { img: null, debug: 'no_photo_in_storage' }
 }
 
 async function mergeOfficeBytes(

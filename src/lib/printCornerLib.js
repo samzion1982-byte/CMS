@@ -666,10 +666,22 @@ export async function getPrintCornerMemberById(memberId) {
   const { data, error } = await supabase
     .from('members')
     .select(MEMBER_SEARCH_SELECT)
-    .eq('member_id', id)
+    .ilike('member_id', id)
     .maybeSingle()
   if (error) throw error
   return data
+}
+
+/** True if member-photos/active/{id}.{jpg|png|…} exists (same path Members page uses). */
+export async function memberPhotoExistsInStorage(memberId) {
+  const id = String(memberId || '').trim()
+  if (!id) return false
+  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+    const path = `active/${id}.${ext}`
+    const { error } = await supabase.storage.from('member-photos').download(path)
+    if (!error) return true
+  }
+  return false
 }
 
 export async function getChurchForPrintCorner() {

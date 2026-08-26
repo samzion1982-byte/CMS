@@ -25,6 +25,7 @@ import {
   applyMemberToFieldValues,
   searchPrintCornerMembers,
   getPrintCornerMemberById,
+  memberPhotoExistsInStorage,
   getPrintCornerApplicationForms,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
@@ -634,8 +635,9 @@ export default function PrintCornerPage() {
           toast(`Member “${fieldValues.member_id}” not found.`, 'error')
           return
         }
-        if (!m.photo_url) {
-          toast(`Member ${m.member_name || m.member_id} has no photo. Upload one in Members first.`, 'error')
+        const hasPhoto = m.photo_url || await memberPhotoExistsInStorage(m.member_id || fieldValues.member_id)
+        if (!hasPhoto) {
+          toast(`Member ${m.member_name || m.member_id} has no photo in storage. Upload one in Members first.`, 'error')
           return
         }
       }
