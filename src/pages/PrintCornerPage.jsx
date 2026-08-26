@@ -574,8 +574,6 @@ export default function PrintCornerPage() {
     }
   }
 
-  }
-
   function renderMemberPicker({ hint }) {
     return (
       <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe' }}>
