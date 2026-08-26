@@ -8,6 +8,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import JSZip from 'https://esm.sh/jszip@3.10.1'
+import { Image } from 'https://deno.land/x/imagescript@1.2.15/mod.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -129,6 +130,99 @@ function sniffImageMeta(bytes: Uint8Array, urlHint = '') {
   if (u.includes('.png')) return { ext: 'png', contentType: 'image/png' }
   if (u.includes('.jpg') || u.includes('.jpeg')) return { ext: 'jpg', contentType: 'image/jpeg' }
   return { ext: 'png', contentType: 'image/png' }
+}
+
+function jpegDimensions(bytes: Uint8Array): { w: number, h: number } | null {
+  if (bytes.length < 10 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null
+  let i = 2
+  while (i < bytes.length - 9) {
+    if (bytes[i] !== 0xff) { i++; continue }
+    const marker = bytes[i + 1]
+    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+      const h = (bytes[i + 5] << 8) | bytes[i + 6]
+      const w = (bytes[i + 7] << 8) | bytes[i + 8]
+      return w > 0 && h > 0 ? { w, h } : null
+    }
+    const len = (bytes[i + 2] << 8) | bytes[i + 3]
+    if (len < 2) break
+    i += 2 + len
+  }
+  return null
+}
+
+function pngDimensions(bytes: Uint8Array): { w: number, h: number } | null {
+  if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null
+  const w = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]
+  const h = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]
+  return w > 0 && h > 0 ? { w, h } : null
+}
+
+function imageDimensions(bytes: Uint8Array): { w: number, h: number } | null {
+  return jpegDimensions(bytes) || pngDimensions(bytes)
+}
+
+/** EMU → px at ~150 DPI (typical embedded PPT image resolution). */
+function emuToPx(emu: number) {
+  return Math.max(64, Math.round(Number(emu) * 150 / 914400))
+}
+
+/**
+ * Fit member photo into the frame — cover crop, top-aligned (object-fit: cover; object-position: top).
+ * Fills the Canva circle without centre-zooming on the nose.
+ */
+async function fitMemberPhotoBytes(
+  source: Uint8Array,
+  targetW: number,
+  targetH: number,
+): Promise<{ bytes: Uint8Array, ext: string, contentType: string }> {
+  const tw = Math.max(96, Math.min(1024, Math.round(targetW)))
+  const th = Math.max(96, Math.min(1024, Math.round(targetH)))
+  const size = Math.max(tw, th)
+
+  const img = await Image.decode(source)
+  const scale = Math.max(size / img.width, size / img.height)
+  const sw = Math.max(1, Math.round(img.width * scale))
+  const sh = Math.max(1, Math.round(img.height * scale))
+  const resized = img.resize(sw, sh)
+
+  const x = Math.max(0, Math.floor((sw - size) / 2))
+  const y = 0
+  const cropW = Math.min(size, sw - x)
+  const cropH = Math.min(size, sh - y)
+  let out = resized.crop(x, y, cropW, cropH)
+  if (out.width !== size || out.height !== size) {
+    out = out.resize(size, size)
+  }
+
+  const bytes = await out.encodeJPEG(90)
+  return { bytes, ext: 'jpg', contentType: 'image/jpeg' }
+}
+
+async function prepareMemberPhotoForFrame(
+  zip: JSZip,
+  source: { bytes: Uint8Array, ext: string, contentType: string },
+  existingPath: string | null,
+  slotBlock: string,
+): Promise<{ bytes: Uint8Array, ext: string, contentType: string }> {
+  let tw = 400
+  let th = 400
+
+  if (existingPath) {
+    const f = zip.file(existingPath)
+    if (f) {
+      const existing = new Uint8Array(await f.async('uint8array'))
+      const dim = imageDimensions(existing)
+      if (dim) { tw = dim.w; th = dim.h }
+    }
+  }
+
+  const xfrm = extractPptxXfrm(slotBlock)
+  if (xfrm) {
+    tw = emuToPx(xfrm.cx)
+    th = emuToPx(xfrm.cy)
+  }
+
+  return fitMemberPhotoBytes(source.bytes, tw, th)
 }
 
 async function fetchSignatureImage(url: string | null | undefined) {
@@ -741,15 +835,16 @@ async function mergeOfficeBytes(
 
       const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
 
-      // Member photo: swap image bytes in-place — keeps Canva circle/ellipse frame intact
+      // Member photo: cover-crop to frame size (top-aligned) then swap bytes in-place
       if (slot.key === 'member_photo' && existingBefore) {
-        zip.file(existingBefore, img.bytes)
+        const fitted = await prepareMemberPhotoForFrame(zip, img, existingBefore, slot.block)
+        zip.file(existingBefore, fitted.bytes)
         if (ctXml) {
-          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+          ctXml = ensureContentTypeDefault(ctXml, fitted.ext, fitted.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, fitted.contentType)
         }
         swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
+        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}:${fitted.bytes.length}b`)
         continue
       }
 
