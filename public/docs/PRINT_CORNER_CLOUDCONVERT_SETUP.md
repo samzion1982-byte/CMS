@@ -63,6 +63,11 @@ Same key on every church project.
 
 **Each church Supabase needs its own deploy** — SQL + bucket alone are not enough.
 
+**Preferred PDF engine (new):** Google Drive / Docs — see `docs/PRINT_CORNER_GOOGLE_DRIVE_PDF.md`  
+(Connect Google on Backup page; no CloudConvert credits.)
+
+**Optional fallback:** CloudConvert (`CLOUDCONVERT_API_KEY`).
+
 | Church | Project | Ref |
 |--------|---------|-----|
 | St Paul's (live) | `trichystpaulschurch-cms` | `wjasjrthijpxlarreics` |

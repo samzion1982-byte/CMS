@@ -412,16 +412,20 @@ export default function PrintCornerPage() {
         <main style={{ flex: 1, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, padding: 20 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 12px',
-            borderRadius: 8, background: ping?.cloudconvert ? '#f0fdf4' : '#fef2f2',
-            border: `1px solid ${ping?.cloudconvert ? '#bbf7d0' : '#fecaca'}`, fontSize: 13,
+            borderRadius: 8,
+            background: (ping?.ready || ping?.google_drive || ping?.cloudconvert) ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${(ping?.ready || ping?.google_drive || ping?.cloudconvert) ? '#bbf7d0' : '#fecaca'}`,
+            fontSize: 13,
           }}>
-            {ping?.cloudconvert
+            {(ping?.ready || ping?.google_drive || ping?.cloudconvert)
               ? <CheckCircle2 size={16} style={{ color: '#16a34a' }} />
               : <AlertCircle size={16} style={{ color: '#dc2626' }} />}
             <span>
-              {ping?.cloudconvert
-                ? 'CloudConvert ready — PDF issue available when credits allow'
-                : ping?.error || 'CloudConvert not ready — wizard & drafts still work'}
+              {(ping?.ready || ping?.google_drive || ping?.cloudconvert)
+                ? (ping?.google_drive
+                  ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
+                  : 'PDF ready via CloudConvert')
+                : ping?.error || 'Connect Google on Backup page (or set CloudConvert) for Issue PDF'}
             </span>
           </div>
 
