@@ -167,34 +167,28 @@ function emuToPx(emu: number) {
 }
 
 /**
- * Fit member photo into the frame — cover crop, top-aligned (object-fit: cover; object-position: top).
- * Fills the Canva circle without centre-zooming on the nose.
+ * Fit member photo — contain + top-centre so the full head is visible (not centre-cropped).
  */
 async function fitMemberPhotoBytes(
   source: Uint8Array,
   targetW: number,
   targetH: number,
 ): Promise<{ bytes: Uint8Array, ext: string, contentType: string }> {
-  const tw = Math.max(96, Math.min(1024, Math.round(targetW)))
-  const th = Math.max(96, Math.min(1024, Math.round(targetH)))
+  const tw = Math.max(128, Math.min(800, Math.round(targetW)))
+  const th = Math.max(128, Math.min(800, Math.round(targetH)))
   const size = Math.max(tw, th)
 
   const img = await Image.decode(source)
-  const scale = Math.max(size / img.width, size / img.height)
+  const scale = Math.min(size / img.width, size / img.height)
   const sw = Math.max(1, Math.round(img.width * scale))
   const sh = Math.max(1, Math.round(img.height * scale))
   const resized = img.resize(sw, sh)
 
-  const x = Math.max(0, Math.floor((sw - size) / 2))
-  const y = 0
-  const cropW = Math.min(size, sw - x)
-  const cropH = Math.min(size, sh - y)
-  let out = resized.crop(x, y, cropW, cropH)
-  if (out.width !== size || out.height !== size) {
-    out = out.resize(size, size)
-  }
+  const canvas = new Image(size, size)
+  canvas.fill(0xffffffff)
+  canvas.composite(resized, Math.floor((size - sw) / 2), 0)
 
-  const bytes = await out.encodeJPEG(90)
+  const bytes = await canvas.encodeJPEG(92)
   return { bytes, ext: 'jpg', contentType: 'image/jpeg' }
 }
 
@@ -207,7 +201,12 @@ async function prepareMemberPhotoForFrame(
   let tw = 400
   let th = 400
 
-  if (existingPath) {
+  // Prefer on-slide shape size — placeholder media files are often tiny thumbs with Canva srcRect zoom
+  const xfrm = extractPptxXfrm(slotBlock)
+  if (xfrm) {
+    tw = emuToPx(xfrm.cx)
+    th = emuToPx(xfrm.cy)
+  } else if (existingPath) {
     const f = zip.file(existingPath)
     if (f) {
       const existing = new Uint8Array(await f.async('uint8array'))
@@ -216,13 +215,35 @@ async function prepareMemberPhotoForFrame(
     }
   }
 
-  const xfrm = extractPptxXfrm(slotBlock)
-  if (xfrm) {
-    tw = emuToPx(xfrm.cx)
-    th = emuToPx(xfrm.cy)
-  }
-
   return fitMemberPhotoBytes(source.bytes, tw, th)
+}
+
+/** Canva PPTX often ships srcRect / svgBlip crop on placeholders — causes extreme zoom after byte swap. */
+function sanitizeMemberPhotoBlipXml(fragment: string): string {
+  let out = fragment
+  out = out.replace(/<a:srcRect\b[^>]*\/>/gi, '')
+  out = out.replace(/<a:srcRect\b[^>]*>[\s\S]*?<\/a:srcRect>/gi, '')
+  out = out.replace(/<a:ext\b[^>]*>[\s\S]*?<asvg:svgBlip\b[\s\S]*?<\/a:ext>/gi, '')
+  out = out.replace(/<asvg:svgBlip\b[^>]*\/>/gi, '')
+  out = out.replace(/<asvg:svgBlip\b[\s\S]*?<\/asvg:svgBlip>/gi, '')
+  out = out.replace(/<a:fillRect\b[^>]*\/>/gi, '<a:fillRect/>')
+  out = out.replace(/<a:fillRect\b[^>]*>[\s\S]*?<\/a:fillRect>/gi, '<a:fillRect/>')
+  return out
+}
+
+function clearMemberPhotoCropInSlide(xml: string, embedId: string, slotBlock: string): string {
+  let out = xml
+  const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const blipFillRe = new RegExp(
+    `(<(?:p:blipFill|pic:blipFill)\\b[\\s\\S]*?<a:blip\\b[^>]*r:embed="${esc}"[\\s\\S]*?</(?:p:blipFill|pic:blipFill)>)`,
+    'gi',
+  )
+  out = out.replace(blipFillRe, m => sanitizeMemberPhotoBlipXml(m))
+  if (slotBlock && out.includes(slotBlock)) {
+    const cleaned = sanitizeMemberPhotoBlipXml(slotBlock)
+    if (cleaned !== slotBlock) out = out.split(slotBlock).join(cleaned)
+  }
+  return out
 }
 
 async function fetchSignatureImage(url: string | null | undefined) {
@@ -835,16 +856,25 @@ async function mergeOfficeBytes(
 
       const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
 
-      // Member photo: cover-crop to frame size (top-aligned) then swap bytes in-place
+      // Member photo: fit image + strip Canva srcRect crop so the circle doesn't centre-zoom
       if (slot.key === 'member_photo' && existingBefore) {
-        const fitted = await prepareMemberPhotoForFrame(zip, img, existingBefore, slot.block)
+        let fitted = img
+        try {
+          fitted = await prepareMemberPhotoForFrame(zip, img, existingBefore, slot.block)
+          swapLog.push(`${slot.key}:fitted:${fitted.bytes.length}b`)
+        } catch (e) {
+          swapLog.push(`${slot.key}:fit_failed:${e instanceof Error ? e.message : String(e)}`)
+        }
         zip.file(existingBefore, fitted.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, fitted.ext, fitted.contentType)
           ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, fitted.contentType)
         }
+        const beforeLen = xml.length
+        xml = clearMemberPhotoCropInSlide(xml, slot.embedId, slot.block)
+        if (xml.length !== beforeLen) swapLog.push(`${slot.key}:cleared_srcRect`)
         swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}:${fitted.bytes.length}b`)
+        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
         continue
       }
 
