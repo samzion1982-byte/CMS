@@ -104,7 +104,7 @@ export async function invokePrintCorner(body) {
     let detail = error.message || String(error)
     if (/failed to send a request to the edge function/i.test(detail)) {
       throw new Error(
-        'cms-print-corner Edge Function is not deployed on this church Supabase project. Deploy it and set CLOUDCONVERT_API_KEY (see docs/PRINT_CORNER_CLOUDCONVERT_SETUP.md).'
+        'cms-print-corner Edge Function is not deployed on this church Supabase project. Deploy it and connect Google on Backup (see docs/PRINT_CORNER_GOOGLE_DRIVE_PDF.md).'
       )
     }
     // Non-2xx responses (e.g. 500) — body often has { error: "..." }
@@ -269,29 +269,48 @@ export async function countTemplatesInCategory(categoryId) {
 }
 
 /**
- * Read {placeholder} tags from a Word .docx (word/document.xml).
- * Strips XML so tags split across Word runs still match.
+ * Read {placeholder} tags from a Word .docx.
+ * - Text tags in document/header/footer XML
+ * - Image Alt Text (descr) e.g. {presbyter_sign} on a placeholder picture
  */
 export async function parseDocxPlaceholders(fileOrBlob) {
   const zip = await JSZip.loadAsync(fileOrBlob)
-  const docXml = await zip.file('word/document.xml')?.async('string')
-  if (!docXml) throw new Error('Invalid Word file (missing document.xml).')
-
-  // Concatenate text; remove tags so "{mem" + "ber_name}" becomes "{member_name}"
-  const plain = docXml
-    .replace(/<w:tab\/>/g, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
+  const xmlNames = Object.keys(zip.files).filter(n =>
+    /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n) && !zip.files[n].dir
+  )
+  if (!xmlNames.length) throw new Error('Invalid Word file (missing document.xml).')
 
   const found = new Set()
-  const re = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-  let m
-  while ((m = re.exec(plain)) !== null) {
-    found.add(m[1])
+  const textRe = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
+  const descrRe = /\bdescr\s*=\s*"([^"]*)"/gi
+
+  for (const name of xmlNames) {
+    const docXml = await zip.file(name).async('string')
+
+    for (const dm of docXml.matchAll(descrRe)) {
+      const val = String(dm[1] || '').trim()
+      let m
+      const braced = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
+      while ((m = braced.exec(val)) !== null) found.add(m[1])
+      const bare = val.replace(/^\{+/, '').replace(/\}+$/, '').trim()
+      if (isImagePlaceholderKey(bare)) found.add(bare)
+    }
+
+    const plain = docXml
+      .replace(/<w:tab\/>/g, ' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+
+    let m
+    textRe.lastIndex = 0
+    while ((m = textRe.exec(plain)) !== null) {
+      found.add(m[1])
+    }
   }
+
   return [...found]
 }
 

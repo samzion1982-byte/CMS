@@ -1,18 +1,17 @@
 // @ts-nocheck
 /* ═══════════════════════════════════════════════════════════════
-   cms-print-corner — mail-merge Word → PDF
-   Engines (PRINT_CORNER_PDF_ENGINE):
-     auto          — Google Drive if connected, else CloudConvert (default)
-     google_drive  — Google Docs export only
-     cloudconvert  — CloudConvert only
+   cms-print-corner — mail-merge Word → PDF via Google Drive
    Secrets / deps:
      GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET
        + cms_backup_settings.google_refresh_token (Backup → Connect Google)
      OR GOOGLE_SERVICE_ACCOUNT_JSON
-     CLOUDCONVERT_API_KEY (optional fallback)
    Actions:
-     ping              — auth + which engines are ready
-     convert_storage   — merge field_values → PDF → issued/
+     ping              — auth + Google Drive ready?
+     convert_storage   — merge field_values (+ signature images) → PDF → issued/
+   Signatures:
+     Prefer a placeholder picture in Word with Alt Text {presbyter_sign}
+     (also secretary_sign, treasurer_sign, treasurer_seal). Size kept from Word.
+     Text tag {presbyter_sign} is a fallback (fixed size).
    ═══════════════════════════════════════════════════════════════ */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -22,9 +21,6 @@ import JSZip from 'https://esm.sh/jszip@3.10.1'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_ANON') || ''
-const CLOUDCONVERT_API_KEY = Deno.env.get('CLOUDCONVERT_API_KEY') || ''
-const PDF_ENGINE = (Deno.env.get('PRINT_CORNER_PDF_ENGINE') || 'auto').toLowerCase()
-const CC_API = 'https://api.cloudconvert.com/v2'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -115,6 +111,13 @@ function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>
   return out
 }
 
+function normalizeSignKey(raw: string): string | null {
+  let s = String(raw || '').trim()
+  if (!s) return null
+  s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
+  return IMAGE_PLACEHOLDER_MAP[s] ? s : null
+}
+
 function sniffImageMeta(bytes: Uint8Array, urlHint = '') {
   const u = urlHint.toLowerCase()
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) {
@@ -150,17 +153,44 @@ function nextRelationshipId(relsXml: string) {
 }
 
 function relsPathForXmlPart(xmlPath: string) {
-  // word/document.xml → word/_rels/document.xml.rels
   const i = xmlPath.lastIndexOf('/')
   const dir = i >= 0 ? xmlPath.slice(0, i) : ''
   const base = i >= 0 ? xmlPath.slice(i + 1) : xmlPath
   return `${dir}/_rels/${base}.rels`
 }
 
-/** Inline signature ~ 1.6" × 0.55" (EMUs) */
+function ensureContentTypeDefault(ctXml: string, ext: string, contentType: string) {
+  const re = new RegExp(`Extension\\s*=\\s*"${ext}"`, 'i')
+  if (re.test(ctXml)) return ctXml
+  return ctXml.replace(
+    '</Types>',
+    `<Default Extension="${ext}" ContentType="${contentType}"/></Types>`,
+  )
+}
+
+/** Find pictures whose Alt Text / descr is {presbyter_sign} etc. */
+function findAltTextImageSlots(xml: string) {
+  const slots: Array<{ key: string, embedId: string, block: string }> = []
+  const drawingRegex = /<w:drawing[\s\S]*?<\/w:drawing>/gi
+  for (const m of xml.matchAll(drawingRegex)) {
+    const block = m[0]
+    const descrMatch = block.match(/\bdescr\s*=\s*"([^"]*)"/i)
+      || block.match(/\btitle\s*=\s*"([^"]*)"/i)
+    if (!descrMatch) continue
+    const key = normalizeSignKey(descrMatch[1])
+    if (!key) continue
+    const blip = block.match(/<a:blip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
+      || block.match(/<a:blip\b[^>]*\bembed\s*=\s*"([^"]+)"/i)
+    if (!blip) continue
+    slots.push({ key, embedId: blip[1], block })
+  }
+  return slots
+}
+
+/** Inline signature fallback when using text {presbyter_sign} (not preferred) */
 function signatureDrawingXml(rId: string, docPrId: number, name: string, isSeal = false) {
-  const cx = isSeal ? 914400 : 1463040 // 1" seal or ~1.6" sign
-  const cy = isSeal ? 914400 : 502920  // 1" seal or ~0.55" sign
+  const cx = isSeal ? 914400 : 1463040
+  const cy = isSeal ? 914400 : 502920
   return (
     `<w:drawing>`
     + `<wp:inline distT="0" distB="0" distL="0" distR="0"`
@@ -169,11 +199,11 @@ function signatureDrawingXml(rId: string, docPrId: number, name: string, isSeal 
     + ` xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"`
     + ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
     + `<wp:extent cx="${cx}" cy="${cy}"/>`
-    + `<wp:docPr id="${docPrId}" name="${escapeXml(name)}"/>`
+    + `<wp:docPr id="${docPrId}" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/>`
     + `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>`
     + `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
     + `<pic:pic>`
-    + `<pic:nvPicPr><pic:cNvPr id="0" name="${escapeXml(name)}"/><pic:cNvPicPr/></pic:nvPicPr>`
+    + `<pic:nvPicPr><pic:cNvPr id="0" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/><pic:cNvPicPr/></pic:nvPicPr>`
     + `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
     + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
     + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
@@ -181,19 +211,13 @@ function signatureDrawingXml(rId: string, docPrId: number, name: string, isSeal 
   )
 }
 
-/**
- * Collapse {key} (even if Word split it across runs) to a marker, then splice a
- * drawing run into the surrounding <w:t>…</w:t> so the image sits in-flow.
- */
 function injectImageAtPlaceholder(xml: string, key: string, drawingXml: string) {
   const marker = `§§IMG_${key}§§`
   if (!placeholderExistsInXml(xml, key)) return xml
   let out = replacePlaceholderInXml(xml, key, marker)
   if (!out.includes(marker)) return out
-  // Close current text run, insert drawing run, reopen text — valid OOXML
   const splice = `</w:t></w:r><w:r>${drawingXml}</w:r><w:r><w:t>`
-  out = out.split(marker).join(splice)
-  return out
+  return out.split(marker).join(splice)
 }
 
 async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>) {
@@ -231,54 +255,101 @@ async function mergeDocxBytes(
 
   let docPrSeq = 900
   let mediaSeq = 0
+  const swappedKeys = new Set<string>()
+
+  let ctXml = zip.file('[Content_Types].xml')
+    ? await zip.file('[Content_Types].xml')!.async('string')
+    : ''
 
   for (const name of targets) {
     const file = zip.file(name)
     if (!file) continue
     let xml = await file.async('string')
 
-    // 1) Inject signature / seal images for placeholders present in this part
+    const relsName = relsPathForXmlPart(name)
+    let relsXml = zip.file(relsName)
+      ? await zip.file(relsName)!.async('string')
+      : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
+    let relsDirty = false
+
+    // 1) Preferred: swap picture bytes for AltText {presbyter_sign} etc. (keeps Word size)
+    const slots = findAltTextImageSlots(xml)
+    for (const slot of slots) {
+      const img = signatureImages[slot.key]
+      if (!img) continue
+
+      mediaSeq += 1
+      const mediaName = `sign_${slot.key}_${mediaSeq}.${img.ext}`
+      zip.file(`word/media/${mediaName}`, img.bytes)
+
+      const rId = nextRelationshipId(relsXml)
+      const relType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+      relsXml = relsXml.replace(
+        '</Relationships>',
+        `<Relationship Id="${rId}" Type="${relType}" Target="media/${mediaName}"/></Relationships>`,
+      )
+      relsDirty = true
+
+      const oldBlock = slot.block
+      const newBlock = oldBlock.replace(
+        new RegExp(`r:embed\\s*=\\s*"${slot.embedId}"`, 'i'),
+        `r:embed="${rId}"`,
+      )
+      if (newBlock === oldBlock) {
+        const tgt = relsXml.match(
+          new RegExp(`Id\\s*=\\s*"${slot.embedId}"[^>]*Target\\s*=\\s*"([^"]+)"`, 'i'),
+        )
+        if (tgt?.[1]) {
+          const relTarget = tgt[1].replace(/^\//, '')
+          const full = relTarget.startsWith('word/') ? relTarget : `word/${relTarget}`
+          zip.file(full, img.bytes)
+        }
+      } else {
+        xml = xml.replace(oldBlock, newBlock)
+      }
+
+      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+      swappedKeys.add(slot.key)
+    }
+
+    // 2) Fallback: text tag {presbyter_sign} → inject drawing (fixed size)
     for (const [key, img] of Object.entries(signatureImages)) {
+      if (swappedKeys.has(key)) continue
       if (!placeholderExistsInXml(xml, key)) continue
 
       mediaSeq += 1
       const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-      const mediaPath = `word/media/${mediaName}`
-      zip.file(mediaPath, img.bytes)
-
-      const relsName = relsPathForXmlPart(name)
-      let relsXml = zip.file(relsName)
-        ? await zip.file(relsName)!.async('string')
-        : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
-          + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
+      zip.file(`word/media/${mediaName}`, img.bytes)
 
       const rId = nextRelationshipId(relsXml)
-      const relType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
-      const target = `media/${mediaName}`
-      if (!relsXml.includes(`Id="${rId}"`)) {
-        relsXml = relsXml.replace(
-          '</Relationships>',
-          `<Relationship Id="${rId}" Type="${relType}" Target="${target}"/></Relationships>`,
-        )
-        zip.file(relsName, relsXml)
-      }
+      relsXml = relsXml.replace(
+        '</Relationships>',
+        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/></Relationships>`,
+      )
+      relsDirty = true
 
       docPrSeq += 1
       const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
       xml = injectImageAtPlaceholder(xml, key, drawing)
+      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+      swappedKeys.add(key)
     }
 
-    // 2) Clear any remaining image placeholders (missing upload → blank)
+    // 3) Clear leftover text sign tags if image missing
     for (const key of IMAGE_PLACEHOLDER_KEYS) {
       if (placeholderExistsInXml(xml, key)) {
         xml = replacePlaceholderInXml(xml, key, '')
       }
     }
 
-    // 3) Normal text mail-merge
+    // 4) Text mail-merge
     xml = applyFieldValuesToXml(xml, fieldValues)
     zip.file(name, xml)
+    if (relsDirty) zip.file(relsName, relsXml)
   }
+
+  if (ctXml) zip.file('[Content_Types].xml', ctXml)
 
   return await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
 }
@@ -450,90 +521,10 @@ async function convertDocxViaGoogleDrive(
     if (!pdfBytes.length) throw new Error('Google Docs returned empty PDF')
     return { pdfBytes, driveFileId: fileId }
   } finally {
-    // Best-effort cleanup of temp Google Doc
     await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },
     }).catch(() => null)
-  }
-}
-
-/* ── CloudConvert (optional fallback) ──────────────────────────── */
-
-async function createCloudConvertJob(importUrl: string, outputFilename: string) {
-  const payload = {
-    tasks: {
-      'import-file': { operation: 'import/url', url: importUrl },
-      'convert-file': {
-        operation: 'convert',
-        input: 'import-file',
-        input_format: 'docx',
-        output_format: 'pdf',
-        engine: 'office',
-        filename: outputFilename,
-      },
-      'export-file': { operation: 'export/url', input: 'convert-file' },
-    },
-  }
-  const res = await fetch(`${CC_API}/jobs`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${CLOUDCONVERT_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data?.message || data?.error || `CloudConvert job failed (${res.status})`)
-  return data?.data?.id as string
-}
-
-async function waitForExportUrl(jobId: string, maxMs = 120000) {
-  const started = Date.now()
-  while (Date.now() - started < maxMs) {
-    const res = await fetch(`${CC_API}/jobs/${jobId}?include=tasks`, {
-      headers: { Authorization: `Bearer ${CLOUDCONVERT_API_KEY}` },
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data?.message || `CloudConvert poll failed (${res.status})`)
-    const job = data?.data
-    if (job?.status === 'error') throw new Error(job?.message || 'CloudConvert job error')
-    const exportTask = (job?.tasks || []).find((t: { name?: string }) => t.name === 'export-file')
-    if (exportTask?.status === 'finished') {
-      const url = exportTask?.result?.files?.[0]?.url
-      if (url) return { url, jobId }
-    }
-    await new Promise(r => setTimeout(r, 1500))
-  }
-  throw new Error('CloudConvert timed out waiting for PDF')
-}
-
-async function convertDocxViaCloudConvert(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  mergedBytes: Uint8Array,
-  outBase: string,
-) {
-  const mergedName = stampFilename(outBase, 'docx')
-  const mergedPath = `work/merged/${userId}/${mergedName}`
-  const { error: mergeUpErr } = await admin.storage.from(BUCKET).upload(mergedPath, mergedBytes, {
-    contentType: DOCX_MIME,
-    upsert: true,
-  })
-  if (mergeUpErr) throw new Error(`Merged upload failed: ${mergeUpErr.message}`)
-
-  const { data: signed, error: signErr } = await admin.storage.from(BUCKET).createSignedUrl(mergedPath, 3600)
-  if (signErr || !signed?.signedUrl) throw new Error(signErr?.message || 'Could not sign merged URL')
-
-  const outName = stampFilename(outBase, 'pdf')
-  const jobId = await createCloudConvertJob(signed.signedUrl, outName)
-  const { url: pdfUrl, jobId: finishedJobId } = await waitForExportUrl(jobId)
-  const pdfRes = await fetch(pdfUrl)
-  if (!pdfRes.ok) throw new Error(`Failed to download PDF (${pdfRes.status})`)
-  return {
-    pdfBytes: new Uint8Array(await pdfRes.arrayBuffer()),
-    outName,
-    engineMeta: { engine: 'cloudconvert', cloudconvert_job: finishedJobId || jobId },
   }
 }
 
@@ -552,21 +543,16 @@ serve(async (req) => {
 
     if (action === 'ping') {
       const google = await probeGoogleReady(admin)
-      const cloudconvert = !!CLOUDCONVERT_API_KEY
-      const ready = google.ready || cloudconvert
       return json({
         ok: true,
-        ready,
-        engine_pref: PDF_ENGINE,
+        ready: google.ready,
+        engine: 'google_drive',
         google_drive: google.ready,
         google_via: google.via,
         google_email: google.email,
-        cloudconvert,
         merge: true,
         signatures: true,
         user: prof?.email || user.email,
-        // Back-compat for older UI that only checks cloudconvert
-        cloudconvert_or_google: ready,
       })
     }
 
@@ -592,59 +578,34 @@ serve(async (req) => {
       const mergedBytes = await mergeDocxBytes(templateBytes, fieldValues, signatureImages)
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
-      const preferGoogle = PDF_ENGINE === 'auto' || PDF_ENGINE === 'google' || PDF_ENGINE === 'google_drive'
-      const preferCc = PDF_ENGINE === 'auto' || PDF_ENGINE === 'cloudconvert'
-      const forceGoogle = PDF_ENGINE === 'google' || PDF_ENGINE === 'google_drive'
-      const forceCc = PDF_ENGINE === 'cloudconvert'
-
-      let pdfBytes: Uint8Array | null = null
       let outName = stampFilename(outBase, 'pdf')
-      let engineMeta: Record<string, unknown> = {}
-      const errors: string[] = []
 
-      if (preferGoogle && !forceCc) {
-        try {
-          const g = await resolveGoogleAccess(admin)
-          if (!g) throw new Error('Google Drive not connected (Backup → Connect Google)')
-          const result = await convertDocxViaGoogleDrive(
-            g.accessToken,
-            mergedBytes,
-            outName.replace(/\.pdf$/i, '.docx'),
-            g.folderId,
-          )
-          pdfBytes = result.pdfBytes
-          engineMeta = {
-            engine: 'google_drive',
-            google_via: g.via,
-            google_email: g.email,
-            drive_temp_deleted: true,
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
-          errors.push(`google_drive: ${msg}`)
-          if (forceGoogle) throw e
-        }
-      }
-
-      if (!pdfBytes && preferCc && CLOUDCONVERT_API_KEY && !forceGoogle) {
-        try {
-          const result = await convertDocxViaCloudConvert(admin, user.id, mergedBytes, outBase)
-          pdfBytes = result.pdfBytes
-          outName = result.outName
-          engineMeta = result.engineMeta
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
-          errors.push(`cloudconvert: ${msg}`)
-          if (forceCc || !preferGoogle) throw e
-        }
-      }
-
-      if (!pdfBytes) {
+      const g = await resolveGoogleAccess(admin)
+      if (!g) {
         return json({
-          error: errors.length
-            ? errors.join(' | ')
-            : 'No PDF engine available. Connect Google on Backup page, or set CLOUDCONVERT_API_KEY.',
+          error: 'Google Drive not connected. Open Backup → Connect Google, then retry Issue PDF.',
         }, 500)
+      }
+
+      let pdfBytes: Uint8Array
+      let engineMeta: Record<string, unknown>
+      try {
+        const result = await convertDocxViaGoogleDrive(
+          g.accessToken,
+          mergedBytes,
+          outName.replace(/\.pdf$/i, '.docx'),
+          g.folderId,
+        )
+        pdfBytes = result.pdfBytes
+        engineMeta = {
+          engine: 'google_drive',
+          google_via: g.via,
+          google_email: g.email,
+          drive_temp_deleted: true,
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return json({ error: `google_drive: ${msg}` }, 500)
       }
 
       const year = new Date().getFullYear()
@@ -669,7 +630,7 @@ serve(async (req) => {
           storage_path: issuedPath,
           field_values: fieldValues,
           source: body.source || 'manual',
-          cloudconvert_job: engineMeta.cloudconvert_job || engineMeta.engine || null,
+          cloudconvert_job: engineMeta.engine || null,
           issued_by: user.id,
           issued_by_email: prof?.email || user.email,
         })

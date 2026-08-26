@@ -458,7 +458,8 @@ function TemplatesPanel() {
               <Upload size={14} /> Upload .docx
             </button>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-              On upload, all {'{placeholders}'} in the Word file are detected automatically and become wizard fields.
+              Detects text {'{placeholders}'} and signature Alt Text on pictures
+              (e.g. place a blank image, set Alt Text to {'{presbyter_sign}'} — size stays as in Word).
             </p>
           </div>
 
@@ -515,8 +516,10 @@ function SignaturesPanel() {
     <div className="card" style={{ padding: 20, maxWidth: 640 }}>
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Office bearer signatures</div>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 16px', lineHeight: 1.55 }}>
-        Signatures are stored on the church record (Church Setup) for Print Corner letters.
-        How they appear on each letter (fixed in letterhead vs auto-inject) will be decided when templates are finalized.
+        Upload signatures in Church Setup. In Word, insert a placeholder image sized as you want,
+        set its Alt Text to <code style={{ fontSize: 12 }}>{'{presbyter_sign}'}</code>
+        {' '}(or secretary_sign / treasurer_sign), re-upload the .docx, then Issue PDF.
+        The placeholder picture is replaced; its size and position are kept.
       </p>
 
       {loading ? (
@@ -552,7 +555,7 @@ function SignaturesPanel() {
         color: 'var(--text-2)',
       }}>
         {allReady
-          ? 'All three signature images are stored. You can use them in letter design when ready.'
+          ? 'All three signature images are stored. Use Alt Text {presbyter_sign} on a sized placeholder image in Word.'
           : 'Some signatures are missing. Open Church Setup → Print Corner — Signature images, then Save.'}
       </div>
 

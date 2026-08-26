@@ -246,14 +246,9 @@ export default function PrintCornerPage() {
   }
 
   function pdfErrorToast(raw) {
-    if (/expired or revoked|invalid_grant|Google Drive not connected/i.test(raw)) {
+      if (/expired or revoked|invalid_grant|Google Drive not connected/i.test(raw)) {
       toast(
         'Google Drive login expired. Open Backup → Disconnect Google → Connect Google again, then retry.',
-        'error',
-      )
-    } else if (/run out of conversion credits/i.test(raw)) {
-      toast(
-        'CloudConvert credits are used up. Reconnect Google on Backup (recommended) or wait for credits to reset.',
         'error',
       )
     } else {
@@ -649,19 +644,17 @@ export default function PrintCornerPage() {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 12px',
             borderRadius: 8,
-            background: (ping?.ready || ping?.google_drive || ping?.cloudconvert) ? '#f0fdf4' : '#fef2f2',
-            border: `1px solid ${(ping?.ready || ping?.google_drive || ping?.cloudconvert) ? '#bbf7d0' : '#fecaca'}`,
+            background: (ping?.ready || ping?.google_drive) ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${(ping?.ready || ping?.google_drive) ? '#bbf7d0' : '#fecaca'}`,
             fontSize: 13,
           }}>
-            {(ping?.ready || ping?.google_drive || ping?.cloudconvert)
+            {(ping?.ready || ping?.google_drive)
               ? <CheckCircle2 size={16} style={{ color: '#16a34a' }} />
               : <AlertCircle size={16} style={{ color: '#dc2626' }} />}
             <span>
-              {(ping?.ready || ping?.google_drive || ping?.cloudconvert)
-                ? (ping?.google_drive
-                  ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
-                  : 'PDF ready via CloudConvert')
-                : ping?.error || 'Connect Google on Backup page (or set CloudConvert) for Issue PDF'}
+              {(ping?.ready || ping?.google_drive)
+                ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
+                : ping?.error || 'Connect Google on Backup page for Issue PDF'}
             </span>
           </div>
 
