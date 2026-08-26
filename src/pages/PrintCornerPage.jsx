@@ -432,50 +432,9 @@ export default function PrintCornerPage() {
       toast('No file ready.', 'error')
       return
     }
-    setSharing(true)
-    try {
-      const blob = await fetchShareFile(href)
-      const objectUrl = URL.createObjectURL(blob)
-      const isImage = String(blob.type || '').startsWith('image/')
-      const w = window.open('', '_blank', 'noopener,noreferrer')
-      if (!w) {
-        URL.revokeObjectURL(objectUrl)
-        toast('Allow pop-ups in the browser to print.', 'error')
-        return
-      }
-      if (isImage) {
-        w.document.write(`<!DOCTYPE html><html><head><title>Print form</title>
-<style>
-  html,body{margin:0;padding:0;background:#fff}
-  @media print{body{margin:0} img{max-width:100%;height:auto;page-break-inside:avoid}}
-  body{display:flex;justify-content:center;align-items:flex-start;min-height:100vh}
-  img{max-width:100%;height:auto}
-</style></head><body>
-<img src="${objectUrl}" alt="Form" onload="setTimeout(function(){window.focus();window.print()},200)" />
-</body></html>`)
-      } else {
-        w.document.write(`<!DOCTYPE html><html><head><title>Print form</title>
-<style>html,body{margin:0;height:100%;overflow:hidden}iframe{border:0;width:100%;height:100%}</style>
-</head><body>
-<iframe id="printFrame" src="${objectUrl}"></iframe>
-<script>
-  var f=document.getElementById('printFrame');
-  f.onload=function(){
-    setTimeout(function(){
-      try{f.contentWindow.focus();f.contentWindow.print();}
-      catch(e){window.focus();window.print();}
-    },400);
-  };
-</script>
-</body></html>`)
-      }
-      w.document.close()
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 120000)
-    } catch (e) {
-      toast(e.message || 'Could not print', 'error')
-    } finally {
-      setSharing(false)
-    }
+    // Open in a new tab so the browser’s PDF/image viewer can View + Print (Ctrl+P).
+    const w = window.open(href, '_blank', 'noopener,noreferrer')
+    if (!w) toast('Allow pop-ups to view / print the form.', 'error')
   }
 
   async function handleDownloadFile(url, label) {
@@ -736,8 +695,7 @@ export default function PrintCornerPage() {
               background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8,
               fontSize: 12, fontWeight: 700, cursor: sharing ? 'wait' : 'pointer', opacity: sharing ? 0.7 : 1,
             }}>
-            {sharing ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-            Print
+            <Printer size={13} /> View / Print
           </button>
           <button type="button" disabled={sharing} onClick={() => handleDownloadFile(url, label)}
             style={{
