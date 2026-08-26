@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import JSZip from 'jszip'
+import { PDFDocument } from 'pdf-lib'
 import { supabase } from './supabase'
 import { buildMasterTree, getAllMasterDescendants, moveMasterItem } from './assetsLib'
 
@@ -626,7 +627,6 @@ export async function convertBulkLettersToPdf({
   const stamp = new Date().toISOString().slice(0, 10)
 
   if (output === 'zip') {
-    const JSZip = (await import('jszip')).default
     const zip = new JSZip()
     for (const part of pdfParts) {
       zip.file(part.name, part.bytes)
@@ -643,7 +643,6 @@ export async function convertBulkLettersToPdf({
     return { count: rows.length, fileName, pageCount: rows.length, results, output: 'zip' }
   }
 
-  const { PDFDocument } = await import('pdf-lib')
   const merged = await PDFDocument.create()
   for (const part of pdfParts) {
     const src = await PDFDocument.load(part.bytes)

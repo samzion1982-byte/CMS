@@ -114,6 +114,7 @@ export default function PrintCornerPage() {
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
+  const [bulkOutput, setBulkOutput] = useState('single') // 'single' | 'zip'
   const [tplSearch, setTplSearch] = useState('')
   const [activeCategoryId, setActiveCategoryId] = useState(null)
   const catsSeededRef = useRef(false)
@@ -231,6 +232,7 @@ export default function PrintCornerPage() {
   function clearBulk() {
     setBulkRows([])
     setBulkProgress(null)
+    setBulkOutput('single')
   }
 
   async function handleSaveDraft() {
@@ -331,14 +333,6 @@ export default function PrintCornerPage() {
       return
     }
 
-    // OK = one multi-page PDF; Cancel = separate PDFs in a ZIP
-    // (Browsers cannot create RAR — ZIP is the supported archive format.)
-    const singlePdf = window.confirm(
-      'How do you want the bulk download?\n\n'
-      + '• OK — one multi-page PDF (all copies together)\n'
-      + '• Cancel — separate PDFs in a ZIP file',
-    )
-
     setBusy(true)
     setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
     try {
@@ -348,7 +342,7 @@ export default function PrintCornerPage() {
         templateType: templateStorageType(selected.template_type),
         rows: bulkRows,
         onProgress: setBulkProgress,
-        output: singlePdf ? 'single' : 'zip',
+        output: bulkOutput === 'zip' ? 'zip' : 'single',
       })
       if (output === 'zip') {
         toast(`${count} PDF(s) downloaded in ${fileName}`, 'success')
@@ -490,11 +484,54 @@ export default function PrintCornerPage() {
             <div><strong>Template:</strong> {selected.label}</div>
             {includeTamil && <div><strong>Tamil:</strong> Yes</div>}
             {bulkMode && (
-              <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8', fontSize: 12 }}>
-                Bulk mode: {bulkRows.length} row(s) loaded from tracker
-                <button type="button" onClick={clearBulk} style={{ marginLeft: 10, fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  Clear
-                </button>
+              <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 600 }}>
+                    Bulk mode: {bulkRows.length} row(s) loaded from tracker
+                  </span>
+                  <button type="button" onClick={clearBulk} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+                    Clear
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 8 }}>Download as</div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <label style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 7,
+                    background: bulkOutput === 'single' ? '#fff' : 'transparent',
+                    border: bulkOutput === 'single' ? '1.5px solid #2563eb' : '1px solid #bfdbfe',
+                    cursor: 'pointer', fontSize: 12, color: '#1e3a8a',
+                  }}>
+                    <input
+                      type="radio"
+                      name="bulkOutput"
+                      checked={bulkOutput === 'single'}
+                      onChange={() => setBulkOutput('single')}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      <strong>One multi-page PDF</strong>
+                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>All copies combined in a single file</span>
+                    </span>
+                  </label>
+                  <label style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 7,
+                    background: bulkOutput === 'zip' ? '#fff' : 'transparent',
+                    border: bulkOutput === 'zip' ? '1.5px solid #2563eb' : '1px solid #bfdbfe',
+                    cursor: 'pointer', fontSize: 12, color: '#1e3a8a',
+                  }}>
+                    <input
+                      type="radio"
+                      name="bulkOutput"
+                      checked={bulkOutput === 'zip'}
+                      onChange={() => setBulkOutput('zip')}
+                      style={{ marginTop: 2 }}
+                    />
+                    <span>
+                      <strong>Separate PDFs in a ZIP</strong>
+                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>One PDF per row, packed in a ZIP archive</span>
+                    </span>
+                  </label>
+                </div>
               </div>
             )}
           </div>
