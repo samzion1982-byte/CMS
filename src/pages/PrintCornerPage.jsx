@@ -299,20 +299,6 @@ export default function PrintCornerPage() {
     }
   }, [memberQuery, selectedMember])
 
-  // First load: select first category in Settings order
-  useEffect(() => {
-    if (!sidebarBrowseItems.length || catsSeededRef.current) return
-    catsSeededRef.current = true
-    const first = sidebarBrowseItems[0]
-    if (first.isForms) {
-      setSidebarMode('forms')
-      setActiveCategoryId(first.id)
-    } else {
-      setSidebarMode('templates')
-      setActiveCategoryId(first.id)
-    }
-  }, [sidebarBrowseItems])
-
   const filteredGroups = useMemo(() => {
     const q = tplSearch.trim().toLowerCase()
     if (!q) return groups
@@ -336,6 +322,20 @@ export default function PrintCornerPage() {
       blankFormsCount: blankForms.length,
     })
   }, [categories, groups, blankForms.length])
+
+  // First load: select first category in Settings order
+  useEffect(() => {
+    if (!sidebarBrowseItems.length || catsSeededRef.current) return
+    catsSeededRef.current = true
+    const first = sidebarBrowseItems[0]
+    if (first.isForms) {
+      setSidebarMode('forms')
+      setActiveCategoryId(first.id)
+    } else {
+      setSidebarMode('templates')
+      setActiveCategoryId(first.id)
+    }
+  }, [sidebarBrowseItems])
 
   const activeGroup = useMemo(() => {
     if (tplSearch.trim()) return null
