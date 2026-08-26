@@ -24,6 +24,7 @@ import {
   defaultFieldValuesFromTemplate,
   applyMemberToFieldValues,
   searchPrintCornerMembers,
+  getPrintCornerMemberById,
   getPrintCornerApplicationForms,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
@@ -411,6 +412,31 @@ export default function PrintCornerPage() {
     if (selected) setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
   }
 
+  async function handleMemberIdLookup(rawId) {
+    const id = String(rawId || '').trim()
+    if (!id) return
+    try {
+      const m = await getPrintCornerMemberById(id)
+      if (!m) {
+        toast(`No member found for ID “${id}”.`, 'error')
+        return
+      }
+      clearBulk()
+      setSelectedMember(m)
+      setMemberQuery(m.member_name || m.member_id || '')
+      setFieldValues(prev => applyMemberToFieldValues({ ...prev }, m))
+      setSharePhone(m.whatsapp || m.mobile || '')
+      setShareEmail(m.email || '')
+      toast(`Filled from ${m.member_name || m.member_id}`, 'success')
+    } catch (e) {
+      toast(e.message || 'Member lookup failed', 'error')
+    }
+  }
+
+  function isMemberIdField(key) {
+    return key === 'member_id' || key === 'Member_id'
+  }
+
   async function handleShareWhatsApp(pdfUrl, label) {
     const url = pdfUrl || lastPdf?.signed_url
     if (!url) {
@@ -756,6 +782,44 @@ export default function PrintCornerPage() {
     )
   }
 
+  function renderIssuedPdfPreview({ url, label }) {
+    if (!url) return null
+    return (
+      <div style={{ marginTop: 16, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--card-border)', background: '#f8fafc' }}>
+        <div style={{
+          padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+          borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+        }}>
+          <span>Issued PDF</span>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button type="button" disabled={sharing} onClick={() => handlePrintPdf(url)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6,
+                fontSize: 11, fontWeight: 700, cursor: sharing ? 'wait' : 'pointer',
+              }}>
+              <Printer size={12} /> View / Print
+            </button>
+            <button type="button" disabled={sharing} onClick={() => handleDownloadFile(url, label)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                background: '#14532d', color: '#fff', border: 'none', borderRadius: 6,
+                fontSize: 11, fontWeight: 700, cursor: sharing ? 'wait' : 'pointer',
+              }}>
+              <Download size={12} /> Download
+            </button>
+          </span>
+        </div>
+        <iframe
+          title={`Issued — ${label || 'document'}`}
+          src={url}
+          style={{ display: 'block', width: '100%', height: 520, border: 'none', background: '#fff' }}
+        />
+      </div>
+    )
+  }
+
   function renderShareActions({ url, label }) {
     if (!url) return null
     return (
@@ -946,6 +1010,14 @@ export default function PrintCornerPage() {
                     clearBulk()
                     setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
                   }}
+                  onBlur={isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
+                  onKeyDown={isMemberIdField(v.key) ? e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleMemberIdLookup(e.currentTarget.value)
+                    }
+                  } : undefined}
+                  placeholder={isMemberIdField(v.key) ? 'Enter ID and press Enter or tab out' : undefined}
                   style={{ ...INPUT, marginTop: 4, fontWeight: 400 }}
                 />
               </label>
@@ -1112,7 +1184,7 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          {lastPdf?.signed_url && !bulkMode && renderShareActions({
+          {lastPdf?.signed_url && !bulkMode && renderIssuedPdfPreview({
             url: lastPdf.signed_url,
             label: selected?.label || 'document',
           })}
