@@ -4,10 +4,11 @@ import { useAuth } from '../lib/AuthContext'
 import {
   Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList,
   CheckCircle2, AlertCircle, Save, Download, Upload,
-  Pencil, Trash2, Search,
+  Pencil, Trash2, Search, MessageCircle, X,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
+import { sendWhatsAppMessage } from '../lib/whatsapp'
 import {
   getPrintCornerCatalog,
   pingPrintCorner,
@@ -21,6 +22,10 @@ import {
   deleteDraft,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
+  applyMemberToFieldValues,
+  searchPrintCornerMembers,
+  getPrintCornerApplicationForms,
+  getApplicationFormSignedUrl,
   textFieldVariables,
   imageFieldVariables,
 } from '../lib/printCornerLib'
@@ -101,11 +106,15 @@ export default function PrintCornerPage() {
 
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState([])
+  const [blankForms, setBlankForms] = useState([])
   const [selected, setSelected] = useState(null)
+  const [selectedBlankForm, setSelectedBlankForm] = useState(null)
+  const [sidebarMode, setSidebarMode] = useState('forms') // 'forms' | 'templates'
   const [ping, setPing] = useState(null)
   const [busy, setBusy] = useState(false)
   const [lastPdf, setLastPdf] = useState(null)
   const [bulkProgress, setBulkProgress] = useState(null)
+  const [blankShareUrl, setBlankShareUrl] = useState(null)
 
   const [step, setStep] = useState(1)
   const [church, setChurch] = useState(null)
@@ -119,18 +128,32 @@ export default function PrintCornerPage() {
   const [activeCategoryId, setActiveCategoryId] = useState(null)
   const catsSeededRef = useRef(false)
 
+  // Member (blank forms share / letter autofill)
+  const [memberQuery, setMemberQuery] = useState('')
+  const [memberHits, setMemberHits] = useState([])
+  const [memberSearching, setMemberSearching] = useState(false)
+  const [selectedMember, setSelectedMember] = useState(null)
+  const [sharePhone, setSharePhone] = useState('')
+  const [shareEmail, setShareEmail] = useState('')
+  const [sharing, setSharing] = useState(false)
+  const memberSearchTimer = useRef(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [{ categories, templates }, churchRow, draftRows] = await Promise.all([
+      const [{ categories, templates }, churchRow, draftRows, appForms] = await Promise.all([
         getPrintCornerCatalog(),
         getChurchForPrintCorner(),
         getSharedDrafts(30),
+        getPrintCornerApplicationForms(true).catch(() => []),
       ])
       const top = categories.filter(c => !c.parent_id)
-      setGroups(groupTemplates(top, templates))
+      // Mail-merge catalog only — blank scanned forms live in application_forms
+      setGroups(groupTemplates(top, templates.filter(t => t.template_type !== 'form')))
+      setBlankForms(appForms)
       setChurch(churchRow)
       setDrafts(draftRows)
+      if (appForms.length && !catsSeededRef.current) setSidebarMode('forms')
       try {
         const p = await pingPrintCorner()
         setPing(p)
@@ -148,15 +171,71 @@ export default function PrintCornerPage() {
 
   useEffect(() => {
     if (!selected) return
+    setSelectedBlankForm(null)
+    setBlankShareUrl(null)
     setStep(1)
     setDraftId(null)
     setBulkRows([])
     setLastPdf(null)
     setBulkProgress(null)
     setIncludeTamil(!!selected.include_tamil)
+    setSelectedMember(null)
+    setMemberQuery('')
+    setMemberHits([])
+    setSharePhone('')
+    setShareEmail('')
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedBlankForm) {
+      setBlankShareUrl(null)
+      return
+    }
+    setSelected(null)
+    setSelectedMember(null)
+    setMemberQuery('')
+    setMemberHits([])
+    setSharePhone('')
+    setShareEmail('')
+    setBlankShareUrl(null)
+    let cancelled = false
+    ;(async () => {
+      if (!selectedBlankForm.storage_path) return
+      try {
+        const url = await getApplicationFormSignedUrl(selectedBlankForm.storage_path)
+        if (!cancelled) setBlankShareUrl(url)
+      } catch (e) {
+        if (!cancelled) toast(e.message || 'Could not open form file', 'error')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedBlankForm?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (memberSearchTimer.current) clearTimeout(memberSearchTimer.current)
+    const q = memberQuery.trim()
+    if (selectedMember || q.length < 2) {
+      setMemberHits([])
+      setMemberSearching(false)
+      return undefined
+    }
+    setMemberSearching(true)
+    memberSearchTimer.current = setTimeout(async () => {
+      try {
+        const rows = await searchPrintCornerMembers(q)
+        setMemberHits(rows)
+      } catch {
+        setMemberHits([])
+      } finally {
+        setMemberSearching(false)
+      }
+    }, 280)
+    return () => {
+      if (memberSearchTimer.current) clearTimeout(memberSearchTimer.current)
+    }
+  }, [memberQuery, selectedMember])
 
   // First load: select first category
   useEffect(() => {
@@ -235,6 +314,107 @@ export default function PrintCornerPage() {
     setBulkOutput('single')
   }
 
+  const showMemberApproach = selected?.template_type === 'letter'
+
+  const filteredBlankForms = useMemo(() => {
+    const q = tplSearch.trim().toLowerCase()
+    if (!q) return blankForms
+    return blankForms.filter(f =>
+      (f.label || '').toLowerCase().includes(q)
+      || (f.form_key || '').toLowerCase().includes(q)
+      || (f.description || '').toLowerCase().includes(q),
+    )
+  }, [blankForms, tplSearch])
+
+  function pickMember(m) {
+    if (!m) return
+    clearBulk()
+    setSelectedMember(m)
+    setMemberQuery(m.member_name || m.member_id || '')
+    setMemberHits([])
+    setSharePhone(m.whatsapp || m.mobile || '')
+    setShareEmail(m.email || '')
+    if (selected) {
+      setFieldValues(prev => applyMemberToFieldValues({ ...prev }, m))
+      toast(`Filled from ${m.member_name || m.member_id}`, 'success')
+    }
+  }
+
+  function clearMember() {
+    setSelectedMember(null)
+    setMemberQuery('')
+    setMemberHits([])
+    setSharePhone('')
+    setShareEmail('')
+    if (selected) setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
+  }
+
+  async function handleShareWhatsApp(pdfUrl, label) {
+    const url = pdfUrl || lastPdf?.signed_url
+    if (!url) {
+      toast('No file ready to share.', 'error')
+      return
+    }
+    const to = sharePhone.trim()
+    if (!to) {
+      toast('Enter the member WhatsApp / mobile number.', 'error')
+      return
+    }
+    setSharing(true)
+    try {
+      const name = selectedMember?.member_name || fieldValues.member_name || 'Member'
+      const docLabel = label || selected?.label || 'document'
+      const churchName = church?.church_name || 'Church'
+      const msg = [
+        `Dear ${name},`,
+        '',
+        `Please find your *${docLabel}* from *${churchName}*.`,
+        '',
+        'You can also open it here:',
+        url,
+        '',
+        'God bless you.',
+      ].join('\n')
+      await sendWhatsAppMessage(church, {
+        to,
+        message: msg,
+        mediaUrl: url,
+        mediaType: /\.(jpe?g|png|webp)(\?|$)/i.test(url) ? 'image' : 'document',
+      })
+      toast('WhatsApp sent.', 'success')
+    } catch (e) {
+      toast(e.message || 'WhatsApp send failed', 'error')
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  function handleShareEmail(pdfUrl, label) {
+    const url = pdfUrl || lastPdf?.signed_url
+    if (!url) {
+      toast('No file ready to share.', 'error')
+      return
+    }
+    const to = shareEmail.trim()
+    const name = selectedMember?.member_name || fieldValues.member_name || 'Member'
+    const docLabel = label || selected?.label || 'document'
+    const churchName = church?.church_name || 'Church'
+    const subject = encodeURIComponent(`${docLabel} — ${churchName}`)
+    const body = encodeURIComponent(
+      `Dear ${name},\n\nPlease find your ${docLabel} from ${churchName}:\n\n${url}\n\nGod bless you.\n`,
+    )
+    window.open(`mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`, '_blank')
+  }
+
+  function handlePrintPdf(url) {
+    const href = url || lastPdf?.signed_url
+    if (!href) {
+      toast('No file ready.', 'error')
+      return
+    }
+    window.open(href, '_blank', 'noopener,noreferrer')
+  }
+
   async function handleSaveDraft() {
     if (!selected) return
     setBusy(true)
@@ -268,6 +448,10 @@ export default function PrintCornerPage() {
     setFieldValues(d.field_values || {})
     setIncludeTamil(!!d.include_tamil)
     setBulkRows([])
+    setSelectedMember(null)
+    setMemberQuery(d.field_values?.member_name || d.member_id || '')
+    setSharePhone(d.field_values?.whatsapp || d.field_values?.mobile || '')
+    setShareEmail(d.field_values?.email || '')
     setStep(2)
     toast('Draft loaded — edit fields, then Review.', 'info')
   }
@@ -390,11 +574,181 @@ export default function PrintCornerPage() {
     }
   }
 
+  }
+
+  function renderMemberPicker({ hint }) {
+    return (
+      <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#5b21b6' }}>Member request</div>
+        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.45 }}>{hint}</p>
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-3)' }} />
+          <input
+            value={selectedMember ? `${selectedMember.member_name || ''} (${selectedMember.member_id})` : memberQuery}
+            onChange={e => {
+              if (selectedMember) clearMember()
+              setMemberQuery(e.target.value)
+            }}
+            placeholder="Search name, member ID, or mobile…"
+            style={{ ...INPUT, paddingLeft: 32, paddingRight: selectedMember || memberSearching ? 36 : 10 }}
+          />
+          {(memberSearching || selectedMember) && (
+            <span style={{ position: 'absolute', right: 8, top: 8 }}>
+              {memberSearching ? (
+                <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text-3)' }} />
+              ) : (
+                <button type="button" onClick={clearMember} title="Clear member"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 2, display: 'flex' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </span>
+          )}
+          {!selectedMember && memberHits.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 40, marginTop: 4,
+              background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto',
+            }}>
+              {memberHits.map(m => (
+                <button key={m.member_id} type="button" onMouseDown={e => { e.preventDefault(); pickMember(m) }}
+                  style={{
+                    display: 'flex', width: '100%', padding: '8px 12px', gap: 10, alignItems: 'center',
+                    background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+                    borderBottom: '1px solid var(--card-border)',
+                  }}>
+                  <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 12, color: '#2563eb', minWidth: 64 }}>{m.member_id}</span>
+                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-1)' }}>{m.member_name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{m.mobile || m.whatsapp || ''}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {selectedMember && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-2)', display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+            {selectedMember.mobile && <span>Mobile: {selectedMember.mobile}</span>}
+            {(selectedMember.whatsapp || selectedMember.mobile) && (
+              <span>WhatsApp: {selectedMember.whatsapp || selectedMember.mobile}</span>
+            )}
+            {selectedMember.email && <span>Email: {selectedMember.email}</span>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderShareActions({ url, label }) {
+    if (!url) return null
+    return (
+      <div style={{ marginTop: 8, padding: 14, borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: '#15803d' }}>Print or share</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          <button type="button" onClick={() => handlePrintPdf(url)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            <Printer size={13} /> Open / Print
+          </button>
+          <a href={url} download target="_blank" rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'var(--text-1)', textDecoration: 'none' }}>
+            <Download size={13} /> Download
+          </a>
+        </div>
+        <div style={{ display: 'grid', gap: 12, borderTop: '1px solid #bbf7d0', paddingTop: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            Share with member
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>
+              WhatsApp / mobile
+              <input value={sharePhone} onChange={e => setSharePhone(e.target.value)} placeholder="91…" style={{ ...INPUT, marginTop: 4, fontWeight: 400 }} />
+            </label>
+            <button type="button" disabled={sharing || !sharePhone.trim()} onClick={() => handleShareWhatsApp(url, label)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px',
+                background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                cursor: sharing || !sharePhone.trim() ? 'not-allowed' : 'pointer', opacity: !sharePhone.trim() ? 0.5 : 1,
+              }}>
+              {sharing ? <Loader2 size={13} className="animate-spin" /> : <MessageCircle size={13} />}
+              WhatsApp
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>
+              Email
+              <input type="email" value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="member@email.com" style={{ ...INPUT, marginTop: 4, fontWeight: 400 }} />
+            </label>
+            <button type="button" onClick={() => handleShareEmail(url, label)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px',
+                background: '#1d4ed8', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}>
+              <Mail size={13} /> Email
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: '#166534', margin: 0, lineHeight: 1.4 }}>
+            WhatsApp sends the file. Email opens your mail app with a link to the form.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  function renderBlankFormContent() {
+    const f = selectedBlankForm
+    if (!f) {
+      return (
+        <div style={{ color: 'var(--text-3)', fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
+          Select an application form from the left — or upload blank PDFs/JPEGs in Settings.
+        </div>
+      )
+    }
+    const isImage = (f.mime_type || '').startsWith('image/')
+    return (
+      <div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>{f.label}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
+            Blank scanned form · {f.mime_type?.includes('pdf') ? 'PDF' : isImage ? 'Image' : 'File'}
+          </div>
+          {f.description && <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 8 }}>{f.description}</p>}
+        </div>
+        {!f.storage_path ? (
+          <div style={{ padding: 14, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 13, color: '#9a3412' }}>
+            File not uploaded yet. Open Print Corner Settings → Application forms and upload the scanned PDF or JPEG.
+          </div>
+        ) : (
+          <>
+            {renderMemberPicker({
+              hint: 'Optional: look up the member who requested this form so WhatsApp / email are prefilled.',
+            })}
+            {isImage && blankShareUrl && (
+              <div style={{
+                marginBottom: 14, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--card-border)',
+                background: '#f8fafc', maxHeight: 360, display: 'flex', justifyContent: 'center',
+              }}>
+                <img src={blankShareUrl} alt={f.label} style={{ maxWidth: '100%', maxHeight: 360, objectFit: 'contain' }} />
+              </div>
+            )}
+            {!blankShareUrl ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)' }}>
+                <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} /> Preparing file…
+              </div>
+            ) : renderShareActions({ url: blankShareUrl, label: f.label })}
+          </>
+        )}
+      </div>
+    )
+  }
+
   function renderStepContent() {
+    if (sidebarMode === 'forms' || selectedBlankForm) {
+      return renderBlankFormContent()
+    }
+
     if (!selected) {
       return (
         <div style={{ color: 'var(--text-3)', fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
-          Select a template from the left panel.
+          Select a letter or certificate template from the left panel.
         </div>
       )
     }
@@ -402,6 +756,9 @@ export default function PrintCornerPage() {
     if (step === 2) {
       return (
         <div>
+          {showMemberApproach && renderMemberPicker({
+            hint: 'Search the member for this letter. Matching fields autofill; you can still edit below.',
+          })}
           {selected.include_tamil && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14 }}>
               <input type="checkbox" checked={includeTamil} onChange={e => setIncludeTamil(e.target.checked)} />
@@ -598,12 +955,10 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          {lastPdf?.signed_url && !bulkMode && (
-            <div style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Last issued PDF</div>
-              <a href={lastPdf.signed_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#2563eb' }}>Open PDF</a>
-            </div>
-          )}
+          {lastPdf?.signed_url && !bulkMode && renderShareActions({
+            url: lastPdf.signed_url,
+            label: selected?.label || 'document',
+          })}
         </div>
       )
     }
@@ -636,7 +991,7 @@ export default function PrintCornerPage() {
 
   return (
     <div className="page-container">
-      <PageHeader icon={Printer} title="Print Corner" subtitle="Certificates, letters, and forms">
+      <PageHeader icon={Printer} title="Print Corner" subtitle="Application forms, letters, and certificates">
         <button type="button" onClick={() => navigate('/print-corner/settings')} title="Print Corner Settings"
           style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
           <Settings size={15} />
@@ -651,51 +1006,81 @@ export default function PrintCornerPage() {
         }}>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 10 }}>
-              TEMPLATES
+              LIBRARY
             </div>
             <div style={{ position: 'relative', marginBottom: 10 }}>
               <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-3)' }} />
               <input
                 value={tplSearch}
                 onChange={e => setTplSearch(e.target.value)}
-                placeholder="Search templates…"
+                placeholder={sidebarMode === 'forms' ? 'Search forms…' : 'Search templates…'}
                 style={{ ...INPUT, height: 34, paddingLeft: 32, fontSize: 12 }}
               />
             </div>
-            {!tplSearch.trim() && filteredGroups.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {filteredGroups.map((g, gi) => {
-                  const catStyle = categoryHeaderStyle(g.category.name, gi)
-                  const on = activeGroup?.category.id === g.category.id
-                  return (
-                    <button
-                      key={g.category.id}
-                      type="button"
-                      onClick={() => setActiveCategoryId(g.category.id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                        padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                        borderRadius: 8,
-                        background: on ? catStyle.bg : 'transparent',
-                        borderLeft: `3px solid ${on ? catStyle.accent : 'transparent'}`,
-                      }}
-                    >
-                      <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 800 : 600, color: on ? catStyle.accent : 'var(--text-2)' }}>
-                        {g.category.name}
-                      </span>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
-                        padding: '2px 7px', borderRadius: 99,
-                        background: on ? catStyle.badgeBg : 'var(--input-bg)',
-                        color: on ? catStyle.badgeColor : 'var(--text-3)',
-                      }}>
-                        {g.templates.length}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarMode('forms')
+                  setSelected(null)
+                  if (!selectedBlankForm && blankForms[0]) setSelectedBlankForm(blankForms[0])
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderRadius: 8,
+                  background: sidebarMode === 'forms' ? '#f5f3ff' : 'transparent',
+                  borderLeft: `3px solid ${sidebarMode === 'forms' ? '#7c3aed' : 'transparent'}`,
+                }}
+              >
+                <ClipboardList size={14} style={{ color: '#7c3aed' }} />
+                <span style={{ flex: 1, fontSize: 12, fontWeight: sidebarMode === 'forms' ? 800 : 600, color: sidebarMode === 'forms' ? '#7c3aed' : 'var(--text-2)' }}>
+                  Application forms
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
+                  padding: '2px 7px', borderRadius: 99,
+                  background: sidebarMode === 'forms' ? '#ede9fe' : 'var(--input-bg)',
+                  color: sidebarMode === 'forms' ? '#6d28d9' : 'var(--text-3)',
+                }}>
+                  {blankForms.length}
+                </span>
+              </button>
+              {!tplSearch.trim() && filteredGroups.map((g, gi) => {
+                const catStyle = categoryHeaderStyle(g.category.name, gi)
+                const on = sidebarMode === 'templates' && activeGroup?.category.id === g.category.id
+                return (
+                  <button
+                    key={g.category.id}
+                    type="button"
+                    onClick={() => {
+                      setSidebarMode('templates')
+                      setSelectedBlankForm(null)
+                      setActiveCategoryId(g.category.id)
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                      borderRadius: 8,
+                      background: on ? catStyle.bg : 'transparent',
+                      borderLeft: `3px solid ${on ? catStyle.accent : 'transparent'}`,
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 800 : 600, color: on ? catStyle.accent : 'var(--text-2)' }}>
+                      {g.category.name}
+                    </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
+                      padding: '2px 7px', borderRadius: 99,
+                      background: on ? catStyle.badgeBg : 'var(--input-bg)',
+                      color: on ? catStyle.badgeColor : 'var(--text-3)',
+                    }}>
+                      {g.templates.length}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -703,6 +1088,48 @@ export default function PrintCornerPage() {
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
                 <Loader2 size={20} className="animate-spin" />
               </div>
+            ) : sidebarMode === 'forms' ? (
+              filteredBlankForms.length === 0 ? (
+                <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
+                  {tplSearch.trim()
+                    ? 'No forms match your search.'
+                    : 'No blank forms yet. Upload scanned PDFs/JPEGs in Print Corner Settings → Application forms.'}
+                </div>
+              ) : (
+                <div>
+                  <div style={{
+                    padding: '8px 14px', fontSize: 11, fontWeight: 700,
+                    color: '#6d28d9', background: '#f5f3ff', borderBottom: '1px solid #ede9fe',
+                  }}>
+                    Blank forms (print / share as-is)
+                  </div>
+                  {filteredBlankForms.map(f => {
+                    const active = selectedBlankForm?.id === f.id
+                    return (
+                      <button key={f.id} type="button" onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
+                          padding: '10px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                          background: active ? '#f5f3ff' : 'transparent',
+                          borderLeft: active ? '3px solid #7c3aed' : '3px solid transparent',
+                          color: 'var(--text-1)',
+                        }}>
+                        <ClipboardList size={15} style={{ color: '#7c3aed', flexShrink: 0, marginTop: 2 }} />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
+                            {f.label}
+                          </span>
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                            {f.storage_path
+                              ? (f.mime_type?.includes('pdf') ? 'PDF ready' : 'Image ready')
+                              : 'File missing'}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
             ) : sidebarTemplates.length === 0 ? (
               <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
                 {tplSearch.trim() ? 'No templates match your search.' : 'No templates in this category.'}
@@ -723,7 +1150,7 @@ export default function PrintCornerPage() {
                   const active = selected?.id === t.id
                   const accent = TEMPLATE_TYPES[t.template_type]?.color || activeCatStyle.accent
                   return (
-                    <button key={t.id} type="button" onClick={() => setSelected(t)}
+                    <button key={t.id} type="button" onClick={() => { setSidebarMode('templates'); setSelected(t) }}
                       style={{
                         display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
                         padding: '10px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
@@ -758,24 +1185,26 @@ export default function PrintCornerPage() {
         </aside>
 
         <main style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, padding: 20 }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 12px',
-            borderRadius: 8,
-            background: (ping?.ready || ping?.google_drive) ? '#f0fdf4' : '#fef2f2',
-            border: `1px solid ${(ping?.ready || ping?.google_drive) ? '#bbf7d0' : '#fecaca'}`,
-            fontSize: 13,
-          }}>
-            {(ping?.ready || ping?.google_drive)
-              ? <CheckCircle2 size={16} style={{ color: '#16a34a' }} />
-              : <AlertCircle size={16} style={{ color: '#dc2626' }} />}
-            <span>
+          {sidebarMode === 'templates' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 12px',
+              borderRadius: 8,
+              background: (ping?.ready || ping?.google_drive) ? '#f0fdf4' : '#fef2f2',
+              border: `1px solid ${(ping?.ready || ping?.google_drive) ? '#bbf7d0' : '#fecaca'}`,
+              fontSize: 13,
+            }}>
               {(ping?.ready || ping?.google_drive)
-                ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
-                : ping?.error || 'Connect Google on Backup page for Issue PDF'}
-            </span>
-          </div>
+                ? <CheckCircle2 size={16} style={{ color: '#16a34a' }} />
+                : <AlertCircle size={16} style={{ color: '#dc2626' }} />}
+              <span>
+                {(ping?.ready || ping?.google_drive)
+                  ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
+                  : ping?.error || 'Connect Google on Backup page for Issue PDF'}
+              </span>
+            </div>
+          )}
 
-          {selected && (
+          {selected && sidebarMode === 'templates' && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
               {STEPS.map(s => (
                 <button key={s.id} type="button" onClick={() => setStep(s.id)}

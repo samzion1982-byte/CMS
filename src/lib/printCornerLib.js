@@ -410,6 +410,76 @@ export function imageFieldVariables(variables) {
   return normalizeTemplateVariables(variables).filter(v => isImagePlaceholderKey(v.key))
 }
 
+function formatPrintCornerDate(value) {
+  if (!value) return ''
+  const s = String(value).trim()
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+function memberAddressLine(member) {
+  if (!member) return ''
+  return [
+    member.address_street,
+    member.area_1,
+    member.area_2,
+    member.city,
+    member.state,
+  ].filter(Boolean).join(', ')
+}
+
+/** Map member row → template placeholder keys that exist on `out`. */
+export function applyMemberToFieldValues(out, member) {
+  if (!out || !member) return out || {}
+  const address = memberAddressLine(member)
+  const pairs = [
+    ['member_id', member.member_id],
+    ['Member_id', member.member_id],
+    ['family_id', member.family_id],
+    ['member_name', member.member_name],
+    ['Member_name', member.member_name],
+    ['name', member.member_name],
+    ['Name', member.member_name],
+    ['title', member.title],
+    ['father_name', member.father_name],
+    ['Father_name', member.father_name],
+    ['spouse_name', member.spouse_name],
+    ['gender', member.gender],
+    ['aadhaar', member.aadhaar],
+    ['mobile', member.mobile],
+    ['whatsapp', member.whatsapp || member.mobile],
+    ['email', member.email],
+    ['dob', formatPrintCornerDate(member.dob_actual || member.dob_certificate)],
+    ['dob_actual', formatPrintCornerDate(member.dob_actual)],
+    ['dob_certificate', formatPrintCornerDate(member.dob_certificate)],
+    ['date_of_marriage', formatPrintCornerDate(member.date_of_marriage)],
+    ['marital_status', member.marital_status],
+    ['baptism_date', formatPrintCornerDate(member.baptism_date)],
+    ['confirmation_date', formatPrintCornerDate(member.confirmation_date)],
+    ['qualification', member.qualification],
+    ['profession', member.profession],
+    ['zonal_area', member.zonal_area],
+    ['zone', member.zonal_area],
+    ['city', member.city],
+    ['state', member.state],
+    ['address_street', member.address_street],
+    ['member_address', address],
+    ['residential_address', address],
+  ]
+  for (const [key, val] of pairs) {
+    if (key in out && val != null && String(val).trim() !== '') {
+      out[key] = String(val)
+    }
+  }
+  return out
+}
+
 export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
   const vars = normalizeTemplateVariables(template?.variables)
   const out = {}
@@ -430,32 +500,45 @@ export function defaultFieldValuesFromTemplate(template, church = null, member =
     if ('secretary_name' in out) out.secretary_name = church.secretary_name || ''
     if ('treasurer_name' in out) out.treasurer_name = church.treasurer_name || ''
   }
-  if (member) {
-    if ('member_id' in out) out.member_id = member.member_id ?? ''
-    if ('member_name' in out) out.member_name = member.member_name ?? ''
-    if ('mobile' in out) out.mobile = member.mobile ?? ''
-    if ('family_id' in out) out.family_id = member.family_id ?? ''
-  }
+  if (member) applyMemberToFieldValues(out, member)
   // Sensible date default when template asks for {date}
   if ('date' in out && !out.date) {
-    const d = new Date()
-    const dd = String(d.getDate()).padStart(2, '0')
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    out.date = `${dd}.${mm}.${d.getFullYear()}`
+    out.date = formatPrintCornerDate(new Date().toISOString().slice(0, 10))
   }
   return out
 }
+
+const MEMBER_SEARCH_SELECT = [
+  'member_id', 'member_name', 'title', 'father_name', 'spouse_name', 'gender', 'aadhaar',
+  'family_id', 'mobile', 'whatsapp', 'email',
+  'dob_actual', 'dob_certificate', 'marital_status', 'date_of_marriage',
+  'baptism_date', 'confirmation_date', 'qualification', 'profession',
+  'address_street', 'area_1', 'area_2', 'city', 'state', 'zonal_area',
+].join(', ')
 
 export async function searchPrintCornerMembers(query, limit = 15) {
   const q = String(query || '').trim()
   if (q.length < 2) return []
   const { data, error } = await supabase
     .from('members')
-    .select('member_id, member_name, mobile, family_id, zone')
+    .select(MEMBER_SEARCH_SELECT)
     .or(`member_id.ilike.%${q}%,member_name.ilike.%${q}%,mobile.ilike.%${q}%`)
+    .eq('is_active', true)
     .limit(limit)
   if (error) throw error
   return data || []
+}
+
+export async function getPrintCornerMemberById(memberId) {
+  const id = String(memberId || '').trim()
+  if (!id) return null
+  const { data, error } = await supabase
+    .from('members')
+    .select(MEMBER_SEARCH_SELECT)
+    .eq('member_id', id)
+    .maybeSingle()
+  if (error) throw error
+  return data
 }
 
 export async function getChurchForPrintCorner() {
@@ -463,7 +546,8 @@ export async function getChurchForPrintCorner() {
     .from('churches')
     .select(
       'church_name, diocese, address, city, pincode, presbyter_name, pastor_name, secretary_name, treasurer_name, '
-      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url',
+      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url, '
+      + 'whatsapp_api_type, whatsapp_receipt_mode',
     )
     .limit(1)
     .maybeSingle()
@@ -667,3 +751,156 @@ export async function convertBulkLettersToPdf({
 export async function convertBulkLettersToZip(opts) {
   return convertBulkLettersToPdf({ ...opts, output: 'zip' })
 }
+
+/* ── Blank application forms (PDF / JPEG repository) ─────────── */
+
+const APP_FORM_SELECT = '*'
+const APP_FORM_MAX_BYTES = 20 * 1024 * 1024
+const APP_FORM_MIME = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+])
+
+function slugifyFormKey(label) {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || `form-${Date.now()}`
+}
+
+function detectAppFormMime(file) {
+  const type = String(file?.type || '').toLowerCase()
+  if (APP_FORM_MIME.has(type)) return type === 'image/jpg' ? 'image/jpeg' : type
+  const name = String(file?.name || '').toLowerCase()
+  if (name.endsWith('.pdf')) return 'application/pdf'
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg'
+  if (name.endsWith('.png')) return 'image/png'
+  if (name.endsWith('.webp')) return 'image/webp'
+  return ''
+}
+
+export async function getPrintCornerApplicationForms(activeOnly = true) {
+  let q = supabase
+    .from('print_corner_application_forms')
+    .select(APP_FORM_SELECT)
+    .order('sort_order')
+    .order('label')
+  if (activeOnly) q = q.eq('is_active', true)
+  const { data, error } = await q
+  if (error) throw error
+  return data || []
+}
+
+export async function savePrintCornerApplicationForm({
+  id, form_key, label, description, sort_order, is_active,
+  storage_path, file_name, mime_type, file_size,
+}) {
+  const payload = {
+    label: String(label || '').trim(),
+    description: description != null ? String(description).trim() || null : undefined,
+    sort_order: sort_order ?? 0,
+    is_active: is_active ?? true,
+  }
+  if (!payload.label) throw new Error('Form label is required.')
+  if (form_key != null) payload.form_key = String(form_key).trim() || slugifyFormKey(payload.label)
+  if (storage_path !== undefined) payload.storage_path = storage_path
+  if (file_name !== undefined) payload.file_name = file_name
+  if (mime_type !== undefined) payload.mime_type = mime_type
+  if (file_size !== undefined) payload.file_size = file_size
+  payload.updated_at = new Date().toISOString()
+
+  if (id) {
+    const { data, error } = await supabase
+      .from('print_corner_application_forms')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+
+  if (!payload.form_key) payload.form_key = slugifyFormKey(payload.label)
+  const { data, error } = await supabase
+    .from('print_corner_application_forms')
+    .insert(payload)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deletePrintCornerApplicationForm(id, storagePath = null) {
+  if (storagePath) {
+    try {
+      await supabase.storage.from(BUCKET).remove([storagePath])
+    } catch { /* ignore */ }
+  }
+  const { error } = await supabase.from('print_corner_application_forms').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function uploadPrintCornerApplicationFormFile(file, formRow) {
+  if (!file) throw new Error('Choose a PDF or JPEG file.')
+  if (!formRow?.id || !formRow?.form_key) throw new Error('Save the form label first, then upload.')
+  if (file.size > APP_FORM_MAX_BYTES) {
+    throw new Error('File is too large (max 20 MB).')
+  }
+  const mime = detectAppFormMime(file)
+  if (!mime) throw new Error('Upload a PDF or JPEG/PNG image of the blank form.')
+
+  const ext = mime === 'application/pdf' ? 'pdf'
+    : mime === 'image/png' ? 'png'
+      : mime === 'image/webp' ? 'webp'
+        : 'jpg'
+  const storagePath = `application-forms/${formRow.form_key}/blank.${ext}`
+
+  // Remove prior extensions when replacing
+  const siblings = [
+    `application-forms/${formRow.form_key}/blank.pdf`,
+    `application-forms/${formRow.form_key}/blank.jpg`,
+    `application-forms/${formRow.form_key}/blank.jpeg`,
+    `application-forms/${formRow.form_key}/blank.png`,
+    `application-forms/${formRow.form_key}/blank.webp`,
+  ].filter(p => p !== storagePath)
+  try {
+    await supabase.storage.from(BUCKET).remove(siblings)
+  } catch { /* ignore */ }
+
+  const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
+    upsert: true,
+    contentType: mime,
+  })
+  if (upErr) throw upErr
+
+  return savePrintCornerApplicationForm({
+    id: formRow.id,
+    label: formRow.label,
+    form_key: formRow.form_key,
+    description: formRow.description,
+    sort_order: formRow.sort_order,
+    is_active: formRow.is_active,
+    storage_path: storagePath,
+    file_name: file.name,
+    mime_type: mime,
+    file_size: file.size,
+  })
+}
+
+/** Signed URL for print / WhatsApp / email share (private bucket). */
+export async function getApplicationFormSignedUrl(storagePath, expiresSec = 60 * 60 * 24 * 7) {
+  if (!storagePath) throw new Error('Form file is not uploaded yet.')
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(storagePath, expiresSec)
+  if (error) throw error
+  if (!data?.signedUrl) throw new Error('Could not create share link.')
+  return data.signedUrl
+}
+
+export { APP_FORM_MAX_BYTES }

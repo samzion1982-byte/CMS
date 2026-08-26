@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Settings, ArrowLeft, Plus, Pencil, Trash2, Check, X, Loader2,
-  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown, PenLine,
+  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown, PenLine, ClipboardList,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
@@ -19,6 +19,10 @@ import {
   normalizeTemplateVariables,
   getChurchForPrintCorner,
   getOfficeBearerSignatureStatus,
+  getPrintCornerApplicationForms,
+  savePrintCornerApplicationForm,
+  deletePrintCornerApplicationForm,
+  uploadPrintCornerApplicationFormFile,
   TEMPLATE_TYPES,
 } from '../lib/printCornerLib'
 
@@ -29,8 +33,9 @@ const INPUT = {
 }
 
 const TABS = [
-  { id: 'categories', label: 'Categories', icon: Tags },
+  { id: 'forms', label: 'Application forms', icon: ClipboardList },
   { id: 'templates', label: 'Templates', icon: FileText },
+  { id: 'categories', label: 'Categories', icon: Tags },
   { id: 'signatures', label: 'Signatures', icon: PenLine },
 ]
 
@@ -598,13 +603,263 @@ function SignaturesPanel() {
   )
 }
 
+function ApplicationFormsPanel() {
+  const toast = useToast()
+  const fileRef = useRef(null)
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
+  const [form, setForm] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await getPrintCornerApplicationForms(false)
+      setRows(list)
+      if (selectedId && !list.some(r => r.id === selectedId)) {
+        setSelectedId(null)
+        setForm(null)
+      }
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setLoading(false)
+  }, [toast, selectedId])
+
+  useEffect(() => { load() }, [load])
+
+  const selected = rows.find(r => r.id === selectedId) || null
+
+  useEffect(() => {
+    if (!selected) {
+      setForm(null)
+      return
+    }
+    setForm({
+      label: selected.label || '',
+      description: selected.description || '',
+      is_active: selected.is_active !== false,
+      sort_order: selected.sort_order ?? 0,
+    })
+  }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleAdd() {
+    if (!newLabel.trim()) return
+    setBusy('add')
+    try {
+      const max = rows.reduce((m, r) => Math.max(m, r.sort_order || 0), 0)
+      const row = await savePrintCornerApplicationForm({
+        label: newLabel.trim(),
+        sort_order: max + 10,
+        is_active: true,
+      })
+      toast('Form added — upload the scanned PDF or JPEG next.', 'success')
+      setAdding(false)
+      setNewLabel('')
+      await load()
+      setSelectedId(row.id)
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setBusy(null)
+  }
+
+  async function handleSave() {
+    if (!selected || !form) return
+    setBusy(selected.id)
+    try {
+      await savePrintCornerApplicationForm({
+        id: selected.id,
+        form_key: selected.form_key,
+        label: form.label,
+        description: form.description,
+        is_active: form.is_active,
+        sort_order: form.sort_order,
+        storage_path: selected.storage_path,
+        file_name: selected.file_name,
+        mime_type: selected.mime_type,
+        file_size: selected.file_size,
+      })
+      toast('Saved.', 'success')
+      await load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setBusy(null)
+  }
+
+  async function handleDelete(row) {
+    if (!window.confirm(`Delete blank form “${row.label}”?`)) return
+    setBusy(row.id)
+    try {
+      await deletePrintCornerApplicationForm(row.id, row.storage_path)
+      toast('Deleted.', 'success')
+      if (selectedId === row.id) {
+        setSelectedId(null)
+        setForm(null)
+      }
+      await load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setBusy(null)
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !selected) return
+    setBusy('upload')
+    try {
+      await uploadPrintCornerApplicationFormFile(file, selected)
+      toast('Blank form uploaded to repository.', 'success')
+      await load()
+    } catch (err) {
+      toast(err.message || 'Upload failed', 'error')
+    }
+    setBusy(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
+        <Loader2 className="animate-spin" size={20} style={{ display: 'inline', verticalAlign: 'middle' }} /> Loading…
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 420 }}>
+      <aside style={{
+        width: 300, flexShrink: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)',
+        borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', color: 'var(--text-3)' }}>BLANK FORMS</div>
+          <button type="button" onClick={() => setAdding(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            <Plus size={12} /> Add
+          </button>
+        </div>
+        {adding && (
+          <div style={{ padding: 10, borderBottom: '1px solid var(--card-border)', display: 'grid', gap: 8 }}>
+            <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. Baptism information form"
+              style={INPUT} autoFocus onKeyDown={e => { if (e.key === 'Enter') handleAdd() }} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" disabled={busy === 'add'} onClick={handleAdd}
+                style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {busy === 'add' ? '…' : 'Create'}
+              </button>
+              <button type="button" onClick={() => { setAdding(false); setNewLabel('') }}
+                style={{ padding: '6px 10px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {rows.length === 0 ? (
+            <p style={{ padding: 16, fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+              No blank forms yet. Add one and upload the scanned PDF or JPEG.
+            </p>
+          ) : rows.map(r => {
+            const on = r.id === selectedId
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setSelectedId(r.id)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
+                  border: 'none', borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+                  background: on ? '#f5f3ff' : 'transparent',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{r.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                  {r.storage_path
+                    ? (r.mime_type?.includes('pdf') ? 'PDF' : 'Image') + (r.is_active ? '' : ' · inactive')
+                    : 'File not uploaded'}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </aside>
+
+      <div className="card" style={{ flex: 1, padding: 20, minWidth: 0 }}>
+        {!selected || !form ? (
+          <p style={{ color: 'var(--text-3)', fontSize: 14, margin: 0 }}>Select a blank form, or add one.</p>
+        ) : (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', marginBottom: 6, letterSpacing: '0.06em' }}>
+              SCANNED APPLICATION FORM
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Upload the printed blank form (PDF or JPEG). Staff will print or share it as-is when a member requests it — no mail-merge.
+            </p>
+            <div style={{ display: 'grid', gap: 12, maxWidth: 480, marginBottom: 18 }}>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>
+                Display label
+                <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ ...INPUT, marginTop: 4 }} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>
+                Notes (optional)
+                <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ ...INPUT, marginTop: 4 }} placeholder="e.g. For office + parents" />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                Active (visible in Print Corner)
+              </label>
+            </div>
+
+            <div style={{
+              padding: 14, borderRadius: 10, marginBottom: 16,
+              background: selected.storage_path ? '#f0fdf4' : '#fff7ed',
+              border: `1px solid ${selected.storage_path ? '#bbf7d0' : '#fed7aa'}`,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Repository file</div>
+              <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 10, wordBreak: 'break-all' }}>
+                {selected.storage_path
+                  ? `${selected.file_name || selected.storage_path}${selected.file_size ? ` · ${(selected.file_size / 1024).toFixed(0)} KB` : ''}`
+                  : 'Not uploaded yet'}
+              </div>
+              <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" onChange={handleUpload} style={{ display: 'none' }} />
+              <button type="button" disabled={busy === 'upload'} onClick={() => fileRef.current?.click()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                {busy === 'upload' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {selected.storage_path ? 'Replace file' : 'Upload PDF / JPEG'}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" disabled={busy === selected.id} onClick={handleSave}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                {busy === selected.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Save
+              </button>
+              <button type="button" disabled={busy === selected.id} onClick={() => handleDelete(selected)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function PrintCornerSettingsPage() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState('templates')
+  const [tab, setTab] = useState('forms')
 
   return (
     <div className="page-container">
-      <PageHeader icon={Settings} title="Print Corner Settings" subtitle="Categories and Word templates">
+      <PageHeader icon={Settings} title="Print Corner Settings" subtitle="Blank forms, Word templates, and signatures">
         <button type="button" onClick={() => navigate('/print-corner')}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
           <ArrowLeft size={14} /> Back
@@ -629,6 +884,7 @@ export default function PrintCornerSettingsPage() {
         })}
       </div>
 
+      {tab === 'forms' && <ApplicationFormsPanel />}
       {tab === 'categories' && <CategoriesPanel />}
       {tab === 'templates' && <TemplatesPanel />}
       {tab === 'signatures' && <SignaturesPanel />}
