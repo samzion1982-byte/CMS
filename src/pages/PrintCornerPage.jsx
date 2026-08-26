@@ -21,7 +21,8 @@ import {
   deleteDraft,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
-  normalizeTemplateVariables,
+  textFieldVariables,
+  imageFieldVariables,
 } from '../lib/printCornerLib'
 
 const TYPE_ICONS = {
@@ -176,7 +177,12 @@ export default function PrintCornerPage() {
   }, [selected])
 
   const variables = useMemo(
-    () => normalizeTemplateVariables(selected?.variables),
+    () => textFieldVariables(selected?.variables),
+    [selected],
+  )
+
+  const imageVariables = useMemo(
+    () => imageFieldVariables(selected?.variables),
     [selected],
   )
 
@@ -359,11 +365,20 @@ export default function PrintCornerPage() {
               Include Tamil text block
             </label>
           )}
-          {variables.length === 0 ? (
+          {variables.length === 0 && imageVariables.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12 }}>
               No variables on this template yet. Upload a Word file with {'{placeholders}'} in Print Corner Settings.
             </p>
           ) : null}
+          {imageVariables.length > 0 && (
+            <div style={{
+              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+              background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
+            }}>
+              Signature images (auto from Church Setup):{' '}
+              {imageVariables.map(v => `{${v.key}}`).join(', ')}
+            </div>
+          )}
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
             {variables.map(v => (
               <label key={v.key} style={{ fontSize: 12, fontWeight: 600 }}>

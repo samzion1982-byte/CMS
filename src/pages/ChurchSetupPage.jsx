@@ -529,6 +529,41 @@ export default function ChurchSetupPage() {
   const canEditBasics = canIdentity || canBearers
   // Non–super-admin roles that were granted this page get the zones/categories view.
   const isAdmin1     = profile?.role === 'admin1' || (!isSuperAdmin && !!profile?.role)
+  // Signatures: church admins with Church Setup grant, and super_admin provisioning a church
+  const canEditSignatures = isSuperAdmin || canBearers || canIdentity
+
+  const SignatureImagesCard = (
+    <div className="card p-6">
+      <p className="form-section form-section-blue" style={{ color: '#7c3aed', borderColor: '#ddd6fe' }}>
+        Print Corner — Signature images
+      </p>
+      <p className="text-xs text-slate-500 mb-4">
+        PNG preferred (transparent background). Stored on this church for Print Corner letters later —
+        upload here and Save changes. Exact placement in Word templates will be decided when letter design is final.
+      </p>
+      <div className="flex flex-wrap gap-6">
+        {[
+          { label: 'Presbyter', preview: presbyterSigPreview, ref: presbyterSigRef, setFile: setPresbyterSigFile, setPreview: setPresbyterSigPreview },
+          { label: 'Secretary', preview: secretarySigPreview, ref: secretarySigRef, setFile: setSecretarySigFile, setPreview: setSecretarySigPreview },
+          { label: 'Treasurer', preview: treasurerSigPreview, ref: treasurerSigRef, setFile: setTreasurerSigFile, setPreview: setTreasurerSigPreview },
+        ].map(({ label, preview, ref, setFile, setPreview }) => (
+          <div key={label} className="flex flex-col items-center gap-2">
+            <div onClick={() => ref.current?.click()}
+              className="w-28 h-20 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-violet-400 transition-colors flex items-center justify-center bg-slate-50">
+              {preview
+                ? <img src={preview} className="w-full h-full object-contain p-2" alt={`${label} signature`} />
+                : <p className="text-[10px] text-slate-400 text-center px-2">{label}<br />signature</p>}
+            </div>
+            <input ref={ref} type="file" accept="image/png,image/jpeg" className="hidden"
+              onChange={e => onSignaturePick(setFile, setPreview, e)} />
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => ref.current?.click()}>
+              <Upload size={11} /> {label}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   if (!profile) {
     return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading…</div>
@@ -747,37 +782,7 @@ export default function ChurchSetupPage() {
         </div>
 
         {/* PRINT CORNER SIGNATURES */}
-        {(canBearers || canIdentity) && (
-          <div className="card p-6">
-            <p className="form-section form-section-blue" style={{ color: '#7c3aed', borderColor: '#ddd6fe' }}>
-              Print Corner — Signature images
-            </p>
-            <p className="text-xs text-slate-500 mb-4">
-              PNG preferred (transparent background). Used on letters and forms when PDF overlay is enabled.
-            </p>
-            <div className="flex flex-wrap gap-6">
-              {[
-                { label: 'Presbyter', preview: presbyterSigPreview, ref: presbyterSigRef, setFile: setPresbyterSigFile, setPreview: setPresbyterSigPreview },
-                { label: 'Secretary', preview: secretarySigPreview, ref: secretarySigRef, setFile: setSecretarySigFile, setPreview: setSecretarySigPreview },
-                { label: 'Treasurer', preview: treasurerSigPreview, ref: treasurerSigRef, setFile: setTreasurerSigFile, setPreview: setTreasurerSigPreview },
-              ].map(({ label, preview, ref, setFile, setPreview }) => (
-                <div key={label} className="flex flex-col items-center gap-2">
-                  <div onClick={() => ref.current?.click()}
-                    className="w-28 h-20 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-violet-400 transition-colors flex items-center justify-center bg-slate-50">
-                    {preview
-                      ? <img src={preview} className="w-full h-full object-contain p-2" alt={`${label} signature`} />
-                      : <p className="text-[10px] text-slate-400 text-center px-2">{label}<br />signature</p>}
-                  </div>
-                  <input ref={ref} type="file" accept="image/png,image/jpeg" className="hidden"
-                    onChange={e => onSignaturePick(setFile, setPreview, e)} />
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => ref.current?.click()}>
-                    <Upload size={11} /> {label}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {canEditSignatures && SignatureImagesCard}
 
         {/* ACCOUNTS MODULE */}
         <div className="card p-6">
@@ -1235,6 +1240,8 @@ export default function ChurchSetupPage() {
               </div>
             </div>
           )}
+
+          {canEditSignatures && SignatureImagesCard}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <ZonesPanel profile={profile} toast={toast} />

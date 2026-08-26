@@ -30,6 +30,24 @@ const VARIABLE_LABELS = {
   Church_name: 'Church name',
   member_id: 'Member ID',
   body: 'Letter body',
+  presbyter_sign: 'Presbyter signature (auto)',
+  secretary_sign: 'Secretary signature (auto)',
+  seceratary_sign: 'Secretary signature (auto)',
+  treasurer_sign: 'Treasurer signature (auto)',
+  treasurer_seal: 'Treasurer seal (auto)',
+}
+
+/** Word tags that inject Church Setup PNG/JPG — not typed in the wizard */
+export const IMAGE_PLACEHOLDER_KEYS = new Set([
+  'presbyter_sign',
+  'secretary_sign',
+  'seceratary_sign',
+  'treasurer_sign',
+  'treasurer_seal',
+])
+
+export function isImagePlaceholderKey(key) {
+  return IMAGE_PLACEHOLDER_KEYS.has(String(key || '').trim())
 }
 
 export const TEMPLATE_TYPES = {
@@ -327,15 +345,30 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
 
 export function normalizeTemplateVariables(raw) {
   if (!raw) return []
-  if (Array.isArray(raw)) return raw.filter(v => v && v.key)
-  return []
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter(v => v && v.key)
+    .map(v => ({
+      ...v,
+      key: String(v.key).trim(),
+      label: v.label || VARIABLE_LABELS[v.key] || v.key,
+      kind: isImagePlaceholderKey(v.key) ? 'image' : (v.kind || 'text'),
+    }))
+}
+
+export function textFieldVariables(variables) {
+  return normalizeTemplateVariables(variables).filter(v => !isImagePlaceholderKey(v.key))
+}
+
+export function imageFieldVariables(variables) {
+  return normalizeTemplateVariables(variables).filter(v => isImagePlaceholderKey(v.key))
 }
 
 export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
   const vars = normalizeTemplateVariables(template?.variables)
   const out = {}
   for (const v of vars) {
-    if (v.key) out[v.key] = ''
+    if (v.key && !isImagePlaceholderKey(v.key)) out[v.key] = ''
   }
   if (church) {
     const churchName = church.church_name || ''
@@ -413,7 +446,7 @@ export function getOfficeBearerSignatureStatus(church) {
 const TRACKER_SNO = 'S.No'
 
 export function trackerColumnKeys(variables) {
-  return normalizeTemplateVariables(variables).map(v => v.key).filter(Boolean)
+  return textFieldVariables(variables).map(v => v.key).filter(Boolean)
 }
 
 /** Build header row: S.No + variable keys */

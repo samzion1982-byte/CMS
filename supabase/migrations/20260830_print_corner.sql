@@ -1,4 +1,6 @@
--- Print Corner — templates, drafts, issued log, storage bucket, church signatures
+-- Print Corner — letter templates, drafts, issued log, storage, church signatures
+-- Scope for now: letters only. Certificates/forms are not seeded (Event Recorder handles register extracts).
+-- Signature image URLs are stored on churches for later use; placement in Word is TBD.
 
 -- Office bearer signature images (PNG preferred; stored in church-logos/signatures/)
 ALTER TABLE public.churches
@@ -161,34 +163,23 @@ DO $$ BEGIN
     USING (bucket_id = 'print-corner');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- ── Seed default catalog (idempotent) ───────────────────────────
+-- ── Seed default catalog (idempotent) — Letters only for now ───
+-- Certificates / forms stay out of seed; Event Recorder covers register extracts.
+-- Office bearer signature URLs are stored on churches.* for later letter use.
 
 DO $$
 DECLARE
-  cat_cert uuid;
   cat_letter uuid;
-  cat_form uuid;
 BEGIN
   IF EXISTS (SELECT 1 FROM public.print_corner_templates LIMIT 1) THEN
     RETURN;
   END IF;
 
   INSERT INTO public.print_corner_categories (name, parent_id, sort_order)
-  VALUES ('Certificates', NULL, 1) RETURNING id INTO cat_cert;
-
-  INSERT INTO public.print_corner_categories (name, parent_id, sort_order)
-  VALUES ('Letters', NULL, 2) RETURNING id INTO cat_letter;
-
-  INSERT INTO public.print_corner_categories (name, parent_id, sort_order)
-  VALUES ('Application Forms', NULL, 3) RETURNING id INTO cat_form;
+  VALUES ('Letters', NULL, 1) RETURNING id INTO cat_letter;
 
   INSERT INTO public.print_corner_templates
     (category_id, template_key, label, template_type, description, sort_order, config) VALUES
-    (cat_cert, 'cert-baptism',      'Baptism Extract',       'certificate', 'Register extract — Event Recorder or manual', 1, '{"eventKind":"baptism"}'::jsonb),
-    (cat_cert, 'cert-confirmation', 'Confirmation Extract',  'certificate', 'Register extract — Event Recorder or manual', 2, '{"eventKind":"confirmation"}'::jsonb),
-    (cat_cert, 'cert-wedding',      'Wedding Extract',       'certificate', 'Register extract — Event Recorder or manual', 3, '{"eventKind":"wedding"}'::jsonb),
-    (cat_cert, 'cert-burial',       'Burial Extract',        'certificate', 'Register extract — Event Recorder or manual', 4, '{"eventKind":"burial"}'::jsonb),
-    (cat_letter, 'letter-recommendation', 'Recommendation Letter', 'letter', 'Church letterhead Word template + variables', 1, '{"engine":"office"}'::jsonb),
-    (cat_form, 'form-baptism-info',     'Baptism Information Form',      'form', 'Blank bilingual form (Word upload)', 1, '{}'::jsonb),
-    (cat_form, 'form-confirmation-app', 'Confirmation Application Form', 'form', 'Blank application form (Word upload)', 2, '{}'::jsonb);
+    (cat_letter, 'letter-recommendation', 'Recommendation Letter', 'letter',
+     'Church letterhead Word template + variables', 1, '{"engine":"office"}'::jsonb);
 END $$;

@@ -515,10 +515,8 @@ function SignaturesPanel() {
     <div className="card" style={{ padding: 20, maxWidth: 640 }}>
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Office bearer signatures</div>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 16px', lineHeight: 1.55 }}>
-        Upload Presbyter, Secretary, and Treasurer signature PNGs in Church Setup.
-        For Word/Corel letters today, place those signature images directly in the letterhead template
-        (they travel with the .docx). Auto-injecting signature images into mail-merge is the next step —
-        names like <code style={{ fontSize: 12 }}>{'{presbyter_name}'}</code> already fill from Church Setup.
+        Signatures are stored on the church record (Church Setup) for Print Corner letters.
+        How they appear on each letter (fixed in letterhead vs auto-inject) will be decided when templates are finalized.
       </p>
 
       {loading ? (
@@ -554,7 +552,7 @@ function SignaturesPanel() {
         color: 'var(--text-2)',
       }}>
         {allReady
-          ? 'All three signature images are on file. Embed them in your Corel/Word letterhead, or wait for auto-inject on Issue PDF.'
+          ? 'All three signature images are stored. You can use them in letter design when ready.'
           : 'Some signatures are missing. Open Church Setup → Print Corner — Signature images, then Save.'}
       </div>
 

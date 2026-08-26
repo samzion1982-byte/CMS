@@ -75,6 +75,28 @@ function escapeXml(s: string) {
     .replace(/"/g, '&quot;')
 }
 
+/** Image placeholders → churches.*_signature_url / treasurer_seal_url */
+const IMAGE_PLACEHOLDER_MAP: Record<string, string> = {
+  presbyter_sign: 'presbyter_signature_url',
+  secretary_sign: 'secretary_signature_url',
+  seceratary_sign: 'secretary_signature_url', // common typo alias
+  treasurer_sign: 'treasurer_signature_url',
+  treasurer_seal: 'treasurer_seal_url',
+}
+
+const IMAGE_PLACEHOLDER_KEYS = new Set(Object.keys(IMAGE_PLACEHOLDER_MAP))
+
+function isImagePlaceholderKey(key: string) {
+  return IMAGE_PLACEHOLDER_KEYS.has(String(key || '').trim())
+}
+
+function placeholderExistsInXml(xml: string, key: string) {
+  const intact = `{${key}}`
+  if (xml.includes(intact)) return true
+  const chars = intact.split('').map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(chars.join('(?:<[^>]+>)*')).test(xml)
+}
+
 function replacePlaceholderInXml(xml: string, key: string, value: string) {
   const safe = escapeXml(value)
   const intact = `{${key}}`
@@ -87,22 +109,177 @@ function replacePlaceholderInXml(xml: string, key: string, value: string) {
 function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>) {
   let out = xml
   for (const [key, raw] of Object.entries(fieldValues || {})) {
-    if (!key) continue
+    if (!key || isImagePlaceholderKey(key)) continue
     out = replacePlaceholderInXml(out, key, raw == null ? '' : String(raw))
   }
   return out
 }
 
-async function mergeDocxBytes(docxBytes: Uint8Array, fieldValues: Record<string, unknown>) {
+function sniffImageMeta(bytes: Uint8Array, urlHint = '') {
+  const u = urlHint.toLowerCase()
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) {
+    return { ext: 'png', contentType: 'image/png' }
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { ext: 'jpg', contentType: 'image/jpeg' }
+  }
+  if (u.includes('.png')) return { ext: 'png', contentType: 'image/png' }
+  if (u.includes('.jpg') || u.includes('.jpeg')) return { ext: 'jpg', contentType: 'image/jpeg' }
+  return { ext: 'png', contentType: 'image/png' }
+}
+
+async function fetchSignatureImage(url: string | null | undefined) {
+  if (!url || !String(url).trim()) return null
+  try {
+    const res = await fetch(String(url).trim())
+    if (!res.ok) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    if (!bytes.length) return null
+    return { bytes, ...sniffImageMeta(bytes, url) }
+  } catch {
+    return null
+  }
+}
+
+function nextRelationshipId(relsXml: string) {
+  let max = 0
+  for (const m of relsXml.matchAll(/\bId\s*=\s*"rId(\d+)"/gi)) {
+    max = Math.max(max, Number(m[1]) || 0)
+  }
+  return `rId${max + 1}`
+}
+
+function relsPathForXmlPart(xmlPath: string) {
+  // word/document.xml → word/_rels/document.xml.rels
+  const i = xmlPath.lastIndexOf('/')
+  const dir = i >= 0 ? xmlPath.slice(0, i) : ''
+  const base = i >= 0 ? xmlPath.slice(i + 1) : xmlPath
+  return `${dir}/_rels/${base}.rels`
+}
+
+/** Inline signature ~ 1.6" × 0.55" (EMUs) */
+function signatureDrawingXml(rId: string, docPrId: number, name: string, isSeal = false) {
+  const cx = isSeal ? 914400 : 1463040 // 1" seal or ~1.6" sign
+  const cy = isSeal ? 914400 : 502920  // 1" seal or ~0.55" sign
+  return (
+    `<w:drawing>`
+    + `<wp:inline distT="0" distB="0" distL="0" distR="0"`
+    + ` xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"`
+    + ` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
+    + ` xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"`
+    + ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+    + `<wp:extent cx="${cx}" cy="${cy}"/>`
+    + `<wp:docPr id="${docPrId}" name="${escapeXml(name)}"/>`
+    + `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>`
+    + `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+    + `<pic:pic>`
+    + `<pic:nvPicPr><pic:cNvPr id="0" name="${escapeXml(name)}"/><pic:cNvPicPr/></pic:nvPicPr>`
+    + `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+    + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
+    + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
+    + `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`
+  )
+}
+
+/**
+ * Collapse {key} (even if Word split it across runs) to a marker, then splice a
+ * drawing run into the surrounding <w:t>…</w:t> so the image sits in-flow.
+ */
+function injectImageAtPlaceholder(xml: string, key: string, drawingXml: string) {
+  const marker = `§§IMG_${key}§§`
+  if (!placeholderExistsInXml(xml, key)) return xml
+  let out = replacePlaceholderInXml(xml, key, marker)
+  if (!out.includes(marker)) return out
+  // Close current text run, insert drawing run, reopen text — valid OOXML
+  const splice = `</w:t></w:r><w:r>${drawingXml}</w:r><w:r><w:t>`
+  out = out.split(marker).join(splice)
+  return out
+}
+
+async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>) {
+  const { data: church } = await admin
+    .from('churches')
+    .select('presbyter_signature_url, secretary_signature_url, treasurer_signature_url, treasurer_seal_url')
+    .limit(1)
+    .maybeSingle()
+
+  const images: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {}
+  if (!church) return images
+
+  const loaded = new Map<string, { bytes: Uint8Array, ext: string, contentType: string } | null>()
+
+  for (const [placeholder, column] of Object.entries(IMAGE_PLACEHOLDER_MAP)) {
+    const url = (church as Record<string, string | null>)[column]
+    if (!loaded.has(column)) {
+      loaded.set(column, await fetchSignatureImage(url))
+    }
+    const img = loaded.get(column)
+    if (img) images[placeholder] = img
+  }
+  return images
+}
+
+async function mergeDocxBytes(
+  docxBytes: Uint8Array,
+  fieldValues: Record<string, unknown>,
+  signatureImages: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {},
+) {
   const zip = await JSZip.loadAsync(docxBytes)
   const targets = Object.keys(zip.files).filter(n =>
     /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n) && !zip.files[n].dir
   )
+
+  let docPrSeq = 900
+  let mediaSeq = 0
+
   for (const name of targets) {
     const file = zip.file(name)
     if (!file) continue
-    zip.file(name, applyFieldValuesToXml(await file.async('string'), fieldValues))
+    let xml = await file.async('string')
+
+    // 1) Inject signature / seal images for placeholders present in this part
+    for (const [key, img] of Object.entries(signatureImages)) {
+      if (!placeholderExistsInXml(xml, key)) continue
+
+      mediaSeq += 1
+      const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
+      const mediaPath = `word/media/${mediaName}`
+      zip.file(mediaPath, img.bytes)
+
+      const relsName = relsPathForXmlPart(name)
+      let relsXml = zip.file(relsName)
+        ? await zip.file(relsName)!.async('string')
+        : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+          + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
+
+      const rId = nextRelationshipId(relsXml)
+      const relType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
+      const target = `media/${mediaName}`
+      if (!relsXml.includes(`Id="${rId}"`)) {
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="${relType}" Target="${target}"/></Relationships>`,
+        )
+        zip.file(relsName, relsXml)
+      }
+
+      docPrSeq += 1
+      const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
+      xml = injectImageAtPlaceholder(xml, key, drawing)
+    }
+
+    // 2) Clear any remaining image placeholders (missing upload → blank)
+    for (const key of IMAGE_PLACEHOLDER_KEYS) {
+      if (placeholderExistsInXml(xml, key)) {
+        xml = replacePlaceholderInXml(xml, key, '')
+      }
+    }
+
+    // 3) Normal text mail-merge
+    xml = applyFieldValuesToXml(xml, fieldValues)
+    zip.file(name, xml)
   }
+
   return await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
 }
 
@@ -386,6 +563,7 @@ serve(async (req) => {
         google_email: google.email,
         cloudconvert,
         merge: true,
+        signatures: true,
         user: prof?.email || user.email,
         // Back-compat for older UI that only checks cloudconvert
         cloudconvert_or_google: ready,
@@ -410,7 +588,8 @@ serve(async (req) => {
         return json({ error: dlErr?.message || 'Could not download template' }, 400)
       }
       const templateBytes = new Uint8Array(await fileBlob.arrayBuffer())
-      const mergedBytes = await mergeDocxBytes(templateBytes, fieldValues)
+      const signatureImages = await loadChurchSignatureImages(admin)
+      const mergedBytes = await mergeDocxBytes(templateBytes, fieldValues, signatureImages)
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
       const preferGoogle = PDF_ENGINE === 'auto' || PDF_ENGINE === 'google' || PDF_ENGINE === 'google_drive'
@@ -504,6 +683,7 @@ serve(async (req) => {
         filename: outName,
         merged: true,
         fields_applied: Object.keys(fieldValues).length,
+        signatures_injected: Object.keys(signatureImages),
         ...engineMeta,
       })
     }
