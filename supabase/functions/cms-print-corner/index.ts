@@ -473,8 +473,10 @@ function findPptxShapeForPlaceholder(xml: string, key: string) {
 }
 
 function extractPptxXfrm(spXml: string) {
-  // Prefer spPr xfrm (shape position), not txBody internals
-  const spPr = spXml.match(/<p:spPr\b[\s\S]*?<\/p:spPr>/i)?.[0] || spXml
+  // Prefer shape/picture spPr xfrm (works for p:sp and p:pic)
+  const spPr = spXml.match(/<p:spPr\b[\s\S]*?<\/p:spPr>/i)?.[0]
+    || spXml.match(/<pic:spPr\b[\s\S]*?<\/pic:spPr>/i)?.[0]
+    || spXml
   const x = spPr.match(/<a:off\b[^>]*\bx\s*=\s*"(-?\d+)"/i)?.[1]
   const y = spPr.match(/<a:off\b[^>]*\by\s*=\s*"(-?\d+)"/i)?.[1]
   const cx = spPr.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
@@ -508,13 +510,22 @@ function pptxSignaturePicXml(
   name: string,
   xfrm: { x: string, y: string, cx: string, cy: string },
   isSeal = false,
+  preserveSize = false,
 ) {
-  const adj = adjustSignatureXfrm(xfrm, isSeal)
+  // Text placeholders need a grown box; AltText image placeholders keep Canva size/position
+  const adj = preserveSize
+    ? {
+      x: String(xfrm.x || '0'),
+      y: String(xfrm.y || '0'),
+      cx: String(xfrm.cx || '2000000'),
+      cy: String(xfrm.cy || '700000'),
+    }
+    : adjustSignatureXfrm(xfrm, isSeal)
   return (
     `<p:pic>`
     + `<p:nvPicPr>`
     + `<p:cNvPr id="${shapeId}" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/>`
-    + `<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>`
+    + `<p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr>`
     + `<p:nvPr/>`
     + `</p:nvPicPr>`
     + `<p:blipFill>`
@@ -645,15 +656,18 @@ async function mergeOfficeBytes(
         continue
       }
 
-      // Letter-style primary path: overwrite the existing media part in the zip
+      // PPTX: always replace Canva p:pic with a clean picture (overwrite/relink alone
+      // is ignored by Google Slides). DOCX letters keep overwrite + relink.
       const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
       if (existingBefore) {
         zip.file(existingBefore, img.bytes)
-        swappedKeys.add(slot.key)
+        if (ctXml) {
+          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+        }
         swapLog.push(`${slot.key}:overwrite:${existingBefore}`)
       }
 
-      // Also add a fresh media part + retarget blip (helps Canva SVG / Google Slides)
       mediaSeq += 1
       const mediaName = `sign_${slot.key}_${mediaSeq}.${img.ext}`
       const mediaPath = `${mediaFolder}/${mediaName}`
@@ -671,25 +685,28 @@ async function mergeOfficeBytes(
       relsDirty = true
 
       const oldBlock = slot.block
-      const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
-
-      if (newBlock !== oldBlock && xml.includes(oldBlock)) {
-        xml = xml.split(oldBlock).join(newBlock)
-        swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
-      } else if (!existingBefore && isPptx && xml.includes(oldBlock)) {
+      if (isPptx && xml.includes(oldBlock)) {
         const xfrm = extractPptxXfrm(oldBlock) || { x: '0', y: '0', cx: '2000000', cy: '700000' }
         const shapeId = maxCNvPrId(xml) + 1
-        const pic = pptxSignaturePicXml(rId, shapeId, slot.key, xfrm, slot.key === 'treasurer_seal')
+        const pic = pptxSignaturePicXml(rId, shapeId, slot.key, xfrm, slot.key === 'treasurer_seal', true)
         xml = xml.split(oldBlock).join(pic)
         swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:replace_shape:${rId}`)
-      } else if (!swappedKeys.has(slot.key)) {
-        swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
+        swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
+      } else {
+        const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
+        if (newBlock !== oldBlock && xml.includes(oldBlock)) {
+          xml = xml.split(oldBlock).join(newBlock)
+          swappedKeys.add(slot.key)
+          swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
+        } else if (existingBefore) {
+          swappedKeys.add(slot.key)
+        } else {
+          swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
+        }
       }
     }
 
-    // 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT: replace text box with picture)
+// 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT: replace text box with picture)
     for (const [key, img] of Object.entries(signatureImages)) {
       if (swappedKeys.has(key)) continue
       if (!officeHasPlaceholder(xml, key)) continue
