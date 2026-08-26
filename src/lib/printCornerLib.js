@@ -366,3 +366,150 @@ export async function getChurchForPrintCorner() {
   if (error) throw error
   return data
 }
+
+/* ── Bulk letter tracker (Excel) ───────────────────────────────── */
+
+const TRACKER_SNO = 'S.No'
+
+export function trackerColumnKeys(variables) {
+  return normalizeTemplateVariables(variables).map(v => v.key).filter(Boolean)
+}
+
+/** Build header row: S.No + variable keys */
+export function trackerHeaders(variables) {
+  return [TRACKER_SNO, ...trackerColumnKeys(variables)]
+}
+
+/** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
+export async function downloadPrintCornerTracker({ templateKey, variables, fieldValues, blankRows = 49 }) {
+  const ExcelJS = (await import('exceljs')).default
+  const keys = trackerColumnKeys(variables)
+  if (!keys.length) throw new Error('No variables on this template.')
+
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Tracker', { views: [{ state: 'frozen', ySplit: 1 }] })
+  const headers = trackerHeaders(variables)
+
+  ws.addRow(headers)
+  const headerRow = ws.getRow(1)
+  headerRow.font = { bold: true }
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+
+  const firstRow = [1, ...keys.map(k => fieldValues?.[k] ?? '')]
+  ws.addRow(firstRow)
+
+  for (let i = 2; i <= blankRows + 1; i++) {
+    ws.addRow([i, ...keys.map(() => '')])
+  }
+
+  ws.columns = headers.map((h, i) => ({
+    width: i === 0 ? 8 : Math.max(14, String(h).length + 4),
+  }))
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${templateKey || 'letter'}_tracker.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/** Parse uploaded tracker .xlsx → array of field value objects (skips empty rows) */
+export async function parsePrintCornerTrackerFile(file, variables) {
+  const keys = trackerColumnKeys(variables)
+  if (!keys.length) throw new Error('No variables on this template.')
+
+  const ExcelJS = (await import('exceljs')).default
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(await file.arrayBuffer())
+  const ws = wb.worksheets[0]
+  if (!ws) throw new Error('Empty spreadsheet.')
+
+  const headerRow = ws.getRow(1)
+  const colCount = headerRow.cellCount
+  const headerMap = new Map()
+  for (let c = 1; c <= colCount; c++) {
+    const h = String(headerRow.getCell(c).value ?? '').trim()
+    if (h && h !== TRACKER_SNO) headerMap.set(h, c)
+  }
+
+  const missing = keys.filter(k => !headerMap.has(k))
+  if (missing.length) {
+    throw new Error(`Tracker missing columns: ${missing.join(', ')}. Download a fresh tracker and try again.`)
+  }
+
+  const rows = []
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r)
+    const fieldValues = {}
+    let hasData = false
+    for (const key of keys) {
+      const col = headerMap.get(key)
+      const val = col ? String(row.getCell(col).value ?? '').trim() : ''
+      fieldValues[key] = val
+      if (val) hasData = true
+    }
+    if (hasData) rows.push(fieldValues)
+  }
+
+  if (!rows.length) throw new Error('No data rows found in tracker.')
+  return rows
+}
+
+function safePdfName(index, fieldValues, templateKey) {
+  const base = fieldValues.member_name || fieldValues.ref_no || `row_${index + 1}`
+  const safe = String(base).replace(/[^\w.-]+/g, '_').slice(0, 60)
+  return `${String(index + 1).padStart(3, '0')}_${safe}.pdf`
+}
+
+/** Generate one PDF per tracker row, zip and download; each PDF also saved to issued/ via Edge */
+export async function convertBulkLettersToZip({
+  storagePath,
+  templateKey,
+  templateType = 'letters',
+  rows,
+  onProgress,
+}) {
+  const zip = new JSZip()
+  const results = []
+
+  for (let i = 0; i < rows.length; i++) {
+    const fieldValues = rows[i]
+    onProgress?.({ current: i + 1, total: rows.length, label: fieldValues.member_name || `Row ${i + 1}` })
+
+    const res = await convertTemplateFromStorage({
+      storagePath,
+      templateKey,
+      templateType,
+      memberId: fieldValues.member_id || null,
+      fieldValues,
+      issue: true,
+      source: 'manual',
+    })
+
+    if (!res?.signed_url) throw new Error(`Row ${i + 1}: no PDF URL returned`)
+
+    const pdfRes = await fetch(res.signed_url)
+    if (!pdfRes.ok) throw new Error(`Row ${i + 1}: could not download PDF`)
+    const pdfBytes = await pdfRes.arrayBuffer()
+    const fname = res.filename || safePdfName(i, fieldValues, templateKey)
+    zip.file(fname, pdfBytes)
+    results.push({ ...res, fieldValues })
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const stamp = new Date().toISOString().slice(0, 10)
+  const zipName = `${templateKey}_bulk_${stamp}.zip`
+  const url = URL.createObjectURL(zipBlob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zipName
+  a.click()
+  URL.revokeObjectURL(url)
+
+  return { count: rows.length, zipName, results }
+}

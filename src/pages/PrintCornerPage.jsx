@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import {
   Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList,
-  ChevronRight, CheckCircle2, AlertCircle, User, Save, FolderOpen, Search,
+  ChevronRight, CheckCircle2, AlertCircle, Save, Download, Upload,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
@@ -11,10 +11,12 @@ import {
   getPrintCornerCatalog,
   pingPrintCorner,
   convertTemplateFromStorage,
+  convertBulkLettersToZip,
+  downloadPrintCornerTracker,
+  parsePrintCornerTrackerFile,
   TEMPLATE_TYPES,
   getSharedDrafts,
   saveDraft,
-  searchPrintCornerMembers,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
   normalizeTemplateVariables,
@@ -28,9 +30,8 @@ const TYPE_ICONS = {
 
 const STEPS = [
   { id: 1, label: 'Template' },
-  { id: 2, label: 'Member' },
-  { id: 3, label: 'Fields' },
-  { id: 4, label: 'Review' },
+  { id: 2, label: 'Fields' },
+  { id: 3, label: 'Review' },
 ]
 
 const INPUT = {
@@ -51,10 +52,17 @@ function groupTemplates(categories, templates) {
   return [...byCat.values()].sort((a, b) => a.category.sort_order - b.category.sort_order)
 }
 
+function templateStorageType(templateType) {
+  if (templateType === 'form') return 'forms'
+  if (templateType === 'certificate') return 'certificates'
+  return 'letters'
+}
+
 export default function PrintCornerPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useAuth()
+  const trackerInputRef = useRef(null)
 
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState([])
@@ -62,17 +70,15 @@ export default function PrintCornerPage() {
   const [ping, setPing] = useState(null)
   const [busy, setBusy] = useState(false)
   const [lastPdf, setLastPdf] = useState(null)
+  const [bulkProgress, setBulkProgress] = useState(null)
 
   const [step, setStep] = useState(1)
   const [church, setChurch] = useState(null)
-  const [memberQuery, setMemberQuery] = useState('')
-  const [memberHits, setMemberHits] = useState([])
-  const [member, setMember] = useState(null)
   const [fieldValues, setFieldValues] = useState({})
   const [includeTamil, setIncludeTamil] = useState(false)
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
-  const [showDrafts, setShowDrafts] = useState(false)
+  const [bulkRows, setBulkRows] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -104,34 +110,13 @@ export default function PrintCornerPage() {
   useEffect(() => {
     if (!selected) return
     setStep(1)
-    setMember(null)
-    setMemberQuery('')
-    setMemberHits([])
     setDraftId(null)
+    setBulkRows([])
+    setLastPdf(null)
+    setBulkProgress(null)
     setIncludeTamil(!!selected.include_tamil)
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (member) {
-      setFieldValues(prev => ({
-        ...defaultFieldValuesFromTemplate(selected, church, member),
-        ...prev,
-        ...defaultFieldValuesFromTemplate(selected, church, member),
-      }))
-    }
-  }, [member, church, selected])
-
-  useEffect(() => {
-    const q = memberQuery.trim()
-    if (q.length < 2) { setMemberHits([]); return }
-    const t = setTimeout(async () => {
-      try {
-        setMemberHits(await searchPrintCornerMembers(q))
-      } catch { setMemberHits([]) }
-    }, 250)
-    return () => clearTimeout(t)
-  }, [memberQuery])
 
   const selectedMeta = useMemo(() => {
     if (!selected) return null
@@ -143,6 +128,13 @@ export default function PrintCornerPage() {
     [selected],
   )
 
+  const bulkMode = bulkRows.length > 0
+
+  function clearBulk() {
+    setBulkRows([])
+    setBulkProgress(null)
+  }
+
   async function handleSaveDraft() {
     if (!selected) return
     setBusy(true)
@@ -151,7 +143,7 @@ export default function PrintCornerPage() {
         id: draftId || undefined,
         template_id: selected.id,
         template_key: selected.template_key,
-        member_id: member?.member_id || null,
+        member_id: fieldValues.member_id || null,
         status: 'draft',
         wizard_step: step,
         field_values: fieldValues,
@@ -173,15 +165,30 @@ export default function PrintCornerPage() {
     const tpl = groups.flatMap(g => g.templates).find(t => t.id === d.template_id || t.template_key === d.template_key)
     if (tpl) setSelected(tpl)
     setDraftId(d.id)
-    setMember(d.member_id ? { member_id: d.member_id, member_name: d.field_values?.member_name || d.member_id } : null)
     setFieldValues(d.field_values || {})
     setIncludeTamil(!!d.include_tamil)
-    setStep(d.wizard_step || 3)
-    setShowDrafts(false)
+    setBulkRows([])
+    setStep(3)
     toast('Draft loaded.', 'info')
   }
 
-  async function handleTestConvert() {
+  function pdfErrorToast(raw) {
+    if (/expired or revoked|invalid_grant|Google Drive not connected/i.test(raw)) {
+      toast(
+        'Google Drive login expired. Open Backup → Disconnect Google → Connect Google again, then retry.',
+        'error',
+      )
+    } else if (/run out of conversion credits/i.test(raw)) {
+      toast(
+        'CloudConvert credits are used up. Reconnect Google on Backup (recommended) or wait for credits to reset.',
+        'error',
+      )
+    } else {
+      toast(raw, 'error')
+    }
+  }
+
+  async function handleIssuePdf() {
     if (!selected?.storage_path) {
       toast('Upload a .docx for this template in Print Corner Settings first.', 'error')
       return
@@ -191,17 +198,77 @@ export default function PrintCornerPage() {
       const res = await convertTemplateFromStorage({
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
-        templateType: selected.template_type === 'form' ? 'forms'
-          : selected.template_type === 'certificate' ? 'certificates' : 'letters',
-        memberId: member?.member_id || null,
+        templateType: templateStorageType(selected.template_type),
+        memberId: fieldValues.member_id || null,
         fieldValues,
         issue: true,
-        source: member ? 'register' : 'manual',
+        source: 'manual',
       })
       setLastPdf(res)
       toast('PDF created and saved to issued folder.', 'success')
     } catch (e) {
-      toast(e.message || 'Convert failed', 'error')
+      pdfErrorToast(e.message || 'Convert failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleMultiPdf() {
+    if (!selected?.storage_path) {
+      toast('Upload a .docx for this template in Print Corner Settings first.', 'error')
+      return
+    }
+    if (!bulkRows.length) {
+      toast('Upload a filled tracker first.', 'error')
+      return
+    }
+    setBusy(true)
+    setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
+    try {
+      const { count, zipName } = await convertBulkLettersToZip({
+        storagePath: selected.storage_path,
+        templateKey: selected.template_key,
+        templateType: templateStorageType(selected.template_type),
+        rows: bulkRows,
+        onProgress: setBulkProgress,
+      })
+      toast(`${count} PDFs created — downloaded ${zipName}`, 'success')
+    } catch (e) {
+      pdfErrorToast(e.message || 'Bulk convert failed')
+    } finally {
+      setBusy(false)
+      setBulkProgress(null)
+    }
+  }
+
+  async function handleDownloadTracker() {
+    if (!selected || !variables.length) {
+      toast('No variables on this template.', 'error')
+      return
+    }
+    try {
+      await downloadPrintCornerTracker({
+        templateKey: selected.template_key,
+        variables,
+        fieldValues,
+      })
+      toast('Tracker downloaded.', 'success')
+    } catch (e) {
+      toast(e.message || 'Could not download tracker', 'error')
+    }
+  }
+
+  async function handleTrackerFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !selected) return
+    setBusy(true)
+    try {
+      const rows = await parsePrintCornerTrackerFile(file, variables)
+      setBulkRows(rows)
+      toast(`${rows.length} row(s) loaded from tracker — use Multi PDF to generate.`, 'success')
+    } catch (err) {
+      toast(err.message || 'Could not read tracker', 'error')
     } finally {
       setBusy(false)
     }
@@ -219,43 +286,6 @@ export default function PrintCornerPage() {
     if (step === 2) {
       return (
         <div>
-          <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 12 }}>
-            Link a member (optional). Leave blank for a generic letter.
-          </p>
-          {member ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{member.member_name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{member.member_id} · {member.mobile || '—'}</div>
-              </div>
-              <button type="button" onClick={() => setMember(null)} style={{ fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-            </div>
-          ) : (
-            <div style={{ position: 'relative', marginBottom: 12 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-3)' }} />
-              <input value={memberQuery} onChange={e => setMemberQuery(e.target.value)} placeholder="Search name, ID, mobile…" style={{ ...INPUT, paddingLeft: 32 }} />
-              {memberHits.length > 0 && (
-                <div style={{ position: 'absolute', zIndex: 5, left: 0, right: 0, top: '100%', marginTop: 4, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', maxHeight: 220, overflow: 'auto' }}>
-                  {memberHits.map(m => (
-                    <button key={m.member_id} type="button" onClick={() => { setMember(m); setMemberQuery(''); setMemberHits([]) }}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none', borderBottom: '1px solid var(--card-border)', background: 'transparent', cursor: 'pointer', fontSize: 13 }}>
-                      <strong>{m.member_name}</strong> · {m.member_id}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-            Continue → Fields
-          </button>
-        </div>
-      )
-    }
-
-    if (step === 3) {
-      return (
-        <div>
           {selected.include_tamil && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14 }}>
               <input type="checkbox" checked={includeTamil} onChange={e => setIncludeTamil(e.target.checked)} />
@@ -271,47 +301,117 @@ export default function PrintCornerPage() {
             {variables.map(v => (
               <label key={v.key} style={{ fontSize: 12, fontWeight: 600 }}>
                 {v.label || v.key}
-                <input value={fieldValues[v.key] ?? ''} onChange={e => setFieldValues(f => ({ ...f, [v.key]: e.target.value }))}
-                  style={{ ...INPUT, marginTop: 4, fontWeight: 400 }} />
+                <input
+                  value={fieldValues[v.key] ?? ''}
+                  onChange={e => {
+                    clearBulk()
+                    setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
+                  }}
+                  style={{ ...INPUT, marginTop: 4, fontWeight: 400 }}
+                />
               </label>
             ))}
           </div>
-          <button type="button" onClick={() => setStep(4)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             Review →
           </button>
         </div>
       )
     }
 
-    if (step === 4) {
+    if (step === 3) {
       return (
         <div>
+          <div style={{ marginBottom: 20, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
+            {drafts.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No drafts yet.</p>
+            ) : (
+              <div style={{ maxHeight: 140, overflow: 'auto' }}>
+                {drafts.map(d => (
+                  <button key={d.id} type="button" onClick={() => loadDraft(d)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 0', border: 'none', borderBottom: '1px solid var(--card-border)', background: 'transparent', cursor: 'pointer', fontSize: 13 }}>
+                    <strong>{d.template_key}</strong> · {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
             <div><strong>Template:</strong> {selected.label}</div>
-            <div><strong>Member:</strong> {member?.member_name || '— (blank)'}</div>
             {includeTamil && <div><strong>Tamil:</strong> Yes</div>}
+            {bulkMode && (
+              <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8', fontSize: 12 }}>
+                Bulk mode: {bulkRows.length} row(s) loaded from tracker
+                <button type="button" onClick={clearBulk} style={{ marginLeft: 10, fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Clear
+                </button>
+              </div>
+            )}
           </div>
-          <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-            {Object.entries(fieldValues).filter(([, val]) => val).map(([k, val]) => (
-              <div key={k} style={{ marginBottom: 4 }}><strong>{k}:</strong> {val}</div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+
+          {!bulkMode && (
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
+              {Object.entries(fieldValues).filter(([, val]) => val).map(([k, val]) => (
+                <div key={k} style={{ marginBottom: 4 }}><strong>{k}:</strong> {val}</div>
+              ))}
+            </div>
+          )}
+
+          {(selected.template_type === 'letter' || selected.template_type === 'form') && (
+            <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk letters (tracker)</div>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                For multiple PDFs: download the tracker, fill rows, upload it, then use Multi PDF.
+                For a single letter, use Issue PDF with the fields above.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" disabled={busy || !variables.length} onClick={handleDownloadTracker}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  <Download size={14} /> Download tracker
+                </button>
+                <button type="button" disabled={busy} onClick={() => trackerInputRef.current?.click()}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  <Upload size={14} /> Upload tracker
+                </button>
+                <input ref={trackerInputRef} type="file" accept=".xlsx,.xls" onChange={handleTrackerFile} style={{ display: 'none' }} />
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button type="button" disabled={busy} onClick={handleSaveDraft}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <Save size={14} /> Save shared draft
             </button>
             {selected.template_type === 'letter' || selected.template_type === 'form' ? (
-              <button type="button" disabled={busy || !selected.storage_path} onClick={handleTestConvert}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
-                {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                Issue PDF
-              </button>
+              bulkMode ? (
+                <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                  Multi PDF
+                </button>
+              ) : (
+                <button type="button" disabled={busy || !selected.storage_path} onClick={handleIssuePdf}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                  Issue PDF
+                </button>
+              )
             ) : (
               <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>Built-in certificates — PDF coming next</span>
             )}
           </div>
-          {lastPdf?.signed_url && (
+
+          {bulkProgress && (
+            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-2)' }}>
+              Generating PDF {bulkProgress.current} of {bulkProgress.total}
+              {bulkProgress.label ? ` — ${bulkProgress.label}` : ''}
+            </div>
+          )}
+
+          {lastPdf?.signed_url && !bulkMode && (
             <div style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Last issued PDF</div>
               <a href={lastPdf.signed_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#2563eb' }}>Open PDF</a>
@@ -341,7 +441,7 @@ export default function PrintCornerPage() {
         </div>
         <button type="button" onClick={() => setStep(2)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          <User size={14} /> Start wizard
+          Fill fields →
         </button>
       </>
     )
@@ -350,30 +450,11 @@ export default function PrintCornerPage() {
   return (
     <div className="page-container">
       <PageHeader icon={Printer} title="Print Corner" subtitle="Certificates, letters, and forms">
-        <button type="button" onClick={() => setShowDrafts(s => !s)}
-          style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)', marginRight: 8 }}
-          title="Shared drafts">
-          <FolderOpen size={15} />
-        </button>
         <button type="button" onClick={() => navigate('/print-corner/settings')} title="Print Corner Settings"
           style={{ padding: '8px 10px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-2)' }}>
           <Settings size={15} />
         </button>
       </PageHeader>
-
-      {showDrafts && (
-        <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
-          {drafts.length === 0 ? (
-            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No drafts yet.</p>
-          ) : drafts.map(d => (
-            <button key={d.id} type="button" onClick={() => loadDraft(d)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 0', border: 'none', borderBottom: '1px solid var(--card-border)', background: 'transparent', cursor: 'pointer', fontSize: 13 }}>
-              <strong>{d.template_key}</strong> · {d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 420 }}>
         <aside style={{ width: 260, flexShrink: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, overflow: 'hidden' }}>
