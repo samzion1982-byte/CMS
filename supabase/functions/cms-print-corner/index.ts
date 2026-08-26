@@ -138,6 +138,37 @@ async function fetchSignatureImage(url: string | null | undefined) {
   }
 }
 
+/** Prefer storage download when URL points at church-logos (public fetch often blocked). */
+async function loadSignatureFromUrlOrStorage(
+  admin: ReturnType<typeof createClient>,
+  url: string | null | undefined,
+  fallbackPath: string | undefined,
+) {
+  const tryPaths: string[] = []
+  if (fallbackPath) {
+    tryPaths.push(
+      fallbackPath,
+      fallbackPath.replace(/\.png$/i, '.jpg'),
+      fallbackPath.replace(/\.png$/i, '.jpeg'),
+    )
+  }
+  const u = String(url || '')
+  const m = u.match(/\/storage\/v1\/object\/(?:public|sign)\/church-logos\/([^?]+)/i)
+  if (m?.[1]) tryPaths.unshift(decodeURIComponent(m[1]))
+
+  for (const tryPath of tryPaths) {
+    const { data, error } = await admin.storage.from('church-logos').download(tryPath)
+    if (error || !data) continue
+    const bytes = new Uint8Array(await data.arrayBuffer())
+    if (!bytes.length) continue
+    return { img: { bytes, ...sniffImageMeta(bytes, tryPath) }, via: `storage:${tryPath}` }
+  }
+
+  const fetched = await fetchSignatureImage(url)
+  if (fetched) return { img: fetched, via: 'url' }
+  return { img: null, via: url ? 'fetch_failed' : 'no_url' }
+}
+
 function nextRelationshipId(relsXml: string) {
   let max = 0
   for (const m of relsXml.matchAll(/\bId\s*=\s*"rId(\d+)"/gi)) {
@@ -253,6 +284,27 @@ function injectImageAtPlaceholder(xml: string, key: string, drawingXml: string) 
   return out.split(marker).join(splice)
 }
 
+/** Strip XML to readable text (same approach as frontend placeholder scan). */
+function officePlainText(xml: string) {
+  return String(xml || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/<a:t[^>]*>/gi, '')
+    .replace(/<\/a:t>/gi, '')
+    .replace(/<w:t[^>]*>/gi, '')
+    .replace(/<\/w:t>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+}
+
+function officeHasPlaceholder(xml: string, key: string) {
+  if (placeholderExistsInXml(xml, key)) return true
+  return officePlainText(xml).includes(`{${key}}`)
+}
+
 function maxCNvPrId(xml: string) {
   let max = 1
   for (const m of xml.matchAll(/\bid\s*=\s*"(\d+)"/gi)) {
@@ -261,22 +313,48 @@ function maxCNvPrId(xml: string) {
   return max
 }
 
-/** Find p:sp shape that contains a signature text placeholder (Canva/PPT often uses text, not AltText). */
+/** Find p:sp (incl. inside groups) that contains a signature text placeholder. */
 function findPptxShapeForPlaceholder(xml: string, key: string) {
   const re = /<p:sp\b[\s\S]*?<\/p:sp>/gi
+  let best: string | null = null
   for (const m of xml.matchAll(re)) {
-    if (placeholderExistsInXml(m[0], key)) return m[0]
+    const block = m[0]
+    if (officeHasPlaceholder(block, key)) {
+      // Prefer innermost / shortest match
+      if (!best || block.length < best.length) best = block
+    }
   }
-  return null
+  return best
 }
 
 function extractPptxXfrm(spXml: string) {
-  const x = spXml.match(/<a:off\b[^>]*\bx\s*=\s*"(-?\d+)"/i)?.[1]
-  const y = spXml.match(/<a:off\b[^>]*\by\s*=\s*"(-?\d+)"/i)?.[1]
-  const cx = spXml.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
-  const cy = spXml.match(/<a:ext\b[^>]*\bcy\s*=\s*"(\d+)"/i)?.[1]
+  // Prefer spPr xfrm (shape position), not txBody internals
+  const spPr = spXml.match(/<p:spPr\b[\s\S]*?<\/p:spPr>/i)?.[0] || spXml
+  const x = spPr.match(/<a:off\b[^>]*\bx\s*=\s*"(-?\d+)"/i)?.[1]
+  const y = spPr.match(/<a:off\b[^>]*\by\s*=\s*"(-?\d+)"/i)?.[1]
+  const cx = spPr.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
+  const cy = spPr.match(/<a:ext\b[^>]*\bcy\s*=\s*"(\d+)"/i)?.[1]
   if (x == null || y == null || cx == null || cy == null) return null
   return { x, y, cx, cy }
+}
+
+function adjustSignatureXfrm(
+  xfrm: { x: string, y: string, cx: string, cy: string },
+  isSeal = false,
+) {
+  let cx = Number(xfrm.cx) || 0
+  let cy = Number(xfrm.cy) || 0
+  let x = Number(xfrm.x) || 0
+  let y = Number(xfrm.y) || 0
+  const wantCy = isSeal ? 914400 : 700000
+  const wantCx = isSeal ? 914400 : 2000000
+  if (cy < wantCy) {
+    const grow = wantCy - cy
+    y = Math.max(0, y - grow) // grow upward so image sits on the signature line
+    cy = wantCy
+  }
+  if (cx < wantCx) cx = wantCx
+  return { x: String(Math.round(x)), y: String(Math.round(y)), cx: String(Math.round(cx)), cy: String(Math.round(cy)) }
 }
 
 function pptxSignaturePicXml(
@@ -286,13 +364,7 @@ function pptxSignaturePicXml(
   xfrm: { x: string, y: string, cx: string, cy: string },
   isSeal = false,
 ) {
-  let cx = Number(xfrm.cx) || 0
-  let cy = Number(xfrm.cy) || 0
-  // Text boxes for tags are often short — expand to a readable signature size
-  if (cy < 250000) cy = isSeal ? 914400 : 560000
-  if (cx < 900000) cx = isSeal ? 914400 : 1600000
-  const x = xfrm.x || '0'
-  const y = xfrm.y || '0'
+  const adj = adjustSignatureXfrm(xfrm, isSeal)
   return (
     `<p:pic>`
     + `<p:nvPicPr>`
@@ -301,14 +373,23 @@ function pptxSignaturePicXml(
     + `<p:nvPr/>`
     + `</p:nvPicPr>`
     + `<p:blipFill>`
-    + `<a:blip r:embed="${rId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`
+    + `<a:blip r:embed="${rId}"/>`
     + `<a:stretch><a:fillRect/></a:stretch>`
     + `</p:blipFill>`
-    + `<p:spPr>`
-    + `<a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
+    + `<p:spPr bwMode="auto">`
+    + `<a:xfrm><a:off x="${adj.x}" y="${adj.y}"/><a:ext cx="${adj.cx}" cy="${adj.cy}"/></a:xfrm>`
     + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`
     + `</p:spPr>`
     + `</p:pic>`
+  )
+}
+
+function ensureMediaContentTypeOverride(ctXml: string, mediaPath: string, contentType: string) {
+  const part = `/${mediaPath.replace(/^\/+/, '')}`
+  if (ctXml.includes(`PartName="${part}"`)) return ctXml
+  return ctXml.replace(
+    '</Types>',
+    `<Override PartName="${part}" ContentType="${contentType}"/></Types>`,
   )
 }
 
@@ -338,29 +419,15 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
   async function loadColumn(column: string, url: string | null | undefined) {
     if (loaded.has(column)) return loaded.get(column)!
 
-    let img = await fetchSignatureImage(url)
+    const path = STORAGE_FALLBACK[column]
+    const { img, via } = await loadSignatureFromUrlOrStorage(admin, url, path)
     if (img) {
-      debug[column] = `url_ok:${img.ext}:${img.bytes.length}b`
+      debug[column] = `${via}:${img.ext}:${img.bytes.length}b`
       loaded.set(column, img)
       return img
     }
 
-    // Fallback: read directly from church-logos with service role
-    const path = STORAGE_FALLBACK[column]
-    if (path) {
-      for (const tryPath of [path, path.replace(/\.png$/i, '.jpg'), path.replace(/\.png$/i, '.jpeg')]) {
-        const { data, error } = await admin.storage.from('church-logos').download(tryPath)
-        if (error || !data) continue
-        const bytes = new Uint8Array(await data.arrayBuffer())
-        if (!bytes.length) continue
-        img = { bytes, ...sniffImageMeta(bytes, tryPath) }
-        debug[column] = `storage_ok:${tryPath}:${img.ext}:${bytes.length}b`
-        loaded.set(column, img)
-        return img
-      }
-    }
-
-    debug[column] = url ? `fetch_failed:${String(url).slice(0, 80)}` : 'no_url'
+    debug[column] = via === 'fetch_failed' ? `fetch_failed:${String(url).slice(0, 80)}` : via
     loaded.set(column, null)
     return null
   }
@@ -402,6 +469,8 @@ async function mergeOfficeBytes(
     const file = zip.file(name)
     if (!file) continue
     let xml = await file.async('string')
+    // Canva sometimes inserts zero-width chars inside placeholder text
+    xml = xml.replace(/[\u200B-\u200D\uFEFF]/g, '')
 
     const relsName = relsPathForXmlPart(name)
     let relsXml = zip.file(relsName)
@@ -425,8 +494,12 @@ async function mergeOfficeBytes(
 
       mediaSeq += 1
       const mediaName = `sign_${slot.key}_${mediaSeq}.${img.ext}`
-      zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
-      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+      const mediaPath = `${mediaFolder}/${mediaName}`
+      zip.file(mediaPath, img.bytes)
+      if (ctXml) {
+        ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+        ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+      }
 
       const rId = nextRelationshipId(relsXml)
       relsXml = relsXml.replace(
@@ -456,14 +529,15 @@ async function mergeOfficeBytes(
       }
     }
 
-    // 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT picture at text-box position)
+    // 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT: replace text box with picture)
     for (const [key, img] of Object.entries(signatureImages)) {
       if (swappedKeys.has(key)) continue
-      if (!placeholderExistsInXml(xml, key)) continue
+      if (!officeHasPlaceholder(xml, key)) continue
 
       mediaSeq += 1
       const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-      zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
+      const mediaPath = `${mediaFolder}/${mediaName}`
+      zip.file(mediaPath, img.bytes)
 
       const rId = nextRelationshipId(relsXml)
       relsXml = relsXml.replace(
@@ -471,22 +545,38 @@ async function mergeOfficeBytes(
         `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
       )
       relsDirty = true
-      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+      if (ctXml) {
+        ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+        ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+      }
 
       if (isPptx) {
         const sp = findPptxShapeForPlaceholder(xml, key)
-        const xfrm = (sp && extractPptxXfrm(sp))
-          || { x: '0', y: '0', cx: '1600000', cy: '560000' }
         const shapeId = maxCNvPrId(xml) + 1
-        const pic = pptxSignaturePicXml(rId, shapeId, key, xfrm, key === 'treasurer_seal')
-        xml = replacePlaceholderInXml(xml, key, '')
-        if (xml.includes('</p:spTree>')) {
-          xml = xml.replace('</p:spTree>', `${pic}</p:spTree>`)
+        if (sp) {
+          const xfrm = extractPptxXfrm(sp) || { x: '0', y: '0', cx: '2000000', cy: '700000' }
+          const pic = pptxSignaturePicXml(rId, shapeId, key, xfrm, key === 'treasurer_seal')
+          // Replace the text box shape with a real picture (survives Google Slides import better)
+          xml = xml.split(sp).join(pic)
+          swappedKeys.add(key)
+          swapLog.push(`${key}:pptx_replace_shape:${rId}`)
         } else {
-          xml += pic
+          const pic = pptxSignaturePicXml(
+            rId,
+            shapeId,
+            key,
+            { x: '5500000', y: '4500000', cx: '2000000', cy: '700000' },
+            key === 'treasurer_seal',
+          )
+          xml = replacePlaceholderInXml(xml, key, '')
+          if (xml.includes('</p:spTree>')) {
+            xml = xml.replace('</p:spTree>', `${pic}</p:spTree>`)
+          } else {
+            xml += pic
+          }
+          swappedKeys.add(key)
+          swapLog.push(`${key}:pptx_append_fallback:${rId}`)
         }
-        swappedKeys.add(key)
-        swapLog.push(`${key}:pptx_text_inject`)
       } else {
         docPrSeq += 1
         const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
@@ -498,8 +588,13 @@ async function mergeOfficeBytes(
 
     // 3) Clear leftover text sign tags
     for (const key of IMAGE_PLACEHOLDER_KEYS) {
-      if (placeholderExistsInXml(xml, key)) {
+      if (officeHasPlaceholder(xml, key)) {
         xml = replacePlaceholderInXml(xml, key, '')
+        // plain-text leftovers when XML was oddly split
+        const plainTag = `{${key}}`
+        if (officePlainText(xml).includes(plainTag)) {
+          xml = xml.split(plainTag).join('')
+        }
       }
     }
 

@@ -187,6 +187,7 @@ function TemplatesPanel() {
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState(null)
+  const [activeCategoryId, setActiveCategoryId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState(null)
   const [varRows, setVarRows] = useState([])
@@ -243,6 +244,24 @@ function TemplatesPanel() {
   const selected = templates.find(t => t.id === selectedId)
 
   useEffect(() => {
+    if (!grouped.length) return
+    setActiveCategoryId(prev => {
+      if (prev && grouped.some(g => g.category.id === prev)) return prev
+      if (selected?.category_id && grouped.some(g => g.category.id === selected.category_id)) {
+        return selected.category_id
+      }
+      return grouped[0].category.id
+    })
+  }, [grouped, selected?.category_id])
+
+  const activeGroup = useMemo(
+    () => grouped.find(g => g.category.id === activeCategoryId) || grouped[0] || null,
+    [grouped, activeCategoryId],
+  )
+
+  const sidebarTemplates = activeGroup?.templates || []
+
+  useEffect(() => {
     if (!selected) { setForm(null); setVarRows([]); return }
     setForm({
       label: selected.label,
@@ -252,6 +271,7 @@ function TemplatesPanel() {
       is_active: selected.is_active !== false,
     })
     setVarRows(normalizeTemplateVariables(selected.variables).map(v => ({ key: v.key || '', label: v.label || v.key || '' })))
+    if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selectedId, selected])
 
   async function handleSaveMeta() {
@@ -346,7 +366,7 @@ function TemplatesPanel() {
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>BY CATEGORY</span>
           <button type="button" onClick={() => {
             setAdding(true)
-            setNewTpl(n => ({ ...n, category_id: n.category_id || activeCategories[0]?.id || '' }))
+            setNewTpl(n => ({ ...n, category_id: n.category_id || activeCategoryId || activeCategories[0]?.id || '' }))
           }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             <Plus size={12} /> Add
@@ -373,34 +393,48 @@ function TemplatesPanel() {
           </div>
         )}
 
-        {grouped.every(g => g.templates.length === 0) ? (
-          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>No templates yet. Add one under a category.</div>
-        ) : grouped.map(g => (
-          <div key={g.category.id}>
-            <div style={{
-              padding: '8px 14px 4px', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
-              color: g.category.is_active === false ? '#94a3b8' : 'var(--text-2)',
-              background: 'var(--input-bg)',
-            }}>
-              {g.category.name}
-              {g.category.is_active === false ? ' (inactive)' : ''}
-              <span style={{ fontWeight: 500, marginLeft: 6, color: 'var(--text-3)' }}>{g.templates.length}</span>
-            </div>
-            {g.templates.length === 0 ? (
-              <div style={{ padding: '6px 14px 10px', fontSize: 11, color: 'var(--text-3)' }}>No templates in this category</div>
-            ) : g.templates.map(t => (
-              <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {grouped.map(g => {
+            const on = activeGroup?.category.id === g.category.id
+            return (
+              <button
+                key={g.category.id}
+                type="button"
+                onClick={() => setActiveCategoryId(g.category.id)}
                 style={{
-                  display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none',
-                  borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
-                  background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                  fontSize: 13, opacity: t.is_active === false ? 0.55 : 1,
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  padding: '8px 10px', border: 'none', borderRadius: 7, cursor: 'pointer', textAlign: 'left',
+                  background: on ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                  borderLeft: on ? '3px solid var(--accent)' : '3px solid transparent',
+                }}
+              >
+                <span style={{
+                  flex: 1, fontSize: 12, fontWeight: on ? 800 : 600,
+                  color: g.category.is_active === false ? '#94a3b8' : (on ? 'var(--accent)' : 'var(--text-2)'),
                 }}>
-                <div style={{ fontWeight: 600 }}>{t.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
+                  {g.category.name}{g.category.is_active === false ? ' (inactive)' : ''}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)' }}>{g.templates.length}</span>
               </button>
-            ))}
+            )
+          })}
+        </div>
+
+        {sidebarTemplates.length === 0 ? (
+          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
+            {grouped.length === 0 ? 'No templates yet. Add one under a category.' : 'No templates in this category.'}
           </div>
+        ) : sidebarTemplates.map(t => (
+          <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none',
+              borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+              background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+              fontSize: 13, opacity: t.is_active === false ? 0.55 : 1,
+            }}>
+            <div style={{ fontWeight: 600 }}>{t.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
+          </button>
         ))}
       </div>
 

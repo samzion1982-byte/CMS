@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import {
   Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList,
-  ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Save, Download, Upload,
+  CheckCircle2, AlertCircle, Save, Download, Upload,
   Pencil, Trash2, Search,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
@@ -115,7 +115,7 @@ export default function PrintCornerPage() {
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
   const [tplSearch, setTplSearch] = useState('')
-  const [expandedCats, setExpandedCats] = useState(() => new Set())
+  const [activeCategoryId, setActiveCategoryId] = useState(null)
   const catsSeededRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -154,18 +154,14 @@ export default function PrintCornerPage() {
     setBulkProgress(null)
     setIncludeTamil(!!selected.include_tamil)
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
-    setExpandedCats(prev => {
-      const next = new Set(prev)
-      if (selected.category_id) next.add(selected.category_id)
-      return next
-    })
+    if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // First load: open only the first category so the list stays compact as templates grow
+  // First load: select first category
   useEffect(() => {
     if (!groups.length || catsSeededRef.current) return
     catsSeededRef.current = true
-    setExpandedCats(new Set([groups[0].category.id]))
+    setActiveCategoryId(groups[0].category.id)
   }, [groups])
 
   const filteredGroups = useMemo(() => {
@@ -183,14 +179,21 @@ export default function PrintCornerPage() {
       .filter(g => g.templates.length > 0)
   }, [groups, tplSearch])
 
-  function toggleCategory(id) {
-    setExpandedCats(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
+  const activeGroup = useMemo(() => {
+    if (tplSearch.trim()) return null
+    return filteredGroups.find(g => g.category.id === activeCategoryId) || filteredGroups[0] || null
+  }, [filteredGroups, activeCategoryId, tplSearch])
+
+  const sidebarTemplates = useMemo(() => {
+    if (tplSearch.trim()) return filteredGroups.flatMap(g => g.templates.map(t => ({ t, catName: g.category.name })))
+    if (!activeGroup) return []
+    return activeGroup.templates.map(t => ({ t, catName: activeGroup.category.name }))
+  }, [filteredGroups, activeGroup, tplSearch])
+
+  const activeCatStyle = useMemo(() => {
+    const idx = filteredGroups.findIndex(g => g.category.id === (activeGroup?.category.id))
+    return categoryHeaderStyle(activeGroup?.category?.name, Math.max(0, idx))
+  }, [filteredGroups, activeGroup])
 
   const selectedMeta = useMemo(() => {
     if (!selected) return null
@@ -209,9 +212,9 @@ export default function PrintCornerPage() {
 
   const bulkMode = bulkRows.length > 0
 
-  /** Drafts for the same template type as the selection (certs don't show letter drafts). */
+  /** Drafts for letters/forms only (certificates skip shared drafts). */
   const visibleDrafts = useMemo(() => {
-    if (!selected) return drafts
+    if (!selected || selected.template_type === 'certificate') return []
     const keysOfType = new Set(
       groups
         .flatMap(g => g.templates)
@@ -310,10 +313,12 @@ export default function PrintCornerPage() {
         source: 'manual',
       })
       setLastPdf(res)
-      const swapped = res?.signature_merge?.swapped || res?.signatures_injected || []
+      const swapped = res?.signature_merge?.swapped || []
+      const swapLog = res?.signature_merge?.swap_log || []
       if (imageVariables.length && !swapped.length) {
+        console.warn('[print-corner] signature_load', res?.signature_load, 'signature_merge', res?.signature_merge)
         toast(
-          'PDF created, but signature was not applied. Re-upload Presbyter sign in Church Setup, redeploy cms-print-corner, then retry.',
+          `PDF created, but no signatures merged (${swapLog.join(', ') || 'empty'}). Check Church Setup PNGs and redeploy cms-print-corner.`,
           'error',
         )
       } else {
@@ -442,17 +447,12 @@ export default function PrintCornerPage() {
     }
 
     if (step === 3) {
+      const showDrafts = selected.template_type !== 'certificate'
       return (
         <div>
+          {showDrafts && (
           <div style={{ marginBottom: 20, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
-              Shared drafts
-              {selectedMeta ? (
-                <span style={{ fontWeight: 600, color: 'var(--text-3)', marginLeft: 6 }}>
-                  · {selectedMeta.label} only
-                </span>
-              ) : null}
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
             {visibleDrafts.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
                 No drafts for this type yet.
@@ -480,6 +480,7 @@ export default function PrintCornerPage() {
               </div>
             )}
           </div>
+          )}
 
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
             <div><strong>Template:</strong> {selected.label}</div>
@@ -524,10 +525,12 @@ export default function PrintCornerPage() {
           )}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {showDrafts && (
             <button type="button" disabled={busy} onClick={handleSaveDraft}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <Save size={14} /> Save shared draft
             </button>
+            )}
             {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
               bulkMode ? (
                 <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
@@ -609,7 +612,7 @@ export default function PrintCornerPage() {
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 10 }}>
               TEMPLATES
             </div>
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', marginBottom: 10 }}>
               <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-3)' }} />
               <input
                 value={tplSearch}
@@ -618,6 +621,40 @@ export default function PrintCornerPage() {
                 style={{ ...INPUT, height: 34, paddingLeft: 32, fontSize: 12 }}
               />
             </div>
+            {!tplSearch.trim() && filteredGroups.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {filteredGroups.map((g, gi) => {
+                  const catStyle = categoryHeaderStyle(g.category.name, gi)
+                  const on = activeGroup?.category.id === g.category.id
+                  return (
+                    <button
+                      key={g.category.id}
+                      type="button"
+                      onClick={() => setActiveCategoryId(g.category.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                        padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                        borderRadius: 8,
+                        background: on ? catStyle.bg : 'transparent',
+                        borderLeft: `3px solid ${on ? catStyle.accent : 'transparent'}`,
+                      }}
+                    >
+                      <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 800 : 600, color: on ? catStyle.accent : 'var(--text-2)' }}>
+                        {g.category.name}
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
+                        padding: '2px 7px', borderRadius: 99,
+                        background: on ? catStyle.badgeBg : 'var(--input-bg)',
+                        color: on ? catStyle.badgeColor : 'var(--text-3)',
+                      }}>
+                        {g.templates.length}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
@@ -625,79 +662,57 @@ export default function PrintCornerPage() {
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
                 <Loader2 size={20} className="animate-spin" />
               </div>
-            ) : filteredGroups.length === 0 ? (
+            ) : sidebarTemplates.length === 0 ? (
               <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
-                {tplSearch.trim() ? 'No templates match your search.' : 'No templates yet.'}
+                {tplSearch.trim() ? 'No templates match your search.' : 'No templates in this category.'}
               </div>
-            ) : filteredGroups.map((g, gi) => {
-              const open = tplSearch.trim() ? true : expandedCats.has(g.category.id)
-              const catStyle = categoryHeaderStyle(g.category.name, gi)
-              return (
-                <div key={g.category.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                  <button
-                    type="button"
-                    onClick={() => toggleCategory(g.category.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                      background: catStyle.bg,
-                      borderLeft: `3px solid ${catStyle.accent}`,
-                      boxShadow: open ? `inset 0 -1px 0 ${catStyle.badgeBg}` : 'none',
-                    }}
-                  >
-                    {open
-                      ? <ChevronDown size={14} style={{ color: catStyle.accent, flexShrink: 0 }} />
-                      : <ChevronRight size={14} style={{ color: catStyle.accent, flexShrink: 0 }} />}
-                    <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: catStyle.accent }}>
-                      {g.category.name}
-                    </span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
-                      padding: '2px 7px', borderRadius: 99,
-                      background: catStyle.badgeBg, color: catStyle.badgeColor,
-                    }}>
-                      {g.templates.length}
-                    </span>
-                  </button>
-                  {open && (
-                    <div style={{ background: 'var(--card-bg)' }}>
-                      {g.templates.map(t => {
-                    const Icon = TYPE_ICONS[t.template_type] || FileText
-                    const active = selected?.id === t.id
-                    return (
-                      <button key={t.id} type="button" onClick={() => setSelected(t)}
-                        style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
-                          padding: '10px 14px 10px 18px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                          background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                          borderLeft: active ? `3px solid ${catStyle.accent}` : '3px solid transparent',
-                          color: 'var(--text-1)',
-                        }}>
-                        <Icon size={15} style={{
-                          color: TEMPLATE_TYPES[t.template_type]?.color || catStyle.accent,
-                          flexShrink: 0, marginTop: 2,
-                        }} />
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
-                            {t.label}
-                          </span>
-                          {t.description ? (
-                            <span style={{
-                              display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {t.description}
-                            </span>
-                          ) : null}
+            ) : (
+              <div style={{ background: 'var(--card-bg)' }}>
+                {!tplSearch.trim() && activeGroup && (
+                  <div style={{
+                    padding: '8px 14px', fontSize: 11, fontWeight: 700,
+                    color: activeCatStyle.accent, background: activeCatStyle.bg,
+                    borderBottom: `1px solid ${activeCatStyle.badgeBg}`,
+                  }}>
+                    {activeGroup.category.name}
+                  </div>
+                )}
+                {sidebarTemplates.map(({ t, catName }) => {
+                  const Icon = TYPE_ICONS[t.template_type] || FileText
+                  const active = selected?.id === t.id
+                  const accent = TEMPLATE_TYPES[t.template_type]?.color || activeCatStyle.accent
+                  return (
+                    <button key={t.id} type="button" onClick={() => setSelected(t)}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
+                        padding: '10px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                        background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                        borderLeft: active ? `3px solid ${accent}` : '3px solid transparent',
+                        color: 'var(--text-1)',
+                      }}>
+                      <Icon size={15} style={{ color: accent, flexShrink: 0, marginTop: 2 }} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
+                          {t.label}
                         </span>
-                      </button>
-                    )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+                        {tplSearch.trim() ? (
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                            {catName}
+                          </span>
+                        ) : t.description ? (
+                          <span style={{
+                            display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {t.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </aside>
 
