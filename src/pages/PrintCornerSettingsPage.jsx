@@ -309,16 +309,31 @@ function TemplatesPanel() {
   async function handleAddTemplate() {
     if (!newTpl.category_id) { toast('Choose a category.', 'error'); return }
     if (!newTpl.label.trim()) { toast('Enter a display label.', 'error'); return }
-    const key = (newTpl.template_key || newTpl.label).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-    if (!key) { toast('Enter a template key.', 'error'); return }
+    const key = newTpl.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      || `template-${Date.now()}`
+    const cat = allTopCategories.find(c => c.id === newTpl.category_id)
+      || activeCategories.find(c => c.id === newTpl.category_id)
+    const catName = String(cat?.name || '').toLowerCase()
+    let templateType = 'letter'
+    if (catName.includes('cert')) templateType = 'certificate'
+    else if (catName.includes('form') || catName.includes('application')) templateType = 'form'
+
     setBusy(true)
     try {
       const max = templates.filter(t => t.category_id === newTpl.category_id).reduce((m, t) => Math.max(m, t.sort_order || 0), 0)
+      // Ensure unique key if label collides
+      let uniqueKey = key
+      const existing = new Set(templates.map(t => t.template_key))
+      let n = 2
+      while (existing.has(uniqueKey)) {
+        uniqueKey = `${key}-${n}`
+        n += 1
+      }
       const row = await savePrintCornerTemplate({
         category_id: newTpl.category_id,
         label: newTpl.label.trim(),
-        template_key: key,
-        template_type: newTpl.template_type,
+        template_key: uniqueKey,
+        template_type: templateType,
         sort_order: max + 10,
         variables: [],
         is_active: true,
@@ -376,12 +391,6 @@ function TemplatesPanel() {
               {activeCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <input placeholder="Display label" value={newTpl.label} onChange={e => setNewTpl(f => ({ ...f, label: e.target.value }))} style={INPUT} />
-            <input placeholder="Key (optional)" value={newTpl.template_key} onChange={e => setNewTpl(f => ({ ...f, template_key: e.target.value }))} style={INPUT} />
-            <select value={newTpl.template_type} onChange={e => setNewTpl(f => ({ ...f, template_type: e.target.value }))} style={INPUT}>
-              <option value="letter">Letter</option>
-              <option value="form">Form</option>
-              <option value="certificate">Certificate</option>
-            </select>
             <div style={{ display: 'flex', gap: 6 }}>
               <button type="button" disabled={busy} onClick={handleAddTemplate} style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
               <button type="button" onClick={() => setAdding(false)} style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
