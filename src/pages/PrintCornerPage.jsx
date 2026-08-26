@@ -315,12 +315,23 @@ export default function PrintCornerPage() {
       setLastPdf(res)
       const swapped = res?.signature_merge?.swapped || []
       const swapLog = res?.signature_merge?.swap_log || []
+      const altDebug = res?.signature_merge?.alt_debug
+      console.warn('[print-corner] signature_load', res?.signature_load)
+      console.warn('[print-corner] signature_merge', res?.signature_merge)
       if (imageVariables.length && !swapped.length) {
-        console.warn('[print-corner] signature_load', res?.signature_load, 'signature_merge', res?.signature_merge)
+        const hits = (altDebug || []).flatMap(d => d.alt_hits || [])
+        const hitSummary = hits.length
+          ? `AltText found: ${hits.map(h => `${h.key}(@${h.attr})`).join(', ')}`
+          : 'No AltText hits in slide XML'
+        const slotSummary = (altDebug || []).map(d =>
+          `${d.part}: ${d.image_containers || 0} images, ${(d.slots || []).length} slots`,
+        ).join(' | ') || 'no parts'
         toast(
-          `PDF created, but no signatures merged (${swapLog.join(', ') || 'empty'}). Check Church Setup PNGs and redeploy cms-print-corner.`,
+          `PDF created, but signatures not swapped. ${hitSummary}. ${slotSummary}. Log: ${swapLog.join('; ') || 'empty'}`,
           'error',
         )
+      } else if (imageVariables.length && swapped.length) {
+        toast(`PDF created. Signatures: ${swapped.join(', ')}`, 'success')
       } else {
         toast('PDF created and saved to issued folder.', 'success')
       }
@@ -561,6 +572,28 @@ export default function PrintCornerPage() {
             <div style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Last issued PDF</div>
               <a href={lastPdf.signed_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#2563eb' }}>Open PDF</a>
+              {lastPdf.signature_merge && (
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11, fontWeight: 700, cursor: 'pointer', color: 'var(--text-2)' }}>
+                    Signature merge debug
+                  </summary>
+                  <pre style={{
+                    marginTop: 8, padding: 8, fontSize: 10, overflow: 'auto', maxHeight: 220,
+                    background: 'var(--card-bg)', borderRadius: 6, border: '1px solid var(--card-border)',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>
+                    {JSON.stringify({
+                      format: lastPdf.signature_merge.format,
+                      swapped: lastPdf.signature_merge.swapped,
+                      swap_log: lastPdf.signature_merge.swap_log,
+                      slots_found: lastPdf.signature_merge.slots_found,
+                      signature_keys_available: lastPdf.signature_merge.signature_keys_available,
+                      signature_load: lastPdf.signature_load,
+                      alt_debug: lastPdf.signature_merge.alt_debug,
+                    }, null, 2)}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
         </div>
