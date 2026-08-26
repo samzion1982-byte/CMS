@@ -568,19 +568,37 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          {lastPdf?.signed_url && !bulkMode && (
-            <div style={{ marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Last issued PDF</div>
-              <a href={lastPdf.signed_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#2563eb' }}>Open PDF</a>
-              {lastPdf.signature_merge && (
-                <details style={{ marginTop: 10 }}>
-                  <summary style={{ fontSize: 11, fontWeight: 700, cursor: 'pointer', color: 'var(--text-2)' }}>
-                    Signature merge debug
-                  </summary>
+          {lastPdf && !bulkMode && (
+            <div style={{
+              marginTop: 16, padding: 14, borderRadius: 8,
+              background: '#fffbeb', border: '2px solid #f59e0b',
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: '#92400e' }}>
+                Signature merge debug
+              </div>
+              {lastPdf.signed_url && (
+                <a href={lastPdf.signed_url} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-block', marginBottom: 10, fontSize: 13, fontWeight: 600, color: '#2563eb' }}>
+                  Open PDF
+                </a>
+              )}
+              {!lastPdf.signature_merge ? (
+                <p style={{ fontSize: 12, color: '#b45309', margin: 0 }}>
+                  No signature_merge in response — redeploy edge function <code>cms-print-corner</code>,
+                  hard-refresh this page (Ctrl+Shift+R), then Issue PDF again.
+                </p>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, marginBottom: 8, color: '#78350f', lineHeight: 1.5 }}>
+                    <div><strong>Format:</strong> {lastPdf.signature_merge.format || '—'}</div>
+                    <div><strong>Swapped:</strong> {(lastPdf.signature_merge.swapped || []).join(', ') || '(none)'}</div>
+                    <div><strong>Swap log:</strong> {(lastPdf.signature_merge.swap_log || []).join(' · ') || '(empty)'}</div>
+                    <div><strong>Slots found:</strong> {(lastPdf.signature_merge.slots_found || []).join(' · ') || '(none)'}</div>
+                  </div>
                   <pre style={{
-                    marginTop: 8, padding: 8, fontSize: 10, overflow: 'auto', maxHeight: 220,
-                    background: 'var(--card-bg)', borderRadius: 6, border: '1px solid var(--card-border)',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    margin: 0, padding: 10, fontSize: 11, overflow: 'auto', maxHeight: 280,
+                    background: '#fff', borderRadius: 6, border: '1px solid #fcd34d',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#1c1917',
                   }}>
                     {JSON.stringify({
                       format: lastPdf.signature_merge.format,
@@ -592,7 +610,7 @@ export default function PrintCornerPage() {
                       alt_debug: lastPdf.signature_merge.alt_debug,
                     }, null, 2)}
                   </pre>
-                </details>
+                </>
               )}
             </div>
           )}
