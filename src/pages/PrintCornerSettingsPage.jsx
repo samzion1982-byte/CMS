@@ -25,6 +25,7 @@ import {
   uploadPrintCornerApplicationFormFile,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
+  warmTemplatePreview,
   TEMPLATE_TYPES,
 } from '../lib/printCornerLib'
 
@@ -215,6 +216,9 @@ function TemplatesPanel() {
   const [tplPreviewUrl, setTplPreviewUrl] = useState(null)
   const [tplPreviewLoading, setTplPreviewLoading] = useState(false)
   const [tplPreviewError, setTplPreviewError] = useState(null)
+  const [tplPreviewCached, setTplPreviewCached] = useState(false)
+  const [tplPreviewTick, setTplPreviewTick] = useState(0)
+  const [tplPreviewForce, setTplPreviewForce] = useState(false)
   const [church, setChurch] = useState(null)
 
   const load = useCallback(async () => {
@@ -357,24 +361,37 @@ function TemplatesPanel() {
       setTplPreviewUrl(null)
       setTplPreviewLoading(false)
       setTplPreviewError(null)
+      setTplPreviewCached(false)
       return
     }
     let cancelled = false
+    const force = tplPreviewForce
     setTplPreviewLoading(true)
     setTplPreviewError(null)
-    setTplPreviewUrl(null)
+    if (force) setTplPreviewUrl(null)
     ;(async () => {
       try {
-        const res = await previewPrintCornerTemplate(selected, church)
-        if (!cancelled) setTplPreviewUrl(res.signed_url || null)
+        const res = await previewPrintCornerTemplate(selected, church, { force })
+        if (!cancelled) {
+          setTplPreviewUrl(res.signed_url || null)
+          setTplPreviewCached(!!res.cached)
+        }
       } catch (e) {
         if (!cancelled) setTplPreviewError(e.message || 'Preview failed')
       } finally {
-        if (!cancelled) setTplPreviewLoading(false)
+        if (!cancelled) {
+          setTplPreviewLoading(false)
+          setTplPreviewForce(false)
+        }
       }
     })()
     return () => { cancelled = true }
-  }, [selected?.id, selected?.storage_path, isAppFormsMode, church])
+  }, [selected?.id, selected?.storage_path, isAppFormsMode, church, tplPreviewTick]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function refreshTplPreview() {
+    setTplPreviewForce(true)
+    setTplPreviewTick(t => t + 1)
+  }
 
   async function handleSaveMeta() {
     if (!selected || !form) return
@@ -525,6 +542,10 @@ function TemplatesPanel() {
         toast('Uploaded, but no {placeholders} found. Add tags like {member_name} and re-upload.', 'error')
       }
       await load()
+      // Rebuild cached preview.pdf in the background, then refresh the panel
+      warmTemplatePreview(result.template || selected, church)
+      setTplPreviewForce(true)
+      setTplPreviewTick(t => t + 1)
     } catch (err) { toast(err.message, 'error') }
     setBusy(false)
   }
@@ -821,14 +842,28 @@ function TemplatesPanel() {
               <div style={{
                 padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
                 borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
-                display: 'flex', justifyContent: 'space-between', gap: 8,
+                display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
               }}>
                 <span>Template preview</span>
-                <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>Sample data · not issued</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>
+                    {tplPreviewCached ? 'Cached' : 'Sample data · not issued'}
+                  </span>
+                  <button type="button" disabled={tplPreviewLoading} onClick={refreshTplPreview}
+                    style={{
+                      fontSize: 11, fontWeight: 700, textTransform: 'none', letterSpacing: 0,
+                      padding: '3px 8px', borderRadius: 6, border: '1px solid var(--card-border)',
+                      background: 'var(--card-bg)', color: 'var(--text-2)', cursor: tplPreviewLoading ? 'wait' : 'pointer',
+                    }}>
+                    Refresh
+                  </button>
+                </span>
               </div>
               {tplPreviewLoading ? (
-                <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
-                  <Loader2 size={16} className="animate-spin" style={{ display: 'inline' }} /> Generating preview…
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 13, lineHeight: 1.5 }}>
+                  <Loader2 size={16} className="animate-spin" style={{ display: 'inline' }} />
+                  <div style={{ marginTop: 8 }}>Loading preview…</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>First load builds a cache; later opens are much faster.</div>
                 </div>
               ) : tplPreviewError ? (
                 <div style={{ padding: 14, fontSize: 13, color: '#b91c1c', lineHeight: 1.45 }}>{tplPreviewError}</div>

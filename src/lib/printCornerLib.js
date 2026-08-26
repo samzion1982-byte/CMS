@@ -136,6 +136,7 @@ export async function convertTemplateFromStorage({
   fieldValues = {},
   issue = true,
   source = 'manual',
+  forcePreview = false,
 }) {
   return invokePrintCorner({
     action: 'convert_storage',
@@ -146,12 +147,78 @@ export async function convertTemplateFromStorage({
     field_values: fieldValues,
     issue,
     source,
+    force_preview: forcePreview,
   })
 }
 
-/** Convert letter/certificate template → PDF preview (not logged as issued). */
-export async function previewPrintCornerTemplate(template, church = null) {
+/** Stable preview.pdf path next to source.docx / source.pptx */
+export function templatePreviewStoragePath(storagePath) {
+  const p = String(storagePath || '')
+  const next = p.replace(/source\.(docx|pptx)$/i, 'preview.pdf')
+  return next !== p ? next : null
+}
+
+const previewMemoryCache = new Map() // key → { signed_url, expires }
+
+function previewCacheKey(storagePath) {
+  return String(storagePath || '')
+}
+
+/** Try local session cache + storage preview.pdf (no Google convert). */
+export async function getCachedTemplatePreviewUrl(storagePath) {
+  const previewPath = templatePreviewStoragePath(storagePath)
+  if (!previewPath) return null
+
+  const memKey = previewCacheKey(storagePath)
+  const hit = previewMemoryCache.get(memKey)
+  if (hit && hit.expires > Date.now() && hit.signed_url) {
+    return { signed_url: hit.signed_url, storage_path: previewPath, cached: true, engine: 'memory' }
+  }
+
+  const folder = previewPath.replace(/\/[^/]+$/, '')
+  const { data: listing, error } = await supabase.storage.from(BUCKET).list(folder, { limit: 30 })
+  if (error) return null
+  const hasPreview = (listing || []).some(f => f.name === 'preview.pdf')
+  if (!hasPreview) return null
+
+  const { data, error: urlErr } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(previewPath, 3600 * 6)
+  if (urlErr || !data?.signedUrl) return null
+
+  previewMemoryCache.set(memKey, {
+    signed_url: data.signedUrl,
+    expires: Date.now() + 1000 * 60 * 60 * 5,
+  })
+  return { signed_url: data.signedUrl, storage_path: previewPath, cached: true, engine: 'storage' }
+}
+
+function rememberPreviewUrl(storagePath, signedUrl) {
+  if (!storagePath || !signedUrl) return
+  previewMemoryCache.set(previewCacheKey(storagePath), {
+    signed_url: signedUrl,
+    expires: Date.now() + 1000 * 60 * 60 * 5,
+  })
+}
+
+export function invalidateTemplatePreviewCache(storagePath) {
+  if (storagePath) previewMemoryCache.delete(previewCacheKey(storagePath))
+}
+
+/**
+ * Letter/certificate PDF preview.
+ * Uses cached preview.pdf when available (fast); otherwise converts via Google once and stores it.
+ */
+export async function previewPrintCornerTemplate(template, church = null, { force = false } = {}) {
   if (!template?.storage_path) throw new Error('Upload a template file first.')
+
+  if (!force) {
+    const cached = await getCachedTemplatePreviewUrl(template.storage_path)
+    if (cached?.signed_url) return cached
+  } else {
+    invalidateTemplatePreviewCache(template.storage_path)
+  }
+
   const sampleMember = {
     member_id: 'M001',
     member_name: 'Sample Member',
@@ -167,14 +234,24 @@ export async function previewPrintCornerTemplate(template, church = null) {
   const templateType = template.template_type === 'certificate' ? 'certificates'
     : template.template_type === 'form' ? 'forms'
       : 'letters'
-  return convertTemplateFromStorage({
+  const res = await convertTemplateFromStorage({
     storagePath: template.storage_path,
     templateKey: template.template_key,
     templateType,
     fieldValues,
     issue: false,
     source: 'blank',
+    forcePreview: force,
   })
+  if (res?.signed_url) rememberPreviewUrl(template.storage_path, res.signed_url)
+  return res
+}
+
+/** Fire-and-forget: rebuild preview.pdf after a template upload. */
+export function warmTemplatePreview(template, church = null) {
+  if (!template?.storage_path) return
+  invalidateTemplatePreviewCache(template.storage_path)
+  previewPrintCornerTemplate(template, church, { force: true }).catch(() => {})
 }
 
 export async function getSharedDrafts(limit = 50) {

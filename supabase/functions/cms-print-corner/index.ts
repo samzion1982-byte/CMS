@@ -1033,6 +1033,31 @@ serve(async (req) => {
         return json({ error: 'storage_path must be under templates/' }, 400)
       }
 
+      const previewPath = String(storagePath).replace(/source\.(docx|pptx)$/i, 'preview.pdf')
+      const canStablePreview = !issue && previewPath !== storagePath && previewPath.endsWith('/preview.pdf')
+
+      // Fast path: serve cached preview.pdf without Google Drive convert
+      if (canStablePreview && body.force_preview !== true) {
+        const folder = previewPath.replace(/\/[^/]+$/, '')
+        const { data: listing } = await admin.storage.from(BUCKET).list(folder, { limit: 30 })
+        const hasPreview = (listing || []).some((f: { name?: string }) => f.name === 'preview.pdf')
+        if (hasPreview) {
+          const { data: existing } = await admin.storage.from(BUCKET).createSignedUrl(previewPath, 3600 * 6)
+          if (existing?.signedUrl) {
+            return json({
+              ok: true,
+              storage_path: previewPath,
+              signed_url: existing.signedUrl,
+              filename: 'preview.pdf',
+              merged: false,
+              cached: true,
+              fields_applied: 0,
+              engine: 'cache',
+            })
+          }
+        }
+      }
+
       const { data: fileBlob, error: dlErr } = await admin.storage.from(BUCKET).download(storagePath)
       if (dlErr || !fileBlob) {
         return json({ error: dlErr?.message || 'Could not download template' }, 400)
@@ -1082,9 +1107,10 @@ serve(async (req) => {
       }
 
       const year = new Date().getFullYear()
+      // Issued docs go under issued/; previews overwrite stable preview.pdf next to the template
       const issuedPath = issue
         ? `issued/${body.template_type || 'letters'}/${year}/${outName}`
-        : `previews/${user.id}/${outName}`
+        : (canStablePreview ? previewPath : `previews/${user.id}/${outName}`)
 
       const { error: upErr } = await admin.storage.from(BUCKET).upload(issuedPath, pdfBytes, {
         contentType: 'application/pdf',
@@ -1092,7 +1118,7 @@ serve(async (req) => {
       })
       if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`)
 
-      const { data: urlData } = await admin.storage.from(BUCKET).createSignedUrl(issuedPath, 3600)
+      const { data: urlData } = await admin.storage.from(BUCKET).createSignedUrl(issuedPath, issue ? 3600 : 3600 * 6)
 
       if (issue) {
         const { error: logErr } = await admin.from('print_corner_issued_log').insert({
