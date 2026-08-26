@@ -149,6 +149,34 @@ export async function convertTemplateFromStorage({
   })
 }
 
+/** Convert letter/certificate template → PDF preview (not logged as issued). */
+export async function previewPrintCornerTemplate(template, church = null) {
+  if (!template?.storage_path) throw new Error('Upload a template file first.')
+  const sampleMember = {
+    member_id: 'M001',
+    member_name: 'Sample Member',
+    mobile: '9000000000',
+    family_id: 'F001',
+    father_name: 'Sample Father',
+    title: 'Mr.',
+  }
+  const fieldValues = defaultFieldValuesFromTemplate(template, church, sampleMember)
+  for (const key of Object.keys(fieldValues)) {
+    if (!String(fieldValues[key] || '').trim()) fieldValues[key] = `[${key}]`
+  }
+  const templateType = template.template_type === 'certificate' ? 'certificates'
+    : template.template_type === 'form' ? 'forms'
+      : 'letters'
+  return convertTemplateFromStorage({
+    storagePath: template.storage_path,
+    templateKey: template.template_key,
+    templateType,
+    fieldValues,
+    issue: false,
+    source: 'blank',
+  })
+}
+
 export async function getSharedDrafts(limit = 50) {
   const { data, error } = await supabase
     .from('print_corner_drafts')

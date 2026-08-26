@@ -23,6 +23,8 @@ import {
   savePrintCornerApplicationForm,
   deletePrintCornerApplicationForm,
   uploadPrintCornerApplicationFormFile,
+  getApplicationFormSignedUrl,
+  previewPrintCornerTemplate,
   TEMPLATE_TYPES,
 } from '../lib/printCornerLib'
 
@@ -209,14 +211,20 @@ function TemplatesPanel() {
   const [adding, setAdding] = useState(false)
   const [newTpl, setNewTpl] = useState({ category_id: '', label: '' })
   const [newBlankLabel, setNewBlankLabel] = useState('')
+  const [blankPreviewUrl, setBlankPreviewUrl] = useState(null)
+  const [tplPreviewUrl, setTplPreviewUrl] = useState(null)
+  const [tplPreviewLoading, setTplPreviewLoading] = useState(false)
+  const [tplPreviewError, setTplPreviewError] = useState(null)
+  const [church, setChurch] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [cats, tpls, forms] = await Promise.all([
+      const [cats, tpls, forms, churchRow] = await Promise.all([
         getPrintCornerCategories(false),
         getPrintCornerTemplates(false),
         getPrintCornerApplicationForms(false).catch(() => []),
+        getChurchForPrintCorner().catch(() => null),
       ])
 
       // Remove legacy mail-merge "form" templates (blank scanned forms replace them)
@@ -231,6 +239,7 @@ function TemplatesPanel() {
       setCategories(cats)
       setTemplates(cleaned)
       setBlankForms(forms || [])
+      setChurch(churchRow)
       setSelectedId(prev => {
         if (prev && cleaned.some(t => t.id === prev)) return prev
         return null
@@ -324,6 +333,48 @@ function TemplatesPanel() {
       sort_order: selectedBlank.sort_order ?? 0,
     })
   }, [selectedBlank?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedBlank?.storage_path) {
+      setBlankPreviewUrl(null)
+      return
+    }
+    let cancelled = false
+    setBlankPreviewUrl(null)
+    ;(async () => {
+      try {
+        const url = await getApplicationFormSignedUrl(selectedBlank.storage_path)
+        if (!cancelled) setBlankPreviewUrl(url)
+      } catch {
+        if (!cancelled) setBlankPreviewUrl(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedBlank?.id, selectedBlank?.storage_path])
+
+  useEffect(() => {
+    if (isAppFormsMode || !selected?.storage_path) {
+      setTplPreviewUrl(null)
+      setTplPreviewLoading(false)
+      setTplPreviewError(null)
+      return
+    }
+    let cancelled = false
+    setTplPreviewLoading(true)
+    setTplPreviewError(null)
+    setTplPreviewUrl(null)
+    ;(async () => {
+      try {
+        const res = await previewPrintCornerTemplate(selected, church)
+        if (!cancelled) setTplPreviewUrl(res.signed_url || null)
+      } catch (e) {
+        if (!cancelled) setTplPreviewError(e.message || 'Preview failed')
+      } finally {
+        if (!cancelled) setTplPreviewLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selected?.id, selected?.storage_path, isAppFormsMode, church])
 
   async function handleSaveMeta() {
     if (!selected || !form) return
@@ -664,6 +715,36 @@ function TemplatesPanel() {
                 {selectedBlank.storage_path ? 'Replace file' : 'Upload PDF / JPEG'}
               </button>
             </div>
+
+            {selectedBlank.storage_path && (
+              <div style={{
+                marginBottom: 16, borderRadius: 10, overflow: 'hidden',
+                border: '1px solid var(--card-border)', background: '#f8fafc',
+              }}>
+                <div style={{
+                  padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+                  borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
+                }}>
+                  Preview
+                </div>
+                {!blankPreviewUrl ? (
+                  <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-3)' }}>
+                    <Loader2 size={16} className="animate-spin" style={{ display: 'inline' }} /> Loading preview…
+                  </div>
+                ) : (() => {
+                  const hint = `${selectedBlank.mime_type || ''} ${selectedBlank.storage_path || ''} ${selectedBlank.file_name || ''}`.toLowerCase()
+                  const pdf = hint.includes('pdf')
+                  return pdf ? (
+                    <iframe title="Form preview" src={blankPreviewUrl} style={{ display: 'block', width: '100%', height: 360, border: 'none', background: '#fff' }} />
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: 12, maxHeight: 360, overflow: 'auto' }}>
+                      <img src={blankPreviewUrl} alt={selectedBlank.label} style={{ maxWidth: '100%', maxHeight: 340, objectFit: 'contain' }} />
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" disabled={busy} onClick={handleSaveBlankForm}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -731,6 +812,35 @@ function TemplatesPanel() {
               Canva → PowerPoint works. Detects {'{placeholders}'} and picture Alt Text like {'{presbyter_sign}'}.
             </p>
           </div>
+
+          {selected.storage_path && (
+            <div style={{
+              marginBottom: 16, borderRadius: 10, overflow: 'hidden',
+              border: '1px solid var(--card-border)', background: '#f8fafc',
+            }}>
+              <div style={{
+                padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+                borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
+                display: 'flex', justifyContent: 'space-between', gap: 8,
+              }}>
+                <span>Template preview</span>
+                <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>Sample data · not issued</span>
+              </div>
+              {tplPreviewLoading ? (
+                <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
+                  <Loader2 size={16} className="animate-spin" style={{ display: 'inline' }} /> Generating preview…
+                </div>
+              ) : tplPreviewError ? (
+                <div style={{ padding: 14, fontSize: 13, color: '#b91c1c', lineHeight: 1.45 }}>{tplPreviewError}</div>
+              ) : tplPreviewUrl ? (
+                <iframe
+                  title={`Preview — ${selected.label}`}
+                  src={tplPreviewUrl}
+                  style={{ display: 'block', width: '100%', height: 360, border: 'none', background: '#fff' }}
+                />
+              ) : null}
+            </div>
+          )}
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

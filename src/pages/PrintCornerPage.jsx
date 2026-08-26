@@ -26,6 +26,7 @@ import {
   searchPrintCornerMembers,
   getPrintCornerApplicationForms,
   getApplicationFormSignedUrl,
+  previewPrintCornerTemplate,
   textFieldVariables,
   imageFieldVariables,
 } from '../lib/printCornerLib'
@@ -115,6 +116,9 @@ export default function PrintCornerPage() {
   const [lastPdf, setLastPdf] = useState(null)
   const [bulkProgress, setBulkProgress] = useState(null)
   const [blankShareUrl, setBlankShareUrl] = useState(null)
+  const [tplPreviewUrl, setTplPreviewUrl] = useState(null)
+  const [tplPreviewLoading, setTplPreviewLoading] = useState(false)
+  const [tplPreviewError, setTplPreviewError] = useState(null)
 
   const [step, setStep] = useState(1)
   const [church, setChurch] = useState(null)
@@ -173,6 +177,8 @@ export default function PrintCornerPage() {
     if (!selected) return
     setSelectedBlankForm(null)
     setBlankShareUrl(null)
+    setTplPreviewUrl(null)
+    setTplPreviewError(null)
     setStep(1)
     setDraftId(null)
     setBulkRows([])
@@ -187,6 +193,31 @@ export default function PrintCornerPage() {
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Letter / certificate PDF preview (Google convert, not issued)
+  useEffect(() => {
+    if (sidebarMode === 'forms' || !selected?.storage_path) {
+      setTplPreviewUrl(null)
+      setTplPreviewLoading(false)
+      setTplPreviewError(null)
+      return
+    }
+    let cancelled = false
+    setTplPreviewLoading(true)
+    setTplPreviewError(null)
+    setTplPreviewUrl(null)
+    ;(async () => {
+      try {
+        const res = await previewPrintCornerTemplate(selected, church)
+        if (!cancelled) setTplPreviewUrl(res.signed_url || null)
+      } catch (e) {
+        if (!cancelled) setTplPreviewError(e.message || 'Preview failed')
+      } finally {
+        if (!cancelled) setTplPreviewLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selected?.id, selected?.storage_path, sidebarMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedBlankForm) {
@@ -755,38 +786,58 @@ export default function PrintCornerPage() {
         </div>
       )
     }
-    const isImage = (f.mime_type || '').startsWith('image/')
+    const pathHint = `${f.mime_type || ''} ${f.storage_path || ''} ${f.file_name || ''}`.toLowerCase()
+    const isPdf = pathHint.includes('pdf')
+    const isImage = !isPdf && (pathHint.includes('image/') || /\.(jpe?g|png|webp)(\?|$)/i.test(pathHint))
     return (
       <div>
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)' }}>{f.label}</div>
           <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
-            Blank scanned form · {f.mime_type?.includes('pdf') ? 'PDF' : isImage ? 'Image' : 'File'}
+            Blank scanned form · {isPdf ? 'PDF' : isImage ? 'Image' : 'File'}
           </div>
           {f.description && <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 8 }}>{f.description}</p>}
         </div>
         {!f.storage_path ? (
           <div style={{ padding: 14, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 13, color: '#9a3412' }}>
-            File not uploaded yet. Open Print Corner Settings → Application forms and upload the scanned PDF or JPEG.
+            File not uploaded yet. Open Print Corner Settings → Templates → Application forms and upload the scanned PDF or JPEG.
           </div>
         ) : (
           <>
+            {!blankShareUrl ? (
+              <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-3)', marginBottom: 14 }}>
+                <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} /> Preparing preview…
+              </div>
+            ) : (
+              <div style={{
+                marginBottom: 14, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--card-border)',
+                background: '#f8fafc',
+              }}>
+                <div style={{
+                  padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+                  borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
+                }}>
+                  Preview
+                </div>
+                {isImage ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 12, maxHeight: 420, overflow: 'auto' }}>
+                    <img src={blankShareUrl} alt={f.label} style={{ maxWidth: '100%', maxHeight: 400, objectFit: 'contain' }} />
+                  </div>
+                ) : (
+                  <iframe
+                    title={`Preview — ${f.label}`}
+                    src={blankShareUrl}
+                    style={{ display: 'block', width: '100%', height: 420, border: 'none', background: '#fff' }}
+                  />
+                )}
+              </div>
+            )}
+
             {renderMemberPicker({
               hint: 'Optional: look up the member who requested this form so WhatsApp / email are prefilled.',
             })}
-            {isImage && blankShareUrl && (
-              <div style={{
-                marginBottom: 14, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--card-border)',
-                background: '#f8fafc', maxHeight: 360, display: 'flex', justifyContent: 'center',
-              }}>
-                <img src={blankShareUrl} alt={f.label} style={{ maxWidth: '100%', maxHeight: 360, objectFit: 'contain' }} />
-              </div>
-            )}
-            {!blankShareUrl ? (
-              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)' }}>
-                <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} /> Preparing file…
-              </div>
-            ) : renderShareActions({ url: blankShareUrl, label: f.label })}
+
+            {blankShareUrl && renderShareActions({ url: blankShareUrl, label: f.label })}
           </>
         )}
       </div>
@@ -1016,7 +1067,7 @@ export default function PrintCornerPage() {
       )
     }
 
-    // step 1 — template summary
+    // step 1 — template summary + PDF preview
     return (
       <>
         <div style={{ marginBottom: 16 }}>
@@ -1028,14 +1079,54 @@ export default function PrintCornerPage() {
             <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 8 }}>{selected.description}</p>
           )}
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16 }}>
-          <strong>Storage path:</strong>{' '}
-          {selected.storage_path || (
-            <span style={{ color: '#c2410c' }}>Not uploaded — use Print Corner Settings</span>
-          )}
-        </div>
-        <button type="button" onClick={() => setStep(2)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+
+        {!selected.storage_path ? (
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 13, color: '#9a3412' }}>
+            Not uploaded — use Print Corner Settings to upload a .docx / .pptx
+          </div>
+        ) : (
+          <div style={{
+            marginBottom: 16, borderRadius: 10, overflow: 'hidden',
+            border: '1px solid var(--card-border)', background: '#f8fafc',
+          }}>
+            <div style={{
+              padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-3)',
+              borderBottom: '1px solid var(--card-border)', letterSpacing: '0.04em', textTransform: 'uppercase',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+            }}>
+              <span>Template preview</span>
+              <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
+                Sample data · not issued
+              </span>
+            </div>
+            {tplPreviewLoading ? (
+              <div style={{ padding: 36, textAlign: 'center', color: 'var(--text-3)' }}>
+                <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} /> Generating preview…
+              </div>
+            ) : tplPreviewError ? (
+              <div style={{ padding: 16, fontSize: 13, color: '#b91c1c', lineHeight: 1.45 }}>
+                {tplPreviewError}
+              </div>
+            ) : tplPreviewUrl ? (
+              <iframe
+                title={`Preview — ${selected.label}`}
+                src={tplPreviewUrl}
+                style={{ display: 'block', width: '100%', height: 420, border: 'none', background: '#fff' }}
+              />
+            ) : (
+              <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
+                No preview available
+              </div>
+            )}
+          </div>
+        )}
+
+        <button type="button" onClick={() => setStep(2)} disabled={!selected.storage_path}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px',
+            background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: selected.storage_path ? 'pointer' : 'not-allowed', opacity: selected.storage_path ? 1 : 0.5,
+          }}>
           Fill fields →
         </button>
       </>
