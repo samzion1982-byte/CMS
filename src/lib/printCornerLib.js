@@ -558,7 +558,7 @@ function memberAddressLine(member) {
   ].filter(Boolean).join(', ')
 }
 
-/** Map member row → template placeholder keys that exist on `out`. */
+/** Map member row → template placeholder keys. */
 export function applyMemberToFieldValues(out, member) {
   if (!out || !member) return out || {}
   const address = memberAddressLine(member)
@@ -596,26 +596,27 @@ export function applyMemberToFieldValues(out, member) {
     ['member_address', address],
     ['residential_address', address],
   ]
+  const next = { ...out }
   for (const [key, val] of pairs) {
-    if (key in out && val != null && String(val).trim() !== '') {
-      out[key] = String(val)
+    if (val != null && String(val).trim() !== '') {
+      next[key] = String(val)
     }
   }
   if (member.member_id) {
-    out.member_id = String(member.member_id)
-    if ('Member_id' in out) out.Member_id = String(member.member_id)
+    next.member_id = String(member.member_id)
+    next.Member_id = String(member.member_id)
   }
-  return out
+  if (member.member_name) {
+    next.member_name = String(member.member_name)
+    next.Member_name = String(member.member_name)
+  }
+  return next
 }
 
 export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
-  const vars = normalizeTemplateVariables(template?.variables)
   const out = {}
-  for (const v of vars) {
-    if (v.key && !isImagePlaceholderKey(v.key)) out[v.key] = ''
-  }
-  if (templateHasMemberPhoto(template?.variables) && !('member_id' in out)) {
-    out.member_id = ''
+  for (const v of wizardTextVariables(template?.variables)) {
+    if (v.key) out[v.key] = ''
   }
   if (church) {
     const churchName = church.church_name || ''

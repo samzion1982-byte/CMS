@@ -411,6 +411,11 @@ export default function PrintCornerPage() {
     if (first && !g?.templates.some(t => t.id === selected?.id)) setSelected(first)
   }
 
+  function mergeMemberFields(member) {
+    if (!member) return
+    setFieldValues(prev => applyMemberToFieldValues({ ...prev }, member))
+  }
+
   function pickMember(m) {
     if (!m) return
     clearBulk()
@@ -420,7 +425,7 @@ export default function PrintCornerPage() {
     setSharePhone(m.whatsapp || m.mobile || '')
     setShareEmail(m.email || '')
     if (selected) {
-      setFieldValues(prev => applyMemberToFieldValues({ ...prev }, m))
+      mergeMemberFields(m)
       toast(`Filled from ${m.member_name || m.member_id}`, 'success')
     }
   }
@@ -446,7 +451,7 @@ export default function PrintCornerPage() {
       clearBulk()
       setSelectedMember(m)
       setMemberQuery(m.member_name || m.member_id || '')
-      setFieldValues(prev => applyMemberToFieldValues({ ...prev }, m))
+      mergeMemberFields(m)
       setSharePhone(m.whatsapp || m.mobile || '')
       setShareEmail(m.email || '')
       toast(`Filled from ${m.member_name || m.member_id}`, 'success')
