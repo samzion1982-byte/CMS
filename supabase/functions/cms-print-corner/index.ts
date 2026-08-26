@@ -108,6 +108,123 @@ function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>
   return out
 }
 
+function normalizeMergeFieldKey(key: string) {
+  return String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function isNameLikeMergeField(key: string) {
+  const n = normalizeMergeFieldKey(key)
+  return n === 'member_name' || n === 'name' || n === 'full_name' || n === 'membername' || n === 'fullname'
+}
+
+function extractPptxShapeText(spXml: string) {
+  const parts: string[] = []
+  const re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(spXml)) !== null) parts.push(m[1])
+  return parts.join('').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+}
+
+function extractPptxFirstFontSz(spXml: string) {
+  const m = spXml.match(/<a:rPr\b[^>]*\bsz="(\d+)"/i)
+  return m ? Number(m[1]) || 2400 : 2400
+}
+
+/** EMU width → shrink fontScale (100000 = 100%) so text fits with side padding. */
+function estimatePptxNameFontScale(text: string, widthEmu: number, fontSzHundredths: number) {
+  const len = text.trim().length
+  if (len < 14) return 100000
+  const fontPt = fontSzHundredths / 100
+  const widthPt = (widthEmu / 914400) * 72
+  const padPt = 16
+  const usablePt = Math.max(24, widthPt - padPt)
+  const charW = fontPt * 0.62
+  const maxChars = usablePt / charW
+  if (len <= maxChars) return 100000
+  const scale = Math.floor((maxChars / len) * 100000)
+  return Math.max(38000, Math.min(100000, scale))
+}
+
+function patchPptxTxBodyAutofit(spXml: string, fontScale: number) {
+  const txBodyRe = /<p:txBody\b[\s\S]*?<\/p:txBody>/i
+  const txBodyMatch = spXml.match(txBodyRe)
+  if (!txBodyMatch) return spXml
+  let txBody = txBodyMatch[0]
+  const autofitXml = `<a:normAutofit fontScale="${fontScale}"/>`
+
+  if (/<a:bodyPr\b/i.test(txBody)) {
+    txBody = txBody.replace(/<a:bodyPr\b[^>]*\/?>/i, (tag) => {
+      const selfClose = /\/>\s*$/.test(tag)
+      let attrs = tag.replace(/^<a:bodyPr/i, '').replace(/\/?>$/, '').trim()
+      if (/wrap="/i.test(attrs)) attrs = attrs.replace(/wrap="[^"]*"/i, 'wrap="square"')
+      else attrs += ' wrap="square"'
+      if (!/anchor="/i.test(attrs)) attrs += ' anchor="ctr"'
+      if (!/horzOverflow="/i.test(attrs)) attrs += ' horzOverflow="clip"'
+      return selfClose
+        ? `<a:bodyPr ${attrs}>${autofitXml}</a:bodyPr>`
+        : `<a:bodyPr ${attrs}>`
+    })
+    txBody = txBody.replace(/<a:noAutofit\s*\/>/gi, autofitXml)
+    txBody = txBody.replace(/<a:spAutoFit\s*\/>/gi, autofitXml)
+    if (!/<a:normAutofit\b/i.test(txBody)) {
+      txBody = txBody.replace(/(<a:bodyPr\b[^>]*>)/i, `$1${autofitXml}`)
+    } else {
+      txBody = txBody.replace(/<a:normAutofit\b[^>]*\/?>/gi, autofitXml)
+    }
+  } else {
+    txBody = txBody.replace(
+      /<p:txBody\b[^>]*>/i,
+      `<p:txBody><a:bodyPr wrap="square" anchor="ctr" horzOverflow="clip">${autofitXml}</a:bodyPr>`,
+    )
+  }
+
+  return spXml.replace(txBodyMatch[0], txBody)
+}
+
+function patchPptxRunFontSizes(spXml: string, fontScale: number) {
+  return spXml.replace(/<a:rPr\b[^>]*\/?>/gi, (tag) => {
+    const selfClose = /\/>\s*$/.test(tag)
+    let attrs = tag.replace(/^<a:rPr/i, '').replace(/\/?>$/, '').trim()
+    const szMatch = attrs.match(/\bsz="(\d+)"/i)
+    if (szMatch) {
+      const newSz = Math.max(900, Math.floor(Number(szMatch[1]) * fontScale / 100000))
+      attrs = attrs.replace(/\bsz="\d+"/i, `sz="${newSz}"`)
+    }
+    return selfClose ? `<a:rPr ${attrs}/>` : `<a:rPr ${attrs}>`
+  })
+}
+
+function shapeTextMatchesLongNameField(text: string, fieldValues: Record<string, unknown>) {
+  const t = text.trim()
+  if (t.length < 14) return false
+  for (const [key, raw] of Object.entries(fieldValues || {})) {
+    if (!key || isImagePlaceholderKey(key) || !isNameLikeMergeField(key)) continue
+    const val = String(raw ?? '').trim()
+    if (val && val === t) return true
+  }
+  return t.length >= 22
+}
+
+/** Shrink long member names in PPTX text boxes so they stay inside the frame padding. */
+function applyPptxLongNameTextFit(xml: string, fieldValues: Record<string, unknown>) {
+  const re = /<p:sp\b[\s\S]*?<\/p:sp>/gi
+  return xml.replace(re, (sp) => {
+    if (!/<p:txBody/i.test(sp)) return sp
+    const text = extractPptxShapeText(sp)
+    if (!shapeTextMatchesLongNameField(text, fieldValues)) return sp
+    const xfrm = extractPptxXfrm(sp)
+    if (!xfrm?.cx) return sp
+    const widthEmu = Number(xfrm.cx)
+    if (!widthEmu) return sp
+    const fontSz = extractPptxFirstFontSz(sp)
+    const fontScale = estimatePptxNameFontScale(text, widthEmu, fontSz)
+    if (fontScale >= 100000) return sp
+    let patched = patchPptxTxBodyAutofit(sp, fontScale)
+    patched = patchPptxRunFontSizes(patched, fontScale)
+    return patched
+  })
+}
+
 function normalizeImageSlotKey(raw: string): string | null {
   let s = String(raw || '').trim()
   if (!s) return null
@@ -1027,6 +1144,7 @@ async function mergeOfficeBytes(
 
     // 4) Text mail-merge
     xml = applyFieldValuesToXml(xml, fieldValues)
+    if (isPptx) xml = applyPptxLongNameTextFit(xml, fieldValues)
     zip.file(name, xml)
     if (relsDirty) zip.file(relsName, relsXml)
   }

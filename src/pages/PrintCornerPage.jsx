@@ -32,6 +32,8 @@ import {
   wizardTextVariables,
   imageFieldVariables,
   templateHasMemberPhoto,
+  sortPrintCornerTemplates,
+  sortPrintCornerCategories,
 } from '../lib/printCornerLib'
 
 const TYPE_ICONS = {
@@ -55,23 +57,24 @@ const INPUT = {
 const SIDEBAR_FORMS_ID = '__application_forms__'
 
 function groupTemplates(categories, templates) {
-  const byCat = new Map()
-  for (const c of categories) {
-    if (!c.parent_id) byCat.set(c.id, { category: c, templates: [] })
-  }
-  const orphans = []
+  const sortedCategories = sortPrintCornerCategories(categories.filter(c => !c.parent_id))
+  const byCatId = new Map()
   for (const t of templates) {
-    const bucket = byCat.get(t.category_id)
-    if (bucket) bucket.templates.push(t)
-    else orphans.push(t)
+    if (!byCatId.has(t.category_id)) byCatId.set(t.category_id, [])
+    byCatId.get(t.category_id).push(t)
   }
-  const groups = [...byCat.values()]
+  const known = new Set(sortedCategories.map(c => c.id))
+  const groups = sortedCategories
+    .map(c => ({
+      category: c,
+      templates: sortPrintCornerTemplates(byCatId.get(c.id) || []),
+    }))
     .filter(g => g.templates.length > 0)
-    .sort((a, b) => a.category.sort_order - b.category.sort_order)
+  const orphans = templates.filter(t => !known.has(t.category_id))
   if (orphans.length) {
     groups.push({
       category: { id: '__unassigned', name: 'Unassigned', sort_order: 9999 },
-      templates: orphans,
+      templates: sortPrintCornerTemplates(orphans),
     })
   }
   return groups

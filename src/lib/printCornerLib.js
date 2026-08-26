@@ -61,6 +61,22 @@ export const TEMPLATE_TYPES = {
   form:        { label: 'Form',        color: '#16a34a' },
 }
 
+/** Categories/templates sort by Settings order (sort_order), not alphabetical. */
+export function comparePrintCornerSortOrder(a, b) {
+  const da = Number(a?.sort_order ?? 0)
+  const db = Number(b?.sort_order ?? 0)
+  if (da !== db) return da - db
+  return String(a?.id || '').localeCompare(String(b?.id || ''))
+}
+
+export function sortPrintCornerCategories(rows) {
+  return [...(rows || [])].sort(comparePrintCornerSortOrder)
+}
+
+export function sortPrintCornerTemplates(rows) {
+  return sortPrintCornerCategories(rows)
+}
+
 export function buildCategoryTree(rows) {
   const byId = new Map((rows || []).map(r => [r.id, { ...r, children: [] }]))
   const roots = []
@@ -72,7 +88,7 @@ export function buildCategoryTree(rows) {
     }
   }
   const sortNodes = list => {
-    list.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+    list.sort(comparePrintCornerSortOrder)
     for (const n of list) sortNodes(n.children)
   }
   sortNodes(roots)
@@ -82,23 +98,26 @@ export function buildCategoryTree(rows) {
 export async function getPrintCornerCatalog() {
   const [catRes, tplRes] = await Promise.all([
     supabase.from('print_corner_categories').select('*').eq('is_active', true)
-      .order('sort_order').order('name'),
+      .order('sort_order'),
     supabase.from('print_corner_templates').select('*').eq('is_active', true)
-      .order('sort_order').order('label'),
+      .order('sort_order'),
   ])
   if (catRes.error) throw catRes.error
   if (tplRes.error) throw tplRes.error
 
+  const categories = sortPrintCornerCategories(catRes.data || [])
+  const templates = sortPrintCornerTemplates(tplRes.data || [])
+
   const templatesByCategory = new Map()
-  for (const t of tplRes.data || []) {
+  for (const t of templates) {
     if (!templatesByCategory.has(t.category_id)) templatesByCategory.set(t.category_id, [])
     templatesByCategory.get(t.category_id).push(t)
   }
 
   return {
-    tree: buildCategoryTree(catRes.data || []),
-    categories: catRes.data || [],
-    templates: tplRes.data || [],
+    tree: buildCategoryTree(categories),
+    categories,
+    templates,
     templatesByCategory,
   }
 }
@@ -290,11 +309,11 @@ export async function deleteDraft(id) {
 /* ── Settings: categories ─────────────────────────────────────── */
 
 export async function getPrintCornerCategories(activeOnly = false) {
-  let q = supabase.from('print_corner_categories').select('*').order('sort_order').order('name')
+  let q = supabase.from('print_corner_categories').select('*').order('sort_order')
   if (activeOnly) q = q.eq('is_active', true)
   const { data, error } = await q
   if (error) throw error
-  return data || []
+  return sortPrintCornerCategories(data || [])
 }
 
 export async function savePrintCornerCategory({ id, name, sort_order, is_active, parent_id }) {
@@ -332,11 +351,11 @@ export async function movePrintCornerCategory(dragNode, targetNode, dropPos, all
 /* ── Settings: templates ──────────────────────────────────────── */
 
 export async function getPrintCornerTemplates(activeOnly = false) {
-  let q = supabase.from('print_corner_templates').select('*').order('sort_order').order('label')
+  let q = supabase.from('print_corner_templates').select('*').order('sort_order')
   if (activeOnly) q = q.eq('is_active', true)
   const { data, error } = await q
   if (error) throw error
-  return data || []
+  return sortPrintCornerTemplates(data || [])
 }
 
 export async function savePrintCornerTemplate(payload) {

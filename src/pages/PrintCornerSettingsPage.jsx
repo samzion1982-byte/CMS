@@ -27,6 +27,8 @@ import {
   previewPrintCornerTemplate,
   warmTemplatePreview,
   TEMPLATE_TYPES,
+  sortPrintCornerCategories,
+  sortPrintCornerTemplates,
 } from '../lib/printCornerLib'
 
 const INPUT = {
@@ -70,7 +72,7 @@ function CategoriesPanel() {
 
   useEffect(() => { load() }, [load])
 
-  const topLevel = rows.filter(r => !r.parent_id).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+  const topLevel = sortPrintCornerCategories(rows.filter(r => !r.parent_id))
 
   async function handleAdd() {
     if (!newName.trim()) return
@@ -261,9 +263,9 @@ function TemplatesPanel() {
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const mergeCategories = useMemo(
-    () => categories
-      .filter(c => !c.parent_id && !isFormCategoryName(c.name))
-      .sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)),
+    () => sortPrintCornerCategories(
+      categories.filter(c => !c.parent_id && !isFormCategoryName(c.name)),
+    ),
     [categories],
   )
 
@@ -275,9 +277,9 @@ function TemplatesPanel() {
   const grouped = useMemo(() => {
     const groups = mergeCategories.map(c => ({
       category: c,
-      templates: templates
-        .filter(t => t.category_id === c.id)
-        .sort((a, b) => (a.sort_order - b.sort_order) || a.label.localeCompare(b.label)),
+      templates: sortPrintCornerTemplates(
+        templates.filter(t => t.category_id === c.id),
+      ),
     }))
     const known = new Set(mergeCategories.map(c => c.id))
     const orphans = templates.filter(t => !known.has(t.category_id))
