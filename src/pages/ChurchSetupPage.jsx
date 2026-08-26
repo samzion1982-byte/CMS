@@ -397,6 +397,9 @@ export default function ChurchSetupPage() {
       const { data: pd } = supabase.storage.from('church-logos').getPublicUrl(path)
       treasurer_seal_url = pd?.publicUrl || null
     }
+    let presbyter_signature_url = church?.presbyter_signature_url || null
+    let secretary_signature_url = church?.secretary_signature_url || null
+    let treasurer_signature_url = church?.treasurer_signature_url || null
     try {
       if (presbyterSigFile) presbyter_signature_url = await uploadSignatureImage(presbyterSigFile, 'signatures/presbyter-signature.png')
       if (secretarySigFile) secretary_signature_url = await uploadSignatureImage(secretarySigFile, 'signatures/secretary-signature.png')
