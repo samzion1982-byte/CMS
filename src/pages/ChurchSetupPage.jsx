@@ -233,9 +233,15 @@ export default function ChurchSetupPage() {
   }
 
   async function uploadSignatureImage(file, path) {
-    const { error } = await supabase.storage.from('church-logos').upload(path, file, { upsert: true })
+    const { error } = await supabase.storage.from('church-logos').upload(path, file, {
+      upsert: true,
+      contentType: file.type || 'image/png',
+      cacheControl: '0',
+    })
     if (error) throw error
-    return supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+    const base = supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+    // Bust CDN/browser cache after overwrite
+    return base ? `${base.split('?')[0]}?v=${Date.now()}` : null
   }
 
   async function verifyLicense() {

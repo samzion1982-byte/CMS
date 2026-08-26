@@ -273,7 +273,15 @@ export default function PrintCornerPage() {
         source: 'manual',
       })
       setLastPdf(res)
-      toast('PDF created and saved to issued folder.', 'success')
+      const swapped = res?.signature_merge?.swapped || res?.signatures_injected || []
+      if (imageVariables.length && !swapped.length) {
+        toast(
+          'PDF created, but signature was not applied. Re-upload Presbyter sign in Church Setup, redeploy cms-print-corner, then retry.',
+          'error',
+        )
+      } else {
+        toast('PDF created and saved to issued folder.', 'success')
+      }
     } catch (e) {
       pdfErrorToast(e.message || 'Convert failed')
     } finally {

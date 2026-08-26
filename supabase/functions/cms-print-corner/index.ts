@@ -168,23 +168,51 @@ function ensureContentTypeDefault(ctXml: string, ext: string, contentType: strin
   )
 }
 
-/** Find pictures whose Alt Text / descr is {presbyter_sign} etc. */
+/** Find pictures whose Alt Text / descr / title / name is {presbyter_sign} etc. */
 function findAltTextImageSlots(xml: string) {
   const slots: Array<{ key: string, embedId: string, block: string }> = []
   const drawingRegex = /<w:drawing[\s\S]*?<\/w:drawing>/gi
   for (const m of xml.matchAll(drawingRegex)) {
     const block = m[0]
-    const descrMatch = block.match(/\bdescr\s*=\s*"([^"]*)"/i)
-      || block.match(/\btitle\s*=\s*"([^"]*)"/i)
-    if (!descrMatch) continue
-    const key = normalizeSignKey(descrMatch[1])
+    let key: string | null = null
+    for (const attr of ['descr', 'title', 'name']) {
+      const am = block.match(new RegExp(`\\b${attr}\\s*=\\s*"([^"]*)"`, 'i'))
+        || block.match(new RegExp(`\\b${attr}\\s*=\\s*'([^']*)'`, 'i'))
+      if (!am) continue
+      key = normalizeSignKey(am[1])
+      if (key) break
+      // descr may contain the tag among other text
+      for (const k of IMAGE_PLACEHOLDER_KEYS) {
+        if (am[1].includes(`{${k}}`) || am[1].trim() === k) {
+          key = normalizeSignKey(k)
+          break
+        }
+      }
+      if (key) break
+    }
+    if (!key) {
+      for (const k of IMAGE_PLACEHOLDER_KEYS) {
+        if (block.includes(`{${k}}`)) { key = normalizeSignKey(k); break }
+      }
+    }
     if (!key) continue
+
     const blip = block.match(/<a:blip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
+      || block.match(/<a:blip\b[^>]*\br:embed\s*=\s*'([^']+)'/i)
       || block.match(/<a:blip\b[^>]*\bembed\s*=\s*"([^"]+)"/i)
     if (!blip) continue
     slots.push({ key, embedId: blip[1], block })
   }
   return slots
+}
+
+function mediaPathFromRels(relsXml: string, embedId: string) {
+  const relTag = relsXml.match(new RegExp(`<Relationship\\b[^>]*\\bId\\s*=\\s*"${embedId}"[^>]*\\/?>`, 'i'))
+  if (!relTag) return null
+  const t = relTag[0].match(/\bTarget\s*=\s*"([^"]+)"/i)
+  if (!t?.[1]) return null
+  const relTarget = t[1].replace(/^\//, '')
+  return relTarget.startsWith('word/') ? relTarget : `word/${relTarget}`
 }
 
 /** Inline signature fallback when using text {presbyter_sign} (not preferred) */
@@ -228,19 +256,57 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
     .maybeSingle()
 
   const images: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {}
-  if (!church) return images
+  const debug: Record<string, string> = {}
+  if (!church) {
+    debug.church = 'not_found'
+    return { images, debug }
+  }
+
+  const STORAGE_FALLBACK: Record<string, string> = {
+    presbyter_signature_url: 'signatures/presbyter-signature.png',
+    secretary_signature_url: 'signatures/secretary-signature.png',
+    treasurer_signature_url: 'signatures/treasurer-signature.png',
+    treasurer_seal_url: 'treasurer-seal.png',
+  }
 
   const loaded = new Map<string, { bytes: Uint8Array, ext: string, contentType: string } | null>()
 
+  async function loadColumn(column: string, url: string | null | undefined) {
+    if (loaded.has(column)) return loaded.get(column)!
+
+    let img = await fetchSignatureImage(url)
+    if (img) {
+      debug[column] = `url_ok:${img.ext}:${img.bytes.length}b`
+      loaded.set(column, img)
+      return img
+    }
+
+    // Fallback: read directly from church-logos with service role
+    const path = STORAGE_FALLBACK[column]
+    if (path) {
+      for (const tryPath of [path, path.replace(/\.png$/i, '.jpg'), path.replace(/\.png$/i, '.jpeg')]) {
+        const { data, error } = await admin.storage.from('church-logos').download(tryPath)
+        if (error || !data) continue
+        const bytes = new Uint8Array(await data.arrayBuffer())
+        if (!bytes.length) continue
+        img = { bytes, ...sniffImageMeta(bytes, tryPath) }
+        debug[column] = `storage_ok:${tryPath}:${img.ext}:${bytes.length}b`
+        loaded.set(column, img)
+        return img
+      }
+    }
+
+    debug[column] = url ? `fetch_failed:${String(url).slice(0, 80)}` : 'no_url'
+    loaded.set(column, null)
+    return null
+  }
+
   for (const [placeholder, column] of Object.entries(IMAGE_PLACEHOLDER_MAP)) {
     const url = (church as Record<string, string | null>)[column]
-    if (!loaded.has(column)) {
-      loaded.set(column, await fetchSignatureImage(url))
-    }
-    const img = loaded.get(column)
+    const img = await loadColumn(column, url)
     if (img) images[placeholder] = img
   }
-  return images
+  return { images, debug }
 }
 
 async function mergeDocxBytes(
@@ -256,6 +322,8 @@ async function mergeDocxBytes(
   let docPrSeq = 900
   let mediaSeq = 0
   const swappedKeys = new Set<string>()
+  const swapLog: string[] = []
+  const slotsFound: string[] = []
 
   let ctXml = zip.file('[Content_Types].xml')
     ? await zip.file('[Content_Types].xml')!.async('string')
@@ -273,44 +341,50 @@ async function mergeDocxBytes(
         + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
     let relsDirty = false
 
-    // 1) Preferred: swap picture bytes for AltText {presbyter_sign} etc. (keeps Word size)
+    // 1) Preferred: replace picture for AltText slots (keep Word size/position)
     const slots = findAltTextImageSlots(xml)
     for (const slot of slots) {
+      slotsFound.push(`${name}:${slot.key}:${slot.embedId}`)
       const img = signatureImages[slot.key]
-      if (!img) continue
+      if (!img) {
+        swapLog.push(`${slot.key}:no_image_bytes`)
+        continue
+      }
 
       mediaSeq += 1
       const mediaName = `sign_${slot.key}_${mediaSeq}.${img.ext}`
-      zip.file(`word/media/${mediaName}`, img.bytes)
+      const mediaPath = `word/media/${mediaName}`
+      zip.file(mediaPath, img.bytes)
+      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
 
       const rId = nextRelationshipId(relsXml)
-      const relType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'
       relsXml = relsXml.replace(
         '</Relationships>',
-        `<Relationship Id="${rId}" Type="${relType}" Target="media/${mediaName}"/></Relationships>`,
+        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/></Relationships>`,
       )
       relsDirty = true
 
+      // Point this drawing's blip at the new image (correct extension matters for Google)
       const oldBlock = slot.block
-      const newBlock = oldBlock.replace(
-        new RegExp(`r:embed\\s*=\\s*"${slot.embedId}"`, 'i'),
-        `r:embed="${rId}"`,
-      )
-      if (newBlock === oldBlock) {
-        const tgt = relsXml.match(
-          new RegExp(`Id\\s*=\\s*"${slot.embedId}"[^>]*Target\\s*=\\s*"([^"]+)"`, 'i'),
-        )
-        if (tgt?.[1]) {
-          const relTarget = tgt[1].replace(/^\//, '')
-          const full = relTarget.startsWith('word/') ? relTarget : `word/${relTarget}`
-          zip.file(full, img.bytes)
-        }
-      } else {
-        xml = xml.replace(oldBlock, newBlock)
-      }
+      let newBlock = oldBlock
+        .replace(new RegExp(`r:embed\\s*=\\s*"${slot.embedId}"`, 'i'), `r:embed="${rId}"`)
+        .replace(new RegExp(`r:embed\\s*=\\s*'${slot.embedId}'`, 'i'), `r:embed='${rId}'`)
 
-      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-      swappedKeys.add(slot.key)
+      if (newBlock !== oldBlock) {
+        xml = xml.split(oldBlock).join(newBlock)
+        swappedKeys.add(slot.key)
+        swapLog.push(`${slot.key}:relinked:${rId}`)
+      } else {
+        // Fallback: overwrite existing media part in place
+        const existing = mediaPathFromRels(relsXml, slot.embedId)
+        if (existing) {
+          zip.file(existing, img.bytes)
+          swappedKeys.add(slot.key)
+          swapLog.push(`${slot.key}:overwrote:${existing}`)
+        } else {
+          swapLog.push(`${slot.key}:failed_no_rel`)
+        }
+      }
     }
 
     // 2) Fallback: text tag {presbyter_sign} → inject drawing (fixed size)
@@ -334,6 +408,7 @@ async function mergeDocxBytes(
       xml = injectImageAtPlaceholder(xml, key, drawing)
       if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
       swappedKeys.add(key)
+      swapLog.push(`${key}:text_inject`)
     }
 
     // 3) Clear leftover text sign tags if image missing
@@ -351,7 +426,15 @@ async function mergeDocxBytes(
 
   if (ctXml) zip.file('[Content_Types].xml', ctXml)
 
-  return await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+  const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+  return {
+    bytes,
+    mergeMeta: {
+      slots_found: slotsFound,
+      swapped: [...swappedKeys],
+      swap_log: swapLog,
+    },
+  }
 }
 
 function concatBytes(parts: Uint8Array[]) {
@@ -574,8 +657,8 @@ serve(async (req) => {
         return json({ error: dlErr?.message || 'Could not download template' }, 400)
       }
       const templateBytes = new Uint8Array(await fileBlob.arrayBuffer())
-      const signatureImages = await loadChurchSignatureImages(admin)
-      const mergedBytes = await mergeDocxBytes(templateBytes, fieldValues, signatureImages)
+      const { images: signatureImages, debug: signatureLoadDebug } = await loadChurchSignatureImages(admin)
+      const { bytes: mergedBytes, mergeMeta } = await mergeDocxBytes(templateBytes, fieldValues, signatureImages)
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
       let outName = stampFilename(outBase, 'pdf')
@@ -645,6 +728,8 @@ serve(async (req) => {
         merged: true,
         fields_applied: Object.keys(fieldValues).length,
         signatures_injected: Object.keys(signatureImages),
+        signature_load: signatureLoadDebug,
+        signature_merge: mergeMeta,
         ...engineMeta,
       })
     }
