@@ -37,9 +37,10 @@ const VARIABLE_LABELS = {
   seceratry_sign: 'Secretary signature (auto)',
   treasurer_sign: 'Treasurer signature (auto)',
   treasurer_seal: 'Treasurer seal (auto)',
+  member_photo: 'Member photo (auto from Member ID)',
 }
 
-/** Word tags that inject Church Setup PNG/JPG — not typed in the wizard */
+/** Word tags that inject images — not typed in the wizard */
 export const IMAGE_PLACEHOLDER_KEYS = new Set([
   'presbyter_sign',
   'secretary_sign',
@@ -47,6 +48,7 @@ export const IMAGE_PLACEHOLDER_KEYS = new Set([
   'seceratry_sign',
   'treasurer_sign',
   'treasurer_seal',
+  'member_photo',
 ])
 
 export function isImagePlaceholderKey(key) {
@@ -515,6 +517,21 @@ export function imageFieldVariables(variables) {
   return normalizeTemplateVariables(variables).filter(v => isImagePlaceholderKey(v.key))
 }
 
+export function templateHasMemberPhoto(variables) {
+  return normalizeTemplateVariables(variables).some(v => v.key === 'member_photo')
+}
+
+/** Text fields shown in wizard + tracker; injects member_id when template uses {member_photo}. */
+export function wizardTextVariables(variables) {
+  const text = textFieldVariables(variables)
+  if (!templateHasMemberPhoto(variables)) return text
+  if (text.some(v => v.key === 'member_id' || v.key === 'Member_id')) return text
+  return [
+    { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
+    ...text,
+  ]
+}
+
 function formatPrintCornerDate(value) {
   if (!value) return ''
   const s = String(value).trim()
@@ -582,6 +599,10 @@ export function applyMemberToFieldValues(out, member) {
       out[key] = String(val)
     }
   }
+  if (member.member_id) {
+    out.member_id = String(member.member_id)
+    if ('Member_id' in out) out.Member_id = String(member.member_id)
+  }
   return out
 }
 
@@ -590,6 +611,9 @@ export function defaultFieldValuesFromTemplate(template, church = null, member =
   const out = {}
   for (const v of vars) {
     if (v.key && !isImagePlaceholderKey(v.key)) out[v.key] = ''
+  }
+  if (templateHasMemberPhoto(template?.variables) && !('member_id' in out)) {
+    out.member_id = ''
   }
   if (church) {
     const churchName = church.church_name || ''
@@ -681,7 +705,7 @@ export function getOfficeBearerSignatureStatus(church) {
 const TRACKER_SNO = 'S.No'
 
 export function trackerColumnKeys(variables) {
-  return textFieldVariables(variables).map(v => v.key).filter(Boolean)
+  return wizardTextVariables(variables).map(v => v.key).filter(Boolean)
 }
 
 /** Build header row: S.No + variable keys */

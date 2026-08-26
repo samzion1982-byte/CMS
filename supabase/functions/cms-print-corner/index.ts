@@ -74,7 +74,9 @@ const IMAGE_PLACEHOLDER_MAP: Record<string, string> = {
   treasurer_seal: 'treasurer_seal_url',
 }
 
-const IMAGE_PLACEHOLDER_KEYS = new Set(Object.keys(IMAGE_PLACEHOLDER_MAP))
+const MEMBER_PHOTO_ALIASES = new Set(['member_photo', 'photo'])
+
+const IMAGE_PLACEHOLDER_KEYS = new Set([...Object.keys(IMAGE_PLACEHOLDER_MAP), 'member_photo'])
 
 function isImagePlaceholderKey(key: string) {
   return IMAGE_PLACEHOLDER_KEYS.has(String(key || '').trim())
@@ -105,11 +107,13 @@ function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>
   return out
 }
 
-function normalizeSignKey(raw: string): string | null {
+function normalizeImageSlotKey(raw: string): string | null {
   let s = String(raw || '').trim()
   if (!s) return null
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
-  return IMAGE_PLACEHOLDER_MAP[s] ? s : null
+  if (IMAGE_PLACEHOLDER_MAP[s]) return s
+  if (MEMBER_PHOTO_ALIASES.has(s)) return 'member_photo'
+  return null
 }
 
 function sniffImageMeta(bytes: Uint8Array, urlHint = '') {
@@ -198,11 +202,11 @@ function keyFromAltAttr(raw: string | null | undefined): string | null {
   if (raw == null) return null
   const val = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
   if (!val) return null
-  const direct = normalizeSignKey(val)
+  const direct = normalizeImageSlotKey(val)
   if (direct) return direct
   for (const k of IMAGE_PLACEHOLDER_KEYS) {
     if (val.includes('{' + k + '}') || val.toLowerCase() === k.toLowerCase()) {
-      return normalizeSignKey(k)
+      return normalizeImageSlotKey(k)
     }
   }
   return null
@@ -594,6 +598,42 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
     if (img) images[placeholder] = img
   }
   return { images, debug }
+}
+
+async function loadMemberPhotoImage(
+  admin: ReturnType<typeof createClient>,
+  memberId: string | null | undefined,
+) {
+  const id = String(memberId || '').trim()
+  if (!id) return { img: null as null, debug: 'no_member_id' }
+
+  const { data: member } = await admin
+    .from('members')
+    .select('photo_url')
+    .eq('member_id', id)
+    .maybeSingle()
+
+  if (!member?.photo_url) return { img: null, debug: 'no_photo_url' }
+
+  const url = String(member.photo_url)
+  const tryPaths: string[] = []
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/member-photos\/([^?]+)/i)
+  if (m?.[1]) tryPaths.push(decodeURIComponent(m[1]))
+  for (const ext of ['jpg', 'jpeg', 'png']) {
+    tryPaths.push(`active/${id}.${ext}`, `deleted/${id}.${ext}`)
+  }
+
+  for (const tryPath of tryPaths) {
+    const { data, error } = await admin.storage.from('member-photos').download(tryPath)
+    if (error || !data) continue
+    const bytes = new Uint8Array(await data.arrayBuffer())
+    if (!bytes.length) continue
+    return { img: { bytes, ...sniffImageMeta(bytes, tryPath) }, debug: `storage:${tryPath}` }
+  }
+
+  const fetched = await fetchSignatureImage(url)
+  if (fetched) return { img: fetched, debug: 'url' }
+  return { img: null, debug: 'fetch_failed' }
 }
 
 async function mergeOfficeBytes(
@@ -1023,11 +1063,13 @@ serve(async (req) => {
     if (action === 'convert_storage') {
       const storagePath = String(body.storage_path || '').trim()
       const templateKey = String(body.template_key || 'document').trim()
-      const memberId = body.member_id ? String(body.member_id).trim() : null
       const issue = body.issue !== false
       const fieldValues = (body.field_values && typeof body.field_values === 'object')
         ? body.field_values
         : {}
+      const memberId = body.member_id
+        ? String(body.member_id).trim()
+        : (fieldValues.member_id ? String(fieldValues.member_id).trim() : null)
 
       if (!storagePath.startsWith('templates/')) {
         return json({ error: 'storage_path must be under templates/' }, 400)
@@ -1065,6 +1107,9 @@ serve(async (req) => {
       const templateBytes = new Uint8Array(await fileBlob.arrayBuffer())
       const format: 'docx' | 'pptx' = /\.pptx$/i.test(storagePath) ? 'pptx' : 'docx'
       const { images: signatureImages, debug: signatureLoadDebug } = await loadChurchSignatureImages(admin)
+      const { img: memberPhoto, debug: memberPhotoDebug } = await loadMemberPhotoImage(admin, memberId)
+      if (memberPhoto) signatureImages.member_photo = memberPhoto
+      signatureLoadDebug.member_photo = memberPhotoDebug
       const { bytes: mergedBytes, mergeMeta } = await mergeOfficeBytes(
         templateBytes,
         fieldValues,

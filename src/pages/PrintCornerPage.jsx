@@ -27,8 +27,9 @@ import {
   getPrintCornerApplicationForms,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
-  textFieldVariables,
+  wizardTextVariables,
   imageFieldVariables,
+  templateHasMemberPhoto,
 } from '../lib/printCornerLib'
 
 const TYPE_ICONS = {
@@ -82,22 +83,24 @@ function templateStorageType(templateType) {
 function categoryHeaderStyle(name, index = 0) {
   const n = String(name || '').toLowerCase()
   if (n.includes('letter')) {
-    return { bg: '#eff6ff', accent: '#2563eb', badgeBg: '#dbeafe', badgeColor: '#1d4ed8' }
+    return { bg: '#eff6ff', accent: '#2563eb', badgeBg: '#dbeafe', badgeColor: '#1d4ed8', Icon: Mail }
   }
   if (n.includes('cert')) {
-    return { bg: '#fffbeb', accent: '#d97706', badgeBg: '#fde68a', badgeColor: '#b45309' }
+    return { bg: '#fffbeb', accent: '#d97706', badgeBg: '#fde68a', badgeColor: '#b45309', Icon: Award }
   }
   if (n.includes('form') || n.includes('application')) {
-    return { bg: '#f5f3ff', accent: '#7c3aed', badgeBg: '#ede9fe', badgeColor: '#6d28d9' }
+    return { bg: '#f5f3ff', accent: '#7c3aed', badgeBg: '#ede9fe', badgeColor: '#6d28d9', Icon: ClipboardList }
   }
   const fallback = [
-    { bg: '#f0fdf4', accent: '#16a34a', badgeBg: '#bbf7d0', badgeColor: '#15803d' },
-    { bg: '#fdf2f8', accent: '#db2777', badgeBg: '#fbcfe8', badgeColor: '#be185d' },
-    { bg: '#ecfeff', accent: '#0891b2', badgeBg: '#a5f3fc', badgeColor: '#0e7490' },
-    { bg: '#f8fafc', accent: '#475569', badgeBg: '#e2e8f0', badgeColor: '#334155' },
+    { bg: '#f0fdf4', accent: '#16a34a', badgeBg: '#bbf7d0', badgeColor: '#15803d', Icon: FileText },
+    { bg: '#fdf2f8', accent: '#db2777', badgeBg: '#fbcfe8', badgeColor: '#be185d', Icon: FileText },
+    { bg: '#ecfeff', accent: '#0891b2', badgeBg: '#a5f3fc', badgeColor: '#0e7490', Icon: FileText },
+    { bg: '#f8fafc', accent: '#475569', badgeBg: '#e2e8f0', badgeColor: '#334155', Icon: FileText },
   ]
   return fallback[index % fallback.length]
 }
+
+const FORMS_STYLE = { bg: '#f5f3ff', accent: '#7c3aed', badgeBg: '#ede9fe', badgeColor: '#6d28d9' }
 
 export default function PrintCornerPage() {
   const navigate = useNavigate()
@@ -330,13 +333,23 @@ export default function PrintCornerPage() {
   }, [selected])
 
   const variables = useMemo(
-    () => textFieldVariables(selected?.variables),
+    () => wizardTextVariables(selected?.variables),
     [selected],
   )
 
   const imageVariables = useMemo(
     () => imageFieldVariables(selected?.variables),
     [selected],
+  )
+
+  const needsMemberPhoto = useMemo(
+    () => templateHasMemberPhoto(selected?.variables),
+    [selected],
+  )
+
+  const churchImageVariables = useMemo(
+    () => imageVariables.filter(v => v.key !== 'member_photo'),
+    [imageVariables],
   )
 
   const bulkMode = bulkRows.length > 0
@@ -363,7 +376,7 @@ export default function PrintCornerPage() {
     setBulkOutput('single')
   }
 
-  const showMemberApproach = selected?.template_type === 'letter'
+  const showMemberApproach = selected?.template_type === 'letter' || needsMemberPhoto
 
   const filteredBlankForms = useMemo(() => {
     const q = tplSearch.trim().toLowerCase()
@@ -583,6 +596,10 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
+    if (needsMemberPhoto && !String(fieldValues.member_id || '').trim()) {
+      toast('Select a member — Member ID is required for the photo on this template.', 'error')
+      return
+    }
     setBusy(true)
     try {
       const res = await convertTemplateFromStorage({
@@ -611,6 +628,13 @@ export default function PrintCornerPage() {
     if (!bulkRows.length) {
       toast('Upload a filled tracker first.', 'error')
       return
+    }
+    if (needsMemberPhoto) {
+      const missing = bulkRows.filter(r => !String(r.member_id || '').trim()).length
+      if (missing) {
+        toast(`${missing} tracker row(s) missing member_id — required for member photo templates.`, 'error')
+        return
+      }
     }
 
     setBusy(true)
@@ -879,7 +903,9 @@ export default function PrintCornerPage() {
       return (
         <div>
           {showMemberApproach && renderMemberPicker({
-            hint: 'Search the member for this letter. Matching fields autofill; you can still edit below.',
+            hint: needsMemberPhoto
+              ? 'Search the member for this document. Member ID loads their photo; matching fields autofill below.'
+              : 'Search the member for this letter. Matching fields autofill; you can still edit below.',
           })}
           {selected.include_tamil && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 14 }}>
@@ -892,13 +918,22 @@ export default function PrintCornerPage() {
               No variables on this template yet. Upload a Word file with {'{placeholders}'} in Print Corner Settings.
             </p>
           ) : null}
-          {imageVariables.length > 0 && (
+          {churchImageVariables.length > 0 && (
             <div style={{
               marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
               background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
             }}>
               Signature images (auto from Church Setup):{' '}
-              {imageVariables.map(v => `{${v.key}}`).join(', ')}
+              {churchImageVariables.map(v => `{${v.key}}`).join(', ')}
+            </div>
+          )}
+          {needsMemberPhoto && (
+            <div style={{
+              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+              background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46',
+            }}>
+              Member photo (auto): set picture Alt Text to {'{member_photo}'} in Canva/PowerPoint.
+              Pick a member above — their photo replaces the placeholder.
             </div>
           )}
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
@@ -1178,130 +1213,370 @@ export default function PrintCornerPage() {
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 480 }}>
         <aside style={{
-          width: 340, flexShrink: 0, maxWidth: '100%',
-          background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10,
+          width: 360, flexShrink: 0, maxWidth: '100%',
+          background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 12,
           display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 160px)', overflow: 'hidden',
+          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
         }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 10 }}>
-              LIBRARY
+          {/* Header + search */}
+          <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)' }}>
+                LIBRARY
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                {blankForms.length + groups.reduce((n, g) => n + g.templates.length, 0)} items
+              </div>
             </div>
-            <div style={{ position: 'relative', marginBottom: 10 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-3)' }} />
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }} />
               <input
                 value={tplSearch}
                 onChange={e => setTplSearch(e.target.value)}
-                placeholder={sidebarMode === 'forms' ? 'Search forms…' : 'Search templates…'}
-                style={{ ...INPUT, height: 34, paddingLeft: 32, fontSize: 12 }}
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setSidebarMode('forms')
-                  setSelected(null)
-                  if (!selectedBlankForm && blankForms[0]) setSelectedBlankForm(blankForms[0])
-                }}
+                placeholder="Search forms, letters, certificates…"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                  padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                  borderRadius: 8,
-                  background: sidebarMode === 'forms' ? '#f5f3ff' : 'transparent',
-                  borderLeft: `3px solid ${sidebarMode === 'forms' ? '#7c3aed' : 'transparent'}`,
+                  ...INPUT, height: 36, paddingLeft: 34, paddingRight: tplSearch ? 34 : 10, fontSize: 13,
+                  borderRadius: 9, border: '1.5px solid var(--card-border)',
                 }}
-              >
-                <ClipboardList size={14} style={{ color: '#7c3aed' }} />
-                <span style={{ flex: 1, fontSize: 12, fontWeight: sidebarMode === 'forms' ? 800 : 600, color: sidebarMode === 'forms' ? '#7c3aed' : 'var(--text-2)' }}>
-                  Application forms
-                </span>
-                <span style={{
-                  fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
-                  padding: '2px 7px', borderRadius: 99,
-                  background: sidebarMode === 'forms' ? '#ede9fe' : 'var(--input-bg)',
-                  color: sidebarMode === 'forms' ? '#6d28d9' : 'var(--text-3)',
-                }}>
-                  {blankForms.length}
-                </span>
-              </button>
-              {!tplSearch.trim() && filteredGroups.map((g, gi) => {
-                const catStyle = categoryHeaderStyle(g.category.name, gi)
-                const on = sidebarMode === 'templates' && activeGroup?.category.id === g.category.id
-                return (
-                  <button
-                    key={g.category.id}
-                    type="button"
-                    onClick={() => {
-                      setSidebarMode('templates')
-                      setSelectedBlankForm(null)
-                      setActiveCategoryId(g.category.id)
-                    }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '8px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                      borderRadius: 8,
-                      background: on ? catStyle.bg : 'transparent',
-                      borderLeft: `3px solid ${on ? catStyle.accent : 'transparent'}`,
-                    }}
-                  >
-                    <span style={{ flex: 1, fontSize: 12, fontWeight: on ? 800 : 600, color: on ? catStyle.accent : 'var(--text-2)' }}>
-                      {g.category.name}
-                    </span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
-                      padding: '2px 7px', borderRadius: 99,
-                      background: on ? catStyle.badgeBg : 'var(--input-bg)',
-                      color: on ? catStyle.badgeColor : 'var(--text-3)',
-                    }}>
-                      {g.templates.length}
-                    </span>
-                  </button>
-                )
-              })}
+              />
+              {tplSearch.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setTplSearch('')}
+                  title="Clear search"
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    border: 'none', background: 'var(--input-bg)', borderRadius: 99, width: 22, height: 22,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-3)',
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
           </div>
 
+          {/* Category rail — hidden while searching (global results instead) */}
+          {!tplSearch.trim() && (
+            <div style={{
+              padding: '10px 12px', borderBottom: '1px solid var(--card-border)', flexShrink: 0,
+              background: 'var(--page-bg, #f8fafc)',
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 8 }}>
+                BROWSE
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSidebarMode('forms')
+                    setSelected(null)
+                    if (!selectedBlankForm && blankForms[0]) setSelectedBlankForm(blankForms[0])
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                    padding: '9px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                    borderRadius: 9,
+                    background: sidebarMode === 'forms' ? FORMS_STYLE.bg : 'var(--card-bg)',
+                    boxShadow: sidebarMode === 'forms' ? 'inset 0 0 0 1.5px #c4b5fd' : 'inset 0 0 0 1px var(--card-border)',
+                  }}
+                >
+                  <span style={{
+                    width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: FORMS_STYLE.badgeBg, color: FORMS_STYLE.accent, flexShrink: 0,
+                  }}>
+                    <ClipboardList size={14} />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{
+                      display: 'block', fontSize: 12.5, fontWeight: sidebarMode === 'forms' ? 800 : 600,
+                      color: sidebarMode === 'forms' ? FORMS_STYLE.accent : 'var(--text-1)',
+                    }}>
+                      Application forms
+                    </span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
+                      Print or share blank scans
+                    </span>
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'center',
+                    padding: '2px 7px', borderRadius: 99,
+                    background: sidebarMode === 'forms' ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
+                    color: sidebarMode === 'forms' ? FORMS_STYLE.badgeColor : 'var(--text-3)',
+                  }}>
+                    {blankForms.length}
+                  </span>
+                </button>
+
+                {filteredGroups.map((g, gi) => {
+                  const catStyle = categoryHeaderStyle(g.category.name, gi)
+                  const CatIcon = catStyle.Icon || FileText
+                  const on = sidebarMode === 'templates' && activeGroup?.category.id === g.category.id
+                  return (
+                    <button
+                      key={g.category.id}
+                      type="button"
+                      onClick={() => {
+                        setSidebarMode('templates')
+                        setSelectedBlankForm(null)
+                        setActiveCategoryId(g.category.id)
+                        const first = g.templates[0]
+                        if (first && !g.templates.some(t => t.id === selected?.id)) setSelected(first)
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                        padding: '9px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                        borderRadius: 9,
+                        background: on ? catStyle.bg : 'var(--card-bg)',
+                        boxShadow: on ? `inset 0 0 0 1.5px ${catStyle.accent}55` : 'inset 0 0 0 1px var(--card-border)',
+                      }}
+                    >
+                      <span style={{
+                        width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: catStyle.badgeBg, color: catStyle.accent, flexShrink: 0,
+                      }}>
+                        <CatIcon size={14} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          display: 'block', fontSize: 12.5, fontWeight: on ? 800 : 600,
+                          color: on ? catStyle.accent : 'var(--text-1)',
+                        }}>
+                          {g.category.name}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
+                          Mail-merge templates
+                        </span>
+                      </span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'center',
+                        padding: '2px 7px', borderRadius: 99,
+                        background: on ? catStyle.badgeBg : 'var(--input-bg)',
+                        color: on ? catStyle.badgeColor : 'var(--text-3)',
+                      }}>
+                        {g.templates.length}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Item list */}
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {loading ? (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
-                <Loader2 size={20} className="animate-spin" />
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
+                <Loader2 size={20} className="animate-spin" style={{ display: 'inline' }} />
               </div>
+            ) : tplSearch.trim() ? (
+              /* Global search results */
+              (() => {
+                const formHits = filteredBlankForms
+                const tplHits = filteredGroups.flatMap(g => g.templates.map(t => ({ t, catName: g.category.name })))
+                if (!formHits.length && !tplHits.length) {
+                  return (
+                    <div style={{ padding: '28px 20px', textAlign: 'center' }}>
+                      <Search size={22} style={{ color: 'var(--text-3)', marginBottom: 8 }} />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)' }}>No matches</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>Try another name or key</div>
+                    </div>
+                  )
+                }
+                return (
+                  <div>
+                    {formHits.length > 0 && (
+                      <>
+                        <div style={{
+                          position: 'sticky', top: 0, zIndex: 1,
+                          padding: '8px 14px', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                          color: FORMS_STYLE.badgeColor, background: FORMS_STYLE.bg,
+                          borderBottom: '1px solid #ede9fe',
+                        }}>
+                          APPLICATION FORMS · {formHits.length}
+                        </div>
+                        {formHits.map(f => {
+                          const active = selectedBlankForm?.id === f.id
+                          const ready = !!f.storage_path
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                                padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                                background: active ? FORMS_STYLE.bg : 'transparent',
+                                borderBottom: '1px solid var(--card-border)',
+                                boxShadow: active ? `inset 3px 0 0 ${FORMS_STYLE.accent}` : 'inset 3px 0 0 transparent',
+                              }}
+                            >
+                              <span style={{
+                                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
+                                color: FORMS_STYLE.accent,
+                              }}>
+                                <ClipboardList size={15} />
+                              </span>
+                              <span style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, color: 'var(--text-1)', lineHeight: 1.3 }}>
+                                  {f.label}
+                                </span>
+                                <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                                  Application form
+                                </span>
+                              </span>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                                background: ready ? '#dcfce7' : '#ffedd5',
+                                color: ready ? '#15803d' : '#c2410c',
+                              }}>
+                                {ready ? 'Ready' : 'Missing'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </>
+                    )}
+                    {tplHits.length > 0 && (
+                      <>
+                        <div style={{
+                          position: 'sticky', top: 0, zIndex: 1,
+                          padding: '8px 14px', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                          color: 'var(--text-3)', background: 'var(--page-bg, #f8fafc)',
+                          borderBottom: '1px solid var(--card-border)',
+                        }}>
+                          TEMPLATES · {tplHits.length}
+                        </div>
+                        {tplHits.map(({ t, catName }) => {
+                          const Icon = TYPE_ICONS[t.template_type] || FileText
+                          const active = selected?.id === t.id
+                          const accent = TEMPLATE_TYPES[t.template_type]?.color || '#2563eb'
+                          const ready = !!t.storage_path
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => { setSidebarMode('templates'); setSelected(t) }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                                padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                                background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                                borderBottom: '1px solid var(--card-border)',
+                                boxShadow: active ? `inset 3px 0 0 ${accent}` : 'inset 3px 0 0 transparent',
+                              }}
+                            >
+                              <span style={{
+                                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: active ? `${accent}18` : 'var(--input-bg)',
+                                color: accent,
+                              }}>
+                                <Icon size={15} />
+                              </span>
+                              <span style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, color: 'var(--text-1)', lineHeight: 1.3 }}>
+                                  {t.label}
+                                </span>
+                                <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                                  {catName}
+                                </span>
+                              </span>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                                background: ready ? '#dcfce7' : '#ffedd5',
+                                color: ready ? '#15803d' : '#c2410c',
+                              }}>
+                                {ready ? 'Ready' : 'Missing'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </>
+                    )}
+                  </div>
+                )
+              })()
             ) : sidebarMode === 'forms' ? (
               filteredBlankForms.length === 0 ? (
-                <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
-                  {tplSearch.trim()
-                    ? 'No forms match your search.'
-                    : 'No blank forms yet. Upload scanned PDFs/JPEGs in Print Corner Settings → Application forms.'}
+                <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12, margin: '0 auto 12px',
+                    background: FORMS_STYLE.badgeBg, color: FORMS_STYLE.accent,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <ClipboardList size={20} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>No blank forms yet</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45, marginBottom: 14 }}>
+                    Upload scanned PDF or JPEG forms in Settings.
+                  </div>
+                  <button type="button" onClick={() => navigate('/print-corner/settings')}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px',
+                      background: FORMS_STYLE.accent, color: '#fff', border: 'none', borderRadius: 8,
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    }}>
+                    <Settings size={13} /> Open Settings
+                  </button>
                 </div>
               ) : (
                 <div>
                   <div style={{
-                    padding: '8px 14px', fontSize: 11, fontWeight: 700,
-                    color: '#6d28d9', background: '#f5f3ff', borderBottom: '1px solid #ede9fe',
+                    position: 'sticky', top: 0, zIndex: 1,
+                    padding: '8px 14px', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                    color: FORMS_STYLE.badgeColor, background: FORMS_STYLE.bg,
+                    borderBottom: '1px solid #ede9fe',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
-                    Blank forms (print / share as-is)
+                    <span>BLANK FORMS</span>
+                    <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>print / share as-is</span>
                   </div>
                   {filteredBlankForms.map(f => {
                     const active = selectedBlankForm?.id === f.id
+                    const ready = !!f.storage_path
+                    const kind = f.mime_type?.includes('pdf') ? 'PDF' : (f.mime_type || '').startsWith('image/') ? 'Image' : 'File'
                     return (
-                      <button key={f.id} type="button" onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
                         style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
-                          padding: '10px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                          background: active ? '#f5f3ff' : 'transparent',
-                          borderLeft: active ? '3px solid #7c3aed' : '3px solid transparent',
-                          color: 'var(--text-1)',
+                          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                          padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                          background: active ? FORMS_STYLE.bg : 'transparent',
+                          borderBottom: '1px solid var(--card-border)',
+                          boxShadow: active ? `inset 3px 0 0 ${FORMS_STYLE.accent}` : 'inset 3px 0 0 transparent',
+                          transition: 'background 0.12s ease',
+                        }}
+                      >
+                        <span style={{
+                          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
+                          color: FORMS_STYLE.accent,
                         }}>
-                        <ClipboardList size={15} style={{ color: '#7c3aed', flexShrink: 0, marginTop: 2 }} />
+                          <ClipboardList size={15} />
+                        </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
+                          <span style={{
+                            display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
+                            color: 'var(--text-1)', lineHeight: 1.3,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
                             {f.label}
                           </span>
                           <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                            {f.storage_path
-                              ? (f.mime_type?.includes('pdf') ? 'PDF ready' : 'Image ready')
-                              : 'File missing'}
+                            {ready ? kind : 'Upload needed'}
                           </span>
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                          background: ready ? '#dcfce7' : '#ffedd5',
+                          color: ready ? '#15803d' : '#c2410c',
+                        }}>
+                          {ready ? 'Ready' : 'Missing'}
                         </span>
                       </button>
                     )
@@ -1309,50 +1584,89 @@ export default function PrintCornerPage() {
                 </div>
               )
             ) : sidebarTemplates.length === 0 ? (
-              <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
-                {tplSearch.trim() ? 'No templates match your search.' : 'No templates in this category.'}
+              <div style={{ padding: '32px 20px', textAlign: 'center' }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 12, margin: '0 auto 12px',
+                  background: activeCatStyle.badgeBg, color: activeCatStyle.accent,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <FileText size={20} />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>No templates here</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45, marginBottom: 14 }}>
+                  Add a Word or PowerPoint template in Settings.
+                </div>
+                <button type="button" onClick={() => navigate('/print-corner/settings')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px',
+                    background: activeCatStyle.accent, color: '#fff', border: 'none', borderRadius: 8,
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                  <Settings size={13} /> Open Settings
+                </button>
               </div>
             ) : (
-              <div style={{ background: 'var(--card-bg)' }}>
-                {!tplSearch.trim() && activeGroup && (
+              <div>
+                {activeGroup && (
                   <div style={{
-                    padding: '8px 14px', fontSize: 11, fontWeight: 700,
-                    color: activeCatStyle.accent, background: activeCatStyle.bg,
+                    position: 'sticky', top: 0, zIndex: 1,
+                    padding: '8px 14px', fontSize: 10, fontWeight: 800, letterSpacing: '0.06em',
+                    color: activeCatStyle.badgeColor, background: activeCatStyle.bg,
                     borderBottom: `1px solid ${activeCatStyle.badgeBg}`,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
-                    {activeGroup.category.name}
+                    <span>{String(activeGroup.category.name || '').toUpperCase()}</span>
+                    <span style={{ fontWeight: 600, letterSpacing: 0, textTransform: 'none' }}>
+                      {sidebarTemplates.length} template{sidebarTemplates.length === 1 ? '' : 's'}
+                    </span>
                   </div>
                 )}
-                {sidebarTemplates.map(({ t, catName }) => {
+                {sidebarTemplates.map(({ t }) => {
                   const Icon = TYPE_ICONS[t.template_type] || FileText
                   const active = selected?.id === t.id
                   const accent = TEMPLATE_TYPES[t.template_type]?.color || activeCatStyle.accent
+                  const ready = !!t.storage_path
+                  const typeLabel = TEMPLATE_TYPES[t.template_type]?.label || 'Template'
                   return (
-                    <button key={t.id} type="button" onClick={() => { setSidebarMode('templates'); setSelected(t) }}
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => { setSidebarMode('templates'); setSelected(t) }}
                       style={{
-                        display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
-                        padding: '10px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                        padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
                         background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                        borderLeft: active ? `3px solid ${accent}` : '3px solid transparent',
-                        color: 'var(--text-1)',
+                        borderBottom: '1px solid var(--card-border)',
+                        boxShadow: active ? `inset 3px 0 0 ${accent}` : 'inset 3px 0 0 transparent',
+                        transition: 'background 0.12s ease',
+                      }}
+                    >
+                      <span style={{
+                        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: active ? `${accent}18` : 'var(--input-bg)',
+                        color: accent,
                       }}>
-                      <Icon size={15} style={{ color: accent, flexShrink: 0, marginTop: 2 }} />
+                        <Icon size={15} />
+                      </span>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
+                        <span style={{
+                          display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
+                          color: 'var(--text-1)', lineHeight: 1.3,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
                           {t.label}
                         </span>
-                        {tplSearch.trim() ? (
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                            {catName}
-                          </span>
-                        ) : t.description ? (
-                          <span style={{
-                            display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
-                            {t.description}
-                          </span>
-                        ) : null}
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                          {typeLabel}{ready ? '' : ' · file needed'}
+                        </span>
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                        background: ready ? '#dcfce7' : '#ffedd5',
+                        color: ready ? '#15803d' : '#c2410c',
+                      }}>
+                        {ready ? 'Ready' : 'Missing'}
                       </span>
                     </button>
                   )

@@ -830,7 +830,7 @@ function TemplatesPanel() {
               <Upload size={14} /> Upload .docx / .pptx
             </button>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-              Canva → PowerPoint works. Detects {'{placeholders}'} and picture Alt Text like {'{presbyter_sign}'}.
+              Canva → PowerPoint works. Detects {'{placeholders}'} and picture Alt Text like {'{presbyter_sign}'} or {'{member_photo}'} (ID cards).
             </p>
           </div>
 
