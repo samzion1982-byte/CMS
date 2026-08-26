@@ -265,9 +265,7 @@ function TemplatesPanel() {
     if (!selected) { setForm(null); setVarRows([]); return }
     setForm({
       label: selected.label,
-      description: selected.description || '',
       category_id: selected.category_id || '',
-      include_tamil: !!selected.include_tamil,
       is_active: selected.is_active !== false,
     })
     setVarRows(normalizeTemplateVariables(selected.variables).map(v => ({ key: v.key || '', label: v.label || v.key || '' })))
@@ -285,9 +283,7 @@ function TemplatesPanel() {
       await savePrintCornerTemplate({
         id: selected.id,
         label: form.label,
-        description: form.description,
         category_id: form.category_id,
-        include_tamil: form.include_tamil,
         is_active: form.is_active,
         variables: varRows.filter(v => v.key.trim()).map(v => ({ key: v.key.trim(), label: (v.label || v.key).trim() })),
       })
@@ -467,13 +463,6 @@ function TemplatesPanel() {
             </label>
             <label style={{ fontSize: 12, fontWeight: 600 }}>Display label
               <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ ...INPUT, marginTop: 4 }} />
-            </label>
-            <label style={{ fontSize: 12, fontWeight: 600 }}>Description
-              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ ...INPUT, marginTop: 4 }} />
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-              <input type="checkbox" checked={form.include_tamil} onChange={e => setForm(f => ({ ...f, include_tamil: e.target.checked }))} />
-              Optional Tamil block in wizard
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
               <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />

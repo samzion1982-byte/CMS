@@ -585,17 +585,20 @@ function safePdfName(index, fieldValues, templateKey) {
   return `${String(index + 1).padStart(3, '0')}_${safe}.pdf`
 }
 
-/** Generate one PDF per tracker row, merge into a single multi-page PDF, and download it */
+/** Generate one PDF per tracker row.
+ * output: 'single' = one multi-page PDF | 'zip' = separate PDFs in a ZIP archive
+ * (ZIP is used instead of RAR — browsers cannot create RAR files.)
+ */
 export async function convertBulkLettersToPdf({
   storagePath,
   templateKey,
   templateType = 'letters',
   rows,
   onProgress,
+  output = 'single',
 }) {
-  const { PDFDocument } = await import('pdf-lib')
-  const merged = await PDFDocument.create()
   const results = []
+  const pdfParts = []
 
   for (let i = 0; i < rows.length; i++) {
     const fieldValues = rows[i]
@@ -616,14 +619,39 @@ export async function convertBulkLettersToPdf({
     const pdfRes = await fetch(res.signed_url)
     if (!pdfRes.ok) throw new Error(`Row ${i + 1}: could not download PDF`)
     const pdfBytes = await pdfRes.arrayBuffer()
-    const src = await PDFDocument.load(pdfBytes)
-    const pages = await merged.copyPages(src, src.getPageIndices())
-    for (const page of pages) merged.addPage(page)
+    pdfParts.push({ bytes: pdfBytes, fieldValues, name: safePdfName(i, fieldValues, templateKey) })
     results.push({ ...res, fieldValues })
   }
 
-  const outBytes = await merged.save()
   const stamp = new Date().toISOString().slice(0, 10)
+
+  if (output === 'zip') {
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    for (const part of pdfParts) {
+      zip.file(part.name, part.bytes)
+    }
+    const outBytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    const fileName = `${templateKey}_bulk_${stamp}.zip`
+    const blob = new Blob([outBytes], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    URL.revokeObjectURL(url)
+    return { count: rows.length, fileName, pageCount: rows.length, results, output: 'zip' }
+  }
+
+  const { PDFDocument } = await import('pdf-lib')
+  const merged = await PDFDocument.create()
+  for (const part of pdfParts) {
+    const src = await PDFDocument.load(part.bytes)
+    const pages = await merged.copyPages(src, src.getPageIndices())
+    for (const page of pages) merged.addPage(page)
+  }
+
+  const outBytes = await merged.save()
   const fileName = `${templateKey}_bulk_${stamp}.pdf`
   const blob = new Blob([outBytes], { type: 'application/pdf' })
   const url = URL.createObjectURL(blob)
@@ -633,10 +661,10 @@ export async function convertBulkLettersToPdf({
   a.click()
   URL.revokeObjectURL(url)
 
-  return { count: rows.length, fileName, pageCount: merged.getPageCount(), results }
+  return { count: rows.length, fileName, pageCount: merged.getPageCount(), results, output: 'single' }
 }
 
-/** @deprecated Use convertBulkLettersToPdf — kept as alias for older imports */
+/** @deprecated alias */
 export async function convertBulkLettersToZip(opts) {
-  return convertBulkLettersToPdf(opts)
+  return convertBulkLettersToPdf({ ...opts, output: 'zip' })
 }
