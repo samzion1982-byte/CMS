@@ -52,6 +52,8 @@ const INPUT = {
   outline: 'none', boxSizing: 'border-box', width: '100%',
 }
 
+const SIDEBAR_FORMS_ID = '__application_forms__'
+
 function groupTemplates(categories, templates) {
   const byCat = new Map()
   for (const c of categories) {
@@ -389,6 +391,25 @@ export default function PrintCornerPage() {
       || (f.description || '').toLowerCase().includes(q),
     )
   }, [blankForms, tplSearch])
+
+  const sidebarBrowseValue = sidebarMode === 'forms'
+    ? SIDEBAR_FORMS_ID
+    : (activeCategoryId || filteredGroups[0]?.category.id || SIDEBAR_FORMS_ID)
+
+  function handleBrowseCategoryChange(value) {
+    if (value === SIDEBAR_FORMS_ID) {
+      setSidebarMode('forms')
+      setSelected(null)
+      if (!selectedBlankForm && blankForms[0]) setSelectedBlankForm(blankForms[0])
+      return
+    }
+    setSidebarMode('templates')
+    setSelectedBlankForm(null)
+    setActiveCategoryId(value)
+    const g = filteredGroups.find(x => x.category.id === value)
+    const first = g?.templates[0]
+    if (first && !g?.templates.some(t => t.id === selected?.id)) setSelected(first)
+  }
 
   function pickMember(m) {
     if (!m) return
@@ -1355,110 +1376,29 @@ export default function PrintCornerPage() {
             </div>
           </div>
 
-          {/* Category rail — hidden while searching (global results instead) */}
+          {/* Category picker — hidden while searching (global results instead) */}
           {!tplSearch.trim() && (
             <div style={{
               padding: '10px 12px', borderBottom: '1px solid var(--card-border)', flexShrink: 0,
               background: 'var(--page-bg, #f8fafc)',
             }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 8 }}>
-                BROWSE
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSidebarMode('forms')
-                    setSelected(null)
-                    if (!selectedBlankForm && blankForms[0]) setSelectedBlankForm(blankForms[0])
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                    padding: '9px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                    borderRadius: 9,
-                    background: sidebarMode === 'forms' ? FORMS_STYLE.bg : 'var(--card-bg)',
-                    boxShadow: sidebarMode === 'forms' ? 'inset 0 0 0 1.5px #c4b5fd' : 'inset 0 0 0 1px var(--card-border)',
-                  }}
-                >
-                  <span style={{
-                    width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: FORMS_STYLE.badgeBg, color: FORMS_STYLE.accent, flexShrink: 0,
-                  }}>
-                    <ClipboardList size={14} />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{
-                      display: 'block', fontSize: 12.5, fontWeight: sidebarMode === 'forms' ? 800 : 600,
-                      color: sidebarMode === 'forms' ? FORMS_STYLE.accent : 'var(--text-1)',
-                    }}>
-                      Application forms
-                    </span>
-                    <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
-                      Print or share blank scans
-                    </span>
-                  </span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'center',
-                    padding: '2px 7px', borderRadius: 99,
-                    background: sidebarMode === 'forms' ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
-                    color: sidebarMode === 'forms' ? FORMS_STYLE.badgeColor : 'var(--text-3)',
-                  }}>
-                    {blankForms.length}
-                  </span>
-                </button>
-
-                {filteredGroups.map((g, gi) => {
-                  const catStyle = categoryHeaderStyle(g.category.name, gi)
-                  const CatIcon = catStyle.Icon || FileText
-                  const on = sidebarMode === 'templates' && activeGroup?.category.id === g.category.id
-                  return (
-                    <button
-                      key={g.category.id}
-                      type="button"
-                      onClick={() => {
-                        setSidebarMode('templates')
-                        setSelectedBlankForm(null)
-                        setActiveCategoryId(g.category.id)
-                        const first = g.templates[0]
-                        if (first && !g.templates.some(t => t.id === selected?.id)) setSelected(first)
-                      }}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                        padding: '9px 10px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                        borderRadius: 9,
-                        background: on ? catStyle.bg : 'var(--card-bg)',
-                        boxShadow: on ? `inset 0 0 0 1.5px ${catStyle.accent}55` : 'inset 0 0 0 1px var(--card-border)',
-                      }}
-                    >
-                      <span style={{
-                        width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: catStyle.badgeBg, color: catStyle.accent, flexShrink: 0,
-                      }}>
-                        <CatIcon size={14} />
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{
-                          display: 'block', fontSize: 12.5, fontWeight: on ? 800 : 600,
-                          color: on ? catStyle.accent : 'var(--text-1)',
-                        }}>
-                          {g.category.name}
-                        </span>
-                        <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
-                          Mail-merge templates
-                        </span>
-                      </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'center',
-                        padding: '2px 7px', borderRadius: 99,
-                        background: on ? catStyle.badgeBg : 'var(--input-bg)',
-                        color: on ? catStyle.badgeColor : 'var(--text-3)',
-                      }}>
-                        {g.templates.length}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+              <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
+                CATEGORY
+              </label>
+              <select
+                value={sidebarBrowseValue}
+                onChange={e => handleBrowseCategoryChange(e.target.value)}
+                style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
+              >
+                <option value={SIDEBAR_FORMS_ID}>
+                  Application forms ({blankForms.length})
+                </option>
+                {filteredGroups.map(g => (
+                  <option key={g.category.id} value={g.category.id}>
+                    {g.category.name} ({g.templates.length})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

@@ -166,8 +166,36 @@ function emuToPx(emu: number) {
   return Math.max(64, Math.round(Number(emu) * 150 / 914400))
 }
 
+/** Average colour from photo corners/edges — fills side gaps in the circular frame. */
+function samplePhotoBackground(img: InstanceType<typeof Image>): number {
+  const w = img.width
+  const h = img.height
+  if (w < 2 || h < 2) return 0xffffffff
+
+  const coords = [
+    [0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1],
+    [Math.floor(w / 2), 0], [Math.floor(w / 2), h - 1],
+    [0, Math.floor(h / 2)], [w - 1, Math.floor(h / 2)],
+    [Math.floor(w * 0.1), 0], [Math.floor(w * 0.9), 0],
+  ]
+
+  let r = 0
+  let g = 0
+  let b = 0
+  let n = 0
+  for (const [x, y] of coords) {
+    const c = img.getPixelAt(x, y)
+    r += (c >>> 24) & 0xff
+    g += (c >>> 16) & 0xff
+    b += (c >>> 8) & 0xff
+    n++
+  }
+  if (!n) return 0xffffffff
+  return Image.rgbaToColor(Math.round(r / n), Math.round(g / n), Math.round(b / n), 255)
+}
+
 /**
- * Fit member photo — contain + top-centre so the full head is visible (not centre-cropped).
+ * Fit member photo — contain + top-centre; pad sides with sampled studio background colour.
  */
 async function fitMemberPhotoBytes(
   source: Uint8Array,
@@ -179,13 +207,14 @@ async function fitMemberPhotoBytes(
   const size = Math.max(tw, th)
 
   const img = await Image.decode(source)
+  const bg = samplePhotoBackground(img)
   const scale = Math.min(size / img.width, size / img.height)
   const sw = Math.max(1, Math.round(img.width * scale))
   const sh = Math.max(1, Math.round(img.height * scale))
   const resized = img.resize(sw, sh)
 
   const canvas = new Image(size, size)
-  canvas.fill(0xffffffff)
+  canvas.fill(bg)
   canvas.composite(resized, Math.floor((size - sw) / 2), 0)
 
   const bytes = await canvas.encodeJPEG(92)

@@ -615,47 +615,34 @@ function TemplatesPanel() {
           </div>
         )}
 
-        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--card-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <button
-            type="button"
-            onClick={() => { setActiveCategoryId(APP_FORMS_SIDEBAR_ID); setSelectedId(null); setAdding(false) }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-              padding: '8px 10px', border: 'none', borderRadius: 7, cursor: 'pointer', textAlign: 'left',
-              background: isAppFormsMode ? '#f5f3ff' : 'transparent',
-              borderLeft: isAppFormsMode ? '3px solid #7c3aed' : '3px solid transparent',
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--card-border)' }}>
+          <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
+            CATEGORY
+          </label>
+          <select
+            value={activeCategoryId}
+            onChange={e => {
+              const v = e.target.value
+              setActiveCategoryId(v)
+              setAdding(false)
+              if (v === APP_FORMS_SIDEBAR_ID) {
+                setSelectedId(null)
+                setSelectedBlankId(null)
+              } else {
+                setSelectedBlankId(null)
+              }
             }}
+            style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
           >
-            <ClipboardList size={13} style={{ color: '#7c3aed', flexShrink: 0 }} />
-            <span style={{ flex: 1, fontSize: 12, fontWeight: isAppFormsMode ? 800 : 600, color: isAppFormsMode ? '#7c3aed' : 'var(--text-2)' }}>
-              Application forms
-            </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)' }}>{blankForms.length}</span>
-          </button>
-          {grouped.map(g => {
-            const on = !isAppFormsMode && activeGroup?.category.id === g.category.id
-            return (
-              <button
-                key={g.category.id}
-                type="button"
-                onClick={() => { setActiveCategoryId(g.category.id); setSelectedBlankId(null); setAdding(false) }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                  padding: '8px 10px', border: 'none', borderRadius: 7, cursor: 'pointer', textAlign: 'left',
-                  background: on ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                  borderLeft: on ? '3px solid var(--accent)' : '3px solid transparent',
-                }}
-              >
-                <span style={{
-                  flex: 1, fontSize: 12, fontWeight: on ? 800 : 600,
-                  color: g.category.is_active === false ? '#94a3b8' : (on ? 'var(--accent)' : 'var(--text-2)'),
-                }}>
-                  {g.category.name}{g.category.is_active === false ? ' (inactive)' : ''}
-                </span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)' }}>{g.templates.length}</span>
-              </button>
-            )
-          })}
+            <option value={APP_FORMS_SIDEBAR_ID}>
+              Application forms ({blankForms.length})
+            </option>
+            {grouped.map(g => (
+              <option key={g.category.id} value={g.category.id}>
+                {g.category.name} ({g.templates.length}){g.category.is_active === false ? ' — inactive' : ''}
+              </option>
+            ))}
+          </select>
         </div>
 
         {isAppFormsMode ? (
