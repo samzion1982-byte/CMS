@@ -253,6 +253,65 @@ function injectImageAtPlaceholder(xml: string, key: string, drawingXml: string) 
   return out.split(marker).join(splice)
 }
 
+function maxCNvPrId(xml: string) {
+  let max = 1
+  for (const m of xml.matchAll(/\bid\s*=\s*"(\d+)"/gi)) {
+    max = Math.max(max, Number(m[1]) || 0)
+  }
+  return max
+}
+
+/** Find p:sp shape that contains a signature text placeholder (Canva/PPT often uses text, not AltText). */
+function findPptxShapeForPlaceholder(xml: string, key: string) {
+  const re = /<p:sp\b[\s\S]*?<\/p:sp>/gi
+  for (const m of xml.matchAll(re)) {
+    if (placeholderExistsInXml(m[0], key)) return m[0]
+  }
+  return null
+}
+
+function extractPptxXfrm(spXml: string) {
+  const x = spXml.match(/<a:off\b[^>]*\bx\s*=\s*"(-?\d+)"/i)?.[1]
+  const y = spXml.match(/<a:off\b[^>]*\by\s*=\s*"(-?\d+)"/i)?.[1]
+  const cx = spXml.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
+  const cy = spXml.match(/<a:ext\b[^>]*\bcy\s*=\s*"(\d+)"/i)?.[1]
+  if (x == null || y == null || cx == null || cy == null) return null
+  return { x, y, cx, cy }
+}
+
+function pptxSignaturePicXml(
+  rId: string,
+  shapeId: number,
+  name: string,
+  xfrm: { x: string, y: string, cx: string, cy: string },
+  isSeal = false,
+) {
+  let cx = Number(xfrm.cx) || 0
+  let cy = Number(xfrm.cy) || 0
+  // Text boxes for tags are often short — expand to a readable signature size
+  if (cy < 250000) cy = isSeal ? 914400 : 560000
+  if (cx < 900000) cx = isSeal ? 914400 : 1600000
+  const x = xfrm.x || '0'
+  const y = xfrm.y || '0'
+  return (
+    `<p:pic>`
+    + `<p:nvPicPr>`
+    + `<p:cNvPr id="${shapeId}" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/>`
+    + `<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr>`
+    + `<p:nvPr/>`
+    + `</p:nvPicPr>`
+    + `<p:blipFill>`
+    + `<a:blip r:embed="${rId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`
+    + `<a:stretch><a:fillRect/></a:stretch>`
+    + `</p:blipFill>`
+    + `<p:spPr>`
+    + `<a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
+    + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`
+    + `</p:spPr>`
+    + `</p:pic>`
+  )
+}
+
 async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>) {
   const { data: church } = await admin
     .from('churches')
@@ -397,27 +456,41 @@ async function mergeOfficeBytes(
       }
     }
 
-    // 2) Word-only: text tag {presbyter_sign} → inject drawing
-    if (!isPptx) {
-      for (const [key, img] of Object.entries(signatureImages)) {
-        if (swappedKeys.has(key)) continue
-        if (!placeholderExistsInXml(xml, key)) continue
+    // 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT picture at text-box position)
+    for (const [key, img] of Object.entries(signatureImages)) {
+      if (swappedKeys.has(key)) continue
+      if (!placeholderExistsInXml(xml, key)) continue
 
-        mediaSeq += 1
-        const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-        zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
+      mediaSeq += 1
+      const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
+      zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
 
-        const rId = nextRelationshipId(relsXml)
-        relsXml = relsXml.replace(
-          '</Relationships>',
-          `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
-        )
-        relsDirty = true
+      const rId = nextRelationshipId(relsXml)
+      relsXml = relsXml.replace(
+        '</Relationships>',
+        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+      )
+      relsDirty = true
+      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
 
+      if (isPptx) {
+        const sp = findPptxShapeForPlaceholder(xml, key)
+        const xfrm = (sp && extractPptxXfrm(sp))
+          || { x: '0', y: '0', cx: '1600000', cy: '560000' }
+        const shapeId = maxCNvPrId(xml) + 1
+        const pic = pptxSignaturePicXml(rId, shapeId, key, xfrm, key === 'treasurer_seal')
+        xml = replacePlaceholderInXml(xml, key, '')
+        if (xml.includes('</p:spTree>')) {
+          xml = xml.replace('</p:spTree>', `${pic}</p:spTree>`)
+        } else {
+          xml += pic
+        }
+        swappedKeys.add(key)
+        swapLog.push(`${key}:pptx_text_inject`)
+      } else {
         docPrSeq += 1
         const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
         xml = injectImageAtPlaceholder(xml, key, drawing)
-        if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
         swappedKeys.add(key)
         swapLog.push(`${key}:text_inject`)
       }

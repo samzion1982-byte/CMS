@@ -72,6 +72,27 @@ function templateStorageType(templateType) {
   return 'letters'
 }
 
+/** Soft tint per category name (falls back by index). */
+function categoryHeaderStyle(name, index = 0) {
+  const n = String(name || '').toLowerCase()
+  if (n.includes('letter')) {
+    return { bg: '#eff6ff', accent: '#2563eb', badgeBg: '#dbeafe', badgeColor: '#1d4ed8' }
+  }
+  if (n.includes('cert')) {
+    return { bg: '#fffbeb', accent: '#d97706', badgeBg: '#fde68a', badgeColor: '#b45309' }
+  }
+  if (n.includes('form') || n.includes('application')) {
+    return { bg: '#f5f3ff', accent: '#7c3aed', badgeBg: '#ede9fe', badgeColor: '#6d28d9' }
+  }
+  const fallback = [
+    { bg: '#f0fdf4', accent: '#16a34a', badgeBg: '#bbf7d0', badgeColor: '#15803d' },
+    { bg: '#fdf2f8', accent: '#db2777', badgeBg: '#fbcfe8', badgeColor: '#be185d' },
+    { bg: '#ecfeff', accent: '#0891b2', badgeBg: '#a5f3fc', badgeColor: '#0e7490' },
+    { bg: '#f8fafc', accent: '#475569', badgeBg: '#e2e8f0', badgeColor: '#334155' },
+  ]
+  return fallback[index % fallback.length]
+}
+
 export default function PrintCornerPage() {
   const navigate = useNavigate()
   const toast = useToast()
@@ -187,6 +208,22 @@ export default function PrintCornerPage() {
   )
 
   const bulkMode = bulkRows.length > 0
+
+  /** Drafts for the same template type as the selection (certs don't show letter drafts). */
+  const visibleDrafts = useMemo(() => {
+    if (!selected) return drafts
+    const keysOfType = new Set(
+      groups
+        .flatMap(g => g.templates)
+        .filter(t => t.template_type === selected.template_type)
+        .map(t => t.template_key),
+    )
+    return drafts.filter(d =>
+      d.template_id === selected.id
+      || d.template_key === selected.template_key
+      || keysOfType.has(d.template_key),
+    )
+  }, [drafts, selected, groups])
 
   function clearBulk() {
     setBulkRows([])
@@ -408,12 +445,21 @@ export default function PrintCornerPage() {
       return (
         <div>
           <div style={{ marginBottom: 20, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
-            {drafts.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No drafts yet.</p>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+              Shared drafts
+              {selectedMeta ? (
+                <span style={{ fontWeight: 600, color: 'var(--text-3)', marginLeft: 6 }}>
+                  · {selectedMeta.label} only
+                </span>
+              ) : null}
+            </div>
+            {visibleDrafts.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+                No drafts for this type yet.
+              </p>
             ) : (
               <div style={{ maxHeight: 180, overflow: 'auto' }}>
-                {drafts.map(d => (
+                {visibleDrafts.map(d => (
                   <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: 13 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <strong>{d.template_key}</strong>
@@ -583,8 +629,9 @@ export default function PrintCornerPage() {
               <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
                 {tplSearch.trim() ? 'No templates match your search.' : 'No templates yet.'}
               </div>
-            ) : filteredGroups.map(g => {
+            ) : filteredGroups.map((g, gi) => {
               const open = tplSearch.trim() ? true : expandedCats.has(g.category.id)
+              const catStyle = categoryHeaderStyle(g.category.name, gi)
               return (
                 <div key={g.category.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
                   <button
@@ -592,25 +639,29 @@ export default function PrintCornerPage() {
                     onClick={() => toggleCategory(g.category.id)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '10px 14px', border: 'none', background: 'var(--input-bg)',
-                      cursor: 'pointer', textAlign: 'left',
+                      padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
+                      background: catStyle.bg,
+                      borderLeft: `3px solid ${catStyle.accent}`,
+                      boxShadow: open ? `inset 0 -1px 0 ${catStyle.badgeBg}` : 'none',
                     }}
                   >
                     {open
-                      ? <ChevronDown size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
-                      : <ChevronRight size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />}
-                    <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
+                      ? <ChevronDown size={14} style={{ color: catStyle.accent, flexShrink: 0 }} />
+                      : <ChevronRight size={14} style={{ color: catStyle.accent, flexShrink: 0 }} />}
+                    <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: catStyle.accent }}>
                       {g.category.name}
                     </span>
                     <span style={{
                       fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
-                      padding: '2px 7px', borderRadius: 99, background: 'var(--card-bg)',
-                      border: '1px solid var(--card-border)', color: 'var(--text-3)',
+                      padding: '2px 7px', borderRadius: 99,
+                      background: catStyle.badgeBg, color: catStyle.badgeColor,
                     }}>
                       {g.templates.length}
                     </span>
                   </button>
-                  {open && g.templates.map(t => {
+                  {open && (
+                    <div style={{ background: 'var(--card-bg)' }}>
+                      {g.templates.map(t => {
                     const Icon = TYPE_ICONS[t.template_type] || FileText
                     const active = selected?.id === t.id
                     return (
@@ -619,11 +670,11 @@ export default function PrintCornerPage() {
                           display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
                           padding: '10px 14px 10px 18px', border: 'none', textAlign: 'left', cursor: 'pointer',
                           background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                          borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+                          borderLeft: active ? `3px solid ${catStyle.accent}` : '3px solid transparent',
                           color: 'var(--text-1)',
                         }}>
                         <Icon size={15} style={{
-                          color: TEMPLATE_TYPES[t.template_type]?.color || '#64748b',
+                          color: TEMPLATE_TYPES[t.template_type]?.color || catStyle.accent,
                           flexShrink: 0, marginTop: 2,
                         }} />
                         <span style={{ flex: 1, minWidth: 0 }}>
@@ -641,7 +692,9 @@ export default function PrintCornerPage() {
                         </span>
                       </button>
                     )
-                  })}
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
