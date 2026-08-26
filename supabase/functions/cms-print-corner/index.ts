@@ -193,43 +193,92 @@ function ensureContentTypeDefault(ctXml: string, ext: string, contentType: strin
   )
 }
 
-/** Find pictures whose Alt Text / descr / title / name is {presbyter_sign} etc. */
+/** Pull a signature key from alt-text-like attribute values. */
+function keyFromAltAttr(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  const val = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+  if (!val) return null
+  const direct = normalizeSignKey(val)
+  if (direct) return direct
+  for (const k of IMAGE_PLACEHOLDER_KEYS) {
+    if (val.includes('{' + k + '}') || val.toLowerCase() === k.toLowerCase()) {
+      return normalizeSignKey(k)
+    }
+  }
+  return null
+}
+
+function extractBlipEmbedId(block: string): string | null {
+  const blip = block.match(/<a:blip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
+    || block.match(/<a:blip\b[^>]*\br:embed\s*=\s*'([^']+)'/i)
+    || block.match(/<a:blip\b[^>]*\bembed\s*=\s*"([^"]+)"/i)
+    || block.match(/<asvg:svgBlip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
+    || block.match(/<a:blip\b[^>]*\br:link\s*=\s*"([^"]+)"/i)
+  return blip?.[1] || null
+}
+
+/**
+ * Find pictures / picture-filled shapes whose AltText (descr/title/name) is a signature key.
+ * Covers Word drawings, PPT p:pic, and Canva p:sp + blipFill.
+ */
 function findAltTextImageSlots(xml: string) {
   const slots: Array<{ key: string, embedId: string, block: string }> = []
-  const blockRegex = /<(?:w:drawing|p:pic)\b[\s\S]*?<\/(?:w:drawing|p:pic)>/gi
+  const seen = new Set<string>()
+  const blockRegex = /<(?:w:drawing|p:pic|p:sp)\b[\s\S]*?<\/(?:w:drawing|p:pic|p:sp)>/gi
+
   for (const m of xml.matchAll(blockRegex)) {
     const block = m[0]
+    if (!/<a:blip\b/i.test(block) && !/<asvg:svgBlip\b/i.test(block)) continue
+
     let key: string | null = null
     for (const attr of ['descr', 'title', 'name']) {
-      const am = block.match(new RegExp(`\\b${attr}\\s*=\\s*"([^"]*)"`, 'i'))
-        || block.match(new RegExp(`\\b${attr}\\s*=\\s*'([^']*)'`, 'i'))
-      if (!am) continue
-      key = normalizeSignKey(am[1])
+      const reDq = new RegExp('\\b' + attr + '\\s*=\\s*"([^"]*)"', 'gi')
+      let am: RegExpExecArray | null
+      while ((am = reDq.exec(block)) !== null) {
+        key = keyFromAltAttr(am[1])
+        if (key) break
+      }
       if (key) break
-      // descr may contain the tag among other text
-      for (const k of IMAGE_PLACEHOLDER_KEYS) {
-        if (am[1].includes(`{${k}}`) || am[1].trim() === k) {
-          key = normalizeSignKey(k)
-          break
-        }
+      const reSq = new RegExp('\\b' + attr + "\\s*=\\s*'([^']*)'", 'gi')
+      while ((am = reSq.exec(block)) !== null) {
+        key = keyFromAltAttr(am[1])
+        if (key) break
       }
       if (key) break
     }
     if (!key) {
       for (const k of IMAGE_PLACEHOLDER_KEYS) {
-        if (block.includes(`{${k}}`)) { key = normalizeSignKey(k); break }
+        if (block.includes('{' + k + '}')) { key = normalizeSignKey(k); break }
       }
     }
     if (!key) continue
 
-    const blip = block.match(/<a:blip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
-      || block.match(/<a:blip\b[^>]*\br:embed\s*=\s*'([^']+)'/i)
-      || block.match(/<a:blip\b[^>]*\bembed\s*=\s*"([^"]+)"/i)
-    if (!blip) continue
-    slots.push({ key, embedId: blip[1], block })
+    const embedId = extractBlipEmbedId(block)
+    if (!embedId) continue
+
+    const dedupe = key + '|' + embedId + '|' + block.length
+    if (seen.has(dedupe)) continue
+    seen.add(dedupe)
+    slots.push({ key, embedId, block })
   }
   return slots
 }
+
+/** Point every blip in a picture block at the new relationship; drop SVG overrides Canva leaves behind. */
+function retargetPictureBlock(block: string, oldEmbedId: string, newRId: string) {
+  let out = block
+  const esc = oldEmbedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  out = out.replace(new RegExp('(r:embed\\s*=\\s*")' + esc + '(")', 'gi'), '$1' + newRId + '$2')
+  out = out.replace(new RegExp("(r:embed\\s*=\\s*')" + esc + "(')", 'gi'), '$1' + newRId + '$2')
+  out = out.replace(new RegExp('r:link\\s*=\\s*"' + esc + '"', 'gi'), 'r:embed="' + newRId + '"')
+  out = out.replace(/(<a:blip\b[^>]*\br:embed\s*=\s*")([^"]+)(")/gi, '$1' + newRId + '$3')
+  out = out.replace(/(<asvg:svgBlip\b[^>]*\br:embed\s*=\s*")([^"]+)(")/gi, '$1' + newRId + '$3')
+  out = out.replace(/<a:ext\b[^>]*>[\s\S]*?<asvg:svgBlip\b[\s\S]*?<\/a:ext>/gi, '')
+  out = out.replace(/<asvg:svgBlip\b[^>]*\/>/gi, '')
+  out = out.replace(/<asvg:svgBlip\b[\s\S]*?<\/asvg:svgBlip>/gi, '')
+  return out
+}
+
 
 function resolveRelTargetToZipPath(xmlPartPath: string, relTarget: string) {
   const dir = xmlPartPath.includes('/') ? xmlPartPath.slice(0, xmlPartPath.lastIndexOf('/')) : ''
@@ -482,7 +531,7 @@ async function mergeOfficeBytes(
     const mediaFolder = isPptx ? 'ppt/media' : 'word/media'
     const relTargetPrefix = isPptx ? '../media/' : 'media/'
 
-    // 1) Replace pictures by AltText (Word + PowerPoint)
+    // 1) Replace pictures by AltText (Word + PowerPoint / Canva)
     const slots = findAltTextImageSlots(xml)
     for (const slot of slots) {
       slotsFound.push(`${name}:${slot.key}:${slot.embedId}`)
@@ -509,22 +558,39 @@ async function mergeOfficeBytes(
       relsDirty = true
 
       const oldBlock = slot.block
-      let newBlock = oldBlock
-        .replace(new RegExp(`r:embed\\s*=\\s*"${slot.embedId}"`, 'i'), `r:embed="${rId}"`)
-        .replace(new RegExp(`r:embed\\s*=\\s*'${slot.embedId}'`, 'i'), `r:embed='${rId}'`)
+      const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
 
-      if (newBlock !== oldBlock) {
+      if (newBlock !== oldBlock && xml.includes(oldBlock)) {
         xml = xml.split(oldBlock).join(newBlock)
         swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:relinked:${rId}`)
-      } else {
-        const existing = mediaPathFromRels(relsXml, slot.embedId, name)
-        if (existing) {
-          zip.file(existing, img.bytes)
+        swapLog.push(`${slot.key}:alt_relinked:${slot.embedId}->${rId}`)
+      }
+
+      // Always overwrite original media bytes too (belt-and-suspenders for Google Slides)
+      const existing = mediaPathFromRels(relsXml, slot.embedId, name)
+      if (existing) {
+        zip.file(existing, img.bytes)
+        if (!swappedKeys.has(slot.key)) {
           swappedKeys.add(slot.key)
-          swapLog.push(`${slot.key}:overwrote:${existing}`)
+          swapLog.push(`${slot.key}:alt_overwrote:${existing}`)
         } else {
-          swapLog.push(`${slot.key}:failed_no_rel`)
+          swapLog.push(`${slot.key}:alt_also_overwrote:${existing}`)
+        }
+      } else if (!swappedKeys.has(slot.key)) {
+        // Last resort: replace whole picture shape with a clean p:pic at same transform
+        if (isPptx) {
+          const xfrm = extractPptxXfrm(oldBlock) || { x: '0', y: '0', cx: '2000000', cy: '700000' }
+          const shapeId = maxCNvPrId(xml) + 1
+          const pic = pptxSignaturePicXml(rId, shapeId, slot.key, xfrm, slot.key === 'treasurer_seal')
+          if (xml.includes(oldBlock)) {
+            xml = xml.split(oldBlock).join(pic)
+            swappedKeys.add(slot.key)
+            swapLog.push(`${slot.key}:alt_replaced_shape:${rId}`)
+          } else {
+            swapLog.push(`${slot.key}:failed_alt_no_rel`)
+          }
+        } else {
+          swapLog.push(`${slot.key}:failed_alt_no_rel`)
         }
       }
     }

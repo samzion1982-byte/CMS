@@ -287,12 +287,12 @@ export async function parseOfficePlaceholders(fileOrBlob) {
 
   const found = new Set()
   const textRe = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-  const descrRe = /\bdescr\s*=\s*"([^"]*)"/gi
+  const attrRe = /\b(?:descr|title|name)\s*=\s*"([^"]*)"/gi
 
   for (const name of xmlNames) {
     const docXml = await zip.file(name).async('string')
 
-    for (const dm of docXml.matchAll(descrRe)) {
+    for (const dm of docXml.matchAll(attrRe)) {
       const val = String(dm[1] || '').trim()
       let m
       const braced = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
