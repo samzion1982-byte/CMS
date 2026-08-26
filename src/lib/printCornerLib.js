@@ -559,15 +559,16 @@ function safePdfName(index, fieldValues, templateKey) {
   return `${String(index + 1).padStart(3, '0')}_${safe}.pdf`
 }
 
-/** Generate one PDF per tracker row, zip and download; each PDF also saved to issued/ via Edge */
-export async function convertBulkLettersToZip({
+/** Generate one PDF per tracker row, merge into a single multi-page PDF, and download it */
+export async function convertBulkLettersToPdf({
   storagePath,
   templateKey,
   templateType = 'letters',
   rows,
   onProgress,
 }) {
-  const zip = new JSZip()
+  const { PDFDocument } = await import('pdf-lib')
+  const merged = await PDFDocument.create()
   const results = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -589,20 +590,27 @@ export async function convertBulkLettersToZip({
     const pdfRes = await fetch(res.signed_url)
     if (!pdfRes.ok) throw new Error(`Row ${i + 1}: could not download PDF`)
     const pdfBytes = await pdfRes.arrayBuffer()
-    const fname = res.filename || safePdfName(i, fieldValues, templateKey)
-    zip.file(fname, pdfBytes)
+    const src = await PDFDocument.load(pdfBytes)
+    const pages = await merged.copyPages(src, src.getPageIndices())
+    for (const page of pages) merged.addPage(page)
     results.push({ ...res, fieldValues })
   }
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const outBytes = await merged.save()
   const stamp = new Date().toISOString().slice(0, 10)
-  const zipName = `${templateKey}_bulk_${stamp}.zip`
-  const url = URL.createObjectURL(zipBlob)
+  const fileName = `${templateKey}_bulk_${stamp}.pdf`
+  const blob = new Blob([outBytes], { type: 'application/pdf' })
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = zipName
+  a.download = fileName
   a.click()
   URL.revokeObjectURL(url)
 
-  return { count: rows.length, zipName, results }
+  return { count: rows.length, fileName, pageCount: merged.getPageCount(), results }
+}
+
+/** @deprecated Use convertBulkLettersToPdf — kept as alias for older imports */
+export async function convertBulkLettersToZip(opts) {
+  return convertBulkLettersToPdf(opts)
 }

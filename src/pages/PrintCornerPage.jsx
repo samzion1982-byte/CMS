@@ -12,7 +12,7 @@ import {
   getPrintCornerCatalog,
   pingPrintCorner,
   convertTemplateFromStorage,
-  convertBulkLettersToZip,
+  convertBulkLettersToPdf,
   downloadPrintCornerTracker,
   parsePrintCornerTrackerFile,
   TEMPLATE_TYPES,
@@ -301,14 +301,14 @@ export default function PrintCornerPage() {
     setBusy(true)
     setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
     try {
-      const { count, zipName } = await convertBulkLettersToZip({
+      const { count, fileName, pageCount } = await convertBulkLettersToPdf({
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
         rows: bulkRows,
         onProgress: setBulkProgress,
       })
-      toast(`${count} PDFs created — downloaded ${zipName}`, 'success')
+      toast(`${count} letter(s) → ${pageCount} page PDF — downloaded ${fileName}`, 'success')
     } catch (e) {
       pdfErrorToast(e.message || 'Bulk convert failed')
     } finally {
@@ -460,8 +460,8 @@ export default function PrintCornerPage() {
             <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk letters (tracker)</div>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                For multiple PDFs: download the tracker, fill rows, upload it, then use Multi PDF.
-                For a single letter, use Issue PDF with the fields above.
+                For multiple letters: download the tracker, fill rows, upload it, then use Multi PDF
+                (one combined multi-page PDF). For a single letter, use Issue PDF.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" disabled={busy || !variables.length} onClick={handleDownloadTracker}
