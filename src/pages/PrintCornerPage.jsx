@@ -10,7 +10,8 @@ import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
 import { sendWhatsAppMessage } from '../lib/whatsapp'
 import {
-  getPrintCornerCatalog,
+  peekPrintCornerSidebarCatalogCache,
+  fetchPrintCornerSidebarCatalog,
   pingPrintCorner,
   convertTemplateFromStorage,
   convertBulkLettersToPdf,
@@ -26,7 +27,6 @@ import {
   searchPrintCornerMembers,
   getPrintCornerMemberById,
   memberPhotoExistsInStorage,
-  getPrintCornerApplicationForms,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
   wizardTextVariables,
@@ -111,16 +111,31 @@ function categoryHeaderStyle(name, index = 0) {
 
 const FORMS_STYLE = { bg: '#f5f3ff', accent: '#7c3aed', badgeBg: '#ede9fe', badgeColor: '#6d28d9' }
 
+function initialSidebarFromCache() {
+  const cached = peekPrintCornerSidebarCatalogCache()
+  if (!cached) {
+    return { categories: [], groups: [], blankForms: [], hasCache: false }
+  }
+  const top = (cached.categories || []).filter(c => !c.parent_id)
+  return {
+    categories: top,
+    groups: groupTemplates(top, (cached.templates || []).filter(t => t.template_type !== 'form')),
+    blankForms: cached.applicationForms || [],
+    hasCache: true,
+  }
+}
+
 export default function PrintCornerPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useAuth()
   const trackerInputRef = useRef(null)
+  const initialSidebar = useMemo(() => initialSidebarFromCache(), [])
 
-  const [loading, setLoading] = useState(true)
-  const [categories, setCategories] = useState([])
-  const [groups, setGroups] = useState([])
-  const [blankForms, setBlankForms] = useState([])
+  const [loading, setLoading] = useState(() => !initialSidebar.hasCache)
+  const [categories, setCategories] = useState(initialSidebar.categories)
+  const [groups, setGroups] = useState(initialSidebar.groups)
+  const [blankForms, setBlankForms] = useState(initialSidebar.blankForms)
   const [selected, setSelected] = useState(null)
   const [selectedBlankForm, setSelectedBlankForm] = useState(null)
   const [sidebarMode, setSidebarMode] = useState('forms') // 'forms' | 'templates'
@@ -158,34 +173,46 @@ export default function PrintCornerPage() {
   const [sharing, setSharing] = useState(false)
   const memberSearchTimer = useRef(null)
 
+  const applySidebarCatalog = useCallback(({ categories: cats, templates, applicationForms }) => {
+    const top = (cats || []).filter(c => !c.parent_id)
+    setCategories(top)
+    setGroups(groupTemplates(top, (templates || []).filter(t => t.template_type !== 'form')))
+    setBlankForms(applicationForms || [])
+  }, [])
+
   const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [{ categories, templates }, churchRow, draftRows, appForms] = await Promise.all([
-        getPrintCornerCatalog(),
-        getChurchForPrintCorner(),
-        getSharedDrafts(30),
-        getPrintCornerApplicationForms(true).catch(() => []),
-      ])
-      const top = categories.filter(c => !c.parent_id)
-      setCategories(top)
-      // Mail-merge catalog only — blank scanned forms live in application_forms
-      setGroups(groupTemplates(top, templates.filter(t => t.template_type !== 'form')))
-      setBlankForms(appForms)
-      setChurch(churchRow)
-      setDrafts(draftRows)
-      try {
-        const p = await pingPrintCorner()
-        setPing(p)
-      } catch (e) {
-        setPing({ ok: false, error: e.message })
-      }
-    } catch (e) {
-      toast(e.message || 'Could not load Print Corner', 'error')
-    } finally {
+    const cached = peekPrintCornerSidebarCatalogCache()
+
+    if (cached) {
+      applySidebarCatalog(cached)
       setLoading(false)
+      fetchPrintCornerSidebarCatalog()
+        .then(fresh => applySidebarCatalog(fresh))
+        .catch(() => {})
+    } else {
+      setLoading(true)
+      try {
+        const fresh = await fetchPrintCornerSidebarCatalog()
+        applySidebarCatalog(fresh)
+      } catch (e) {
+        toast(e.message || 'Could not load Print Corner', 'error')
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [toast])
+
+    getChurchForPrintCorner()
+      .then(setChurch)
+      .catch(() => {})
+
+    getSharedDrafts(30)
+      .then(setDrafts)
+      .catch(() => {})
+
+    pingPrintCorner()
+      .then(setPing)
+      .catch(e => setPing({ ok: false, error: e.message }))
+  }, [toast, applySidebarCatalog])
 
   useEffect(() => { load() }, [load])
 

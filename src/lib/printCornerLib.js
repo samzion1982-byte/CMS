@@ -166,6 +166,53 @@ export async function getPrintCornerCatalog() {
   }
 }
 
+const PRINT_CORNER_CATALOG_CACHE_KEY = 'print_corner_sidebar_catalog_v1'
+const CATALOG_CACHE_TTL_MS = 1000 * 60 * 30
+
+let catalogMemoryCache = null
+
+export function invalidatePrintCornerCatalogCache() {
+  catalogMemoryCache = null
+  try {
+    sessionStorage.removeItem(PRINT_CORNER_CATALOG_CACHE_KEY)
+  } catch { /* ignore */ }
+}
+
+/** Sync read — instant sidebar hydrate on repeat visits. */
+export function peekPrintCornerSidebarCatalogCache() {
+  if (catalogMemoryCache && Date.now() - catalogMemoryCache.fetchedAt < CATALOG_CACHE_TTL_MS) {
+    return catalogMemoryCache
+  }
+  try {
+    const raw = sessionStorage.getItem(PRINT_CORNER_CATALOG_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.fetchedAt || Date.now() - parsed.fetchedAt > CATALOG_CACHE_TTL_MS) return null
+    catalogMemoryCache = parsed
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writePrintCornerSidebarCatalogCache(entry) {
+  catalogMemoryCache = entry
+  try {
+    sessionStorage.setItem(PRINT_CORNER_CATALOG_CACHE_KEY, JSON.stringify(entry))
+  } catch { /* quota */ }
+}
+
+/** Fetch categories, templates, and application forms; update sidebar cache. */
+export async function fetchPrintCornerSidebarCatalog() {
+  const [{ categories, templates }, applicationForms] = await Promise.all([
+    getPrintCornerCatalog(),
+    getPrintCornerApplicationForms(true).catch(() => []),
+  ])
+  const entry = { categories, templates, applicationForms, fetchedAt: Date.now() }
+  writePrintCornerSidebarCatalogCache(entry)
+  return entry
+}
+
 export async function invokePrintCorner(body) {
   const { data, error } = await supabase.functions.invoke('cms-print-corner', { body })
   if (error) {
@@ -371,21 +418,25 @@ export async function savePrintCornerCategory({ id, name, sort_order, is_active,
   if (id) {
     const { data, error } = await supabase.from('print_corner_categories').update(payload).eq('id', id).select().single()
     if (error) throw error
+    invalidatePrintCornerCatalogCache()
     return data
   }
   const { data, error } = await supabase.from('print_corner_categories').insert(payload).select().single()
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
   return data
 }
 
 export async function deactivatePrintCornerCategory(id) {
   const { error } = await supabase.from('print_corner_categories').update({ is_active: false }).eq('id', id)
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
 }
 
 export async function deletePrintCornerCategory(id) {
   const { error } = await supabase.from('print_corner_categories').delete().eq('id', id)
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
 }
 
 export async function movePrintCornerCategory(dragNode, targetNode, dropPos, allRows) {
@@ -410,6 +461,7 @@ export async function savePrintCornerTemplate(payload) {
   if (row.id) {
     const { data, error } = await supabase.from('print_corner_templates').update(row).eq('id', row.id).select('*').single()
     if (error) throw error
+    invalidatePrintCornerCatalogCache()
     return data
   }
   if (!row.template_key?.trim()) throw new Error('Template key is required.')
@@ -417,6 +469,7 @@ export async function savePrintCornerTemplate(payload) {
   if (!row.category_id) throw new Error('Category is required.')
   const { data, error } = await supabase.from('print_corner_templates').insert(row).select('*').single()
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
   return data
 }
 
@@ -429,6 +482,7 @@ export async function deletePrintCornerTemplate(id, storagePath = null) {
   }
   const { error } = await supabase.from('print_corner_templates').delete().eq('id', id)
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
 }
 
 /** Count templates still attached to a category (for delete confirm) */
@@ -1039,6 +1093,7 @@ export async function savePrintCornerApplicationForm({
       .select()
       .single()
     if (error) throw error
+    invalidatePrintCornerCatalogCache()
     return data
   }
 
@@ -1049,6 +1104,7 @@ export async function savePrintCornerApplicationForm({
     .select()
     .single()
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
   return data
 }
 
@@ -1060,6 +1116,7 @@ export async function deletePrintCornerApplicationForm(id, storagePath = null) {
   }
   const { error } = await supabase.from('print_corner_application_forms').delete().eq('id', id)
   if (error) throw error
+  invalidatePrintCornerCatalogCache()
 }
 
 export async function uploadPrintCornerApplicationFormFile(file, formRow) {
