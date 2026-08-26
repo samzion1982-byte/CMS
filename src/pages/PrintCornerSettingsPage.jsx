@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Settings, ArrowLeft, Plus, Pencil, Trash2, Check, X, Loader2,
-  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown,
+  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown, PenLine,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
@@ -11,10 +11,14 @@ import {
   savePrintCornerCategory,
   deactivatePrintCornerCategory,
   deletePrintCornerCategory,
+  countTemplatesInCategory,
   getPrintCornerTemplates,
   savePrintCornerTemplate,
+  deletePrintCornerTemplate,
   uploadPrintCornerTemplateDocx,
   normalizeTemplateVariables,
+  getChurchForPrintCorner,
+  getOfficeBearerSignatureStatus,
   TEMPLATE_TYPES,
 } from '../lib/printCornerLib'
 
@@ -27,6 +31,7 @@ const INPUT = {
 const TABS = [
   { id: 'categories', label: 'Categories', icon: Tags },
   { id: 'templates', label: 'Templates', icon: FileText },
+  { id: 'signatures', label: 'Signatures', icon: PenLine },
 ]
 
 function CategoriesPanel() {
@@ -78,6 +83,21 @@ function CategoriesPanel() {
     setBusy(null)
   }
 
+  async function handleDelete(row) {
+    setBusy(row.id)
+    try {
+      const n = await countTemplatesInCategory(row.id)
+      const msg = n > 0
+        ? `Delete category “${row.name}”? This also permanently deletes ${n} template${n === 1 ? '' : 's'} in it.`
+        : `Delete category “${row.name}”?`
+      if (!window.confirm(msg)) { setBusy(null); return }
+      await deletePrintCornerCategory(row.id)
+      toast('Category deleted.', 'success')
+      await load()
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(null)
+  }
+
   async function move(row, dir) {
     const list = [...topLevel]
     const idx = list.findIndex(r => r.id === row.id)
@@ -120,6 +140,8 @@ function CategoriesPanel() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={20} className="animate-spin" /></div>
+      ) : topLevel.length === 0 ? (
+        <div style={{ padding: 24, fontSize: 13, color: 'var(--text-3)' }}>No categories yet.</div>
       ) : topLevel.map((row, idx) => (
         <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--card-border)', opacity: row.is_active ? 1 : 0.55 }}>
           <GripVertical size={13} style={{ color: 'var(--text-3)', opacity: 0.4 }} />
@@ -135,7 +157,10 @@ function CategoriesPanel() {
               {!row.is_active && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: '#f1f5f9', color: '#64748b' }}>INACTIVE</span>}
               <button type="button" disabled={idx === 0 || busy === row.id} onClick={() => move(row, -1)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', opacity: idx === 0 ? 0.3 : 1 }}><ChevronUp size={14} /></button>
               <button type="button" disabled={idx === topLevel.length - 1 || busy === row.id} onClick={() => move(row, 1)} style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', opacity: idx === topLevel.length - 1 ? 0.3 : 1 }}><ChevronDown size={14} /></button>
-              <button type="button" onClick={() => { setEditingId(row.id); setEditName(row.name) }} style={{ padding: '4px 6px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, cursor: 'pointer' }}><Pencil size={11} /></button>
+              <button type="button" onClick={() => { setEditingId(row.id); setEditName(row.name) }} title="Edit"
+                style={{ padding: '4px 6px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, cursor: 'pointer' }}><Pencil size={11} /></button>
+              <button type="button" disabled={busy === row.id} onClick={() => handleDelete(row)} title="Delete category"
+                style={{ padding: '4px 6px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 6, cursor: 'pointer' }}><Trash2 size={11} /></button>
               <button type="button" onClick={async () => {
                 setBusy(row.id)
                 try {
@@ -165,33 +190,64 @@ function TemplatesPanel() {
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState(null)
   const [varRows, setVarRows] = useState([])
+  const [adding, setAdding] = useState(false)
+  const [newTpl, setNewTpl] = useState({ category_id: '', label: '', template_key: '', template_type: 'letter' })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [cats, tpls] = await Promise.all([
-        getPrintCornerCategories(true),
+        getPrintCornerCategories(false),
         getPrintCornerTemplates(false),
       ])
       setCategories(cats)
       setTemplates(tpls)
-      if (!selectedId && tpls[0]) setSelectedId(tpls[0].id)
+      setSelectedId(prev => {
+        if (prev && tpls.some(t => t.id === prev)) return prev
+        return tpls[0]?.id || null
+      })
     } catch (e) {
       toast(e.message, 'error')
     }
     setLoading(false)
-  }, [toast, selectedId])
+  }, [toast])
 
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const activeCategories = useMemo(
+    () => categories.filter(c => !c.parent_id && c.is_active).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)),
+    [categories],
+  )
+
+  const allTopCategories = useMemo(
+    () => categories.filter(c => !c.parent_id).sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name)),
+    [categories],
+  )
+
+  const grouped = useMemo(() => {
+    const groups = allTopCategories.map(c => ({
+      category: c,
+      templates: templates.filter(t => t.category_id === c.id).sort((a, b) => (a.sort_order - b.sort_order) || a.label.localeCompare(b.label)),
+    }))
+    const known = new Set(allTopCategories.map(c => c.id))
+    const orphans = templates.filter(t => !known.has(t.category_id))
+    if (orphans.length) {
+      groups.push({
+        category: { id: '__unassigned', name: 'Unassigned (fix category)', is_active: true },
+        templates: orphans,
+      })
+    }
+    return groups
+  }, [allTopCategories, templates])
+
   const selected = templates.find(t => t.id === selectedId)
-  const catName = id => categories.find(c => c.id === id)?.name || '—'
 
   useEffect(() => {
     if (!selected) { setForm(null); setVarRows([]); return }
     setForm({
       label: selected.label,
       description: selected.description || '',
+      category_id: selected.category_id || '',
       include_tamil: !!selected.include_tamil,
       is_active: selected.is_active !== false,
     })
@@ -200,18 +256,62 @@ function TemplatesPanel() {
 
   async function handleSaveMeta() {
     if (!selected || !form) return
+    if (!form.category_id) {
+      toast('Choose a category for this template.', 'error')
+      return
+    }
     setBusy(true)
     try {
       await savePrintCornerTemplate({
         id: selected.id,
         label: form.label,
         description: form.description,
+        category_id: form.category_id,
         include_tamil: form.include_tamil,
         is_active: form.is_active,
         variables: varRows.filter(v => v.key.trim()).map(v => ({ key: v.key.trim(), label: (v.label || v.key).trim() })),
       })
       toast('Template saved.', 'success')
       await load()
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
+
+  async function handleDeleteTemplate() {
+    if (!selected) return
+    if (!window.confirm(`Delete template “${selected.label}”? This cannot be undone.`)) return
+    setBusy(true)
+    try {
+      await deletePrintCornerTemplate(selected.id, selected.storage_path)
+      toast('Template deleted.', 'success')
+      setSelectedId(null)
+      await load()
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
+
+  async function handleAddTemplate() {
+    if (!newTpl.category_id) { toast('Choose a category.', 'error'); return }
+    if (!newTpl.label.trim()) { toast('Enter a display label.', 'error'); return }
+    const key = (newTpl.template_key || newTpl.label).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    if (!key) { toast('Enter a template key.', 'error'); return }
+    setBusy(true)
+    try {
+      const max = templates.filter(t => t.category_id === newTpl.category_id).reduce((m, t) => Math.max(m, t.sort_order || 0), 0)
+      const row = await savePrintCornerTemplate({
+        category_id: newTpl.category_id,
+        label: newTpl.label.trim(),
+        template_key: key,
+        template_type: newTpl.template_type,
+        sort_order: max + 10,
+        variables: [],
+        is_active: true,
+      })
+      toast('Template created.', 'success')
+      setAdding(false)
+      setNewTpl({ category_id: '', label: '', template_key: '', template_type: 'letter' })
+      await load()
+      setSelectedId(row.id)
     } catch (e) { toast(e.message, 'error') }
     setBusy(false)
   }
@@ -240,20 +340,67 @@ function TemplatesPanel() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>TEMPLATES</div>
-        {templates.map(t => (
-          <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
-            style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none',
-              borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
-              background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-              fontSize: 13,
-            }}>
-            <div style={{ fontWeight: 600 }}>{t.label}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{catName(t.category_id)} · {t.template_key}</div>
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>BY CATEGORY</span>
+          <button type="button" onClick={() => {
+            setAdding(true)
+            setNewTpl(n => ({ ...n, category_id: n.category_id || activeCategories[0]?.id || '' }))
+          }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            <Plus size={12} /> Add
           </button>
+        </div>
+
+        {adding && (
+          <div style={{ padding: 12, borderBottom: '1px solid var(--card-border)', background: 'var(--sidebar-item-active-bg)', display: 'grid', gap: 8 }}>
+            <select value={newTpl.category_id} onChange={e => setNewTpl(f => ({ ...f, category_id: e.target.value }))} style={INPUT}>
+              <option value="">Category…</option>
+              {activeCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input placeholder="Display label" value={newTpl.label} onChange={e => setNewTpl(f => ({ ...f, label: e.target.value }))} style={INPUT} />
+            <input placeholder="Key (optional)" value={newTpl.template_key} onChange={e => setNewTpl(f => ({ ...f, template_key: e.target.value }))} style={INPUT} />
+            <select value={newTpl.template_type} onChange={e => setNewTpl(f => ({ ...f, template_type: e.target.value }))} style={INPUT}>
+              <option value="letter">Letter</option>
+              <option value="form">Form</option>
+              <option value="certificate">Certificate</option>
+            </select>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" disabled={busy} onClick={handleAddTemplate} style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
+              <button type="button" onClick={() => setAdding(false)} style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
+            </div>
+          </div>
+        )}
+
+        {grouped.every(g => g.templates.length === 0) ? (
+          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>No templates yet. Add one under a category.</div>
+        ) : grouped.map(g => (
+          <div key={g.category.id}>
+            <div style={{
+              padding: '8px 14px 4px', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em',
+              color: g.category.is_active === false ? '#94a3b8' : 'var(--text-2)',
+              background: 'var(--input-bg)',
+            }}>
+              {g.category.name}
+              {g.category.is_active === false ? ' (inactive)' : ''}
+              <span style={{ fontWeight: 500, marginLeft: 6, color: 'var(--text-3)' }}>{g.templates.length}</span>
+            </div>
+            {g.templates.length === 0 ? (
+              <div style={{ padding: '6px 14px 10px', fontSize: 11, color: 'var(--text-3)' }}>No templates in this category</div>
+            ) : g.templates.map(t => (
+              <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none',
+                  borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+                  background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                  fontSize: 13, opacity: t.is_active === false ? 0.55 : 1,
+                }}>
+                <div style={{ fontWeight: 600 }}>{t.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -263,13 +410,27 @@ function TemplatesPanel() {
             <div>
               <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{TEMPLATE_TYPES[selected.template_type]?.label} · {selected.template_key}</div>
             </div>
-            <button type="button" disabled={busy} onClick={handleSaveMeta}
-              style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
-              Save template
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" disabled={busy} onClick={handleDeleteTemplate}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
+                <Trash2 size={14} /> Delete
+              </button>
+              <button type="button" disabled={busy} onClick={handleSaveMeta}
+                style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
+                Save template
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>Category
+              <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))} style={{ ...INPUT, marginTop: 4 }}>
+                <option value="">Select category…</option>
+                {allTopCategories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.is_active === false ? ' (inactive)' : ''}</option>
+                ))}
+              </select>
+            </label>
             <label style={{ fontSize: 12, fontWeight: 600 }}>Display label
               <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={{ ...INPUT, marginTop: 4 }} />
             </label>
@@ -279,6 +440,10 @@ function TemplatesPanel() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
               <input type="checkbox" checked={form.include_tamil} onChange={e => setForm(f => ({ ...f, include_tamil: e.target.checked }))} />
               Optional Tamil block in wizard
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+              Active (show in Print Corner)
             </label>
           </div>
 
@@ -325,6 +490,82 @@ function TemplatesPanel() {
   )
 }
 
+function SignaturesPanel() {
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [church, setChurch] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        setChurch(await getChurchForPrintCorner())
+      } catch (e) {
+        toast(e.message, 'error')
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [toast])
+
+  const status = getOfficeBearerSignatureStatus(church)
+  const allReady = status.every(s => s.ready)
+
+  return (
+    <div className="card" style={{ padding: 20, maxWidth: 640 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Office bearer signatures</div>
+      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 16px', lineHeight: 1.55 }}>
+        Upload Presbyter, Secretary, and Treasurer signature PNGs in Church Setup.
+        For Word/Corel letters today, place those signature images directly in the letterhead template
+        (they travel with the .docx). Auto-injecting signature images into mail-merge is the next step —
+        names like <code style={{ fontSize: 12 }}>{'{presbyter_name}'}</code> already fill from Church Setup.
+      </p>
+
+      {loading ? (
+        <Loader2 size={20} className="animate-spin" />
+      ) : (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          {status.map(s => (
+            <div key={s.role} style={{
+              width: 120, padding: 12, borderRadius: 8, border: '1px solid var(--card-border)',
+              background: s.ready ? '#f0fdf4' : '#fef2f2', textAlign: 'center',
+            }}>
+              <div style={{
+                height: 56, marginBottom: 8, borderRadius: 6, background: '#fff',
+                border: '1px dashed var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+              }}>
+                {s.url
+                  ? <img src={s.url} alt={s.role} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  : <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Missing</span>}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{s.role}</div>
+              <div style={{ fontSize: 10, color: s.ready ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                {s.ready ? 'Ready' : 'Not uploaded'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{
+        padding: 12, borderRadius: 8, marginBottom: 14, fontSize: 12, lineHeight: 1.5,
+        background: allReady ? '#f0fdf4' : '#fff7ed',
+        border: `1px solid ${allReady ? '#bbf7d0' : '#fed7aa'}`,
+        color: 'var(--text-2)',
+      }}>
+        {allReady
+          ? 'All three signature images are on file. Embed them in your Corel/Word letterhead, or wait for auto-inject on Issue PDF.'
+          : 'Some signatures are missing. Open Church Setup → Print Corner — Signature images, then Save.'}
+      </div>
+
+      <button type="button" onClick={() => navigate('/church-setup')}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        Open Church Setup
+      </button>
+    </div>
+  )
+}
+
 export default function PrintCornerSettingsPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useState('templates')
@@ -338,7 +579,7 @@ export default function PrintCornerSettingsPage() {
         </button>
       </PageHeader>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map(t => {
           const Icon = t.icon
           const active = tab === t.id
@@ -356,7 +597,9 @@ export default function PrintCornerSettingsPage() {
         })}
       </div>
 
-      {tab === 'categories' ? <CategoriesPanel /> : <TemplatesPanel />}
+      {tab === 'categories' && <CategoriesPanel />}
+      {tab === 'templates' && <TemplatesPanel />}
+      {tab === 'signatures' && <SignaturesPanel />}
     </div>
   )
 }

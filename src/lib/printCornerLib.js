@@ -223,9 +223,31 @@ export async function savePrintCornerTemplate(payload) {
   }
   if (!row.template_key?.trim()) throw new Error('Template key is required.')
   if (!row.label?.trim()) throw new Error('Label is required.')
+  if (!row.category_id) throw new Error('Category is required.')
   const { data, error } = await supabase.from('print_corner_templates').insert(row).select('*').single()
   if (error) throw error
   return data
+}
+
+/** Hard-delete template row; best-effort remove storage .docx */
+export async function deletePrintCornerTemplate(id, storagePath = null) {
+  if (storagePath) {
+    try {
+      await supabase.storage.from(BUCKET).remove([storagePath])
+    } catch { /* ignore storage cleanup errors */ }
+  }
+  const { error } = await supabase.from('print_corner_templates').delete().eq('id', id)
+  if (error) throw error
+}
+
+/** Count templates still attached to a category (for delete confirm) */
+export async function countTemplatesInCategory(categoryId) {
+  const { count, error } = await supabase
+    .from('print_corner_templates')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', categoryId)
+  if (error) throw error
+  return count || 0
 }
 
 /**
@@ -360,11 +382,30 @@ export async function searchPrintCornerMembers(query, limit = 15) {
 export async function getChurchForPrintCorner() {
   const { data, error } = await supabase
     .from('churches')
-    .select('church_name, diocese, address, city, pincode, presbyter_name, pastor_name, secretary_name, treasurer_name')
+    .select(
+      'church_name, diocese, address, city, pincode, presbyter_name, pastor_name, secretary_name, treasurer_name, '
+      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url',
+    )
     .limit(1)
     .maybeSingle()
   if (error) throw error
   return data
+}
+
+/** Status of office-bearer signature PNGs from Church Setup */
+export function getOfficeBearerSignatureStatus(church) {
+  if (!church) {
+    return [
+      { role: 'Presbyter', ready: false },
+      { role: 'Secretary', ready: false },
+      { role: 'Treasurer', ready: false },
+    ]
+  }
+  return [
+    { role: 'Presbyter', ready: !!church.presbyter_signature_url, url: church.presbyter_signature_url },
+    { role: 'Secretary', ready: !!church.secretary_signature_url, url: church.secretary_signature_url },
+    { role: 'Treasurer', ready: !!church.treasurer_signature_url, url: church.treasurer_signature_url },
+  ]
 }
 
 /* ── Bulk letter tracker (Excel) ───────────────────────────────── */

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import {
   Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList,
-  ChevronRight, CheckCircle2, AlertCircle, Save, Download, Upload,
+  ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Save, Download, Upload,
+  Pencil, Trash2, Search,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
@@ -17,6 +18,7 @@ import {
   TEMPLATE_TYPES,
   getSharedDrafts,
   saveDraft,
+  deleteDraft,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
   normalizeTemplateVariables,
@@ -45,11 +47,22 @@ function groupTemplates(categories, templates) {
   for (const c of categories) {
     if (!c.parent_id) byCat.set(c.id, { category: c, templates: [] })
   }
+  const orphans = []
   for (const t of templates) {
     const bucket = byCat.get(t.category_id)
     if (bucket) bucket.templates.push(t)
+    else orphans.push(t)
   }
-  return [...byCat.values()].sort((a, b) => a.category.sort_order - b.category.sort_order)
+  const groups = [...byCat.values()]
+    .filter(g => g.templates.length > 0)
+    .sort((a, b) => a.category.sort_order - b.category.sort_order)
+  if (orphans.length) {
+    groups.push({
+      category: { id: '__unassigned', name: 'Unassigned', sort_order: 9999 },
+      templates: orphans,
+    })
+  }
+  return groups
 }
 
 function templateStorageType(templateType) {
@@ -79,6 +92,9 @@ export default function PrintCornerPage() {
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
+  const [tplSearch, setTplSearch] = useState('')
+  const [expandedCats, setExpandedCats] = useState(() => new Set())
+  const catsSeededRef = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -116,7 +132,43 @@ export default function PrintCornerPage() {
     setBulkProgress(null)
     setIncludeTamil(!!selected.include_tamil)
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
+    setExpandedCats(prev => {
+      const next = new Set(prev)
+      if (selected.category_id) next.add(selected.category_id)
+      return next
+    })
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // First load: open only the first category so the list stays compact as templates grow
+  useEffect(() => {
+    if (!groups.length || catsSeededRef.current) return
+    catsSeededRef.current = true
+    setExpandedCats(new Set([groups[0].category.id]))
+  }, [groups])
+
+  const filteredGroups = useMemo(() => {
+    const q = tplSearch.trim().toLowerCase()
+    if (!q) return groups
+    return groups
+      .map(g => ({
+        ...g,
+        templates: g.templates.filter(t =>
+          (t.label || '').toLowerCase().includes(q)
+          || (t.template_key || '').toLowerCase().includes(q)
+          || (t.description || '').toLowerCase().includes(q),
+        ),
+      }))
+      .filter(g => g.templates.length > 0)
+  }, [groups, tplSearch])
+
+  function toggleCategory(id) {
+    setExpandedCats(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const selectedMeta = useMemo(() => {
     if (!selected) return null
@@ -168,8 +220,23 @@ export default function PrintCornerPage() {
     setFieldValues(d.field_values || {})
     setIncludeTamil(!!d.include_tamil)
     setBulkRows([])
-    setStep(3)
-    toast('Draft loaded.', 'info')
+    setStep(2)
+    toast('Draft loaded — edit fields, then Review.', 'info')
+  }
+
+  async function handleDeleteDraft(d) {
+    if (!window.confirm(`Delete shared draft for “${d.template_key}”?`)) return
+    setBusy(true)
+    try {
+      await deleteDraft(d.id)
+      if (draftId === d.id) setDraftId(null)
+      setDrafts(await getSharedDrafts(30))
+      toast('Draft deleted.', 'success')
+    } catch (e) {
+      toast(e.message || 'Could not delete draft', 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   function pdfErrorToast(raw) {
@@ -327,12 +394,24 @@ export default function PrintCornerPage() {
             {drafts.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No drafts yet.</p>
             ) : (
-              <div style={{ maxHeight: 140, overflow: 'auto' }}>
+              <div style={{ maxHeight: 180, overflow: 'auto' }}>
                 {drafts.map(d => (
-                  <button key={d.id} type="button" onClick={() => loadDraft(d)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 0', border: 'none', borderBottom: '1px solid var(--card-border)', background: 'transparent', cursor: 'pointer', fontSize: 13 }}>
-                    <strong>{d.template_key}</strong> · {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
-                  </button>
+                  <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: 13 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong>{d.template_key}</strong>
+                      <span style={{ color: 'var(--text-3)' }}>
+                        {' '}· {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => handleDeleteDraft(d)} title="Delete draft"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                      <Trash2 size={11} /> Delete
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -456,41 +535,102 @@ export default function PrintCornerPage() {
         </button>
       </PageHeader>
 
-      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 420 }}>
-        <aside style={{ width: 260, flexShrink: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)' }}>
-            TEMPLATES
-          </div>
-          {loading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
-              <Loader2 size={20} className="animate-spin" />
+      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 480 }}>
+        <aside style={{
+          width: 340, flexShrink: 0, maxWidth: '100%',
+          background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10,
+          display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 160px)', overflow: 'hidden',
+        }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)', marginBottom: 10 }}>
+              TEMPLATES
             </div>
-          ) : groups.map(g => (
-            <div key={g.category.id}>
-              <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>{g.category.name}</div>
-              {g.templates.map(t => {
-                const Icon = TYPE_ICONS[t.template_type] || FileText
-                const active = selected?.id === t.id
-                return (
-                  <button key={t.id} type="button" onClick={() => setSelected(t)}
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-3)' }} />
+              <input
+                value={tplSearch}
+                onChange={e => setTplSearch(e.target.value)}
+                placeholder="Search templates…"
+                style={{ ...INPUT, height: 34, paddingLeft: 32, fontSize: 12 }}
+              />
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            {loading ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            ) : filteredGroups.length === 0 ? (
+              <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
+                {tplSearch.trim() ? 'No templates match your search.' : 'No templates yet.'}
+              </div>
+            ) : filteredGroups.map(g => {
+              const open = tplSearch.trim() ? true : expandedCats.has(g.category.id)
+              return (
+                <div key={g.category.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(g.category.id)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '8px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                      background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                      borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
-                      fontSize: 13, color: 'var(--text-1)',
+                      padding: '10px 14px', border: 'none', background: 'var(--input-bg)',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}
+                  >
+                    {open
+                      ? <ChevronDown size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+                      : <ChevronRight size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }} />}
+                    <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
+                      {g.category.name}
+                    </span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, minWidth: 20, textAlign: 'center',
+                      padding: '2px 7px', borderRadius: 99, background: 'var(--card-bg)',
+                      border: '1px solid var(--card-border)', color: 'var(--text-3)',
                     }}>
-                    <Icon size={14} style={{ color: TEMPLATE_TYPES[t.template_type]?.color || '#64748b', flexShrink: 0 }} />
-                    <span style={{ flex: 1 }}>{t.label}</span>
-                    <ChevronRight size={12} style={{ opacity: 0.4 }} />
+                      {g.templates.length}
+                    </span>
                   </button>
-                )
-              })}
-            </div>
-          ))}
+                  {open && g.templates.map(t => {
+                    const Icon = TYPE_ICONS[t.template_type] || FileText
+                    const active = selected?.id === t.id
+                    return (
+                      <button key={t.id} type="button" onClick={() => setSelected(t)}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%',
+                          padding: '10px 14px 10px 18px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                          background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                          borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+                          color: 'var(--text-1)',
+                        }}>
+                        <Icon size={15} style={{
+                          color: TEMPLATE_TYPES[t.template_type]?.color || '#64748b',
+                          flexShrink: 0, marginTop: 2,
+                        }} />
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, lineHeight: 1.35 }}>
+                            {t.label}
+                          </span>
+                          {t.description ? (
+                            <span style={{
+                              display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {t.description}
+                            </span>
+                          ) : null}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
         </aside>
 
-        <main style={{ flex: 1, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, padding: 20 }}>
+        <main style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 10, padding: 20 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 12px',
             borderRadius: 8,
