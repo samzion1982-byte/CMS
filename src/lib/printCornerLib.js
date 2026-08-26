@@ -77,6 +77,50 @@ export function sortPrintCornerTemplates(rows) {
   return sortPrintCornerCategories(rows)
 }
 
+/** Virtual sidebar id for blank application forms (print_corner_application_forms). */
+export const PRINT_CORNER_FORMS_SIDEBAR_ID = '__application_forms__'
+
+export function isPrintCornerFormCategoryName(name) {
+  const n = String(name || '').toLowerCase()
+  return n.includes('form') || n.includes('application')
+}
+
+/**
+ * Category dropdown items in Settings order — includes Application Forms at its
+ * configured position (not hardcoded first).
+ */
+export function buildPrintCornerSidebarBrowseItems(
+  categories,
+  { templateCountByCategoryId = {}, blankFormsCount = 0, activeOnly = true } = {},
+) {
+  let rows = (categories || []).filter(c => !c.parent_id)
+  if (activeOnly) rows = rows.filter(c => c.is_active !== false)
+  rows = sortPrintCornerCategories(rows)
+
+  return rows.map(c => {
+    if (isPrintCornerFormCategoryName(c.name)) {
+      return {
+        id: PRINT_CORNER_FORMS_SIDEBAR_ID,
+        name: c.name,
+        sort_order: c.sort_order ?? 0,
+        count: blankFormsCount,
+        isForms: true,
+        isActive: c.is_active !== false,
+        categoryId: c.id,
+      }
+    }
+    return {
+      id: c.id,
+      name: c.name,
+      sort_order: c.sort_order ?? 0,
+      count: templateCountByCategoryId[c.id] ?? 0,
+      isForms: false,
+      isActive: c.is_active !== false,
+      categoryId: c.id,
+    }
+  })
+}
+
 export function buildCategoryTree(rows) {
   const byId = new Map((rows || []).map(r => [r.id, { ...r, children: [] }]))
   const roots = []

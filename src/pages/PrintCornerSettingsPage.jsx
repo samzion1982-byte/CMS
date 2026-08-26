@@ -29,6 +29,9 @@ import {
   TEMPLATE_TYPES,
   sortPrintCornerCategories,
   sortPrintCornerTemplates,
+  buildPrintCornerSidebarBrowseItems,
+  PRINT_CORNER_FORMS_SIDEBAR_ID,
+  isPrintCornerFormCategoryName,
 } from '../lib/printCornerLib'
 
 const INPUT = {
@@ -43,11 +46,10 @@ const TABS = [
   { id: 'signatures', label: 'Signatures', icon: PenLine },
 ]
 
-const APP_FORMS_SIDEBAR_ID = '__application_forms__'
+const APP_FORMS_SIDEBAR_ID = PRINT_CORNER_FORMS_SIDEBAR_ID
 
 function isFormCategoryName(name) {
-  const n = String(name || '').toLowerCase()
-  return n.includes('form') || n.includes('application')
+  return isPrintCornerFormCategoryName(name)
 }
 
 function CategoriesPanel() {
@@ -206,7 +208,8 @@ function TemplatesPanel() {
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState(null)
   const [selectedBlankId, setSelectedBlankId] = useState(null)
-  const [activeCategoryId, setActiveCategoryId] = useState(APP_FORMS_SIDEBAR_ID)
+  const [activeCategoryId, setActiveCategoryId] = useState(null)
+  const browseSeededRef = useRef(false)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState(null)
   const [blankForm, setBlankForm] = useState(null)
@@ -292,22 +295,42 @@ function TemplatesPanel() {
     return groups
   }, [mergeCategories, templates])
 
+  const sidebarBrowseItems = useMemo(() => {
+    const templateCountByCategoryId = {}
+    for (const g of grouped) {
+      if (g.category.id !== '__unassigned') {
+        templateCountByCategoryId[g.category.id] = g.templates.length
+      }
+    }
+    return buildPrintCornerSidebarBrowseItems(categories, {
+      templateCountByCategoryId,
+      blankFormsCount: blankForms.length,
+      activeOnly: false,
+    })
+  }, [categories, grouped, blankForms.length])
+
   const isAppFormsMode = activeCategoryId === APP_FORMS_SIDEBAR_ID
   const selected = templates.find(t => t.id === selectedId)
   const selectedBlank = blankForms.find(f => f.id === selectedBlankId) || null
 
   useEffect(() => {
+    if (!sidebarBrowseItems.length || browseSeededRef.current) return
+    browseSeededRef.current = true
+    setActiveCategoryId(sidebarBrowseItems[0].id)
+  }, [sidebarBrowseItems])
+
+  useEffect(() => {
     if (isAppFormsMode) return
-    if (!grouped.length) return
+    if (!sidebarBrowseItems.length) return
     setActiveCategoryId(prev => {
-      if (prev === APP_FORMS_SIDEBAR_ID) return prev
-      if (prev && grouped.some(g => g.category.id === prev)) return prev
-      if (selected?.category_id && grouped.some(g => g.category.id === selected.category_id)) {
+      if (prev && sidebarBrowseItems.some(i => i.id === prev)) return prev
+      if (selected?.category_id && sidebarBrowseItems.some(i => i.id === selected.category_id)) {
         return selected.category_id
       }
-      return grouped[0]?.category.id || APP_FORMS_SIDEBAR_ID
+      const firstTemplates = sidebarBrowseItems.find(i => !i.isForms)
+      return firstTemplates?.id || sidebarBrowseItems[0]?.id || APP_FORMS_SIDEBAR_ID
     })
-  }, [grouped, selected?.category_id, isAppFormsMode])
+  }, [sidebarBrowseItems, selected?.category_id, isAppFormsMode])
 
   const activeGroup = useMemo(
     () => grouped.find(g => g.category.id === activeCategoryId) || null,
@@ -622,7 +645,7 @@ function TemplatesPanel() {
             CATEGORY
           </label>
           <select
-            value={activeCategoryId}
+            value={activeCategoryId || sidebarBrowseItems[0]?.id || APP_FORMS_SIDEBAR_ID}
             onChange={e => {
               const v = e.target.value
               setActiveCategoryId(v)
@@ -636,12 +659,9 @@ function TemplatesPanel() {
             }}
             style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
           >
-            <option value={APP_FORMS_SIDEBAR_ID}>
-              Application forms ({blankForms.length})
-            </option>
-            {grouped.map(g => (
-              <option key={g.category.id} value={g.category.id}>
-                {g.category.name} ({g.templates.length}){g.category.is_active === false ? ' — inactive' : ''}
+            {sidebarBrowseItems.map(item => (
+              <option key={item.categoryId} value={item.id}>
+                {item.name} ({item.count}){item.isActive === false ? ' — inactive' : ''}
               </option>
             ))}
           </select>

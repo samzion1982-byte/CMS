@@ -34,6 +34,8 @@ import {
   templateHasMemberPhoto,
   sortPrintCornerTemplates,
   sortPrintCornerCategories,
+  buildPrintCornerSidebarBrowseItems,
+  PRINT_CORNER_FORMS_SIDEBAR_ID,
 } from '../lib/printCornerLib'
 
 const TYPE_ICONS = {
@@ -54,7 +56,7 @@ const INPUT = {
   outline: 'none', boxSizing: 'border-box', width: '100%',
 }
 
-const SIDEBAR_FORMS_ID = '__application_forms__'
+const SIDEBAR_FORMS_ID = PRINT_CORNER_FORMS_SIDEBAR_ID
 
 function groupTemplates(categories, templates) {
   const sortedCategories = sortPrintCornerCategories(categories.filter(c => !c.parent_id))
@@ -116,6 +118,7 @@ export default function PrintCornerPage() {
   const trackerInputRef = useRef(null)
 
   const [loading, setLoading] = useState(true)
+  const [categories, setCategories] = useState([])
   const [groups, setGroups] = useState([])
   const [blankForms, setBlankForms] = useState([])
   const [selected, setSelected] = useState(null)
@@ -165,12 +168,12 @@ export default function PrintCornerPage() {
         getPrintCornerApplicationForms(true).catch(() => []),
       ])
       const top = categories.filter(c => !c.parent_id)
+      setCategories(top)
       // Mail-merge catalog only — blank scanned forms live in application_forms
       setGroups(groupTemplates(top, templates.filter(t => t.template_type !== 'form')))
       setBlankForms(appForms)
       setChurch(churchRow)
       setDrafts(draftRows)
-      if (appForms.length && !catsSeededRef.current) setSidebarMode('forms')
       try {
         const p = await pingPrintCorner()
         setPing(p)
@@ -296,12 +299,19 @@ export default function PrintCornerPage() {
     }
   }, [memberQuery, selectedMember])
 
-  // First load: select first category
+  // First load: select first category in Settings order
   useEffect(() => {
-    if (!groups.length || catsSeededRef.current) return
+    if (!sidebarBrowseItems.length || catsSeededRef.current) return
     catsSeededRef.current = true
-    setActiveCategoryId(groups[0].category.id)
-  }, [groups])
+    const first = sidebarBrowseItems[0]
+    if (first.isForms) {
+      setSidebarMode('forms')
+      setActiveCategoryId(first.id)
+    } else {
+      setSidebarMode('templates')
+      setActiveCategoryId(first.id)
+    }
+  }, [sidebarBrowseItems])
 
   const filteredGroups = useMemo(() => {
     const q = tplSearch.trim().toLowerCase()
@@ -317,6 +327,15 @@ export default function PrintCornerPage() {
       }))
       .filter(g => g.templates.length > 0)
   }, [groups, tplSearch])
+
+  const sidebarBrowseItems = useMemo(() => {
+    const templateCountByCategoryId = {}
+    for (const g of groups) templateCountByCategoryId[g.category.id] = g.templates.length
+    return buildPrintCornerSidebarBrowseItems(categories, {
+      templateCountByCategoryId,
+      blankFormsCount: blankForms.length,
+    })
+  }, [categories, groups, blankForms.length])
 
   const activeGroup = useMemo(() => {
     if (tplSearch.trim()) return null
@@ -397,7 +416,7 @@ export default function PrintCornerPage() {
 
   const sidebarBrowseValue = sidebarMode === 'forms'
     ? SIDEBAR_FORMS_ID
-    : (activeCategoryId || filteredGroups[0]?.category.id || SIDEBAR_FORMS_ID)
+    : (activeCategoryId || sidebarBrowseItems.find(i => !i.isForms)?.id || SIDEBAR_FORMS_ID)
 
   function handleBrowseCategoryChange(value) {
     if (value === SIDEBAR_FORMS_ID) {
@@ -1405,12 +1424,9 @@ export default function PrintCornerPage() {
                 onChange={e => handleBrowseCategoryChange(e.target.value)}
                 style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
               >
-                <option value={SIDEBAR_FORMS_ID}>
-                  Application forms ({blankForms.length})
-                </option>
-                {filteredGroups.map(g => (
-                  <option key={g.category.id} value={g.category.id}>
-                    {g.category.name} ({g.templates.length})
+                {sidebarBrowseItems.map(item => (
+                  <option key={item.categoryId} value={item.id}>
+                    {item.name} ({item.count})
                   </option>
                 ))}
               </select>
