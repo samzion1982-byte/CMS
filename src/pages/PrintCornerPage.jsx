@@ -628,6 +628,18 @@ export default function PrintCornerPage() {
     }
     setBusy(true)
     try {
+      if (needsMemberPhoto) {
+        const m = await getPrintCornerMemberById(fieldValues.member_id)
+        if (!m) {
+          toast(`Member “${fieldValues.member_id}” not found.`, 'error')
+          return
+        }
+        if (!m.photo_url) {
+          toast(`Member ${m.member_name || m.member_id} has no photo. Upload one in Members first.`, 'error')
+          return
+        }
+      }
+
       const res = await convertTemplateFromStorage({
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
@@ -638,7 +650,20 @@ export default function PrintCornerPage() {
         source: 'manual',
       })
       setLastPdf(res)
-      toast('PDF created and saved to issued folder.', 'success')
+
+      const photoMerged = res?.signature_merge?.swapped?.includes('member_photo')
+      if (needsMemberPhoto && res?.member_photo_warning) {
+        toast(res.member_photo_warning, 'error')
+      } else if (needsMemberPhoto && !res?.member_photo_loaded) {
+        toast(`Photo not loaded (${res?.member_photo_debug || 'unknown'}). Redeploy cms-print-corner edge function.`, 'error')
+      } else if (needsMemberPhoto && res?.member_photo_loaded && !photoMerged) {
+        toast(
+          'Photo loaded but not placed — set picture Alt Text to {member_photo} on the circular photo in Canva, then re-upload.',
+          'error',
+        )
+      } else {
+        toast('PDF created and saved to issued folder.', 'success')
+      }
     } catch (e) {
       pdfErrorToast(e.message || 'Convert failed')
     } finally {

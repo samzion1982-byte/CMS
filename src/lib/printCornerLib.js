@@ -407,6 +407,8 @@ export async function parseOfficePlaceholders(fileOrBlob) {
       while ((m = braced.exec(val)) !== null) found.add(m[1])
       const bare = val.replace(/^\{+/, '').replace(/\}+$/, '').trim()
       if (isImagePlaceholderKey(bare)) found.add(bare)
+      const normalized = bare.toLowerCase().replace(/\s+/g, '_')
+      if (normalized === 'member_photo') found.add('member_photo')
     }
 
     const plain = docXml

@@ -111,8 +111,10 @@ function normalizeImageSlotKey(raw: string): string | null {
   let s = String(raw || '').trim()
   if (!s) return null
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
+  const lower = s.toLowerCase()
   if (IMAGE_PLACEHOLDER_MAP[s]) return s
-  if (MEMBER_PHOTO_ALIASES.has(s)) return 'member_photo'
+  if (MEMBER_PHOTO_ALIASES.has(lower)) return 'member_photo'
+  if (lower.replace(/\s+/g, '_') === 'member_photo') return 'member_photo'
   return null
 }
 
@@ -609,19 +611,50 @@ async function loadMemberPhotoImage(
 
   const { data: member } = await admin
     .from('members')
-    .select('photo_url')
-    .eq('member_id', id)
+    .select('member_id, photo_url')
+    .ilike('member_id', id)
     .maybeSingle()
 
-  if (!member?.photo_url) return { img: null, debug: 'no_photo_url' }
+  if (!member) return { img: null, debug: 'member_not_found' }
+  if (!member.photo_url) return { img: null, debug: 'no_photo_url' }
 
+  const resolvedId = String(member.member_id || id).trim()
   const url = String(member.photo_url)
   const tryPaths: string[] = []
-  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/member-photos\/([^?]+)/i)
-  if (m?.[1]) tryPaths.push(decodeURIComponent(m[1]))
-  for (const ext of ['jpg', 'jpeg', 'png']) {
-    tryPaths.push(`active/${id}.${ext}`, `deleted/${id}.${ext}`)
+  const seenPaths = new Set<string>()
+  const addPath = (p: string) => {
+    const clean = String(p || '').replace(/^\/+/, '')
+    if (clean && !seenPaths.has(clean)) {
+      seenPaths.add(clean)
+      tryPaths.push(clean)
+    }
   }
+
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/member-photos\/([^?]+)/i)
+  if (m?.[1]) addPath(decodeURIComponent(m[1]))
+
+  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+    addPath(`active/${resolvedId}.${ext}`)
+    addPath(`deleted/${resolvedId}.${ext}`)
+  }
+
+  // Case variants (storage paths may differ in casing from typed member_id)
+  if (resolvedId !== id) {
+    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+      addPath(`active/${id}.${ext}`)
+    }
+  }
+
+  try {
+    const { data: listing } = await admin.storage.from('member-photos').list('active', { limit: 100, search: resolvedId })
+    for (const f of listing || []) {
+      if (!f?.name) continue
+      const lower = f.name.toLowerCase()
+      if (lower.startsWith(resolvedId.toLowerCase()) || lower.startsWith(id.toLowerCase())) {
+        addPath(`active/${f.name}`)
+      }
+    }
+  } catch { /* ignore list errors */ }
 
   for (const tryPath of tryPaths) {
     const { data, error } = await admin.storage.from('member-photos').download(tryPath)
@@ -629,6 +662,17 @@ async function loadMemberPhotoImage(
     const bytes = new Uint8Array(await data.arrayBuffer())
     if (!bytes.length) continue
     return { img: { bytes, ...sniffImageMeta(bytes, tryPath) }, debug: `storage:${tryPath}` }
+  }
+
+  // Signed URL fetch (works when bucket is private)
+  for (const tryPath of tryPaths.slice(0, 6)) {
+    try {
+      const { data: signed } = await admin.storage.from('member-photos').createSignedUrl(tryPath, 120)
+      if (signed?.signedUrl) {
+        const fetched = await fetchSignatureImage(signed.signedUrl)
+        if (fetched) return { img: fetched, debug: `signed:${tryPath}` }
+      }
+    } catch { /* try next */ }
   }
 
   const fetched = await fetchSignatureImage(url)
@@ -696,9 +740,22 @@ async function mergeOfficeBytes(
         continue
       }
 
+      const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
+
+      // Member photo: swap image bytes in-place — keeps Canva circle/ellipse frame intact
+      if (slot.key === 'member_photo' && existingBefore) {
+        zip.file(existingBefore, img.bytes)
+        if (ctXml) {
+          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+        }
+        swappedKeys.add(slot.key)
+        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
+        continue
+      }
+
       // PPTX: always replace Canva p:pic with a clean picture (overwrite/relink alone
       // is ignored by Google Slides). DOCX letters keep overwrite + relink.
-      const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
       if (existingBefore) {
         zip.file(existingBefore, img.bytes)
         if (ctXml) {
@@ -1110,6 +1167,13 @@ serve(async (req) => {
       const { img: memberPhoto, debug: memberPhotoDebug } = await loadMemberPhotoImage(admin, memberId)
       if (memberPhoto) signatureImages.member_photo = memberPhoto
       signatureLoadDebug.member_photo = memberPhotoDebug
+
+      // Warn when template likely needs a photo but none could be loaded
+      const templateNeedsPhoto = /\.pptx$/i.test(storagePath)
+        && memberId
+        && !memberPhoto
+        && memberPhotoDebug !== 'no_member_id'
+
       const { bytes: mergedBytes, mergeMeta } = await mergeOfficeBytes(
         templateBytes,
         fieldValues,
@@ -1191,6 +1255,11 @@ serve(async (req) => {
         signatures_injected: Object.keys(signatureImages),
         signature_load: signatureLoadDebug,
         signature_merge: mergeMeta,
+        member_photo_loaded: !!memberPhoto,
+        member_photo_debug: memberPhotoDebug,
+        member_photo_warning: templateNeedsPhoto
+          ? `Could not load photo for member ${memberId}: ${memberPhotoDebug}. Upload a photo in Members, then retry.`
+          : null,
         ...engineMeta,
       })
     }
