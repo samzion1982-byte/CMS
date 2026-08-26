@@ -354,19 +354,66 @@ export default function PrintCornerPage() {
     setBusy(true)
     setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
     try {
-      const { count, fileName, pageCount } = await convertBulkLettersToPdf({
+      const { count, fileName, pageCount, results } = await convertBulkLettersToPdf({
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
         rows: bulkRows,
         onProgress: setBulkProgress,
       })
-      toast(`${count} letter(s) → ${pageCount} page PDF — downloaded ${fileName}`, 'success')
+      const first = results?.[0] || null
+      if (first) setLastPdf(first)
+      const swapped = first?.signature_merge?.swapped || []
+      const swapLog = first?.signature_merge?.swap_log || []
+      console.warn('[print-corner bulk] signature_merge', first?.signature_merge)
+      console.warn('[print-corner bulk] signature_load', first?.signature_load)
+      if (imageVariables.length && !swapped.length) {
+        toast(
+          `Bulk PDF downloaded, but signatures not swapped on page 1. See Signature merge debug below. Log: ${swapLog.join('; ') || 'empty'}`,
+          'error',
+        )
+      } else {
+        toast(`${count} certificate(s) → ${pageCount} page PDF — downloaded ${fileName}`, 'success')
+      }
     } catch (e) {
       pdfErrorToast(e.message || 'Bulk convert failed')
     } finally {
       setBusy(false)
       setBulkProgress(null)
+    }
+  }
+
+  /** Single Issue PDF using current fields (or first tracker row) — easiest way to see signature debug. */
+  async function handleDebugIssuePdf() {
+    if (!selected?.storage_path) {
+      toast('Upload a template file first.', 'error')
+      return
+    }
+    const values = bulkRows.length ? { ...bulkRows[0] } : fieldValues
+    setBusy(true)
+    try {
+      const res = await convertTemplateFromStorage({
+        storagePath: selected.storage_path,
+        templateKey: selected.template_key,
+        templateType: templateStorageType(selected.template_type),
+        memberId: values.member_id || null,
+        fieldValues: values,
+        issue: true,
+        source: 'manual',
+      })
+      setLastPdf(res)
+      const swapped = res?.signature_merge?.swapped || []
+      console.warn('[print-corner] signature_load', res?.signature_load)
+      console.warn('[print-corner] signature_merge', res?.signature_merge)
+      if (imageVariables.length && !swapped.length) {
+        toast('PDF created but signatures not swapped — see yellow debug box below.', 'error')
+      } else {
+        toast(`PDF created. Signatures: ${(swapped || []).join(', ') || 'none'}`, 'success')
+      }
+    } catch (e) {
+      pdfErrorToast(e.message || 'Convert failed')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -543,19 +590,27 @@ export default function PrintCornerPage() {
             </button>
             )}
             {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
-              bulkMode ? (
-                <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                  Multi PDF
+              <>
+                {bulkMode ? (
+                  <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                    Multi PDF
+                  </button>
+                ) : (
+                  <button type="button" disabled={busy || !selected.storage_path} onClick={handleIssuePdf}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                    Issue PDF
+                  </button>
+                )}
+                <button type="button" disabled={busy || !selected.storage_path} onClick={handleDebugIssuePdf}
+                  title="Creates one PDF and shows signature merge debug below"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <AlertCircle size={14} />}
+                  Test 1 PDF + debug
                 </button>
-              ) : (
-                <button type="button" disabled={busy || !selected.storage_path} onClick={handleIssuePdf}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                  Issue PDF
-                </button>
-              )
+              </>
             ) : (
               <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>Unsupported template type</span>
             )}
@@ -568,7 +623,7 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          {lastPdf && !bulkMode && (
+          {lastPdf && (
             <div style={{
               marginTop: 16, padding: 14, borderRadius: 8,
               background: '#fffbeb', border: '2px solid #f59e0b',
@@ -585,7 +640,7 @@ export default function PrintCornerPage() {
               {!lastPdf.signature_merge ? (
                 <p style={{ fontSize: 12, color: '#b45309', margin: 0 }}>
                   No signature_merge in response — redeploy edge function <code>cms-print-corner</code>,
-                  hard-refresh this page (Ctrl+Shift+R), then Issue PDF again.
+                  hard-refresh this page (Ctrl+Shift+R), then click <strong>Test 1 PDF + debug</strong> again.
                 </p>
               ) : (
                 <>
