@@ -36,6 +36,9 @@ export default function ChurchSetupPage() {
   const logoRef = useRef(null)
   const dioceseLogoRef = useRef(null)
   const sealRef = useRef(null)
+  const presbyterSigRef = useRef(null)
+  const secretarySigRef = useRef(null)
+  const treasurerSigRef = useRef(null)
 
   const [church, setChurch] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -72,6 +75,12 @@ export default function ChurchSetupPage() {
   const [dioceseLogoPreview, setDioceseLogoPreview] = useState(null)
   const [sealFile, setSealFile] = useState(null)
   const [sealPreview, setSealPreview] = useState(null)
+  const [presbyterSigFile, setPresbyterSigFile] = useState(null)
+  const [presbyterSigPreview, setPresbyterSigPreview] = useState(null)
+  const [secretarySigFile, setSecretarySigFile] = useState(null)
+  const [secretarySigPreview, setSecretarySigPreview] = useState(null)
+  const [treasurerSigFile, setTreasurerSigFile] = useState(null)
+  const [treasurerSigPreview, setTreasurerSigPreview] = useState(null)
 
   // License verification
   const [authCode, setAuthCode] = useState('')
@@ -138,6 +147,9 @@ export default function ChurchSetupPage() {
       if (data.logo_url) setLogoPreview(data.logo_url)
       if (data.diocese_logo_url) setDioceseLogoPreview(data.diocese_logo_url)
       if (data.treasurer_seal_url) setSealPreview(data.treasurer_seal_url)
+      if (data.presbyter_signature_url) setPresbyterSigPreview(data.presbyter_signature_url)
+      if (data.secretary_signature_url) setSecretarySigPreview(data.secretary_signature_url)
+      if (data.treasurer_signature_url) setTreasurerSigPreview(data.treasurer_signature_url)
       if (data.auth_code) setLicenseStatus('valid')
       setMpCustom(!!data.master_password_hash)
     } else {
@@ -208,6 +220,22 @@ export default function ChurchSetupPage() {
   function onSeal(e) {
     const f = e.target.files?.[0]; if (!f) return
     setSealFile(f); setSealPreview(URL.createObjectURL(f))
+  }
+
+  function onSignaturePick(setFile, setPreview, e) {
+    const f = e.target.files?.[0]; if (!f) return
+    if (!/^image\/(png|jpeg|jpg)$/i.test(f.type)) {
+      toast('Use PNG (preferred) or JPG for signatures.', 'error')
+      return
+    }
+    if (/jpe?g/i.test(f.type)) toast('PNG is preferred for Print Corner signatures.', 'info')
+    setFile(f); setPreview(URL.createObjectURL(f))
+  }
+
+  async function uploadSignatureImage(file, path) {
+    const { error } = await supabase.storage.from('church-logos').upload(path, file, { upsert: true })
+    if (error) throw error
+    return supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
   }
 
   async function verifyLicense() {
@@ -295,6 +323,23 @@ export default function ChurchSetupPage() {
       if (canBearers) {
         for (const k of BEARER_KEYS) payload[k] = form[k]
       }
+      if (canIdentity || canBearers) {
+        let presbyter_signature_url = church?.presbyter_signature_url || null
+        let secretary_signature_url = church?.secretary_signature_url || null
+        let treasurer_signature_url = church?.treasurer_signature_url || null
+        if (presbyterSigFile) {
+          presbyter_signature_url = await uploadSignatureImage(presbyterSigFile, 'signatures/presbyter-signature.png')
+        }
+        if (secretarySigFile) {
+          secretary_signature_url = await uploadSignatureImage(secretarySigFile, 'signatures/secretary-signature.png')
+        }
+        if (treasurerSigFile) {
+          treasurer_signature_url = await uploadSignatureImage(treasurerSigFile, 'signatures/treasurer-signature.png')
+        }
+        payload.presbyter_signature_url = presbyter_signature_url
+        payload.secretary_signature_url = secretary_signature_url
+        payload.treasurer_signature_url = treasurer_signature_url
+      }
       const { error } = await supabase.from('churches').update(payload).eq('id', church.id)
       if (error) throw error
       toast('Church details saved.', 'success')
@@ -352,7 +397,20 @@ export default function ChurchSetupPage() {
       const { data: pd } = supabase.storage.from('church-logos').getPublicUrl(path)
       treasurer_seal_url = pd?.publicUrl || null
     }
-    const payload = { ...form, logo_url, diocese_logo_url, treasurer_seal_url, updated_at: new Date().toISOString() }
+    try {
+      if (presbyterSigFile) presbyter_signature_url = await uploadSignatureImage(presbyterSigFile, 'signatures/presbyter-signature.png')
+      if (secretarySigFile) secretary_signature_url = await uploadSignatureImage(secretarySigFile, 'signatures/secretary-signature.png')
+      if (treasurerSigFile) treasurer_signature_url = await uploadSignatureImage(treasurerSigFile, 'signatures/treasurer-signature.png')
+    } catch (sigErr) {
+      setSaving(false)
+      toast('Signature upload failed: ' + (sigErr.message || sigErr), 'error')
+      return
+    }
+    const payload = {
+      ...form, logo_url, diocese_logo_url, treasurer_seal_url,
+      presbyter_signature_url, secretary_signature_url, treasurer_signature_url,
+      updated_at: new Date().toISOString(),
+    }
     let err
     if (church) {
       const r = await supabase.from('churches').update(payload).eq('id', church.id)
@@ -687,6 +745,39 @@ export default function ChurchSetupPage() {
             ))}
           </div>
         </div>
+
+        {/* PRINT CORNER SIGNATURES */}
+        {(canBearers || canIdentity) && (
+          <div className="card p-6">
+            <p className="form-section form-section-blue" style={{ color: '#7c3aed', borderColor: '#ddd6fe' }}>
+              Print Corner — Signature images
+            </p>
+            <p className="text-xs text-slate-500 mb-4">
+              PNG preferred (transparent background). Used on letters and forms when PDF overlay is enabled.
+            </p>
+            <div className="flex flex-wrap gap-6">
+              {[
+                { label: 'Presbyter', preview: presbyterSigPreview, ref: presbyterSigRef, setFile: setPresbyterSigFile, setPreview: setPresbyterSigPreview },
+                { label: 'Secretary', preview: secretarySigPreview, ref: secretarySigRef, setFile: setSecretarySigFile, setPreview: setSecretarySigPreview },
+                { label: 'Treasurer', preview: treasurerSigPreview, ref: treasurerSigRef, setFile: setTreasurerSigFile, setPreview: setTreasurerSigPreview },
+              ].map(({ label, preview, ref, setFile, setPreview }) => (
+                <div key={label} className="flex flex-col items-center gap-2">
+                  <div onClick={() => ref.current?.click()}
+                    className="w-28 h-20 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-violet-400 transition-colors flex items-center justify-center bg-slate-50">
+                    {preview
+                      ? <img src={preview} className="w-full h-full object-contain p-2" alt={`${label} signature`} />
+                      : <p className="text-[10px] text-slate-400 text-center px-2">{label}<br />signature</p>}
+                  </div>
+                  <input ref={ref} type="file" accept="image/png,image/jpeg" className="hidden"
+                    onChange={e => onSignaturePick(setFile, setPreview, e)} />
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => ref.current?.click()}>
+                    <Upload size={11} /> {label}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ACCOUNTS MODULE */}
         <div className="card p-6">

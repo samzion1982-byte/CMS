@@ -61,7 +61,12 @@ Same key on every church project.
 
 ## 4. Deploy Edge Function (from your PC)
 
-Project is linked to **zion-cms-hub** (`pnkbiovspluyqcszgfyw`).
+**Each church Supabase needs its own deploy** — SQL + bucket alone are not enough.
+
+| Church | Project | Ref |
+|--------|---------|-----|
+| St Paul's (live) | `trichystpaulschurch-cms` | `wjasjrthijpxlarreics` |
+| Zion Hub (dev) | `zion-cms-hub` | `pnkbiovspluyqcszgfyw` |
 
 **One-time login** (opens browser):
 
@@ -70,19 +75,40 @@ cd C:\Projects\Church-CMS-React
 npm run supabase:login
 ```
 
-**Deploy:**
+### Deploy to BOTH projects at once (recommended)
+
+Set the same CloudConvert key on both, then deploy:
 
 ```powershell
-npm run supabase:deploy-print-corner
+.\deploy\Deploy-PrintCornerFunction.ps1 -Target all -SetSecret -CloudConvertKey "your-key-here"
 ```
 
-Or use the helper script (optional `-SetSecret -CloudConvertKey "..."`):
+Or deploy only (secret already set in Dashboard):
 
 ```powershell
-.\deploy\Deploy-PrintCornerFunction.ps1
+npm run supabase:deploy-print-corner:all
 ```
 
-Verify in Dashboard → **Edge Functions** → `cms-print-corner` is listed.
+Deploy one church only:
+
+```powershell
+npm run supabase:deploy-print-corner          # St Paul's
+npm run supabase:deploy-print-corner:hub      # Zion Hub
+```
+
+Verify in each project's Dashboard → **Edge Functions** → `cms-print-corner`.
+
+### Manual deploy via Supabase Dashboard (no CLI)
+
+Repeat on **both** projects (`trichystpaulschurch-cms` and `zion-cms-hub`):
+
+1. **Edge Functions** → **Deploy a new function** → **Via Editor**
+2. Name: `cms-print-corner`
+3. Paste the full contents of `supabase/functions/cms-print-corner/index.ts` (artifact in repo)
+4. **Deploy function**
+5. **Project Settings** → **Edge Functions** → **Secrets** → add `CLOUDCONVERT_API_KEY` (same key on both)
+
+JWT verification: leave **ON** (default). The function validates the logged-in CMS user itself.
 
 ### Optional: run function locally (`functions serve`)
 

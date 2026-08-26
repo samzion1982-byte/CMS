@@ -182,7 +182,7 @@ serve(async (req) => {
       const { data: urlData } = await admin.storage.from(BUCKET).createSignedUrl(issuedPath, 3600)
 
       if (issue) {
-        await admin.from('print_corner_issued_log').insert({
+        const { error: logErr } = await admin.from('print_corner_issued_log').insert({
           template_key: templateKey,
           template_type: body.template_type || 'letter',
           member_id: memberId,
@@ -194,6 +194,7 @@ serve(async (req) => {
           issued_by: user.id,
           issued_by_email: prof?.email || user.email,
         })
+        if (logErr) throw new Error(`Issued log insert failed: ${logErr.message}`)
       }
 
       return json({

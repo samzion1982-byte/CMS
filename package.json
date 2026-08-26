@@ -12,7 +12,9 @@
     "deploy:hub": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -Only hub",
     "deploy:dry": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Push-All.ps1 -DryRun",
     "supabase:login": "npx supabase login",
-    "supabase:deploy-print-corner": "npx supabase functions deploy cms-print-corner --project-ref pnkbiovspluyqcszgfyw",
+    "supabase:deploy-print-corner": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Deploy-PrintCornerFunction.ps1 -Target stpauls",
+    "supabase:deploy-print-corner:hub": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Deploy-PrintCornerFunction.ps1 -Target hub",
+    "supabase:deploy-print-corner:all": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/Deploy-PrintCornerFunction.ps1 -Target all",
     "supabase:serve-print-corner": "npx supabase functions serve cms-print-corner --env-file supabase/functions/.env.local --no-verify-jwt"
   },
   "dependencies": {
