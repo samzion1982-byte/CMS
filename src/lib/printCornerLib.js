@@ -33,6 +33,7 @@ const VARIABLE_LABELS = {
   presbyter_sign: 'Presbyter signature (auto)',
   secretary_sign: 'Secretary signature (auto)',
   seceratary_sign: 'Secretary signature (auto)',
+  seceratry_sign: 'Secretary signature (auto)',
   treasurer_sign: 'Treasurer signature (auto)',
   treasurer_seal: 'Treasurer seal (auto)',
 }
@@ -42,6 +43,7 @@ export const IMAGE_PLACEHOLDER_KEYS = new Set([
   'presbyter_sign',
   'secretary_sign',
   'seceratary_sign',
+  'seceratry_sign',
   'treasurer_sign',
   'treasurer_seal',
 ])
@@ -269,16 +271,19 @@ export async function countTemplatesInCategory(categoryId) {
 }
 
 /**
- * Read {placeholder} tags from a Word .docx.
- * - Text tags in document/header/footer XML
- * - Image Alt Text (descr) e.g. {presbyter_sign} on a placeholder picture
+ * Read {placeholder} tags from Word .docx or PowerPoint .pptx.
+ * - Text tags in document/slides XML
+ * - Image Alt Text (descr) e.g. {presbyter_sign}
  */
-export async function parseDocxPlaceholders(fileOrBlob) {
+export async function parseOfficePlaceholders(fileOrBlob) {
   const zip = await JSZip.loadAsync(fileOrBlob)
   const xmlNames = Object.keys(zip.files).filter(n =>
-    /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n) && !zip.files[n].dir
+    (
+      /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n)
+      || /^ppt\/slides\/slide\d+\.xml$/i.test(n)
+    ) && !zip.files[n].dir
   )
-  if (!xmlNames.length) throw new Error('Invalid Word file (missing document.xml).')
+  if (!xmlNames.length) throw new Error('Invalid Office file (no document/slides XML).')
 
   const found = new Set()
   const textRe = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
@@ -297,6 +302,8 @@ export async function parseDocxPlaceholders(fileOrBlob) {
     }
 
     const plain = docXml
+      .replace(/<a:t>/g, '')
+      .replace(/<\/a:t>/g, '')
       .replace(/<w:tab\/>/g, ' ')
       .replace(/<[^>]+>/g, '')
       .replace(/&lt;/g, '<')
@@ -312,6 +319,11 @@ export async function parseDocxPlaceholders(fileOrBlob) {
   }
 
   return [...found]
+}
+
+/** @deprecated use parseOfficePlaceholders */
+export async function parseDocxPlaceholders(fileOrBlob) {
+  return parseOfficePlaceholders(fileOrBlob)
 }
 
 export function labelForVariableKey(key) {
@@ -330,23 +342,37 @@ export function variablesFromPlaceholderKeys(keys, existing = []) {
 }
 
 export async function uploadPrintCornerTemplateDocx(file, template, { updateVariables = true } = {}) {
-  if (!file?.name?.toLowerCase().endsWith('.docx')) {
-    throw new Error('Upload a Word .docx file.')
+  const name = (file?.name || '').toLowerCase()
+  const isPptx = name.endsWith('.pptx')
+  const isDocx = name.endsWith('.docx')
+  if (!isPptx && !isDocx) {
+    throw new Error('Upload a Word .docx or PowerPoint .pptx file.')
   }
+
   const folder = template.template_type === 'form' ? 'forms'
     : template.template_type === 'certificate' ? 'certificates' : 'letters'
-  const storagePath = `templates/${folder}/${template.template_key}/source.docx`
+  const ext = isPptx ? 'pptx' : 'docx'
+  const storagePath = `templates/${folder}/${template.template_key}/source.${ext}`
+  const contentType = isPptx
+    ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
   let keys = []
   try {
-    keys = await parseDocxPlaceholders(file)
+    keys = await parseOfficePlaceholders(file)
   } catch (e) {
     console.warn('[print-corner] placeholder scan failed', e)
   }
 
+  // Remove old alternate extension if switching formats
+  const otherPath = `templates/${folder}/${template.template_key}/source.${isPptx ? 'docx' : 'pptx'}`
+  try {
+    await supabase.storage.from(BUCKET).remove([otherPath])
+  } catch { /* ignore */ }
+
   const { error } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
     upsert: true,
-    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    contentType,
   })
   if (error) throw error
 

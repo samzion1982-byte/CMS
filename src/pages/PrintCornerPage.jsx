@@ -456,12 +456,12 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          {(selected.template_type === 'letter' || selected.template_type === 'form') && (
+          {(selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate') && (
             <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk letters (tracker)</div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk print (tracker)</div>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                For multiple letters: download the tracker, fill rows, upload it, then use Multi PDF
-                (one combined multi-page PDF). For a single letter, use Issue PDF.
+                For multiple copies: download the tracker, fill rows, upload it, then use Multi PDF
+                (one combined multi-page PDF). For a single copy, use Issue PDF.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" disabled={busy || !variables.length} onClick={handleDownloadTracker}
@@ -482,7 +482,7 @@ export default function PrintCornerPage() {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <Save size={14} /> Save shared draft
             </button>
-            {selected.template_type === 'letter' || selected.template_type === 'form' ? (
+            {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
               bulkMode ? (
                 <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
@@ -497,7 +497,7 @@ export default function PrintCornerPage() {
                 </button>
               )
             ) : (
-              <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>Built-in certificates — PDF coming next</span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>Unsupported template type</span>
             )}
           </div>
 

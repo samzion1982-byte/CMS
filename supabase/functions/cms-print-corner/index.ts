@@ -1,17 +1,8 @@
 // @ts-nocheck
 /* ═══════════════════════════════════════════════════════════════
-   cms-print-corner — mail-merge Word → PDF via Google Drive
-   Secrets / deps:
-     GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET
-       + cms_backup_settings.google_refresh_token (Backup → Connect Google)
-     OR GOOGLE_SERVICE_ACCOUNT_JSON
-   Actions:
-     ping              — auth + Google Drive ready?
-     convert_storage   — merge field_values (+ signature images) → PDF → issued/
-   Signatures:
-     Prefer a placeholder picture in Word with Alt Text {presbyter_sign}
-     (also secretary_sign, treasurer_sign, treasurer_seal). Size kept from Word.
-     Text tag {presbyter_sign} is a fallback (fixed size).
+   cms-print-corner — mail-merge Word/PowerPoint → PDF via Google Drive
+   DOCX → Google Docs export | PPTX → Google Slides export
+   Signatures: picture AltText {presbyter_sign} (Word or PPT)
    ═══════════════════════════════════════════════════════════════ */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -30,7 +21,9 @@ const CORS = {
 
 const BUCKET = 'print-corner'
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 const GDOC_MIME = 'application/vnd.google-apps.document'
+const GSLIDES_MIME = 'application/vnd.google-apps.presentation'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -75,7 +68,8 @@ function escapeXml(s: string) {
 const IMAGE_PLACEHOLDER_MAP: Record<string, string> = {
   presbyter_sign: 'presbyter_signature_url',
   secretary_sign: 'secretary_signature_url',
-  seceratary_sign: 'secretary_signature_url', // common typo alias
+  seceratary_sign: 'secretary_signature_url', // typo alias
+  seceratry_sign: 'secretary_signature_url',  // typo alias (Canva/Corel)
   treasurer_sign: 'treasurer_signature_url',
   treasurer_seal: 'treasurer_seal_url',
 }
@@ -171,8 +165,8 @@ function ensureContentTypeDefault(ctXml: string, ext: string, contentType: strin
 /** Find pictures whose Alt Text / descr / title / name is {presbyter_sign} etc. */
 function findAltTextImageSlots(xml: string) {
   const slots: Array<{ key: string, embedId: string, block: string }> = []
-  const drawingRegex = /<w:drawing[\s\S]*?<\/w:drawing>/gi
-  for (const m of xml.matchAll(drawingRegex)) {
+  const blockRegex = /<(?:w:drawing|p:pic)\b[\s\S]*?<\/(?:w:drawing|p:pic)>/gi
+  for (const m of xml.matchAll(blockRegex)) {
     const block = m[0]
     let key: string | null = null
     for (const attr of ['descr', 'title', 'name']) {
@@ -206,13 +200,24 @@ function findAltTextImageSlots(xml: string) {
   return slots
 }
 
-function mediaPathFromRels(relsXml: string, embedId: string) {
+function resolveRelTargetToZipPath(xmlPartPath: string, relTarget: string) {
+  const dir = xmlPartPath.includes('/') ? xmlPartPath.slice(0, xmlPartPath.lastIndexOf('/')) : ''
+  const joined = `${dir}/${String(relTarget).replace(/^\//, '')}`
+  const stack: string[] = []
+  for (const part of joined.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') stack.pop()
+    else stack.push(part)
+  }
+  return stack.join('/')
+}
+
+function mediaPathFromRels(relsXml: string, embedId: string, xmlPartPath = 'word/document.xml') {
   const relTag = relsXml.match(new RegExp(`<Relationship\\b[^>]*\\bId\\s*=\\s*"${embedId}"[^>]*\\/?>`, 'i'))
   if (!relTag) return null
   const t = relTag[0].match(/\bTarget\s*=\s*"([^"]+)"/i)
   if (!t?.[1]) return null
-  const relTarget = t[1].replace(/^\//, '')
-  return relTarget.startsWith('word/') ? relTarget : `word/${relTarget}`
+  return resolveRelTargetToZipPath(xmlPartPath, t[1])
 }
 
 /** Inline signature fallback when using text {presbyter_sign} (not preferred) */
@@ -309,14 +314,19 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
   return { images, debug }
 }
 
-async function mergeDocxBytes(
-  docxBytes: Uint8Array,
+async function mergeOfficeBytes(
+  officeBytes: Uint8Array,
   fieldValues: Record<string, unknown>,
   signatureImages: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {},
+  format: 'docx' | 'pptx' = 'docx',
 ) {
-  const zip = await JSZip.loadAsync(docxBytes)
+  const zip = await JSZip.loadAsync(officeBytes)
+  const isPptx = format === 'pptx'
   const targets = Object.keys(zip.files).filter(n =>
-    /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n) && !zip.files[n].dir
+    (isPptx
+      ? /^ppt\/slides\/slide\d+\.xml$/i.test(n)
+      : /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n))
+    && !zip.files[n].dir
   )
 
   let docPrSeq = 900
@@ -341,7 +351,10 @@ async function mergeDocxBytes(
         + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
     let relsDirty = false
 
-    // 1) Preferred: replace picture for AltText slots (keep Word size/position)
+    const mediaFolder = isPptx ? 'ppt/media' : 'word/media'
+    const relTargetPrefix = isPptx ? '../media/' : 'media/'
+
+    // 1) Replace pictures by AltText (Word + PowerPoint)
     const slots = findAltTextImageSlots(xml)
     for (const slot of slots) {
       slotsFound.push(`${name}:${slot.key}:${slot.embedId}`)
@@ -353,18 +366,16 @@ async function mergeDocxBytes(
 
       mediaSeq += 1
       const mediaName = `sign_${slot.key}_${mediaSeq}.${img.ext}`
-      const mediaPath = `word/media/${mediaName}`
-      zip.file(mediaPath, img.bytes)
+      zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
       if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
 
       const rId = nextRelationshipId(relsXml)
       relsXml = relsXml.replace(
         '</Relationships>',
-        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/></Relationships>`,
+        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
       )
       relsDirty = true
 
-      // Point this drawing's blip at the new image (correct extension matters for Google)
       const oldBlock = slot.block
       let newBlock = oldBlock
         .replace(new RegExp(`r:embed\\s*=\\s*"${slot.embedId}"`, 'i'), `r:embed="${rId}"`)
@@ -375,8 +386,7 @@ async function mergeDocxBytes(
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:relinked:${rId}`)
       } else {
-        // Fallback: overwrite existing media part in place
-        const existing = mediaPathFromRels(relsXml, slot.embedId)
+        const existing = mediaPathFromRels(relsXml, slot.embedId, name)
         if (existing) {
           zip.file(existing, img.bytes)
           swappedKeys.add(slot.key)
@@ -387,31 +397,33 @@ async function mergeDocxBytes(
       }
     }
 
-    // 2) Fallback: text tag {presbyter_sign} → inject drawing (fixed size)
-    for (const [key, img] of Object.entries(signatureImages)) {
-      if (swappedKeys.has(key)) continue
-      if (!placeholderExistsInXml(xml, key)) continue
+    // 2) Word-only: text tag {presbyter_sign} → inject drawing
+    if (!isPptx) {
+      for (const [key, img] of Object.entries(signatureImages)) {
+        if (swappedKeys.has(key)) continue
+        if (!placeholderExistsInXml(xml, key)) continue
 
-      mediaSeq += 1
-      const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-      zip.file(`word/media/${mediaName}`, img.bytes)
+        mediaSeq += 1
+        const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
+        zip.file(`${mediaFolder}/${mediaName}`, img.bytes)
 
-      const rId = nextRelationshipId(relsXml)
-      relsXml = relsXml.replace(
-        '</Relationships>',
-        `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/></Relationships>`,
-      )
-      relsDirty = true
+        const rId = nextRelationshipId(relsXml)
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+        )
+        relsDirty = true
 
-      docPrSeq += 1
-      const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
-      xml = injectImageAtPlaceholder(xml, key, drawing)
-      if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-      swappedKeys.add(key)
-      swapLog.push(`${key}:text_inject`)
+        docPrSeq += 1
+        const drawing = signatureDrawingXml(rId, docPrSeq, key, key === 'treasurer_seal')
+        xml = injectImageAtPlaceholder(xml, key, drawing)
+        if (ctXml) ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+        swappedKeys.add(key)
+        swapLog.push(`${key}:text_inject`)
+      }
     }
 
-    // 3) Clear leftover text sign tags if image missing
+    // 3) Clear leftover text sign tags
     for (const key of IMAGE_PLACEHOLDER_KEYS) {
       if (placeholderExistsInXml(xml, key)) {
         xml = replacePlaceholderInXml(xml, key, '')
@@ -430,11 +442,21 @@ async function mergeDocxBytes(
   return {
     bytes,
     mergeMeta: {
+      format,
       slots_found: slotsFound,
       swapped: [...swappedKeys],
       swap_log: swapLog,
     },
   }
+}
+
+/** @deprecated alias */
+async function mergeDocxBytes(
+  docxBytes: Uint8Array,
+  fieldValues: Record<string, unknown>,
+  signatureImages: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {},
+) {
+  return mergeOfficeBytes(docxBytes, fieldValues, signatureImages, 'docx')
 }
 
 function concatBytes(parts: Uint8Array[]) {
@@ -550,17 +572,20 @@ async function probeGoogleReady(admin: ReturnType<typeof createClient>) {
   }
 }
 
-/** Upload merged docx as Google Doc → export PDF → delete temp file */
-async function convertDocxViaGoogleDrive(
+/** Upload merged Office file → Google Docs/Slides → export PDF → delete temp */
+async function convertOfficeViaGoogleDrive(
   accessToken: string,
-  docxBytes: Uint8Array,
+  fileBytes: Uint8Array,
   displayName: string,
   parentFolderId: string | null,
+  format: 'docx' | 'pptx' = 'docx',
 ) {
   const boundary = `pc_${crypto.randomUUID().replace(/-/g, '')}`
+  const googleMime = format === 'pptx' ? GSLIDES_MIME : GDOC_MIME
+  const uploadMime = format === 'pptx' ? PPTX_MIME : DOCX_MIME
   const meta: Record<string, unknown> = {
-    name: displayName.replace(/\.docx$/i, '').slice(0, 120),
-    mimeType: GDOC_MIME,
+    name: displayName.replace(/\.(docx|pptx)$/i, '').slice(0, 120),
+    mimeType: googleMime,
   }
   if (parentFolderId) meta.parents = [parentFolderId]
 
@@ -568,10 +593,10 @@ async function convertDocxViaGoogleDrive(
   const head = enc.encode(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
     `${JSON.stringify(meta)}\r\n` +
-    `--${boundary}\r\nContent-Type: ${DOCX_MIME}\r\n\r\n`,
+    `--${boundary}\r\nContent-Type: ${uploadMime}\r\n\r\n`,
   )
   const tail = enc.encode(`\r\n--${boundary}--\r\n`)
-  const body = concatBytes([head, docxBytes, tail])
+  const body = concatBytes([head, fileBytes, tail])
 
   const upRes = await fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType',
@@ -598,17 +623,26 @@ async function convertDocxViaGoogleDrive(
     )
     if (!exportRes.ok) {
       const errText = await exportRes.text().catch(() => '')
-      throw new Error(`Google Docs PDF export failed (${exportRes.status}): ${errText.slice(0, 200)}`)
+      throw new Error(`Google PDF export failed (${exportRes.status}): ${errText.slice(0, 200)}`)
     }
     const pdfBytes = new Uint8Array(await exportRes.arrayBuffer())
-    if (!pdfBytes.length) throw new Error('Google Docs returned empty PDF')
-    return { pdfBytes, driveFileId: fileId }
+    if (!pdfBytes.length) throw new Error('Google returned empty PDF')
+    return { pdfBytes, driveFileId: fileId, google_mime: googleMime }
   } finally {
     await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },
     }).catch(() => null)
   }
+}
+
+async function convertDocxViaGoogleDrive(
+  accessToken: string,
+  docxBytes: Uint8Array,
+  displayName: string,
+  parentFolderId: string | null,
+) {
+  return convertOfficeViaGoogleDrive(accessToken, docxBytes, displayName, parentFolderId, 'docx')
 }
 
 serve(async (req) => {
@@ -657,8 +691,14 @@ serve(async (req) => {
         return json({ error: dlErr?.message || 'Could not download template' }, 400)
       }
       const templateBytes = new Uint8Array(await fileBlob.arrayBuffer())
+      const format: 'docx' | 'pptx' = /\.pptx$/i.test(storagePath) ? 'pptx' : 'docx'
       const { images: signatureImages, debug: signatureLoadDebug } = await loadChurchSignatureImages(admin)
-      const { bytes: mergedBytes, mergeMeta } = await mergeDocxBytes(templateBytes, fieldValues, signatureImages)
+      const { bytes: mergedBytes, mergeMeta } = await mergeOfficeBytes(
+        templateBytes,
+        fieldValues,
+        signatureImages,
+        format,
+      )
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
       let outName = stampFilename(outBase, 'pdf')
@@ -673,17 +713,20 @@ serve(async (req) => {
       let pdfBytes: Uint8Array
       let engineMeta: Record<string, unknown>
       try {
-        const result = await convertDocxViaGoogleDrive(
+        const result = await convertOfficeViaGoogleDrive(
           g.accessToken,
           mergedBytes,
-          outName.replace(/\.pdf$/i, '.docx'),
+          outName.replace(/\.pdf$/i, format === 'pptx' ? '.pptx' : '.docx'),
           g.folderId,
+          format,
         )
         pdfBytes = result.pdfBytes
         engineMeta = {
           engine: 'google_drive',
           google_via: g.via,
           google_email: g.email,
+          source_format: format,
+          google_mime: result.google_mime,
           drive_temp_deleted: true,
         }
       } catch (e) {

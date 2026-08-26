@@ -326,9 +326,9 @@ function TemplatesPanel() {
       const n = result.placeholders?.length || 0
       if (n) {
         setVarRows((result.variables || []).map(v => ({ key: v.key, label: v.label || v.key })))
-        toast(`Word uploaded — ${n} field${n === 1 ? '' : 's'} captured for the wizard.`, 'success')
+        toast(`Uploaded — ${n} field${n === 1 ? '' : 's'} captured for the wizard.`, 'success')
       } else {
-        toast('Word uploaded, but no {placeholders} found. Add tags like {member_name} in Word and re-upload.', 'error')
+        toast('Uploaded, but no {placeholders} found. Add tags like {member_name} and re-upload.', 'error')
       }
       await load()
     } catch (err) { toast(err.message, 'error') }
@@ -448,24 +448,23 @@ function TemplatesPanel() {
           </div>
 
           <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Word template (.docx)</div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Template file (.docx or .pptx)</div>
             <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 10 }}>
               {selected.storage_path || <span style={{ color: '#c2410c' }}>Not uploaded yet</span>}
             </div>
-            <input ref={fileRef} type="file" accept=".docx" className="hidden" onChange={handleUpload} />
+            <input ref={fileRef} type="file" accept=".docx,.pptx" className="hidden" onChange={handleUpload} />
             <button type="button" disabled={busy} onClick={() => fileRef.current?.click()}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <Upload size={14} /> Upload .docx
+              <Upload size={14} /> Upload .docx / .pptx
             </button>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0' }}>
-              Detects text {'{placeholders}'} and signature Alt Text on pictures
-              (e.g. place a blank image, set Alt Text to {'{presbyter_sign}'} — size stays as in Word).
+              Canva → PowerPoint works. Detects {'{placeholders}'} and picture AltText like {'{presbyter_sign}'}.
             </p>
           </div>
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700 }}>Wizard variables (from Word)</span>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>Wizard variables</span>
               <button type="button" onClick={() => setVarRows(r => [...r, { key: '', label: '' }])}
                 style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer' }}>
                 + Add field
@@ -473,7 +472,7 @@ function TemplatesPanel() {
             </div>
             {varRows.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                Upload a .docx with {'{tags}'} — fields appear here automatically. You can rename labels anytime.
+                Upload a .docx or .pptx with {'{tags}'} — fields appear here automatically.
               </p>
             ) : varRows.map((v, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8 }}>
