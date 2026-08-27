@@ -843,9 +843,55 @@ function findDocxDrawingForAltKey(xml: string, key: string): { block: string, em
   return best ? { block: best.block, embedId: best.embedId } : null
 }
 
+function extractWordAnchorLayout(block: string) {
+  const anchor = block.match(/<wp:anchor\b[\s\S]*?<\/wp:anchor>/i)?.[0]
+  if (!anchor) return null
+  const extent = extractWordInlineExtent(anchor)
+  const posH = anchor.match(/<wp:positionH\b[\s\S]*?<\/wp:positionH>/i)?.[0] || '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+  const posV = anchor.match(/<wp:positionV\b[\s\S]*?<\/wp:positionV>/i)?.[0] || '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+  const wrap = anchor.match(/<wp:wrap(?:None|Square|Tight|Through|TopAndBottom)\b[^>]*\/>/i)?.[0]
+    || anchor.match(/<wp:wrap(?:None|Square|Tight|Through|TopAndBottom)\b[\s\S]*?<\/wp:wrap(?:None|Square|Tight|Through|TopAndBottom)>/i)?.[0]
+    || '<wp:wrapNone/>'
+  const anchorOpen = anchor.match(/<wp:anchor\b([^>]*)>/i)?.[1] || ' distT="0" distB="0" distL="0" distR="0"'
+  return { extent, posH, posV, wrap, anchorOpen }
+}
+
+/** Floating Word picture — certificate-style clean shape with preserved anchor position. */
+function signatureDrawingAnchorXml(
+  rId: string,
+  docPrId: number,
+  name: string,
+  layout: NonNullable<ReturnType<typeof extractWordAnchorLayout>>,
+  isSeal = false,
+) {
+  const cx = layout.extent?.cx || (isSeal ? '914400' : '1463040')
+  const cy = layout.extent?.cy || (isSeal ? '914400' : '502920')
+  return (
+    `<w:drawing>`
+    + `<wp:anchor${layout.anchorOpen}>`
+    + `<wp:simplePos x="0" y="0"/>`
+    + layout.posH
+    + layout.posV
+    + `<wp:extent cx="${cx}" cy="${cy}"/>`
+    + `<wp:effectExtent l="0" t="0" r="0" b="0"/>`
+    + layout.wrap
+    + `<wp:docPr id="${docPrId}" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/>`
+    + `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>`
+    + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`
+    + `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+    + `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+    + `<pic:nvPicPr><pic:cNvPr id="0" name="${escapeXml(name)}" descr="{${escapeXml(name)}}"/><pic:cNvPicPr/></pic:nvPicPr>`
+    + `<pic:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+    + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`
+    + `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
+    + `</pic:pic></a:graphicData></a:graphic>`
+    + `</wp:anchor></w:drawing>`
+  )
+}
+
 /**
- * DOCX church signature swap — same strategy as certificate PPTX:
- * new media rel + replace the whole picture shape (preserveSize), with retarget fallback.
+ * DOCX church signature swap — same strategy as certificate PPTX replace_shape:
+ * overwrite placeholder media + new rel + replace the whole picture shape (never relink-only).
  */
 function docxReplaceSignaturePicture(
   xml: string,
@@ -865,15 +911,16 @@ function docxReplaceSignaturePicture(
   const isSeal = key === 'treasurer_seal'
   const extent = extractWordInlineExtent(block)
 
-  // Floating Word images (common in letter headers): new media rel + retarget anchor (like PPTX new rId)
+  // Floating Word images: full anchor replace (NOT retarget — Google Docs ignores relink on anchor)
   if (/<wp:anchor\b/i.test(block)) {
-    const retargeted = stripDocxSvgBlips(retargetPictureBlock(block, embedId, rId))
-    if (retargeted !== block) {
-      return { xml: xml.split(block).join(retargeted), method: 'docx_retarget_anchor' }
+    const layout = extractWordAnchorLayout(block)
+    if (layout) {
+      const drawing = signatureDrawingAnchorXml(rId, docPrId, key, layout, isSeal)
+      return { xml: xml.split(block).join(drawing), method: 'docx_replace_anchor' }
     }
   }
 
-  // Certificate-style: brand-new clean inline picture at preserved size (pptx replace_shape + preserveSize)
+  // Certificate-style: brand-new clean inline picture at preserved size
   if (/<w:drawing\b/i.test(block)) {
     const drawing = signatureDrawingXml(rId, docPrId, key, isSeal, extent?.cx, extent?.cy)
     return { xml: xml.split(block).join(drawing), method: 'docx_replace_shape' }
@@ -883,11 +930,6 @@ function docxReplaceSignaturePicture(
     return { xml: xml.split(block).join(drawing), method: 'docx_replace_vml' }
   }
 
-  // Fallback: retarget blip inside existing block (keeps wp:anchor layout)
-  const retargeted = stripDocxSvgBlips(retargetPictureBlock(block, embedId, rId))
-  if (retargeted !== block) {
-    return { xml: xml.split(block).join(retargeted), method: 'docx_retarget_shape' }
-  }
   return null
 }
 
@@ -1319,15 +1361,15 @@ async function mergeOfficeBytes(
         continue
       }
 
-      // PPTX: always replace Canva p:pic with a clean picture (overwrite/relink alone
-      // is ignored by Google Slides). DOCX church signatures: replace whole w:drawing + new media rel.
-      if (existingBefore && !isChurchSignature) {
+      // PPTX: always replace Canva p:pic with a clean picture.
+      // DOCX church signatures: overwrite placeholder bytes + replace whole drawing (certificate-style).
+      if (existingBefore) {
         zip.file(existingBefore, img.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
           ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
         }
-        swapLog.push(`${slot.key}:overwrite:${existingBefore}`)
+        swapLog.push(`${slot.key}:overwrite_placeholder:${existingBefore}`)
       }
 
       mediaSeq += 1
@@ -1355,14 +1397,16 @@ async function mergeOfficeBytes(
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
       } else if (isChurchSignature) {
-        // Same as certificate path: new media rel + replace whole picture shape
+        // Certificate-style: replace whole shape. Reuse original rId when placeholder media was overwritten.
         docPrSeq += 1
-        const replaced = docxReplaceSignaturePicture(xml, oldBlock, slot.embedId, rId, slot.key, docPrSeq)
+        const drawRId = (!isPptx && existingBefore) ? slot.embedId : rId
+        const replaced = docxReplaceSignaturePicture(xml, oldBlock, slot.embedId, drawRId, slot.key, docPrSeq)
         if (replaced) {
           xml = replaced.xml
           swappedKeys.add(slot.key)
           docPartSigSwapped = true
-          swapLog.push(`${slot.key}:${replaced.method}:${rId}`)
+          const relNote = drawRId === slot.embedId ? ':reuse_rel' : ''
+          swapLog.push(`${slot.key}:${replaced.method}:${drawRId}${relNote}`)
         } else {
           swapLog.push(`${slot.key}:docx_replace_failed:embed=${slot.embedId}`)
         }
@@ -1478,29 +1522,41 @@ async function mergeOfficeBytes(
         const target = findDocxDrawingForAltKey(xml, key)
         if (!target) continue
 
-        mediaSeq += 1
-        const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-        const mediaPath = `${mediaFolder}/${mediaName}`
-        zip.file(mediaPath, img.bytes)
-        if (ctXml) {
-          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-          ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+        const existingBefore = mediaPathFromRels(relsXml, target.embedId, name)
+        if (existingBefore) {
+          zip.file(existingBefore, img.bytes)
+          if (ctXml) {
+            ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+            ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+          }
         }
 
-        const rId = nextRelationshipId(relsXml)
-        relsXml = relsXml.replace(
-          '</Relationships>',
-          `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
-        )
-        relsDirty = true
+        let drawRId = target.embedId
+        if (!existingBefore) {
+          mediaSeq += 1
+          const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
+          const mediaPath = `${mediaFolder}/${mediaName}`
+          zip.file(mediaPath, img.bytes)
+          if (ctXml) {
+            ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+            ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+          }
+          drawRId = nextRelationshipId(relsXml)
+          relsXml = relsXml.replace(
+            '</Relationships>',
+            `<Relationship Id="${drawRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+          )
+          relsDirty = true
+        }
 
         docPrSeq += 1
-        const replaced = docxReplaceSignaturePicture(xml, target.block, target.embedId, rId, key, docPrSeq)
+        const replaced = docxReplaceSignaturePicture(xml, target.block, target.embedId, drawRId, key, docPrSeq)
         if (replaced) {
           xml = replaced.xml
           swappedKeys.add(key)
           docPartSigSwapped = true
-          swapLog.push(`${key}:${replaced.method}_alt_fallback:${rId}`)
+          const relNote = drawRId === target.embedId ? ':reuse_rel' : ''
+          swapLog.push(`${key}:${replaced.method}_alt_fallback:${drawRId}${relNote}`)
         }
       }
     }
