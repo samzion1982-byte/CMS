@@ -19,6 +19,7 @@ import {
   deletePrintCornerTemplate,
   uploadPrintCornerTemplateDocx,
   normalizeTemplateVariables,
+  finalizeTemplateVariables,
   getChurchForPrintCorner,
   getOfficeBearerSignatureStatus,
   getPrintCornerApplicationForms,
@@ -356,7 +357,10 @@ function TemplatesPanel() {
       category_id: selected.category_id || '',
       is_active: selected.is_active !== false,
     })
-    setVarRows(normalizeTemplateVariables(selected.variables).map(v => ({ key: v.key || '', label: v.label || v.key || '' })))
+    setVarRows(finalizeTemplateVariables(
+      normalizeTemplateVariables(selected.variables).map(v => v.key),
+      selected.variables,
+    ).map(v => ({ key: v.key || '', label: v.label || v.key || '' })))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selectedId, selected, isAppFormsMode])
 
@@ -438,7 +442,10 @@ function TemplatesPanel() {
         label: form.label,
         category_id: form.category_id,
         is_active: form.is_active,
-        variables: varRows.filter(v => v.key.trim()).map(v => ({ key: v.key.trim(), label: (v.label || v.key).trim() })),
+        variables: finalizeTemplateVariables(
+          varRows.filter(v => v.key.trim()).map(v => v.key.trim()),
+          varRows.filter(v => v.key.trim()).map(v => ({ key: v.key.trim(), label: (v.label || v.key).trim() })),
+        ),
       })
       toast('Template saved.', 'success')
       await load()
@@ -608,141 +615,7 @@ function TemplatesPanel() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
-      <div className="card pc-sidebar-panel" style={{ padding: 0, overflow: 'hidden' }}>
-        <div className="pc-sidebar-panel__header" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>BY CATEGORY</span>
-          <button type="button" onClick={() => {
-            setAdding(true)
-            if (!isAppFormsMode) {
-              setNewTpl(n => ({ ...n, category_id: n.category_id || activeCategoryId || activeMergeCategories[0]?.id || '' }))
-            }
-          }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: isAppFormsMode ? '#7c3aed' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-            <Plus size={12} /> Add
-          </button>
-        </div>
-
-        {adding && (
-          <div style={{ padding: 12, borderBottom: '1px solid var(--card-border)', background: 'var(--sidebar-item-active-bg)', display: 'grid', gap: 8 }}>
-            {isAppFormsMode ? (
-              <>
-                <input placeholder="e.g. Baptism information form" value={newBlankLabel}
-                  onChange={e => setNewBlankLabel(e.target.value)} style={INPUT}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAddBlankForm() }} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" disabled={busy} onClick={handleAddBlankForm}
-                    style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
-                  <button type="button" onClick={() => { setAdding(false); setNewBlankLabel('') }}
-                    style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
-                </div>
-              </>
-            ) : (
-              <>
-                <select value={newTpl.category_id} onChange={e => setNewTpl(f => ({ ...f, category_id: e.target.value }))} style={INPUT}>
-                  <option value="">Category…</option>
-                  {activeMergeCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <input placeholder="Display label" value={newTpl.label} onChange={e => setNewTpl(f => ({ ...f, label: e.target.value }))} style={INPUT} />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" disabled={busy} onClick={handleAddTemplate} style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
-                  <button type="button" onClick={() => setAdding(false)} style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="pc-sidebar-panel__category" style={{ padding: '10px 12px', borderBottom: '1px solid var(--card-border)' }}>
-          <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
-            CATEGORY
-          </label>
-          <select
-            value={activeCategoryId || sidebarBrowseItems[0]?.id || APP_FORMS_SIDEBAR_ID}
-            onChange={e => {
-              const v = e.target.value
-              setActiveCategoryId(v)
-              setAdding(false)
-              if (v === APP_FORMS_SIDEBAR_ID) {
-                setSelectedId(null)
-                setSelectedBlankId(null)
-              } else {
-                setSelectedBlankId(null)
-              }
-            }}
-            style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
-          >
-            {sidebarBrowseItems.map(item => (
-              <option key={item.categoryId} value={item.id}>
-                {item.name} ({item.count}){item.isActive === false ? ' — inactive' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="pc-sidebar-list">
-        {isAppFormsMode ? (
-          blankForms.length === 0 ? (
-            <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
-              No blank forms yet. Add one and upload the scanned PDF or JPEG.
-            </div>
-          ) : blankForms.map(f => (
-            <div
-              key={f.id}
-              className={`pc-sidebar-row pc-sidebar-row--compact${selectedBlankId === f.id ? ' is-active' : ''}`}
-              style={{
-                '--pc-accent': '#7c3aed',
-                '--pc-active-bg': '#f5f3ff',
-                opacity: f.is_active === false ? 0.55 : 1,
-              }}
-            >
-              <button type="button" className="pc-sidebar-select" onClick={() => setSelectedBlankId(f.id)}>
-                <span className="pc-sidebar-label">{f.label}</span>
-                <span className="pc-sidebar-sub">
-                  {f.storage_path ? (f.mime_type?.includes('pdf') ? 'PDF' : 'Image') : 'File not uploaded'}
-                </span>
-              </button>
-              <button
-                type="button"
-                className="pc-sidebar-delete"
-                title="Delete form (master password)"
-                onClick={() => setDeletePrompt({ kind: 'form', item: f })}
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))
-        ) : sidebarTemplates.length === 0 ? (
-          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
-            {grouped.length === 0 ? 'No templates yet. Add one under a category.' : 'No templates in this category.'}
-          </div>
-        ) : sidebarTemplates.map(t => (
-          <div
-            key={t.id}
-            className={`pc-sidebar-row pc-sidebar-row--compact${selectedId === t.id ? ' is-active' : ''}`}
-            style={{
-              '--pc-accent': 'var(--accent)',
-              '--pc-active-bg': 'var(--accent-subtle, #eff6ff)',
-              opacity: t.is_active === false ? 0.55 : 1,
-            }}
-          >
-            <button type="button" className="pc-sidebar-select" onClick={() => setSelectedId(t.id)}>
-              <span className="pc-sidebar-label">{t.label}</span>
-              <span className="pc-sidebar-sub">{t.template_key}</span>
-            </button>
-            <button
-              type="button"
-              className="pc-sidebar-delete"
-              title="Delete template (master password)"
-              onClick={() => setDeletePrompt({ kind: 'template', item: t })}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        ))}
-        </div>
-      </div>
-
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, alignItems: 'start' }}>
       {isAppFormsMode ? (
         selectedBlank && blankForm ? (
           <div className="card" style={{ padding: 20 }}>
@@ -949,6 +822,140 @@ function TemplatesPanel() {
       ) : (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>Select a template</div>
       )}
+
+      <div className="card pc-sidebar-panel" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="pc-sidebar-panel__header" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>BY CATEGORY</span>
+          <button type="button" onClick={() => {
+            setAdding(true)
+            if (!isAppFormsMode) {
+              setNewTpl(n => ({ ...n, category_id: n.category_id || activeCategoryId || activeMergeCategories[0]?.id || '' }))
+            }
+          }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: isAppFormsMode ? '#7c3aed' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            <Plus size={12} /> Add
+          </button>
+        </div>
+
+        {adding && (
+          <div style={{ padding: 12, borderBottom: '1px solid var(--card-border)', background: 'var(--sidebar-item-active-bg)', display: 'grid', gap: 8 }}>
+            {isAppFormsMode ? (
+              <>
+                <input placeholder="e.g. Baptism information form" value={newBlankLabel}
+                  onChange={e => setNewBlankLabel(e.target.value)} style={INPUT}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddBlankForm() }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" disabled={busy} onClick={handleAddBlankForm}
+                    style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
+                  <button type="button" onClick={() => { setAdding(false); setNewBlankLabel('') }}
+                    style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
+                </div>
+              </>
+            ) : (
+              <>
+                <select value={newTpl.category_id} onChange={e => setNewTpl(f => ({ ...f, category_id: e.target.value }))} style={INPUT}>
+                  <option value="">Category…</option>
+                  {activeMergeCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input placeholder="Display label" value={newTpl.label} onChange={e => setNewTpl(f => ({ ...f, label: e.target.value }))} style={INPUT} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" disabled={busy} onClick={handleAddTemplate} style={{ flex: 1, padding: '6px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Create</button>
+                  <button type="button" onClick={() => setAdding(false)} style={{ padding: '6px 8px', border: '1px solid var(--card-border)', borderRadius: 6, background: 'none', cursor: 'pointer' }}><X size={13} /></button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="pc-sidebar-panel__category" style={{ padding: '10px 12px', borderBottom: '1px solid var(--card-border)' }}>
+          <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
+            CATEGORY
+          </label>
+          <select
+            value={activeCategoryId || sidebarBrowseItems[0]?.id || APP_FORMS_SIDEBAR_ID}
+            onChange={e => {
+              const v = e.target.value
+              setActiveCategoryId(v)
+              setAdding(false)
+              if (v === APP_FORMS_SIDEBAR_ID) {
+                setSelectedId(null)
+                setSelectedBlankId(null)
+              } else {
+                setSelectedBlankId(null)
+              }
+            }}
+            style={{ ...INPUT, cursor: 'pointer', fontWeight: 600 }}
+          >
+            {sidebarBrowseItems.map(item => (
+              <option key={item.categoryId} value={item.id}>
+                {item.name} ({item.count}){item.isActive === false ? ' — inactive' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="pc-sidebar-list">
+        {isAppFormsMode ? (
+          blankForms.length === 0 ? (
+            <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
+              No blank forms yet. Add one and upload the scanned PDF or JPEG.
+            </div>
+          ) : blankForms.map(f => (
+            <div
+              key={f.id}
+              className={`pc-sidebar-row pc-sidebar-row--compact${selectedBlankId === f.id ? ' is-active' : ''}`}
+              style={{
+                '--pc-accent': '#7c3aed',
+                '--pc-active-bg': '#f5f3ff',
+                opacity: f.is_active === false ? 0.55 : 1,
+              }}
+            >
+              <button type="button" className="pc-sidebar-select" onClick={() => setSelectedBlankId(f.id)}>
+                <span className="pc-sidebar-label">{f.label}</span>
+                <span className="pc-sidebar-sub">
+                  {f.storage_path ? (f.mime_type?.includes('pdf') ? 'PDF' : 'Image') : 'File not uploaded'}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="pc-sidebar-delete"
+                title="Delete form (master password)"
+                onClick={() => setDeletePrompt({ kind: 'form', item: f })}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))
+        ) : sidebarTemplates.length === 0 ? (
+          <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
+            {grouped.length === 0 ? 'No templates yet. Add one under a category.' : 'No templates in this category.'}
+          </div>
+        ) : sidebarTemplates.map(t => (
+          <div
+            key={t.id}
+            className={`pc-sidebar-row pc-sidebar-row--compact${selectedId === t.id ? ' is-active' : ''}`}
+            style={{
+              '--pc-accent': 'var(--accent)',
+              '--pc-active-bg': 'var(--accent-subtle, #eff6ff)',
+              opacity: t.is_active === false ? 0.55 : 1,
+            }}
+          >
+            <button type="button" className="pc-sidebar-select" onClick={() => setSelectedId(t.id)}>
+              <span className="pc-sidebar-label">{t.label}</span>
+              <span className="pc-sidebar-sub">{t.template_key}</span>
+            </button>
+            <button
+              type="button"
+              className="pc-sidebar-delete"
+              title="Delete template (master password)"
+              onClick={() => setDeletePrompt({ kind: 'template', item: t })}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+        </div>
+      </div>
 
       <MasterDeleteGate
         open={!!deletePrompt}

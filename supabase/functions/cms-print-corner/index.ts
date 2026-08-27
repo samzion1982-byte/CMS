@@ -412,6 +412,19 @@ async function fetchSignatureImage(url: string | null | undefined) {
   }
 }
 
+/** Word/Google is picky about media part extensions — always embed signatures as PNG when possible. */
+async function normalizeImageToPng(img: { bytes: Uint8Array, ext: string, contentType: string }) {
+  if (String(img.ext || '').toLowerCase() === 'png') return img
+  try {
+    const decoded = await Image.decode(img.bytes)
+    const bytes = await decoded.encodePNG()
+    if (!bytes?.length) return img
+    return { bytes, ext: 'png', contentType: 'image/png' }
+  } catch {
+    return img
+  }
+}
+
 /** Prefer storage download when URL points at church-logos (public fetch often blocked). */
 async function loadSignatureFromUrlOrStorage(
   admin: ReturnType<typeof createClient>,
@@ -555,7 +568,7 @@ function pickSwapBlock(container: PicContainer, hitIndex: number): { block: stri
   }
   if (container.tag === 'p:grpSp') {
     const innerRe = /<(p:pic|p:sp|v:shape)\b[\s\S]*?<\/\1>/gi
-    let best: { block: string, embedId: string, dist: number, len: number } | null = null
+    let best: { block: string, embedId: string, dist: number, len: number, area: number } | null = null
     let im: RegExpExecArray | null
     while ((im = innerRe.exec(container.block)) !== null) {
       const inner = im[0]
@@ -564,8 +577,10 @@ function pickSwapBlock(container: PicContainer, hitIndex: number): { block: stri
       const absStart = container.start + im.index
       const dist = Math.abs(absStart - hitIndex)
       const len = inner.length
-      if (!best || dist < best.dist || (dist === best.dist && len < best.len)) {
-        best = { block: inner, embedId, dist, len }
+      const xfrm = extractPptxXfrm(inner)
+      const area = xfrm ? (Number(xfrm.cx) || 0) * (Number(xfrm.cy) || 0) : 0
+      if (!best || area > best.area || (area === best.area && dist < best.dist)) {
+        best = { block: inner, embedId, dist, len, area }
       }
     }
     if (best) return { block: best.block, embedId: best.embedId }
@@ -701,6 +716,7 @@ function findProximityKeywordSlots(xml: string) {
   for (const key of IMAGE_PLACEHOLDER_KEYS) {
     if (key === 'member_photo') continue
     const needles = [key, `{${key}}`, key.replace(/_/g, ' ')]
+    if (key === 'presbyter_sign') needles.push('presbyter', 'PRESBYTER')
     for (const needle of needles) {
       let from = 0
       while (from < lowered.length) {
@@ -720,10 +736,16 @@ function findProximityKeywordSlots(xml: string) {
         const dedupe = key + '|' + best.embedId
         if (seen.has(dedupe)) continue
         seen.add(dedupe)
-        let block = window
+        let block = ''
+        const esc = best.embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const embedNeedle = new RegExp(`(?:r:embed|r:id)\\s*=\\s*"${esc}"`, 'i')
         for (const c of containers) {
-          if (idx >= c.start && idx < c.end) { block = c.block; break }
+          if (!embedNeedle.test(c.block)) continue
+          const picked = pickSwapBlock(c, c.start)
+          block = picked?.block || c.block
+          break
         }
+        if (!block) continue
         slots.push({ key, embedId: best.embedId, block, via: 'proximity:' + needle })
       }
     }
@@ -741,6 +763,112 @@ function resolveDocxSwapBlock(xml: string, slot: { embedId: string, block: strin
     if (embedNeedle.test(c.block)) return c.block
   }
   return slot.block
+}
+
+/** Resolve partial p:pic / p:sp blocks to the best swap target for Google Slides. */
+function resolvePptxSwapBlock(xml: string, slot: { embedId: string, block: string }) {
+  const exact = findExactPptxBlockByEmbedId(xml, slot.embedId)
+  if (exact) return exact
+  if (/<p:(?:pic|sp|grpSp)\b/i.test(slot.block) && slot.block.length < 50000) return slot.block
+  return slot.block
+}
+
+function findExactPptxBlockByEmbedId(xml: string, embedId: string): string | null {
+  const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const needle = new RegExp(`(?:r:embed|r:id)\\s*=\\s*"${esc}"`, 'i')
+  for (const c of findPictureContainers(xml)) {
+    if (!/^(p:pic|p:sp|p:grpSp)$/i.test(c.tag)) continue
+    if (!needle.test(c.block)) continue
+    const picked = pickSwapBlock(c, c.start)
+    return picked?.block || c.block
+  }
+  return null
+}
+
+/** Every r:embed / r:id inside a picture block (main blip + Canva SVG overrides). */
+function extractAllBlipEmbedIds(block: string): string[] {
+  const ids = new Set<string>()
+  for (const m of block.matchAll(/(?:r:embed|r:id)\s*=\s*"([^"]+)"/gi)) {
+    if (m[1]) ids.add(m[1])
+  }
+  return [...ids]
+}
+
+/** Keep wp:anchor layout; replace blipFill so Google reads raster media, not cached SVG. */
+function refreshDocxPictureBlipInBlock(block: string, rId: string): string {
+  let out = stripDocxSvgBlips(block)
+  const blipFill = `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+  if (/<pic:blipFill\b/i.test(out)) {
+    return out.replace(/<pic:blipFill\b[\s\S]*?<\/pic:blipFill>/i, blipFill)
+  }
+  if (/<a:blip\b/i.test(out)) {
+    return out.replace(/<a:blip\b[^>]*\/?>/i, `<a:blip r:embed="${rId}"/>`)
+  }
+  return out
+}
+
+function stripPptxSvgBlips(block: string) {
+  return block
+    .replace(/<a:ext\b[^>]*>[\s\S]*?<asvg:svgBlip\b[\s\S]*?<\/a:ext>/gi, '')
+    .replace(/<asvg:svgBlip\b[^>]*\/>/gi, '')
+    .replace(/<asvg:svgBlip\b[\s\S]*?<\/asvg:svgBlip>/gi, '')
+}
+
+/** Keep Canva p:pic / p:sp layout; replace blipFill so Google Slides reads raster media. */
+function refreshPptxBlipInBlock(block: string, rId: string): string {
+  let out = stripPptxSvgBlips(block)
+  const blipFill = `<p:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>`
+  if (/<p:blipFill\b/i.test(out)) {
+    return out.replace(/<p:blipFill\b[\s\S]*?<\/p:blipFill>/i, blipFill)
+  }
+  if (/<pic:blipFill\b/i.test(out)) {
+    return out.replace(/<pic:blipFill\b[\s\S]*?<\/pic:blipFill>/i,
+      `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`)
+  }
+  if (/<a:blip\b/i.test(out)) {
+    return out.replace(/<a:blip\b[^>]*\/?>/i, `<a:blip r:embed="${rId}"/>`)
+  }
+  return out
+}
+
+/** Certificate Canva: visible signature is often near a "PRESBYTER" label, not only AltText. */
+function findPptxLabelProximitySlots(xml: string) {
+  const slots: Array<{ key: string, embedId: string, block: string, via: string }> = []
+  const seen = new Set<string>()
+  const containers = findPictureContainers(xml)
+  const lowered = xml.toLowerCase()
+  const needles = ['presbyter', 'presbyter sign', 'presbyter_sign', '{presbyter_sign}']
+
+  for (const needle of needles) {
+    let from = 0
+    while (from < lowered.length) {
+      const idx = lowered.indexOf(needle, from)
+      if (idx < 0) break
+      from = idx + needle.length
+
+      let best: { container: PicContainer, dist: number } | null = null
+      for (const c of containers) {
+        if (!/^(p:pic|p:sp|p:grpSp)$/i.test(c.tag)) continue
+        const dist = idx < c.start ? c.start - idx : idx >= c.end ? idx - c.end : 0
+        if (dist > 12000) continue
+        if (!best || dist < best.dist) best = { container: c, dist }
+      }
+      if (!best) continue
+
+      const picked = pickSwapBlock(best.container, idx)
+      if (!picked) continue
+      const dedupe = `presbyter_sign|${picked.embedId}`
+      if (seen.has(dedupe)) continue
+      seen.add(dedupe)
+      slots.push({
+        key: 'presbyter_sign',
+        embedId: picked.embedId,
+        block: picked.block,
+        via: `pptx_label:${needle}`,
+      })
+    }
+  }
+  return slots
 }
 
 function stripDocxSvgBlips(xml: string) {
@@ -800,6 +928,50 @@ function mediaPathFromRels(relsXml: string, embedId: string, xmlPartPath = 'word
   return null
 }
 
+/** Point an existing image relationship at a new media/… target (keeps rId for reuse_rel). */
+function patchRelationshipTarget(relsXml: string, embedId: string, relTarget: string) {
+  const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`(<Relationship\\b[^>]*\\bId="${esc}"[^>]*\\bTarget=")([^"]+)(")`, 'i')
+  if (!re.test(relsXml)) return { relsXml, changed: false }
+  return {
+    relsXml: relsXml.replace(re, `$1${relTarget}$3`),
+    changed: true,
+  }
+}
+
+/**
+ * Overwrite placeholder media for signature swap.
+ * JPEG signature into a .png part breaks Google Docs import — rel target must match bytes.
+ */
+function writeSignaturePlaceholderMedia(
+  zip: JSZip,
+  ctXml: string,
+  relsXml: string,
+  relTargetPrefix: string,
+  embedId: string,
+  existingBefore: string,
+  img: { bytes: Uint8Array, ext: string, contentType: string },
+): { relsXml: string, ctXml: string, relsDirty: boolean, mediaPath: string } {
+  let relsDirty = false
+  const existingExt = (existingBefore.split('.').pop() || '').toLowerCase()
+  let mediaPath = existingBefore
+
+  if (existingExt && existingExt !== String(img.ext || '').toLowerCase()) {
+    mediaPath = existingBefore.replace(/\.[^./\\]+$/, `.${img.ext}`)
+    const fileName = mediaPath.includes('/') ? mediaPath.slice(mediaPath.lastIndexOf('/') + 1) : mediaPath
+    const patched = patchRelationshipTarget(relsXml, embedId, `${relTargetPrefix}${fileName}`)
+    relsXml = patched.relsXml
+    relsDirty = patched.changed
+  }
+
+  zip.file(mediaPath, img.bytes)
+  if (ctXml) {
+    ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+    ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+  }
+  return { relsXml, ctXml, relsDirty, mediaPath }
+}
+
 function extractWordInlineExtent(block: string): { cx: string, cy: string } | null {
   const cx = block.match(/<wp:extent\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
     || block.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
@@ -852,7 +1024,8 @@ function extractWordAnchorLayout(block: string) {
   const wrap = anchor.match(/<wp:wrap(?:None|Square|Tight|Through|TopAndBottom)\b[^>]*\/>/i)?.[0]
     || anchor.match(/<wp:wrap(?:None|Square|Tight|Through|TopAndBottom)\b[\s\S]*?<\/wp:wrap(?:None|Square|Tight|Through|TopAndBottom)>/i)?.[0]
     || '<wp:wrapNone/>'
-  const anchorOpen = anchor.match(/<wp:anchor\b([^>]*)>/i)?.[1] || ' distT="0" distB="0" distL="0" distR="0"'
+  const anchorOpen = (anchor.match(/<wp:anchor\b([^>]*)>/i)?.[1] || ' distT="0" distB="0" distL="0" distR="0"')
+    .replace(/\s+xmlns(?::\w+)?="[^"]*"/gi, '')
   return { extent, posH, posV, wrap, anchorOpen }
 }
 
@@ -868,7 +1041,7 @@ function signatureDrawingAnchorXml(
   const cy = layout.extent?.cy || (isSeal ? '914400' : '502920')
   return (
     `<w:drawing>`
-    + `<wp:anchor${layout.anchorOpen}>`
+    + `<wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"${layout.anchorOpen}>`
     + `<wp:simplePos x="0" y="0"/>`
     + layout.posH
     + layout.posV
@@ -911,13 +1084,9 @@ function docxReplaceSignaturePicture(
   const isSeal = key === 'treasurer_seal'
   const extent = extractWordInlineExtent(block)
 
-  // Floating Word images: full anchor replace (NOT retarget — Google Docs ignores relink on anchor)
+  // Floating Word images: never rebuild wp:anchor — Google Drive rejects the resulting DOCX.
   if (/<wp:anchor\b/i.test(block)) {
-    const layout = extractWordAnchorLayout(block)
-    if (layout) {
-      const drawing = signatureDrawingAnchorXml(rId, docPrId, key, layout, isSeal)
-      return { xml: xml.split(block).join(drawing), method: 'docx_replace_anchor' }
-    }
+    return null
   }
 
   // Certificate-style: brand-new clean inline picture at preserved size
@@ -1299,6 +1468,13 @@ async function mergeOfficeBytes(
         found.slots.push(extra)
       }
     }
+    if (isPptx) {
+      for (const extra of findPptxLabelProximitySlots(xml)) {
+        if (!found.slots.some(s => s.key === extra.key && s.embedId === extra.embedId)) {
+          found.slots.push(extra)
+        }
+      }
+    }
     altDebug.push({
       part: name,
       alt_hits: found.debugHits.slice(0, 20),
@@ -1317,8 +1493,75 @@ async function mergeOfficeBytes(
       }
 
       const isChurchSignature = slot.key !== 'member_photo' && !!IMAGE_PLACEHOLDER_MAP[slot.key]
-      const swapBlock = !isPptx ? resolveDocxSwapBlock(xml, slot) : slot.block
+      const swapBlock = !isPptx ? resolveDocxSwapBlock(xml, slot) : resolvePptxSwapBlock(xml, slot)
       const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
+
+      // PPTX church signatures: overwrite media + refresh blip (same strategy as member photo / Word letters)
+      if (isChurchSignature && isPptx) {
+        const useImg = await normalizeImageToPng(img)
+        let block = swapBlock
+        if (!xml.includes(block)) {
+          const exact = findExactPptxBlockByEmbedId(xml, slot.embedId)
+          if (exact) block = exact
+        }
+
+        const embedIds = new Set<string>([slot.embedId])
+        for (const eid of extractAllBlipEmbedIds(block)) embedIds.add(eid)
+
+        let didMedia = false
+        for (const embedId of embedIds) {
+          const mediaPath = mediaPathFromRels(relsXml, embedId, name)
+          if (!mediaPath) continue
+          const written = writeSignaturePlaceholderMedia(
+            zip, ctXml, relsXml, relTargetPrefix, embedId, mediaPath, useImg,
+          )
+          relsXml = written.relsXml
+          ctXml = written.ctXml
+          if (written.relsDirty) relsDirty = true
+          didMedia = true
+          swapLog.push(`${slot.key}:pptx_overwrite:${written.mediaPath}`)
+        }
+
+        let didXml = false
+        if (block && xml.includes(block)) {
+          const refreshed = refreshPptxBlipInBlock(block, slot.embedId)
+          if (refreshed !== block) {
+            xml = xml.split(block).join(refreshed)
+            didXml = true
+            swapLog.push(`${slot.key}:pptx_refresh_blip:${slot.embedId}`)
+          }
+        }
+
+        if (!didXml && block && xml.includes(block)) {
+          mediaSeq += 1
+          const mediaName = `sign_${slot.key}_${mediaSeq}.${useImg.ext}`
+          const mediaPath = `${mediaFolder}/${mediaName}`
+          zip.file(mediaPath, useImg.bytes)
+          if (ctXml) {
+            ctXml = ensureContentTypeDefault(ctXml, useImg.ext, useImg.contentType)
+            ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, useImg.contentType)
+          }
+          const rId = nextRelationshipId(relsXml)
+          relsXml = relsXml.replace(
+            '</Relationships>',
+            `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+          )
+          relsDirty = true
+          const xfrm = extractPptxXfrm(block) || { x: '0', y: '0', cx: '2000000', cy: '700000' }
+          const shapeId = maxCNvPrId(xml) + 1
+          const pic = pptxSignaturePicXml(rId, shapeId, slot.key, xfrm, slot.key === 'treasurer_seal', true)
+          xml = xml.split(block).join(pic)
+          didXml = true
+          swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
+        }
+
+        if (didMedia || didXml) {
+          swappedKeys.add(slot.key)
+        } else {
+          swapLog.push(`${slot.key}:pptx_swap_failed:embed=${slot.embedId}`)
+        }
+        continue
+      }
 
       // Member photo: fit image + strip Canva srcRect crop so the circle doesn't centre-zoom
       if (slot.key === 'member_photo' && existingBefore) {
@@ -1361,15 +1604,78 @@ async function mergeOfficeBytes(
         continue
       }
 
-      // PPTX: always replace Canva p:pic with a clean picture.
-      // DOCX church signatures: overwrite placeholder bytes + replace whole drawing (certificate-style).
-      if (existingBefore) {
+      // DOCX church signatures: overwrite media + refresh blip (keep anchor layout — no full rebuild)
+      if (isChurchSignature && !isPptx) {
+        const useImg = await normalizeImageToPng(img)
+        let block = resolveDocxSwapBlock(xml, slot)
+
+        for (const embedId of extractAllBlipEmbedIds(block)) {
+          const mediaPath = mediaPathFromRels(relsXml, embedId, name)
+          if (!mediaPath) continue
+          const written = writeSignaturePlaceholderMedia(
+            zip, ctXml, relsXml, relTargetPrefix, embedId, mediaPath, useImg,
+          )
+          relsXml = written.relsXml
+          ctXml = written.ctXml
+          if (written.relsDirty) relsDirty = true
+          swapLog.push(`${slot.key}:overwrite_placeholder:${written.mediaPath}`)
+        }
+
+        if (!existingBefore) {
+          mediaSeq += 1
+          const mediaName = `sign_${slot.key}_${mediaSeq}.${useImg.ext}`
+          const mediaPath = `${mediaFolder}/${mediaName}`
+          zip.file(mediaPath, useImg.bytes)
+          if (ctXml) {
+            ctXml = ensureContentTypeDefault(ctXml, useImg.ext, useImg.contentType)
+            ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, useImg.contentType)
+          }
+          const rId = nextRelationshipId(relsXml)
+          relsXml = relsXml.replace(
+            '</Relationships>',
+            `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+          )
+          relsDirty = true
+          docPrSeq += 1
+          const replaced = docxReplaceSignaturePicture(xml, block, slot.embedId, rId, slot.key, docPrSeq)
+          if (replaced) {
+            xml = replaced.xml
+            block = resolveDocxSwapBlock(xml, slot)
+            swapLog.push(`${slot.key}:${replaced.method}:${rId}`)
+          } else {
+            swapLog.push(`${slot.key}:docx_replace_failed:embed=${slot.embedId}`)
+          }
+        }
+
+        if (block && xml.includes(block)) {
+          const refreshed = refreshDocxPictureBlipInBlock(block, slot.embedId)
+          if (refreshed !== block) {
+            xml = xml.split(block).join(refreshed)
+            block = refreshed
+            swapLog.push(`${slot.key}:docx_refresh_blip:${slot.embedId}`)
+          } else {
+            const cleaned = stripDocxSvgBlips(retargetPictureBlock(block, slot.embedId, slot.embedId))
+            if (cleaned !== block) {
+              xml = xml.split(block).join(cleaned)
+              block = cleaned
+              swapLog.push(`${slot.key}:stripped_svg_blip:${slot.embedId}`)
+            }
+          }
+        }
+
+        swappedKeys.add(slot.key)
+        swapLog.push(`${slot.key}:docx_media_only:${existingBefore ? 'reuse_rel' : 'new_rel'}`)
+        continue
+      }
+
+      // PPTX + other non-church DOCX: new media rel + shape replace
+      if (existingBefore && !isChurchSignature) {
         zip.file(existingBefore, img.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
           ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
         }
-        swapLog.push(`${slot.key}:overwrite_placeholder:${existingBefore}`)
+        swapLog.push(`${slot.key}:overwrite:${existingBefore}`)
       }
 
       mediaSeq += 1
@@ -1396,20 +1702,6 @@ async function mergeOfficeBytes(
         xml = xml.split(oldBlock).join(pic)
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
-      } else if (isChurchSignature) {
-        // Certificate-style: replace whole shape. Reuse original rId when placeholder media was overwritten.
-        docPrSeq += 1
-        const drawRId = (!isPptx && existingBefore) ? slot.embedId : rId
-        const replaced = docxReplaceSignaturePicture(xml, oldBlock, slot.embedId, drawRId, slot.key, docPrSeq)
-        if (replaced) {
-          xml = replaced.xml
-          swappedKeys.add(slot.key)
-          docPartSigSwapped = true
-          const relNote = drawRId === slot.embedId ? ':reuse_rel' : ''
-          swapLog.push(`${slot.key}:${replaced.method}:${drawRId}${relNote}`)
-        } else {
-          swapLog.push(`${slot.key}:docx_replace_failed:embed=${slot.embedId}`)
-        }
       } else {
         const extent = extractWordInlineExtent(oldBlock)
         if (/<w:drawing\b/i.test(oldBlock) && xml.includes(oldBlock)) {
@@ -1515,7 +1807,7 @@ async function mergeOfficeBytes(
       }
     }
 
-    // 2b) DOCX alt-text fallback — certificate-style replace when slot loop missed (alt text, no {tag} text)
+    // 2b) DOCX alt-text fallback — media-only when placeholder media exists (never rebuild wp:anchor)
     if (!isPptx) {
       for (const [key, img] of Object.entries(signatureImages)) {
         if (swappedKeys.has(key) || !IMAGE_PLACEHOLDER_MAP[key]) continue
@@ -1524,30 +1816,49 @@ async function mergeOfficeBytes(
 
         const existingBefore = mediaPathFromRels(relsXml, target.embedId, name)
         if (existingBefore) {
-          zip.file(existingBefore, img.bytes)
-          if (ctXml) {
-            ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-            ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+          const useImg = await normalizeImageToPng(img)
+          const written = writeSignaturePlaceholderMedia(
+            zip, ctXml, relsXml, relTargetPrefix, target.embedId, existingBefore, useImg,
+          )
+          relsXml = written.relsXml
+          ctXml = written.ctXml
+          if (written.relsDirty) relsDirty = true
+
+          let block = target.block
+          if (block && xml.includes(block)) {
+            const refreshed = refreshDocxPictureBlipInBlock(block, target.embedId)
+            if (refreshed !== block) {
+              xml = xml.split(block).join(refreshed)
+              swapLog.push(`${key}:docx_refresh_blip:${target.embedId}`)
+            } else {
+              const cleaned = stripDocxSvgBlips(retargetPictureBlock(block, target.embedId, target.embedId))
+              if (cleaned !== block) {
+                xml = xml.split(block).join(cleaned)
+                swapLog.push(`${key}:stripped_svg_blip:${target.embedId}`)
+              }
+            }
           }
+
+          swappedKeys.add(key)
+          swapLog.push(`${key}:docx_media_only_alt:reuse_rel:${written.mediaPath}`)
+          continue
         }
 
-        let drawRId = target.embedId
-        if (!existingBefore) {
-          mediaSeq += 1
-          const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
-          const mediaPath = `${mediaFolder}/${mediaName}`
-          zip.file(mediaPath, img.bytes)
-          if (ctXml) {
-            ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
-            ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
-          }
-          drawRId = nextRelationshipId(relsXml)
-          relsXml = relsXml.replace(
-            '</Relationships>',
-            `<Relationship Id="${drawRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
-          )
-          relsDirty = true
+        mediaSeq += 1
+        const useImg = await normalizeImageToPng(img)
+        const mediaName = `sign_${key}_${mediaSeq}.${useImg.ext}`
+        const mediaPath = `${mediaFolder}/${mediaName}`
+        zip.file(mediaPath, useImg.bytes)
+        if (ctXml) {
+          ctXml = ensureContentTypeDefault(ctXml, useImg.ext, useImg.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, useImg.contentType)
         }
+        const drawRId = nextRelationshipId(relsXml)
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${drawRId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+        )
+        relsDirty = true
 
         docPrSeq += 1
         const replaced = docxReplaceSignaturePicture(xml, target.block, target.embedId, drawRId, key, docPrSeq)
@@ -1555,8 +1866,9 @@ async function mergeOfficeBytes(
           xml = replaced.xml
           swappedKeys.add(key)
           docPartSigSwapped = true
-          const relNote = drawRId === target.embedId ? ':reuse_rel' : ''
-          swapLog.push(`${key}:${replaced.method}_alt_fallback:${drawRId}${relNote}`)
+          swapLog.push(`${key}:${replaced.method}_alt_fallback:${drawRId}`)
+        } else if (/<wp:anchor\b/i.test(target.block)) {
+          swapLog.push(`${key}:docx_anchor_skip_alt:no_media`)
         }
       }
     }
@@ -1719,46 +2031,58 @@ async function probeGoogleReady(admin: ReturnType<typeof createClient>) {
 }
 
 /** Upload merged Office file → Google Docs/Slides → export PDF → delete temp */
-async function convertOfficeViaGoogleDrive(
+async function driveUploadConvertExport(
   accessToken: string,
   fileBytes: Uint8Array,
   displayName: string,
   parentFolderId: string | null,
-  format: 'docx' | 'pptx' = 'docx',
+  format: 'docx' | 'pptx',
 ) {
   const boundary = `pc_${crypto.randomUUID().replace(/-/g, '')}`
   const googleMime = format === 'pptx' ? GSLIDES_MIME : GDOC_MIME
   const uploadMime = format === 'pptx' ? PPTX_MIME : DOCX_MIME
-  const meta: Record<string, unknown> = {
-    name: displayName.replace(/\.(docx|pptx)$/i, '').slice(0, 120),
-    mimeType: googleMime,
+  const safeName = displayName.replace(/\.(docx|pptx)$/i, '').slice(0, 120)
+
+  function buildBody(useParent: string | null) {
+    const meta: Record<string, unknown> = { name: safeName, mimeType: googleMime }
+    if (useParent) meta.parents = [useParent]
+    const enc = new TextEncoder()
+    const head = enc.encode(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${JSON.stringify(meta)}\r\n` +
+      `--${boundary}\r\nContent-Type: ${uploadMime}\r\n\r\n`,
+    )
+    const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+    return concatBytes([head, fileBytes, tail])
   }
-  if (parentFolderId) meta.parents = [parentFolderId]
 
-  const enc = new TextEncoder()
-  const head = enc.encode(
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    `${JSON.stringify(meta)}\r\n` +
-    `--${boundary}\r\nContent-Type: ${uploadMime}\r\n\r\n`,
-  )
-  const tail = enc.encode(`\r\n--${boundary}--\r\n`)
-  const body = concatBytes([head, fileBytes, tail])
-
-  const upRes = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
+  async function tryUpload(useParent: string | null) {
+    const upRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        },
+        body: buildBody(useParent),
       },
-      body,
-    },
-  )
-  const upJson = await upRes.json().catch(() => ({}))
-  if (!upRes.ok) {
-    throw new Error(upJson?.error?.message || `Google Drive upload failed (${upRes.status})`)
+    )
+    const upJson = await upRes.json().catch(() => ({}))
+    return { upRes, upJson }
   }
+
+  let { upRes, upJson } = await tryUpload(parentFolderId)
+  if (!upRes.ok && parentFolderId && (upRes.status === 400 || upRes.status === 404)) {
+    const retry = await tryUpload(null)
+    upRes = retry.upRes
+    upJson = retry.upJson
+  }
+  if (!upRes.ok) {
+    const reason = upJson?.error?.message || upJson?.error?.errors?.[0]?.reason || `HTTP ${upRes.status}`
+    throw new Error(`Google Drive upload failed: ${reason}`)
+  }
+
   const fileId = upJson.id as string
   if (!fileId) throw new Error('Google Drive upload returned no file id')
 
@@ -1769,7 +2093,7 @@ async function convertOfficeViaGoogleDrive(
     )
     if (!exportRes.ok) {
       const errText = await exportRes.text().catch(() => '')
-      throw new Error(`Google PDF export failed (${exportRes.status}): ${errText.slice(0, 200)}`)
+      throw new Error(`Google PDF export failed (${exportRes.status}): ${errText.slice(0, 240)}`)
     }
     const pdfBytes = new Uint8Array(await exportRes.arrayBuffer())
     if (!pdfBytes.length) throw new Error('Google returned empty PDF')
@@ -1780,6 +2104,16 @@ async function convertOfficeViaGoogleDrive(
       headers: { Authorization: `Bearer ${accessToken}` },
     }).catch(() => null)
   }
+}
+
+async function convertOfficeViaGoogleDrive(
+  accessToken: string,
+  fileBytes: Uint8Array,
+  displayName: string,
+  parentFolderId: string | null,
+  format: 'docx' | 'pptx' = 'docx',
+) {
+  return driveUploadConvertExport(accessToken, fileBytes, displayName, parentFolderId, format)
 }
 
 async function convertDocxViaGoogleDrive(
@@ -1947,7 +2281,11 @@ serve(async (req) => {
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        return json({ error: `google_drive: ${msg}` }, 500)
+        return json({
+          error: `google_drive: ${msg}`,
+          signature_merge: mergeMeta,
+          merged_bytes: mergedBytes.length,
+        }, 500)
       }
 
       const year = new Date().getFullYear()

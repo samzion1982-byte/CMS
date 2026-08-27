@@ -87,6 +87,7 @@ export function normalizeImagePlaceholderKey(raw) {
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
   const norm = s.toLowerCase().replace(/[\s-]+/g, '_')
   if (IMAGE_PLACEHOLDER_CANONICAL[norm]) return IMAGE_PLACEHOLDER_CANONICAL[norm]
+  if (norm === 'member_photo' || norm === 'memberphoto') return 'member_photo'
   for (const key of IMAGE_PLACEHOLDER_KEYS) {
     if (norm === key.toLowerCase()) return key
   }
@@ -270,9 +271,18 @@ export async function invokePrintCorner(body) {
       try {
         const parsed = await error.context.json()
         if (parsed?.error) detail = parsed.error
-      } catch { /* ignore */ }
+        if (parsed?.signature_merge) {
+          const err = new Error(detail)
+          err.signatureMerge = parsed.signature_merge
+          throw err
+        }
+      } catch (parseErr) {
+        if (parseErr?.signatureMerge) throw parseErr
+      }
     }
-    throw new Error(detail)
+    const err = new Error(detail)
+    if (data?.signature_merge) err.signatureMerge = data.signature_merge
+    throw err
   }
   if (data?.error) throw new Error(data.error)
   return data
@@ -619,20 +629,37 @@ export async function parseOfficePlaceholders(fileOrBlob) {
 
   const found = new Set()
   const textRe = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-  const attrRe = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi
+  const attrRes = [
+    /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi,
+    /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*'([^']*)'/gi,
+  ]
+
+  function scanAltValue(val) {
+    const fromAlt = normalizeImagePlaceholderKey(val)
+    if (fromAlt) found.add(fromAlt)
+    const braced = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
+    let m
+    while ((m = braced.exec(val)) !== null) {
+      const k = normalizeImagePlaceholderKey(m[1])
+      if (k) found.add(k)
+      else found.add(m[1])
+    }
+    const bare = String(val || '').replace(/^\{+/, '').replace(/\}+$/, '').trim()
+    const bareNorm = bare.toLowerCase().replace(/[\s-]+/g, '_')
+    if (bareNorm === 'member_photo' || bareNorm === 'memberphoto' || bareNorm === 'photo') {
+      found.add('member_photo')
+    } else if (isImagePlaceholderKey(bare)) {
+      found.add(normalizeImagePlaceholderKey(bare) || bare)
+    }
+  }
 
   for (const name of xmlNames) {
     const docXml = await zip.file(name).async('string')
 
-    for (const dm of docXml.matchAll(attrRe)) {
-      const val = String(dm[1] || '').trim()
-      const fromAlt = normalizeImagePlaceholderKey(val)
-      if (fromAlt) found.add(fromAlt)
-      let m
-      const braced = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-      while ((m = braced.exec(val)) !== null) {
-        const k = normalizeImagePlaceholderKey(m[1])
-        if (k) found.add(k)
+    for (const attrRe of attrRes) {
+      attrRe.lastIndex = 0
+      for (const dm of docXml.matchAll(attrRe)) {
+        scanAltValue(dm[1])
       }
     }
 
@@ -738,12 +765,13 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
     id: template.id,
     storage_path: storagePath,
   }
-  if (updateVariables && keys.length) {
-    patch.variables = variablesFromPlaceholderKeys(keys, template.variables)
+  if (updateVariables) {
+    patch.variables = finalizeTemplateVariables(keys, template.variables)
   }
 
   const saved = await savePrintCornerTemplate(patch)
-  return { template: saved, placeholders: keys, variables: patch.variables || normalizeTemplateVariables(saved.variables) }
+  const finalized = patch.variables || normalizeTemplateVariables(saved.variables)
+  return { template: saved, placeholders: keys, variables: finalized }
 }
 
 export function normalizeTemplateVariables(raw) {
@@ -772,14 +800,45 @@ export function imageFieldVariables(variables) {
   return normalizeTemplateVariables(variables).filter(v => isImagePlaceholderKey(v.key))
 }
 
-export function templateHasMemberPhoto(variables) {
-  return normalizeTemplateVariables(variables).some(v => v.key === 'member_photo')
+export function templateMetaFromTemplate(template, categoryName = '') {
+  return {
+    label: template?.label,
+    template_key: template?.template_key,
+    categoryName: String(categoryName || ''),
+  }
+}
+
+function templateLooksLikeIdCard(meta = {}) {
+  const hay = `${meta.label || ''} ${meta.template_key || ''} ${meta.categoryName || ''}`.toLowerCase()
+  return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
+}
+
+export function templateHasMemberPhoto(variables, meta = null) {
+  if (normalizeTemplateVariables(variables).some(v => v.key === 'member_photo')) return true
+  if (meta && templateLooksLikeIdCard(meta)) return true
+  return false
+}
+
+/** Merge scanned + saved keys; ensure member_id when photo placeholder is used. */
+export function finalizeTemplateVariables(keys, existing = []) {
+  const keySet = new Set()
+  for (const k of keys || []) {
+    const t = String(k || '').trim()
+    if (t) keySet.add(t)
+  }
+  for (const v of normalizeTemplateVariables(existing)) {
+    if (v.key) keySet.add(v.key)
+  }
+  if (keySet.has('member_photo') && !keySet.has('member_id') && !keySet.has('Member_id')) {
+    keySet.add('member_id')
+  }
+  return normalizeTemplateVariables(variablesFromPlaceholderKeys([...keySet], existing))
 }
 
 /** Text fields shown in wizard + tracker; injects member_id when template uses {member_photo}. */
-export function wizardTextVariables(variables) {
+export function wizardTextVariables(variables, meta = null) {
   const text = textFieldVariables(variables)
-  if (!templateHasMemberPhoto(variables)) return text
+  if (!templateHasMemberPhoto(variables, meta)) return text
   if (text.some(v => v.key === 'member_id' || v.key === 'Member_id')) return text
   return [
     { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
@@ -950,9 +1009,10 @@ export function churchSetupValueForKey(key, church) {
   return String(patch[key] ?? '').trim()
 }
 
-export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
+export function defaultFieldValuesFromTemplate(template, church = null, member = null, categoryName = '') {
   const out = {}
-  for (const v of wizardTextVariables(template?.variables)) {
+  const meta = templateMetaFromTemplate(template, categoryName)
+  for (const v of wizardTextVariables(template?.variables, meta)) {
     if (v.key) out[v.key] = ''
   }
   if (church) applyChurchToFieldValues(out, church)

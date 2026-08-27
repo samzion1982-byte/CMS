@@ -41,6 +41,8 @@ import {
   wizardTextVariables,
   imageFieldVariables,
   templateHasMemberPhoto,
+  templateMetaFromTemplate,
+  finalizeTemplateVariables,
   isChurchSetupFieldKey,
   churchSetupValueForKey,
   normalizePrintCornerFieldKey,
@@ -286,7 +288,7 @@ export default function PrintCornerPage() {
     setMemberHits([])
     setSharePhone('')
     setShareEmail('')
-    setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
+    setFieldValues(defaultFieldValuesFromTemplate(selected, church, null, selectedCategoryName))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -442,9 +444,21 @@ export default function PrintCornerPage() {
     return TEMPLATE_TYPES[selected.template_type] || TEMPLATE_TYPES.letter
   }, [selected])
 
+  const selectedCategoryName = useMemo(() => {
+    if (!selected) return ''
+    const g = groups.find(x => x.category.id === selected.category_id)
+      || groups.find(x => x.templates.some(t => t.id === selected.id))
+    return g?.category?.name || ''
+  }, [groups, selected])
+
+  const templateMeta = useMemo(
+    () => templateMetaFromTemplate(selected, selectedCategoryName),
+    [selected, selectedCategoryName],
+  )
+
   const variables = useMemo(
-    () => wizardTextVariables(selected?.variables),
-    [selected],
+    () => wizardTextVariables(selected?.variables, templateMeta),
+    [selected, templateMeta],
   )
 
   function resolvedFieldValue(key) {
@@ -488,8 +502,8 @@ export default function PrintCornerPage() {
   )
 
   const needsMemberPhoto = useMemo(
-    () => templateHasMemberPhoto(selected?.variables),
-    [selected],
+    () => templateHasMemberPhoto(selected?.variables, templateMeta),
+    [selected, templateMeta],
   )
 
   const churchImageVariables = useMemo(
@@ -608,7 +622,7 @@ export default function PrintCornerPage() {
     setMemberHits([])
     setSharePhone('')
     setShareEmail('')
-    if (selected) setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
+    if (selected) setFieldValues(defaultFieldValuesFromTemplate(selected, church, null, selectedCategoryName))
   }
 
   async function handleMemberIdLookup(rawId) {
@@ -1059,6 +1073,11 @@ export default function PrintCornerPage() {
         'Google Drive login expired. Open Backup → Disconnect Google → Connect Google again, then retry.',
         'error',
       )
+    } else if (/bad request|invalid.*folder|not found/i.test(raw)) {
+      toast(
+        'Google rejected the merged Word file (not a login issue). Redeploy cms-print-corner with the latest index.ts, then retry Issue PDF.',
+        'error',
+      )
     } else {
       toast(raw, 'error')
     }
@@ -1105,28 +1124,6 @@ export default function PrintCornerPage() {
         console.info('[Print Corner] signature_merge', res.signature_merge)
       }
 
-      const swapped = res?.signature_merge?.swapped || []
-      const swapLog = res?.signature_merge?.swap_log || []
-      const presbyterLog = swapLog.filter(l => String(l).includes('presbyter')).join(' · ')
-      const sigReady = signatureImageStatuses.some(s => s.key === 'presbyter_sign' && s.ready)
-      if (sigReady && !swapped.includes('presbyter_sign')) {
-        const hint = presbyterLog
-          || res?.signature_merge?.slots_found?.filter(s => String(s).includes('presbyter')).join('; ')
-        toast(
-          hint
-            ? `Presbyter signature not placed (${hint}). Redeploy cms-print-corner, then re-issue.`
-            : 'Presbyter signature not placed — set picture Alt Text to {presbyter_sign} on the placeholder image.',
-          'error',
-        )
-      } else if (sigReady && swapped.includes('presbyter_sign')) {
-        toast(
-          presbyterLog
-            ? `PDF created — signature merged (${presbyterLog}).`
-            : 'PDF created — presbyter signature merged.',
-          'success',
-        )
-      }
-
       const photoMerged = res?.signature_merge?.swapped?.includes('member_photo')
       if (needsMemberPhoto && res?.member_photo_warning) {
         toast(res.member_photo_warning, 'error')
@@ -1137,10 +1134,11 @@ export default function PrintCornerPage() {
           'Photo loaded but not placed — set picture Alt Text to {member_photo} on the circular photo in Canva, then re-upload.',
           'error',
         )
-      } else if (!(sigReady && swapped.includes('presbyter_sign'))) {
-        toast('PDF created and saved to issued folder.', 'success')
       }
     } catch (e) {
+      if (import.meta.env.DEV && e?.signatureMerge) {
+        console.info('[Print Corner] signature_merge (failed)', e.signatureMerge)
+      }
       pdfErrorToast(e.message || 'Convert failed')
     } finally {
       setBusy(false)
@@ -1167,7 +1165,7 @@ export default function PrintCornerPage() {
     setBusy(true)
     setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
     try {
-      const { count, fileName, pageCount, output } = await convertBulkLettersToPdf({
+      await convertBulkLettersToPdf({
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
@@ -1175,11 +1173,6 @@ export default function PrintCornerPage() {
         onProgress: setBulkProgress,
         output: bulkOutput === 'zip' ? 'zip' : 'single',
       })
-      if (output === 'zip') {
-        toast(`${count} PDF(s) downloaded in ${fileName}`, 'success')
-      } else {
-        toast(`${count} document(s) → ${pageCount} page PDF — downloaded ${fileName}`, 'success')
-      }
     } catch (e) {
       pdfErrorToast(e.message || 'Bulk convert failed')
     } finally {
