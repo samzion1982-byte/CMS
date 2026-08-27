@@ -1106,9 +1106,11 @@ export default function PrintCornerPage() {
       }
 
       const swapped = res?.signature_merge?.swapped || []
+      const swapLog = res?.signature_merge?.swap_log || []
+      const presbyterLog = swapLog.filter(l => String(l).includes('presbyter')).join(' · ')
       const sigReady = signatureImageStatuses.some(s => s.key === 'presbyter_sign' && s.ready)
       if (sigReady && !swapped.includes('presbyter_sign')) {
-        const hint = res?.signature_merge?.swap_log?.filter(l => String(l).includes('presbyter')).join('; ')
+        const hint = presbyterLog
           || res?.signature_merge?.slots_found?.filter(s => String(s).includes('presbyter')).join('; ')
         toast(
           hint
@@ -1117,7 +1119,12 @@ export default function PrintCornerPage() {
           'error',
         )
       } else if (sigReady && swapped.includes('presbyter_sign')) {
-        toast('PDF created — presbyter signature merged.', 'success')
+        toast(
+          presbyterLog
+            ? `PDF created — signature merged (${presbyterLog}).`
+            : 'PDF created — presbyter signature merged.',
+          'success',
+        )
       }
 
       const photoMerged = res?.signature_merge?.swapped?.includes('member_photo')

@@ -809,6 +809,88 @@ function extractWordInlineExtent(block: string): { cx: string, cy: string } | nu
   return null
 }
 
+/** Locate the exact w:drawing / w:pict block containing an embed id (handles xml.includes mismatches). */
+function findExactWordDrawingByEmbedId(xml: string, embedId: string): string | null {
+  const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const needle = new RegExp(`(?:r:embed|r:id)\\s*=\\s*"${esc}"`, 'i')
+  for (const c of findPictureContainers(xml)) {
+    if ((c.tag === 'w:drawing' || c.tag === 'w:pict') && needle.test(c.block)) return c.block
+  }
+  const re = new RegExp(`<w:drawing\\b[\\s\\S]*?${esc}[\\s\\S]*?<\\/w:drawing>`, 'i')
+  return re.exec(xml)?.[0] || null
+}
+
+/** Find Word drawing for an alt-text key (Pass B — mirrors certificate grpSp / nearby binding). */
+function findDocxDrawingForAltKey(xml: string, key: string): { block: string, embedId: string } | null {
+  const hits = findAltTextHits(xml).filter(h => h.key === key)
+  if (!hits.length) return null
+  const containers = findPictureContainers(xml).filter(c => c.tag === 'w:drawing' || c.tag === 'w:pict')
+  let best: { block: string, embedId: string, score: number } | null = null
+  for (const hit of hits) {
+    for (const c of containers) {
+      const embedId = extractBlipEmbedId(c.block)
+      if (!embedId) continue
+      let score: number
+      if (hit.index >= c.start && hit.index < c.end) score = c.end - c.start
+      else {
+        score = hit.index < c.start ? c.start - hit.index : hit.index - c.end
+        if (score > 8000) continue
+        score += 10000
+      }
+      if (!best || score < best.score) best = { block: c.block, embedId, score }
+    }
+  }
+  return best ? { block: best.block, embedId: best.embedId } : null
+}
+
+/**
+ * DOCX church signature swap — same strategy as certificate PPTX:
+ * new media rel + replace the whole picture shape (preserveSize), with retarget fallback.
+ */
+function docxReplaceSignaturePicture(
+  xml: string,
+  oldBlock: string,
+  embedId: string,
+  rId: string,
+  key: string,
+  docPrId: number,
+): { xml: string, method: string } | null {
+  let block = oldBlock
+  if (!xml.includes(block)) {
+    const exact = findExactWordDrawingByEmbedId(xml, embedId)
+    if (exact) block = exact
+  }
+  if (!block || !xml.includes(block)) return null
+
+  const isSeal = key === 'treasurer_seal'
+  const extent = extractWordInlineExtent(block)
+
+  // Floating Word images (common in letter headers): new media rel + retarget anchor (like PPTX new rId)
+  if (/<wp:anchor\b/i.test(block)) {
+    const retargeted = stripDocxSvgBlips(retargetPictureBlock(block, embedId, rId))
+    if (retargeted !== block) {
+      return { xml: xml.split(block).join(retargeted), method: 'docx_retarget_anchor' }
+    }
+  }
+
+  // Certificate-style: brand-new clean inline picture at preserved size (pptx replace_shape + preserveSize)
+  if (/<w:drawing\b/i.test(block)) {
+    const drawing = signatureDrawingXml(rId, docPrId, key, isSeal, extent?.cx, extent?.cy)
+    return { xml: xml.split(block).join(drawing), method: 'docx_replace_shape' }
+  }
+  if (/<w:pict\b/i.test(block)) {
+    const drawing = signatureDrawingXml(rId, docPrId, key, isSeal, extent?.cx, extent?.cy)
+    return { xml: xml.split(block).join(drawing), method: 'docx_replace_vml' }
+  }
+
+  // Fallback: retarget blip inside existing block (keeps wp:anchor layout)
+  const retargeted = stripDocxSvgBlips(retargetPictureBlock(block, embedId, rId))
+  if (retargeted !== block) {
+    return { xml: xml.split(block).join(retargeted), method: 'docx_retarget_shape' }
+  }
+  return null
+}
+
 /** Inline signature fallback when using text {presbyter_sign} (not preferred) */
 function signatureDrawingXml(
   rId: string,
@@ -1272,9 +1354,20 @@ async function mergeOfficeBytes(
         xml = xml.split(oldBlock).join(pic)
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
+      } else if (isChurchSignature) {
+        // Same as certificate path: new media rel + replace whole picture shape
+        docPrSeq += 1
+        const replaced = docxReplaceSignaturePicture(xml, oldBlock, slot.embedId, rId, slot.key, docPrSeq)
+        if (replaced) {
+          xml = replaced.xml
+          swappedKeys.add(slot.key)
+          docPartSigSwapped = true
+          swapLog.push(`${slot.key}:${replaced.method}:${rId}`)
+        } else {
+          swapLog.push(`${slot.key}:docx_replace_failed:embed=${slot.embedId}`)
+        }
       } else {
         const extent = extractWordInlineExtent(oldBlock)
-        // Replace whole Word drawing so Google Drive PDF conversion picks up the new image rel
         if (/<w:drawing\b/i.test(oldBlock) && xml.includes(oldBlock)) {
           docPrSeq += 1
           const drawing = signatureDrawingXml(
@@ -1287,7 +1380,7 @@ async function mergeOfficeBytes(
           )
           xml = xml.split(oldBlock).join(drawing)
           swappedKeys.add(slot.key)
-          docPartSigSwapped = docPartSigSwapped || isChurchSignature
+          docPartSigSwapped = true
           swapLog.push(`${slot.key}:docx_replace_drawing:${rId}`)
         } else if (/<w:pict\b/i.test(oldBlock) && xml.includes(oldBlock)) {
           docPrSeq += 1
@@ -1301,20 +1394,17 @@ async function mergeOfficeBytes(
           )
           xml = xml.split(oldBlock).join(drawing)
           swappedKeys.add(slot.key)
-          docPartSigSwapped = docPartSigSwapped || isChurchSignature
+          docPartSigSwapped = true
           swapLog.push(`${slot.key}:docx_replace_vml_pict:${rId}`)
         } else {
           const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
           if (newBlock !== oldBlock && xml.includes(oldBlock)) {
             xml = xml.split(oldBlock).join(newBlock)
             swappedKeys.add(slot.key)
-            docPartSigSwapped = docPartSigSwapped || isChurchSignature
+            docPartSigSwapped = true
             swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
-          } else if (existingBefore) {
-            swappedKeys.add(slot.key)
-            swapLog.push(`${slot.key}:overwrite_only:${existingBefore}`)
           } else {
-            swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
+            swapLog.push(`${slot.key}:failed_no_xml_match:embed=${slot.embedId}`)
           }
         }
       }
@@ -1378,6 +1468,40 @@ async function mergeOfficeBytes(
         xml = injectImageAtPlaceholder(xml, key, drawing)
         swappedKeys.add(key)
         swapLog.push(`${key}:text_inject`)
+      }
+    }
+
+    // 2b) DOCX alt-text fallback — certificate-style replace when slot loop missed (alt text, no {tag} text)
+    if (!isPptx) {
+      for (const [key, img] of Object.entries(signatureImages)) {
+        if (swappedKeys.has(key) || !IMAGE_PLACEHOLDER_MAP[key]) continue
+        const target = findDocxDrawingForAltKey(xml, key)
+        if (!target) continue
+
+        mediaSeq += 1
+        const mediaName = `sign_${key}_${mediaSeq}.${img.ext}`
+        const mediaPath = `${mediaFolder}/${mediaName}`
+        zip.file(mediaPath, img.bytes)
+        if (ctXml) {
+          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, img.contentType)
+        }
+
+        const rId = nextRelationshipId(relsXml)
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+        )
+        relsDirty = true
+
+        docPrSeq += 1
+        const replaced = docxReplaceSignaturePicture(xml, target.block, target.embedId, rId, key, docPrSeq)
+        if (replaced) {
+          xml = replaced.xml
+          swappedKeys.add(key)
+          docPartSigSwapped = true
+          swapLog.push(`${key}:${replaced.method}_alt_fallback:${rId}`)
+        }
       }
     }
 
