@@ -1490,12 +1490,24 @@ serve(async (req) => {
       if (memberPhoto) signatureImages.member_photo = memberPhoto
       signatureLoadDebug.member_photo = memberPhotoDebug
 
-      // Church Setup wins for letterhead / office-bearer placeholders (case variants too).
-      // Always set these keys so {presbyter_name} is replaced even when empty (clears leftovers).
+      // Church Setup fills letterhead / office-bearer placeholders unless the wizard sent an override.
       const mergedFieldValues: Record<string, unknown> = { ...(fieldValues || {}) }
+      const overridableChurchKeys = new Set(['church_name', 'presbyter_name', 'pastor_name'])
       const churchKeys = ['church_name', 'Church_name', 'presbyter_name', 'pastor_name', 'diocese', 'secretary_name', 'treasurer_name', 'address']
+
+      function clientOverridesChurchKey(canonicalKey: string): boolean {
+        if (!overridableChurchKeys.has(canonicalKey.toLowerCase())) return false
+        for (const [key, raw] of Object.entries(mergedFieldValues)) {
+          if (key.toLowerCase() === canonicalKey.toLowerCase() && raw != null && String(raw).trim()) {
+            return true
+          }
+        }
+        return false
+      }
+
       for (const ck of churchKeys) {
         if (!(ck in (churchMergeFields || {}))) continue
+        if (clientOverridesChurchKey(ck)) continue
         const cv = churchMergeFields[ck]
         mergedFieldValues[ck] = cv == null ? '' : String(cv)
       }
@@ -1503,6 +1515,7 @@ serve(async (req) => {
         const lower = key.toLowerCase()
         for (const ck of churchKeys) {
           if (ck.toLowerCase() === lower && ck in (churchMergeFields || {})) {
+            if (clientOverridesChurchKey(ck)) continue
             const cv = churchMergeFields[ck]
             mergedFieldValues[key] = cv == null ? '' : String(cv)
           }

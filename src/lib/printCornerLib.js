@@ -826,6 +826,12 @@ export function isChurchSetupFieldKey(key) {
   ].includes(n)
 }
 
+/** Church Setup fields the user may override per letter (e.g. Pastorate vs Church). */
+export function isOverridableChurchFieldKey(key) {
+  const n = normalizePrintCornerFieldKey(key)
+  return ['church_name', 'presbyter_name', 'pastor_name'].includes(n)
+}
+
 /** Skip legacy pastor_name values that are actually church labels, not a person. */
 function looksLikeChurchLabelNotPerson(value, churchName) {
   const s = String(value || '').trim()
@@ -846,8 +852,9 @@ export function resolvePresbyterDisplayName(church) {
   return ''
 }
 
-export function applyChurchToFieldValues(out, church) {
+export function applyChurchToFieldValues(out, church, options = {}) {
   if (!out || !church) return out || {}
+  const { preserveOverrides = false } = options
   const next = { ...out }
   const churchName = church.church_name || ''
   const presbyter = resolvePresbyterDisplayName(church)
@@ -857,6 +864,9 @@ export function applyChurchToFieldValues(out, church) {
   const treasurer = church.treasurer_name || ''
 
   for (const key of Object.keys(next)) {
+    if (preserveOverrides && isOverridableChurchFieldKey(key) && String(next[key] ?? '').trim()) {
+      continue
+    }
     const n = normalizePrintCornerFieldKey(key)
     if (n === 'church_name') next[key] = churchName
     else if (n === 'presbyter_name' || n === 'pastor_name') next[key] = presbyter

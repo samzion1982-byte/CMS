@@ -27,6 +27,7 @@ import {
   defaultFieldValuesFromTemplate,
   applyMemberToFieldValues,
   applyChurchToFieldValues,
+  isOverridableChurchFieldKey,
   searchPrintCornerMembers,
   getPrintCornerMemberById,
   memberPhotoExistsInStorage,
@@ -37,6 +38,7 @@ import {
   templateHasMemberPhoto,
   isChurchSetupFieldKey,
   churchSetupValueForKey,
+  normalizePrintCornerFieldKey,
   getPrintCornerImagePlaceholderStatus,
   sortPrintCornerTemplates,
   sortPrintCornerCategories,
@@ -267,7 +269,7 @@ export default function PrintCornerPage() {
   // Church profile often loads after the template — refill church-owned fields without wiping member edits
   useEffect(() => {
     if (!selected || !church) return
-    setFieldValues(prev => applyChurchToFieldValues({ ...prev }, church))
+    setFieldValues(prev => applyChurchToFieldValues({ ...prev }, church, { preserveOverrides: true }))
   }, [church, selected?.id, step])
 
   // Letter / certificate PDF preview — uses cached preview.pdf when available
@@ -421,6 +423,41 @@ export default function PrintCornerPage() {
     [selected],
   )
 
+  function resolvedFieldValue(key) {
+    if (isOverridableChurchFieldKey(key)) {
+      const churchVal = church ? churchSetupValueForKey(key, church) : ''
+      const stored = fieldValues[key]
+      return stored != null && String(stored).trim() !== '' ? stored : churchVal
+    }
+    if (isChurchSetupFieldKey(key) && church) return churchSetupValueForKey(key, church)
+    return fieldValues[key] ?? ''
+  }
+
+  function setOverridableField(key, val) {
+    clearBulk()
+    setFieldValues(f => {
+      const next = { ...f, [key]: val }
+      const n = normalizePrintCornerFieldKey(key)
+      if (n === 'presbyter_name' || n === 'pastor_name') {
+        for (const other of variables) {
+          const on = normalizePrintCornerFieldKey(other.key)
+          if ((n === 'presbyter_name' && on === 'pastor_name') || (n === 'pastor_name' && on === 'presbyter_name')) {
+            next[other.key] = val
+          }
+        }
+      }
+      return next
+    })
+  }
+
+  function buildIssueFieldValues() {
+    const out = { ...fieldValues }
+    for (const v of variables) {
+      out[v.key] = resolvedFieldValue(v.key)
+    }
+    return out
+  }
+
   const imageVariables = useMemo(
     () => imageFieldVariables(selected?.variables),
     [selected],
@@ -458,6 +495,8 @@ export default function PrintCornerPage() {
       || keysOfType.has(d.template_key),
     )
   }, [drafts, selected, groups])
+
+  const showDrafts = !!selected && selected.template_type !== 'certificate'
 
   function clearBulk() {
     setBulkRows([])
@@ -503,7 +542,7 @@ export default function PrintCornerPage() {
       const base = {}
       for (const key of keys) base[key] = prev[key] ?? ''
       const withMember = applyMemberToFieldValues(base, member, keys)
-      return church ? applyChurchToFieldValues(withMember, church) : withMember
+      return church ? applyChurchToFieldValues(withMember, church, { preserveOverrides: true }) : withMember
     })
   }
 
@@ -679,7 +718,7 @@ export default function PrintCornerPage() {
         member_id: fieldValues.member_id || null,
         status: 'draft',
         wizard_step: step,
-        field_values: fieldValues,
+        field_values: buildIssueFieldValues(),
         include_tamil: includeTamil,
         created_by: profile?.id,
         created_by_email: profile?.email,
@@ -699,7 +738,7 @@ export default function PrintCornerPage() {
     if (tpl) setSelected(tpl)
     setDraftId(d.id)
     const draftValues = d.field_values || {}
-    setFieldValues(church ? applyChurchToFieldValues({ ...draftValues }, church) : draftValues)
+    setFieldValues(church ? applyChurchToFieldValues({ ...draftValues }, church, { preserveOverrides: true }) : draftValues)
     setIncludeTamil(!!d.include_tamil)
     setBulkRows([])
     setSelectedMember(null)
@@ -824,7 +863,7 @@ export default function PrintCornerPage() {
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
         memberId: fieldValues.member_id || null,
-        fieldValues,
+        fieldValues: buildIssueFieldValues(),
         issue: true,
         source: 'manual',
       })
@@ -1264,10 +1303,16 @@ export default function PrintCornerPage() {
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
             {variables.map(v => {
               const fromChurch = isChurchSetupFieldKey(v.key)
+              const overridable = isOverridableChurchFieldKey(v.key)
               const churchVal = fromChurch && church ? churchSetupValueForKey(v.key, church) : ''
-              const displayValue = fromChurch ? churchVal : (fieldValues[v.key] ?? '')
-              const emptyChurch = fromChurch && church && !churchVal
+              const displayValue = overridable
+                ? resolvedFieldValue(v.key)
+                : fromChurch
+                  ? churchVal
+                  : (fieldValues[v.key] ?? '')
+              const emptyChurch = fromChurch && church && !String(displayValue ?? '').trim()
               const churchLoading = fromChurch && !church
+              const readOnly = fromChurch && !overridable
               const isPastorKey = ['presbyter_name', 'pastor_name'].includes(
                 String(v.key || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
               )
@@ -1277,19 +1322,22 @@ export default function PrintCornerPage() {
                     {v.label || v.key}
                     {fromChurch && (
                       <span style={{ fontSize: 11, fontWeight: 500, color: '#1d4ed8' }}>
-                        auto from Church Setup
+                        {overridable ? 'auto-filled · editable' : 'auto from Church Setup'}
                       </span>
                     )}
                   </span>
                   <input
-                    readOnly={fromChurch}
+                    readOnly={readOnly}
                     value={displayValue}
-                    onChange={fromChurch ? undefined : e => {
-                      clearBulk()
-                      setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
+                    onChange={readOnly ? undefined : e => {
+                      if (overridable) setOverridableField(v.key, e.target.value)
+                      else {
+                        clearBulk()
+                        setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
+                      }
                     }}
-                    onBlur={!fromChurch && isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
-                    onKeyDown={!fromChurch && isMemberIdField(v.key) ? e => {
+                    onBlur={!readOnly && isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
+                    onKeyDown={!readOnly && isMemberIdField(v.key) ? e => {
                       if (e.key === 'Enter') {
                         e.preventDefault()
                         handleMemberIdLookup(e.currentTarget.value)
@@ -1310,12 +1358,12 @@ export default function PrintCornerPage() {
                       ...INPUT,
                       marginTop: 4,
                       fontWeight: 400,
-                      ...(fromChurch && displayValue
+                      ...((fromChurch || overridable) && displayValue
                         ? { background: '#ecfdf5', borderColor: '#6ee7b7', color: 'var(--text-1)' }
                         : null),
                       ...(emptyChurch ? { borderColor: '#f59e0b', background: '#fffbeb' } : null),
                       ...(churchLoading ? { color: 'var(--text-3)' } : null),
-                      ...(fromChurch ? { cursor: 'default' } : null),
+                      ...(readOnly ? { cursor: 'default' } : null),
                     }}
                   />
                   {emptyChurch && isPastorKey && (
@@ -1414,21 +1462,11 @@ export default function PrintCornerPage() {
 
           {!bulkMode && (
             <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-              {variables.filter(v => {
-                const val = isChurchSetupFieldKey(v.key) && church
-                  ? churchSetupValueForKey(v.key, church)
-                  : String(fieldValues[v.key] ?? '').trim()
-                return !!val
-              }).map(v => {
-                const val = isChurchSetupFieldKey(v.key) && church
-                  ? churchSetupValueForKey(v.key, church)
-                  : fieldValues[v.key]
-                return (
+              {variables.filter(v => String(resolvedFieldValue(v.key) ?? '').trim()).map(v => (
                   <div key={v.key} style={{ marginBottom: 4 }}>
-                    <strong>{v.label || v.key}:</strong> {val}
+                    <strong>{v.label || v.key}:</strong> {resolvedFieldValue(v.key)}
                   </div>
-                )
-              })}
+              ))}
             </div>
           )}
 
@@ -1586,14 +1624,15 @@ export default function PrintCornerPage() {
       </PageHeader>
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', minHeight: 480 }}>
-        <aside style={{
-          width: 360, flexShrink: 0, maxWidth: '100%',
-          background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 12,
-          display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 160px)', overflow: 'hidden',
-          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
-        }}>
+        <aside
+          className="pc-sidebar-panel"
+          style={{
+            width: 360, flexShrink: 0, maxWidth: '100%',
+            display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 160px)',
+          }}
+        >
           {/* Header + search */}
-          <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid var(--card-border)', flexShrink: 0 }}>
+          <div className="pc-sidebar-panel__header" style={{ padding: '14px 14px 12px', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'var(--text-3)' }}>
                 LIBRARY
@@ -1634,8 +1673,7 @@ export default function PrintCornerPage() {
           {!tplSearch.trim() && (
             <div style={{
               padding: '10px 12px', borderBottom: '1px solid var(--card-border)', flexShrink: 0,
-              background: 'var(--page-bg, #f8fafc)',
-            }}>
+            }} className="pc-sidebar-panel__category">
               <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
                 CATEGORY
               </label>
@@ -1654,7 +1692,7 @@ export default function PrintCornerPage() {
           )}
 
           {/* Item list */}
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <div className="pc-sidebar-list" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             {loading ? (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>
                 <Loader2 size={20} className="animate-spin" style={{ display: 'inline' }} />

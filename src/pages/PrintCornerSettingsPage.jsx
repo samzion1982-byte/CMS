@@ -609,8 +609,8 @@ function TemplatesPanel() {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16, alignItems: 'start' }}>
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="card pc-sidebar-panel" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="pc-sidebar-panel__header" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)' }}>BY CATEGORY</span>
           <button type="button" onClick={() => {
             setAdding(true)
@@ -653,7 +653,7 @@ function TemplatesPanel() {
           </div>
         )}
 
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--card-border)' }}>
+        <div className="pc-sidebar-panel__category" style={{ padding: '10px 12px', borderBottom: '1px solid var(--card-border)' }}>
           <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', color: 'var(--text-3)', marginBottom: 6 }}>
             CATEGORY
           </label>
@@ -680,6 +680,7 @@ function TemplatesPanel() {
           </select>
         </div>
 
+        <div className="pc-sidebar-list">
         {isAppFormsMode ? (
           blankForms.length === 0 ? (
             <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
@@ -739,6 +740,7 @@ function TemplatesPanel() {
             </button>
           </div>
         ))}
+        </div>
       </div>
 
       {isAppFormsMode ? (
