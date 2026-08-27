@@ -520,6 +520,20 @@ export default function PrintCornerPage() {
 
   const showDrafts = !!selected && selected.template_type !== 'certificate'
 
+  /** Issued PDFs for the active sidebar category only (not all history). */
+  const issuedForCategory = useMemo(() => {
+    if (sidebarMode === 'forms' || tplSearch.trim()) return []
+    const templatesInCat = activeGroup?.templates || []
+    if (!templatesInCat.length) return []
+    const keys = new Set(templatesInCat.map(t => t.template_key))
+    const ids = new Set(templatesInCat.map(t => t.id))
+    return issuedPdfs.filter(row => {
+      if (row.template_id && ids.has(row.template_id)) return true
+      if (row.template_key && keys.has(row.template_key)) return true
+      return false
+    })
+  }, [issuedPdfs, activeGroup, sidebarMode, tplSearch])
+
   function clearBulk() {
     setBulkRows([])
     setBulkProgress(null)
@@ -862,37 +876,46 @@ export default function PrintCornerPage() {
   }
 
   function renderIssuedHistory() {
+    if (sidebarMode === 'forms' || tplSearch.trim()) return null
+    const catName = activeGroup?.category?.name || 'this category'
+    const headerStyle = activeCatStyle
+    const rows = issuedForCategory
+
     return (
       <div className="card" style={{ marginTop: 16, padding: 0, overflow: 'hidden' }}>
         <div style={{
-          padding: '12px 16px', borderBottom: '1px solid var(--card-border)',
+          padding: '12px 16px', borderBottom: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
+          background: `linear-gradient(180deg, ${headerStyle.bg || '#eff6ff'} 0%, color-mix(in srgb, ${headerStyle.bg || '#eff6ff'} 82%, #fff) 100%)`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
         }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Recent issued PDFs</div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-              Kept here until you delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
+            <div style={{ fontSize: 14, fontWeight: 700, color: headerStyle.badgeColor || 'var(--text-1)' }}>
+              Recent issued PDFs — {catName}
+            </div>
+            <div style={{ fontSize: 11, color: headerStyle.accent || 'var(--text-3)', marginTop: 2, opacity: 0.9 }}>
+              This category only · delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
             </div>
           </div>
           <button type="button" disabled={issuedLoading} onClick={refreshIssuedPdfs}
             style={{
-              padding: '6px 10px', border: '1px solid var(--card-border)', borderRadius: 7,
-              background: 'var(--card-bg)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              padding: '6px 10px', border: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
+              borderRadius: 7, background: 'rgba(255,255,255,0.55)',
+              fontSize: 12, fontWeight: 600, cursor: 'pointer', color: headerStyle.badgeColor || 'var(--text-2)',
             }}>
             {issuedLoading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
-        {issuedLoading && issuedPdfs.length === 0 ? (
+        {issuedLoading && rows.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
             <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} />
           </div>
-        ) : issuedPdfs.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div style={{ padding: 20, fontSize: 13, color: 'var(--text-3)' }}>
-            No issued PDFs yet. Use Review → Issue PDF to generate one.
+            No issued PDFs for {catName} yet. Select a template → Review → Issue PDF.
           </div>
         ) : (
-          <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-            {issuedPdfs.map(row => {
+          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+            {rows.map(row => {
               const memberLabel = row.field_values?.member_name || row.member_id || '—'
               const when = new Date(row.issued_at).toLocaleString()
               return (
@@ -979,6 +1002,7 @@ export default function PrintCornerPage() {
         storagePath: selected.storage_path,
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
+        templateId: selected.id,
         memberId: fieldValues.member_id || null,
         fieldValues: buildIssueFieldValues(),
         issue: true,
@@ -990,10 +1014,16 @@ export default function PrintCornerPage() {
       const swapped = res?.signature_merge?.swapped || []
       const sigReady = signatureImageStatuses.some(s => s.key === 'presbyter_sign' && s.ready)
       if (sigReady && !swapped.includes('presbyter_sign')) {
+        const hint = res?.signature_merge?.swap_log?.filter(l => String(l).includes('presbyter')).join('; ')
+          || res?.signature_merge?.slots_found?.filter(s => String(s).includes('presbyter')).join('; ')
         toast(
-          'Presbyter signature loaded but not placed in the document. Set picture Alt Text to {presbyter_sign} on the placeholder image, then re-upload the template.',
+          hint
+            ? `Presbyter signature not placed (${hint}). Redeploy cms-print-corner, then re-issue.`
+            : 'Presbyter signature not placed — set picture Alt Text to {presbyter_sign} on the placeholder image.',
           'error',
         )
+      } else if (sigReady && swapped.includes('presbyter_sign')) {
+        toast('PDF created — presbyter signature merged.', 'success')
       }
 
       const photoMerged = res?.signature_merge?.swapped?.includes('member_photo')
@@ -1006,7 +1036,7 @@ export default function PrintCornerPage() {
           'Photo loaded but not placed — set picture Alt Text to {member_photo} on the circular photo in Canva, then re-upload.',
           'error',
         )
-      } else {
+      } else if (!(sigReady && swapped.includes('presbyter_sign'))) {
         toast('PDF created and saved to issued folder.', 'success')
       }
     } catch (e) {

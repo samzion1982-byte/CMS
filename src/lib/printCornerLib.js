@@ -286,6 +286,7 @@ export async function convertTemplateFromStorage({
   storagePath,
   templateKey,
   templateType = 'letters',
+  templateId = null,
   memberId = null,
   fieldValues = {},
   issue = true,
@@ -297,6 +298,7 @@ export async function convertTemplateFromStorage({
     storage_path: storagePath,
     template_key: templateKey,
     template_type: templateType,
+    template_id: templateId,
     member_id: memberId,
     field_values: fieldValues,
     issue,
@@ -445,7 +447,7 @@ const ISSUED_RETENTION_DAYS = 30
 export async function getPrintCornerIssuedLog(limit = 40) {
   const { data, error } = await supabase
     .from('print_corner_issued_log')
-    .select('id, template_key, template_type, member_id, issued_filename, storage_path, field_values, issued_by_email, issued_at')
+    .select('id, template_id, template_key, template_type, member_id, issued_filename, storage_path, field_values, issued_by_email, issued_at')
     .order('issued_at', { ascending: false })
     .limit(limit)
   if (error) throw error

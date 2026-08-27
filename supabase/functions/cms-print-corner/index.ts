@@ -642,6 +642,58 @@ function findAltTextImageSlots(xml: string) {
   return { slots, debugHits, containerCount: containers.length }
 }
 
+/** Match image relationships to AltText near each embed id (Word headers, VML, odd layouts). */
+function findImageSlotsFromEmbedScan(xml: string, relsXml: string) {
+  const slots: Array<{ key: string, embedId: string, block: string, via: string }> = []
+  const seen = new Set<string>()
+  const containers = findPictureContainers(xml)
+
+  for (const m of relsXml.matchAll(/<Relationship\b[^>]*\/?>/gi)) {
+    const tag = m[0]
+    if (!/relationships\/image/i.test(tag)) continue
+    const embedId = tag.match(/\bId\s*=\s*"([^"]+)"/i)?.[1]
+    if (!embedId) continue
+    const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const embedRe = new RegExp(`(?:r:embed|r:id)\\s*=\\s*"${esc}"`, 'i')
+    const hit = embedRe.exec(xml)
+    if (!hit || hit.index == null) continue
+
+    const idx = hit.index
+    const window = xml.slice(Math.max(0, idx - 5000), Math.min(xml.length, idx + 5000))
+    let key: string | null = null
+    for (const attr of ['descr', 'title', 'name', 'o:title', 'o:alt', 'alt']) {
+      const reDq = new RegExp('\\b' + attr.replace(':', '\\:') + '\\s*=\\s*"([^"]*)"', 'gi')
+      let am: RegExpExecArray | null
+      while ((am = reDq.exec(window)) !== null) {
+        key = keyFromAltAttr(am[1])
+        if (key) break
+      }
+      if (key) break
+    }
+    if (!key) continue
+
+    const dedupe = key + '|' + embedId
+    if (seen.has(dedupe)) continue
+    seen.add(dedupe)
+
+    let block = window
+    for (const c of containers) {
+      if (idx >= c.start && idx < c.end) {
+        block = c.block
+        break
+      }
+    }
+    slots.push({ key, embedId, block, via: 'embed_scan' })
+  }
+  return slots
+}
+
+function canInplaceOverwriteMedia(mediaPath: string, img: { ext: string }) {
+  const ext = (mediaPath.split('.').pop() || '').toLowerCase()
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext)) return true
+  return ext === String(img.ext || '').toLowerCase()
+}
+
 /** Point every blip in a picture block at the new relationship; drop SVG overrides Canva leaves behind. */
 function retargetPictureBlock(block: string, oldEmbedId: string, newRId: string) {
   let out = block
@@ -1049,8 +1101,13 @@ async function mergeOfficeBytes(
     const mediaFolder = isPptx ? 'ppt/media' : 'word/media'
     const relTargetPrefix = isPptx ? '../media/' : 'media/'
 
-    // 1) Replace pictures by AltText — same approach as letters (overwrite media + retarget embed)
+    // 1) Replace pictures by AltText — overwrite media in place (best for Word → Google PDF)
     const found = findAltTextImageSlots(xml)
+    for (const extra of findImageSlotsFromEmbedScan(xml, relsXml)) {
+      if (!found.slots.some(s => s.key === extra.key && s.embedId === extra.embedId)) {
+        found.slots.push(extra)
+      }
+    }
     altDebug.push({
       part: name,
       alt_hits: found.debugHits.slice(0, 20),
@@ -1087,6 +1144,18 @@ async function mergeOfficeBytes(
         if (xml.length !== beforeLen) swapLog.push(`${slot.key}:cleared_srcRect`)
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
+        continue
+      }
+
+      // Word letters: swap bytes at the existing media path (keeps rel + drawing — Google PDF respects this)
+      if (!isPptx && existingBefore && canInplaceOverwriteMedia(existingBefore, img)) {
+        zip.file(existingBefore, img.bytes)
+        if (ctXml) {
+          ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+        }
+        swappedKeys.add(slot.key)
+        swapLog.push(`${slot.key}:docx_inplace_only:${existingBefore}`)
         continue
       }
 
@@ -1618,6 +1687,7 @@ serve(async (req) => {
 
       if (issue) {
         const { error: logErr } = await admin.from('print_corner_issued_log').insert({
+          template_id: body.template_id || null,
           template_key: templateKey,
           template_type: body.template_type || 'letter',
           member_id: memberId,
