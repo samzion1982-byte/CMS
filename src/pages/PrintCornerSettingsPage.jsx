@@ -688,32 +688,24 @@ function TemplatesPanel() {
           ) : blankForms.map(f => (
             <div
               key={f.id}
+              className={`pc-sidebar-row pc-sidebar-row--compact${selectedBlankId === f.id ? ' is-active' : ''}`}
               style={{
-                display: 'flex', alignItems: 'stretch', width: '100%',
-                borderBottom: '1px solid var(--card-border)',
-                background: selectedBlankId === f.id ? '#f5f3ff' : 'transparent',
+                '--pc-accent': '#7c3aed',
+                '--pc-active-bg': '#f5f3ff',
                 opacity: f.is_active === false ? 0.55 : 1,
               }}
             >
-              <button type="button" onClick={() => setSelectedBlankId(f.id)}
-                style={{
-                  display: 'block', flex: 1, minWidth: 0, textAlign: 'left', padding: '8px 14px', border: 'none',
-                  cursor: 'pointer', background: 'transparent', fontSize: 13,
-                }}>
-                <div style={{ fontWeight: 600 }}>{f.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <button type="button" className="pc-sidebar-select" onClick={() => setSelectedBlankId(f.id)}>
+                <span className="pc-sidebar-label">{f.label}</span>
+                <span className="pc-sidebar-sub">
                   {f.storage_path ? (f.mime_type?.includes('pdf') ? 'PDF' : 'Image') : 'File not uploaded'}
-                </div>
+                </span>
               </button>
               <button
                 type="button"
+                className="pc-sidebar-delete"
                 title="Delete form (master password)"
                 onClick={() => setDeletePrompt({ kind: 'form', item: f })}
-                style={{
-                  flexShrink: 0, width: 36, border: 'none', borderLeft: '1px solid var(--card-border)',
-                  background: 'transparent', color: '#b91c1c', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
               >
                 <Trash2 size={13} />
               </button>
@@ -726,30 +718,22 @@ function TemplatesPanel() {
         ) : sidebarTemplates.map(t => (
           <div
             key={t.id}
+            className={`pc-sidebar-row pc-sidebar-row--compact${selectedId === t.id ? ' is-active' : ''}`}
             style={{
-              display: 'flex', alignItems: 'stretch', width: '100%',
-              borderBottom: '1px solid var(--card-border)',
-              background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+              '--pc-accent': 'var(--accent)',
+              '--pc-active-bg': 'var(--accent-subtle, #eff6ff)',
               opacity: t.is_active === false ? 0.55 : 1,
             }}
           >
-            <button type="button" onClick={() => setSelectedId(t.id)}
-              style={{
-                display: 'block', flex: 1, minWidth: 0, textAlign: 'left', padding: '8px 14px', border: 'none',
-                cursor: 'pointer', background: 'transparent', fontSize: 13,
-              }}>
-              <div style={{ fontWeight: 600 }}>{t.label}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
+            <button type="button" className="pc-sidebar-select" onClick={() => setSelectedId(t.id)}>
+              <span className="pc-sidebar-label">{t.label}</span>
+              <span className="pc-sidebar-sub">{t.template_key}</span>
             </button>
             <button
               type="button"
+              className="pc-sidebar-delete"
               title="Delete template (master password)"
               onClick={() => setDeletePrompt({ kind: 'template', item: t })}
-              style={{
-                flexShrink: 0, width: 36, border: 'none', borderLeft: '1px solid var(--card-border)',
-                background: 'transparent', color: '#b91c1c', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
             >
               <Trash2 size={13} />
             </button>

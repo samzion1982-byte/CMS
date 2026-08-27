@@ -181,18 +181,18 @@ export default function PrintCornerPage() {
   const memberSearchTimer = useRef(null)
   const [deletePrompt, setDeletePrompt] = useState(null) // { kind: 'template'|'form', item }
 
-  const refreshSidebar = useCallback(async () => {
-    const fresh = await fetchPrintCornerSidebarCatalog()
-    applySidebarCatalog(fresh)
-    return fresh
-  }, [applySidebarCatalog])
-
   const applySidebarCatalog = useCallback(({ categories: cats, templates, applicationForms }) => {
     const top = (cats || []).filter(c => !c.parent_id)
     setCategories(top)
     setGroups(groupTemplates(top, (templates || []).filter(t => t.template_type !== 'form')))
     setBlankForms(applicationForms || [])
   }, [])
+
+  const refreshSidebar = useCallback(async () => {
+    const fresh = await fetchPrintCornerSidebarCatalog()
+    applySidebarCatalog(fresh)
+    return fresh
+  }, [applySidebarCatalog])
 
   const load = useCallback(async () => {
     const cached = peekPrintCornerSidebarCatalogCache()
@@ -1692,30 +1692,16 @@ export default function PrintCornerPage() {
                             <button
                               key={f.id}
                               type="button"
+                              className={`pc-sidebar-hit${active ? ' is-active' : ''}`}
                               onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                                padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                                background: active ? FORMS_STYLE.bg : 'transparent',
-                                borderBottom: '1px solid var(--card-border)',
-                                boxShadow: active ? `inset 3px 0 0 ${FORMS_STYLE.accent}` : 'inset 3px 0 0 transparent',
-                              }}
+                              style={{ '--pc-accent': FORMS_STYLE.accent, '--pc-active-bg': FORMS_STYLE.bg }}
                             >
-                              <span style={{
-                                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
-                                color: FORMS_STYLE.accent,
-                              }}>
+                              <span className="pc-sidebar-icon" style={{ color: FORMS_STYLE.accent }}>
                                 <ClipboardList size={15} />
                               </span>
                               <span style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, color: 'var(--text-1)', lineHeight: 1.3 }}>
-                                  {f.label}
-                                </span>
-                                <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                                  Application form
-                                </span>
+                                <span className="pc-sidebar-label">{f.label}</span>
+                                <span className="pc-sidebar-sub">Application form</span>
                               </span>
                               <span style={{
                                 fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
@@ -1748,30 +1734,16 @@ export default function PrintCornerPage() {
                             <button
                               key={t.id}
                               type="button"
+                              className={`pc-sidebar-hit${active ? ' is-active' : ''}`}
                               onClick={() => { setSidebarMode('templates'); setSelected(t) }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                                padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                                background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                                borderBottom: '1px solid var(--card-border)',
-                                boxShadow: active ? `inset 3px 0 0 ${accent}` : 'inset 3px 0 0 transparent',
-                              }}
+                              style={{ '--pc-accent': accent, '--pc-active-bg': 'var(--accent-subtle, #eff6ff)' }}
                             >
-                              <span style={{
-                                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: active ? `${accent}18` : 'var(--input-bg)',
-                                color: accent,
-                              }}>
+                              <span className="pc-sidebar-icon" style={{ color: accent }}>
                                 <Icon size={15} />
                               </span>
                               <span style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ display: 'block', fontSize: 13, fontWeight: active ? 700 : 600, color: 'var(--text-1)', lineHeight: 1.3 }}>
-                                  {t.label}
-                                </span>
-                                <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                                  {catName}
-                                </span>
+                                <span className="pc-sidebar-label">{t.label}</span>
+                                <span className="pc-sidebar-sub">{catName}</span>
                               </span>
                               <span style={{
                                 fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
@@ -1830,41 +1802,20 @@ export default function PrintCornerPage() {
                     return (
                       <div
                         key={f.id}
-                        style={{
-                          display: 'flex', alignItems: 'stretch', width: '100%',
-                          borderBottom: '1px solid var(--card-border)',
-                          background: active ? FORMS_STYLE.bg : 'transparent',
-                          boxShadow: active ? `inset 3px 0 0 ${FORMS_STYLE.accent}` : 'inset 3px 0 0 transparent',
-                        }}
+                        className={`pc-sidebar-row${active ? ' is-active' : ''}`}
+                        style={{ '--pc-accent': FORMS_STYLE.accent, '--pc-active-bg': FORMS_STYLE.bg }}
                       >
                         <button
                           type="button"
+                          className="pc-sidebar-select"
                           onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0,
-                            padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                            background: 'transparent',
-                          }}
                         >
-                          <span style={{
-                            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
-                            color: FORMS_STYLE.accent,
-                          }}>
+                          <span className="pc-sidebar-icon" style={{ color: FORMS_STYLE.accent }}>
                             <ClipboardList size={15} />
                           </span>
                           <span style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{
-                              display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
-                              color: 'var(--text-1)', lineHeight: 1.3,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {f.label}
-                            </span>
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                              {ready ? kind : 'Upload needed'}
-                            </span>
+                            <span className="pc-sidebar-label">{f.label}</span>
+                            <span className="pc-sidebar-sub">{ready ? kind : 'Upload needed'}</span>
                           </span>
                           <span style={{
                             fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
@@ -1876,13 +1827,9 @@ export default function PrintCornerPage() {
                         </button>
                         <button
                           type="button"
+                          className="pc-sidebar-delete"
                           title="Delete form (master password)"
                           onClick={() => setDeletePrompt({ kind: 'form', item: f })}
-                          style={{
-                            flexShrink: 0, width: 40, border: 'none', borderLeft: '1px solid var(--card-border)',
-                            background: 'transparent', color: '#b91c1c', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -1938,41 +1885,20 @@ export default function PrintCornerPage() {
                   return (
                     <div
                       key={t.id}
-                      style={{
-                        display: 'flex', alignItems: 'stretch', width: '100%',
-                        borderBottom: '1px solid var(--card-border)',
-                        background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-                        boxShadow: active ? `inset 3px 0 0 ${accent}` : 'inset 3px 0 0 transparent',
-                      }}
+                      className={`pc-sidebar-row${active ? ' is-active' : ''}`}
+                      style={{ '--pc-accent': accent, '--pc-active-bg': 'var(--accent-subtle, #eff6ff)' }}
                     >
                       <button
                         type="button"
+                        className="pc-sidebar-select"
                         onClick={() => { setSidebarMode('templates'); setSelected(t) }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0,
-                          padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                          background: 'transparent',
-                        }}
                       >
-                        <span style={{
-                          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: active ? `${accent}18` : 'var(--input-bg)',
-                          color: accent,
-                        }}>
+                        <span className="pc-sidebar-icon" style={{ color: accent }}>
                           <Icon size={15} />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{
-                            display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
-                            color: 'var(--text-1)', lineHeight: 1.3,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
-                            {t.label}
-                          </span>
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                            {typeLabel}{ready ? '' : ' · file needed'}
-                          </span>
+                          <span className="pc-sidebar-label">{t.label}</span>
+                          <span className="pc-sidebar-sub">{typeLabel}{ready ? '' : ' · file needed'}</span>
                         </span>
                         <span style={{
                           fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
@@ -1984,13 +1910,9 @@ export default function PrintCornerPage() {
                       </button>
                       <button
                         type="button"
+                        className="pc-sidebar-delete"
                         title="Delete template (master password)"
                         onClick={() => setDeletePrompt({ kind: 'template', item: t })}
-                        style={{
-                          flexShrink: 0, width: 40, border: 'none', borderLeft: '1px solid var(--card-border)',
-                          background: 'transparent', color: '#b91c1c', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
                       >
                         <Trash2 size={14} />
                       </button>
