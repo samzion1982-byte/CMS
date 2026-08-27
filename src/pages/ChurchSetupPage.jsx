@@ -30,6 +30,97 @@ const BEARER_KEYS = [
 
 const DENOMS = ['CSI','CNI','Catholic','Pentecostal','Methodist','Baptist','Anglican','Others']
 
+/** Classify letter-pad file for thumbnail preview. */
+function letterPadKind(mime, fileName) {
+  const m = String(mime || '').toLowerCase()
+  const n = String(fileName || '').toLowerCase()
+  if ((m.startsWith('image/') && !m.includes('photoshop') && !/\.psd$/i.test(n))
+    || /\.(jpe?g|png|webp)$/i.test(n)) return 'image'
+  if (m === 'application/pdf' || /\.pdf$/i.test(n)) return 'pdf'
+  if (m.includes('wordprocessingml') || m === 'application/msword' || /\.docx?$/i.test(n)) return 'word'
+  if (m.includes('coreldraw') || /\.cdr$/i.test(n)) return 'cdr'
+  if (m.includes('photoshop') || /\.psd$/i.test(n)) return 'psd'
+  return 'file'
+}
+
+function letterPadExtLabel(kind, fileName) {
+  const n = String(fileName || '')
+  const fromName = n.includes('.') ? n.split('.').pop().toUpperCase() : ''
+  if (fromName && fromName.length <= 5) return fromName
+  if (kind === 'image') return 'IMG'
+  if (kind === 'pdf') return 'PDF'
+  if (kind === 'word') return 'DOCX'
+  if (kind === 'cdr') return 'CDR'
+  if (kind === 'psd') return 'PSD'
+  return 'FILE'
+}
+
+function LetterPadThumbnail({ url, mime, fileName, emptyLabel = 'Letter pad' }) {
+  const kind = letterPadKind(mime, fileName)
+  const hasFile = !!(url || fileName)
+  const ext = letterPadExtLabel(kind, fileName)
+
+  if (!hasFile) {
+    return (
+      <div className="text-center px-2">
+        <div className="w-8 h-8 mx-auto opacity-25 text-slate-500">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        </div>
+        <p className="text-[10px] text-slate-400 mt-1">{emptyLabel}</p>
+      </div>
+    )
+  }
+
+  if (kind === 'image' && url) {
+    return <img src={url} className="w-full h-full object-contain p-1.5" alt="Letter pad preview" />
+  }
+
+  if (kind === 'pdf' && url) {
+    return (
+      <div className="relative w-full h-full bg-white">
+        <object
+          data={`${url}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
+          type="application/pdf"
+          className="w-full h-full pointer-events-none"
+          aria-label="Letter pad PDF preview"
+        >
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-b from-red-50 to-white px-2">
+            <span className="text-[10px] font-bold tracking-wide text-red-700 bg-red-100 px-2 py-0.5 rounded">{ext}</span>
+            <CheckCircle size={14} className="text-teal-600" />
+            <span className="text-[9px] text-slate-500 text-center leading-tight line-clamp-2">
+              {fileName || 'Uploaded'}
+            </span>
+          </div>
+        </object>
+        <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-teal-600 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded shadow">
+          <Check size={10} /> On file
+        </div>
+      </div>
+    )
+  }
+
+  const badgeColor = kind === 'word' ? 'bg-blue-100 text-blue-800'
+    : kind === 'cdr' ? 'bg-violet-100 text-violet-800'
+      : kind === 'psd' ? 'bg-indigo-100 text-indigo-800'
+        : 'bg-teal-100 text-teal-800'
+
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-gradient-to-b from-teal-50 to-white px-2 relative">
+      <span className={`text-[10px] font-bold tracking-wide px-2 py-0.5 rounded ${badgeColor}`}>{ext}</span>
+      <CheckCircle size={16} className="text-teal-600" />
+      <span className="text-[9px] text-slate-600 text-center leading-tight line-clamp-2 font-medium">
+        {fileName || 'Letter pad uploaded'}
+      </span>
+      <span className="absolute top-1 right-1 bg-teal-600 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded shadow flex items-center gap-0.5">
+        <Check size={10} /> On file
+      </span>
+    </div>
+  )
+}
+
 export default function ChurchSetupPage() {
   const { profile, pageGrants } = useAuth()
   const toast = useToast()
@@ -158,7 +249,9 @@ export default function ChurchSetupPage() {
           mimeType: data.letter_pad_mime_type || '',
           url: data.letter_pad_url,
         })
-        if (String(data.letter_pad_mime_type || '').startsWith('image/')) {
+        // Keep a preview URL for images + PDFs (browser can render both)
+        const kind = letterPadKind(data.letter_pad_mime_type, data.letter_pad_file_name)
+        if (kind === 'image' || kind === 'pdf') {
           setLetterPadPreview(data.letter_pad_url)
         } else {
           setLetterPadPreview(null)
@@ -280,7 +373,8 @@ export default function ChurchSetupPage() {
       url: '',
     })
     const blobUrl = URL.createObjectURL(f)
-    if (resolvedMime.startsWith('image/') && !/\.psd$/i.test(name)) setLetterPadPreview(blobUrl)
+    const kind = letterPadKind(resolvedMime, f.name)
+    if (kind === 'image' || kind === 'pdf') setLetterPadPreview(blobUrl)
     else setLetterPadPreview(null)
     setLetterPadMeta(m => ({ ...m, url: blobUrl }))
   }
@@ -688,30 +782,29 @@ export default function ChurchSetupPage() {
       <div className="flex flex-wrap items-center gap-4">
         <div
           onClick={() => letterPadRef.current?.click()}
-          className="w-36 h-28 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-teal-400 transition-colors flex items-center justify-center bg-slate-50"
+          className="w-40 h-32 rounded-xl border-2 border-dashed overflow-hidden cursor-pointer hover:border-teal-400 transition-colors flex items-center justify-center bg-slate-50 shrink-0"
+          style={{
+            borderColor: (letterPadMeta.url || letterPadMeta.fileName || letterPadFile)
+              ? '#5eead4'
+              : undefined,
+          }}
+          title={letterPadMeta.fileName || letterPadFile?.name || 'Upload letter pad'}
         >
-          {letterPadPreview
-            ? <img src={letterPadPreview} className="w-full h-full object-contain p-2" alt="Letter pad" />
-            : (
-              <div className="text-center px-2">
-                <div className="w-8 h-8 mx-auto opacity-25">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  {letterPadMeta.fileName ? 'File ready' : 'Letter pad'}
-                </p>
-              </div>
-            )}
+          <LetterPadThumbnail
+            url={letterPadPreview || letterPadMeta.url || ''}
+            mime={letterPadMeta.mimeType || letterPadFile?.type || ''}
+            fileName={letterPadMeta.fileName || letterPadFile?.name || ''}
+            emptyLabel="Letter pad"
+          />
         </div>
         <div className="flex-1 min-w-[180px]">
           <p className="text-sm font-semibold text-slate-700 mb-1">
             {letterPadMeta.fileName || letterPadFile?.name || 'No file uploaded'}
           </p>
           <p className="text-xs text-slate-500 mb-3">
-            {letterPadMeta.mimeType || letterPadFile?.type || 'PDF · JPEG · PNG · DOCX · CDR · PSD · max 20 MB'}
+            {(letterPadMeta.url || letterPadFile)
+              ? 'Letter pad on file — users can download it from Print Corner → Helper Docs.'
+              : 'PDF · JPEG · PNG · DOCX · CDR · PSD · max 20 MB'}
           </p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => letterPadRef.current?.click()}>

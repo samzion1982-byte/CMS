@@ -1072,17 +1072,23 @@ export default function LoginPage() {
           letter-spacing: 0.8px;
           color: #e2e8f0;
           min-height: 1.35em;
+          min-width: 260px;
+          text-align: center;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0;
         }
-        .status-msg.auth-line { animation: authLineIn 0.38s ease both; }
+        .status-msg.auth-line { animation: authLineIn 0.35s ease both; }
         .status-msg.auth-ok { color: #86efac; }
         @keyframes authLineIn {
-          from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
-          to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+          from { opacity: 0; }
+          to   { opacity: 1; }
         }
         .status-msg.welcome { color: #86efac; animation: welcomeFade 0.5s ease both; }
         @keyframes welcomeFade {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from { opacity: 0; }
+          to   { opacity: 1; }
         }
 
         .welcome-name {
@@ -1102,15 +1108,23 @@ export default function LoginPage() {
           to   { opacity: 1; transform: scale(1); }
         }
 
-        .status-dots::after {
-          content: '';
-          animation: dots 1.4s steps(4, end) infinite;
+        /* Fixed-width ellipsis — no layout shift / shake */
+        .status-dots {
+          display: inline-flex;
+          width: 1.35em;
+          justify-content: flex-start;
+          letter-spacing: 0.05em;
+          flex-shrink: 0;
         }
-        @keyframes dots {
-          0%   { content: ''; }
-          25%  { content: '.'; }
-          50%  { content: '..'; }
-          75%, 100% { content: '...'; }
+        .status-dots span {
+          opacity: 0.25;
+          animation: statusDotPulse 1.2s ease-in-out infinite;
+        }
+        .status-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .status-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes statusDotPulse {
+          0%, 100% { opacity: 0.25; }
+          40%      { opacity: 1; }
         }
 
         /* Indeterminate loading slider under Authenticating */
@@ -1301,8 +1315,12 @@ export default function LoginPage() {
                       key={authStep}
                       className={`status-msg auth-line${AUTH_STEPS[authStep]?.tone === 'ok' ? ' auth-ok' : ''}`}
                     >
-                      {AUTH_STEPS[authStep]?.text}
-                      {AUTH_STEPS[authStep]?.tone === 'wait' ? <span className="status-dots"/> : null}
+                      <span>{AUTH_STEPS[authStep]?.text}</span>
+                      {AUTH_STEPS[authStep]?.tone === 'wait' ? (
+                        <span className="status-dots" aria-hidden="true">
+                          <span>.</span><span>.</span><span>.</span>
+                        </span>
+                      ) : null}
                     </p>
                     <div className={`status-slider${AUTH_STEPS[authStep]?.tone === 'ok' ? ' status-slider-done' : ''}`} aria-hidden>
                       <div className="status-slider-bar"/>

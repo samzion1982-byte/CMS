@@ -963,7 +963,18 @@ function HelperDocsPanel() {
   }
 
   const hasPad = !!church?.letter_pad_url
-  const padIsImage = String(church?.letter_pad_mime_type || '').startsWith('image/')
+  const padMime = church?.letter_pad_mime_type || ''
+  const padName = church?.letter_pad_file_name || ''
+  const padIsImage = String(padMime).startsWith('image/') && !/photoshop/i.test(padMime) && !/\.psd$/i.test(padName)
+  const padIsPdf = String(padMime).includes('pdf') || /\.pdf$/i.test(padName)
+  const padExt = (() => {
+    const n = String(padName || '')
+    if (n.includes('.')) return n.split('.').pop().toUpperCase()
+    if (padIsImage) return 'IMG'
+    if (padIsPdf) return 'PDF'
+    if (/word|docx?/i.test(padMime + padName)) return 'DOCX'
+    return 'FILE'
+  })()
   const sigStatus = getOfficeBearerSignatureStatus(church)
   const allSigsReady = sigStatus.every(s => s.ready)
 
@@ -1047,16 +1058,47 @@ function HelperDocsPanel() {
         ) : (
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{
-              width: 120, height: 90, borderRadius: 8, border: '1px dashed var(--card-border)',
-              background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+              width: 140, height: 110, borderRadius: 8,
+              border: hasPad ? '1.5px solid #5eead4' : '1px dashed var(--card-border)',
+              background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', position: 'relative', flexShrink: 0,
             }}>
-              {hasPad && padIsImage
-                ? <img src={church.letter_pad_url} alt="Letter pad" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                : (
-                  <span style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', padding: 8 }}>
-                    {hasPad ? 'PDF on file' : 'Not uploaded'}
-                  </span>
-                )}
+              {hasPad && padIsImage ? (
+                <img src={church.letter_pad_url} alt="Letter pad" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', padding: 4 }} />
+              ) : hasPad && padIsPdf ? (
+                <>
+                  <object
+                    data={`${church.letter_pad_url}#page=1&toolbar=0&navpanes=0&scrollbar=0`}
+                    type="application/pdf"
+                    style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
+                    aria-label="Letter pad PDF"
+                  >
+                    <span style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', padding: 8 }}>{padExt} on file</span>
+                  </object>
+                  <span style={{
+                    position: 'absolute', top: 4, right: 4, background: '#0f766e', color: '#fff',
+                    fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                  }}>On file</span>
+                </>
+              ) : hasPad ? (
+                <div style={{ textAlign: 'center', padding: 8 }}>
+                  <span style={{
+                    display: 'inline-block', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+                    background: '#ccfbf1', color: '#0f766e', padding: '2px 8px', borderRadius: 4, marginBottom: 6,
+                  }}>{padExt}</span>
+                  <div style={{ fontSize: 10, color: 'var(--text-2)', lineHeight: 1.3, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {padName || 'Uploaded'}
+                  </div>
+                  <span style={{
+                    position: 'absolute', top: 4, right: 4, background: '#0f766e', color: '#fff',
+                    fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                  }}>On file</span>
+                </div>
+              ) : (
+                <span style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', padding: 8 }}>
+                  Not uploaded
+                </span>
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
