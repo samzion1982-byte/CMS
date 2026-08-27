@@ -1095,6 +1095,7 @@ function HelperDocsPanel() {
             <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0, lineHeight: 1.55, maxWidth: 640 }}>
               Use these tags in Word / PowerPoint / Canva when building certificates, letters, and ID cards.
               Text tags go in the document body; image tags go in the picture Alt Text.
+              Church name, presbyter/pastor, secretary, treasurer, diocese, and address auto-fill from Church Setup.
             </p>
           </div>
           <button

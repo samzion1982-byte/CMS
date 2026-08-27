@@ -26,10 +26,14 @@ const VARIABLE_LABELS = {
   gender_type: 'Gender type (e.g. man / woman)',
   support_type: 'Support / ministry type',
   purpose: 'Purpose / aspiration',
-  presbyter_name: 'Presbyter name',
-  pastor_name: 'Pastor / Presbyter name',
-  church_name: 'Church name',
-  Church_name: 'Church name',
+  presbyter_name: 'Presbyter name (from Church Setup)',
+  pastor_name: 'Pastor / Presbyter name (from Church Setup)',
+  church_name: 'Church name (from Church Setup)',
+  Church_name: 'Church name (from Church Setup)',
+  diocese: 'Diocese (from Church Setup)',
+  address: 'Church address (from Church Setup)',
+  secretary_name: 'Secretary name (from Church Setup)',
+  treasurer_name: 'Treasurer name (from Church Setup)',
   member_id: 'Member ID',
   body: 'Letter body',
   presbyter_sign: 'Presbyter signature (auto)',
@@ -791,11 +795,18 @@ export function applyChurchToFieldValues(out, church) {
     if (n === 'church_name') next[key] = churchName
     else if (n === 'presbyter_name' || n === 'pastor_name') next[key] = presbyter
     else if (n === 'diocese') next[key] = diocese
-    else if (n === 'address' && !String(next[key] || '').trim()) next[key] = address
+    else if (n === 'address') next[key] = address
     else if (n === 'secretary_name') next[key] = secretary
     else if (n === 'treasurer_name') next[key] = treasurer
   }
   return next
+}
+
+/** Live value for one Church Setup field (Fields tab display). */
+export function churchSetupValueForKey(key, church) {
+  if (!church || !key) return ''
+  const patch = applyChurchToFieldValues({ [key]: '' }, church)
+  return String(patch[key] ?? '').trim()
 }
 
 export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
@@ -951,15 +962,16 @@ export const PRINT_CORNER_PLACEHOLDER_GUIDE = [
   {
     id: 'church',
     title: 'Church / office bearers (auto from Church Setup)',
-    hint: 'Filled automatically from Church Setup. Prefer these exact keys in Word/PowerPoint.',
+    hint: 'Auto-filled in the Print Corner Fields tab from Church Setup. Edit values in Church Setup → Office bearers, then Save. Use {presbyter_name} or {pastor_name} — both receive the same name.',
     items: [
       { key: 'church_name', label: 'Church name', example: 'CSITA St. Paul\'s Pastorate' },
-      { key: 'Church_name', label: 'Church name (alt casing)', example: '…' },
-      { key: 'diocese', label: 'Diocese', example: 'CSI … Diocese' },
-      { key: 'address', label: 'Church address (one line)', example: '…' },
-      { key: 'presbyter_name', label: 'Presbyter / Pastor name', example: 'Rev. …' },
-      { key: 'secretary_name', label: 'Secretary name', example: '…' },
-      { key: 'treasurer_name', label: 'Treasurer name', example: '…' },
+      { key: 'Church_name', label: 'Church name (alt casing)', example: 'CSITA St. Paul\'s Pastorate' },
+      { key: 'diocese', label: 'Diocese', example: 'CSI Trichy–Thanjavur Diocese' },
+      { key: 'address', label: 'Church address (one line; only if wizard field is empty)', example: 'Street, city, pincode' },
+      { key: 'presbyter_name', label: 'Presbyter name', example: 'Rev. John Doe' },
+      { key: 'pastor_name', label: 'Pastor name (alias — same as presbyter_name)', example: 'Rev. John Doe' },
+      { key: 'secretary_name', label: 'Secretary name', example: 'Mr. …' },
+      { key: 'treasurer_name', label: 'Treasurer name', example: 'Mr. …' },
     ],
   },
   {
@@ -983,14 +995,14 @@ export const PRINT_CORNER_PLACEHOLDER_GUIDE = [
   },
   {
     id: 'images',
-    title: 'Images (Alt Text on pictures — not typed in wizard)',
-    hint: 'In Word/PowerPoint/Canva: insert a placeholder picture, set Alt Text (or description) to the tag below.',
+    title: 'Images (Alt Text on pictures — auto from Church Setup / Member ID)',
+    hint: 'Not typed in the wizard. Upload signatures and seal in Church Setup; member photo comes from the selected Member ID. In Word/PowerPoint/Canva: insert a placeholder picture and set Alt Text (description) to the tag below.',
     items: [
-      { key: 'presbyter_sign', label: 'Presbyter signature image', example: 'Alt Text = {presbyter_sign}' },
-      { key: 'secretary_sign', label: 'Secretary signature image', example: 'Alt Text = {secretary_sign}' },
-      { key: 'treasurer_sign', label: 'Treasurer signature image', example: 'Alt Text = {treasurer_sign}' },
-      { key: 'treasurer_seal', label: 'Treasurer seal image', example: 'Alt Text = {treasurer_seal}' },
-      { key: 'member_photo', label: 'Member photo (from Member ID)', example: 'Alt Text = {member_photo}' },
+      { key: 'presbyter_sign', label: 'Presbyter signature', example: 'Church Setup → Presbyter signature' },
+      { key: 'secretary_sign', label: 'Secretary signature', example: 'Church Setup → Secretary signature' },
+      { key: 'treasurer_sign', label: 'Treasurer signature', example: 'Church Setup → Treasurer signature' },
+      { key: 'treasurer_seal', label: 'Treasurer seal', example: 'Church Setup → Treasurer seal' },
+      { key: 'member_photo', label: 'Member photo', example: 'Members photo for selected Member ID' },
     ],
   },
 ]
@@ -1043,7 +1055,8 @@ export function downloadPrintCornerPlaceholderGuide({ churchName = '' } = {}) {
   ${churchLine}
   <div class="intro">
     <p style="margin:0 0 8px"><strong>How to use:</strong> In Word or PowerPoint / Canva, type placeholders exactly like <code>{member_name}</code> (curly braces, no spaces).</p>
-    <p style="margin:0 0 8px">For signatures and member photo, insert a picture and set its <strong>Alt Text / Description</strong> to the image tag (e.g. <code>{presbyter_sign}</code> or <code>{member_photo}</code>).</p>
+    <p style="margin:0 0 8px"><strong>Church Setup fields:</strong> <code>{church_name}</code>, <code>{presbyter_name}</code>, <code>{pastor_name}</code>, <code>{secretary_name}</code>, <code>{treasurer_name}</code>, <code>{diocese}</code>, and <code>{address}</code> auto-fill from Church Setup in the Print Corner wizard.</p>
+    <p style="margin:0 0 8px">For signatures and member photo, insert a picture and set its <strong>Alt Text / Description</strong> to the image tag (e.g. <code>{presbyter_sign}</code> or <code>{member_photo}</code>). Signatures and seal come from Church Setup uploads.</p>
     <p style="margin:0">Only include the tags your design needs. Extra tags on the template become empty fields in the Print Corner wizard.</p>
   </div>
   ${sections}

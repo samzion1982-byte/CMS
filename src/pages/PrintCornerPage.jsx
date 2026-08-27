@@ -34,6 +34,7 @@ import {
   imageFieldVariables,
   templateHasMemberPhoto,
   isChurchSetupFieldKey,
+  churchSetupValueForKey,
   sortPrintCornerTemplates,
   sortPrintCornerCategories,
   buildPrintCornerSidebarBrowseItems,
@@ -256,7 +257,7 @@ export default function PrintCornerPage() {
   useEffect(() => {
     if (!selected || !church) return
     setFieldValues(prev => applyChurchToFieldValues({ ...prev }, church))
-  }, [church, selected?.id])
+  }, [church, selected?.id, step])
 
   // Letter / certificate PDF preview — uses cached preview.pdf when available
   useEffect(() => {
@@ -485,7 +486,8 @@ export default function PrintCornerPage() {
     setFieldValues(prev => {
       const base = {}
       for (const key of keys) base[key] = prev[key] ?? ''
-      return applyMemberToFieldValues(base, member, keys)
+      const withMember = applyMemberToFieldValues(base, member, keys)
+      return church ? applyChurchToFieldValues(withMember, church) : withMember
     })
   }
 
@@ -680,7 +682,8 @@ export default function PrintCornerPage() {
     const tpl = groups.flatMap(g => g.templates).find(t => t.id === d.template_id || t.template_key === d.template_key)
     if (tpl) setSelected(tpl)
     setDraftId(d.id)
-    setFieldValues(d.field_values || {})
+    const draftValues = d.field_values || {}
+    setFieldValues(church ? applyChurchToFieldValues({ ...draftValues }, church) : draftValues)
     setIncludeTamil(!!d.include_tamil)
     setBulkRows([])
     setSelectedMember(null)
@@ -1126,10 +1129,22 @@ export default function PrintCornerPage() {
               Pick a member above — their photo replaces the placeholder.
             </div>
           )}
+          {variables.some(v => isChurchSetupFieldKey(v.key)) && (
+            <div style={{
+              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+              background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af',
+            }}>
+              Church Setup fields below are filled automatically from Church Setup (same values used on the printed letter).
+              {church ? null : ' Loading church profile…'}
+            </div>
+          )}
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
             {variables.map(v => {
               const fromChurch = isChurchSetupFieldKey(v.key)
-              const emptyChurch = fromChurch && !String(fieldValues[v.key] ?? '').trim()
+              const churchVal = fromChurch && church ? churchSetupValueForKey(v.key, church) : ''
+              const displayValue = fromChurch ? churchVal : (fieldValues[v.key] ?? '')
+              const emptyChurch = fromChurch && church && !churchVal
+              const churchLoading = fromChurch && !church
               const isPastorKey = ['presbyter_name', 'pastor_name'].includes(
                 String(v.key || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
               )
@@ -1138,38 +1153,46 @@ export default function PrintCornerPage() {
                   <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                     {v.label || v.key}
                     {fromChurch && (
-                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)' }}>
-                        (from Church Setup)
+                      <span style={{ fontSize: 11, fontWeight: 500, color: '#1d4ed8' }}>
+                        auto from Church Setup
                       </span>
                     )}
                   </span>
                   <input
-                    value={fieldValues[v.key] ?? ''}
-                    onChange={e => {
+                    readOnly={fromChurch}
+                    value={displayValue}
+                    onChange={fromChurch ? undefined : e => {
                       clearBulk()
                       setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
                     }}
-                    onBlur={isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
-                    onKeyDown={isMemberIdField(v.key) ? e => {
+                    onBlur={!fromChurch && isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
+                    onKeyDown={!fromChurch && isMemberIdField(v.key) ? e => {
                       if (e.key === 'Enter') {
                         e.preventDefault()
                         handleMemberIdLookup(e.currentTarget.value)
                       }
                     } : undefined}
                     placeholder={
-                      isMemberIdField(v.key)
-                        ? 'Enter ID and press Enter or tab out'
-                        : emptyChurch && isPastorKey
-                          ? 'Not set — add Presbyter name in Church Setup'
-                          : emptyChurch
-                            ? 'Not set in Church Setup'
-                            : undefined
+                      churchLoading
+                        ? 'Loading from Church Setup…'
+                        : isMemberIdField(v.key)
+                          ? 'Enter ID and press Enter or tab out'
+                          : emptyChurch && isPastorKey
+                            ? 'Not set — add Presbyter name in Church Setup'
+                            : emptyChurch
+                              ? 'Not set in Church Setup'
+                              : undefined
                     }
                     style={{
                       ...INPUT,
                       marginTop: 4,
                       fontWeight: 400,
-                      ...(emptyChurch ? { borderColor: '#f59e0b' } : null),
+                      ...(fromChurch && displayValue
+                        ? { background: '#ecfdf5', borderColor: '#6ee7b7', color: 'var(--text-1)' }
+                        : null),
+                      ...(emptyChurch ? { borderColor: '#f59e0b', background: '#fffbeb' } : null),
+                      ...(churchLoading ? { color: 'var(--text-3)' } : null),
+                      ...(fromChurch ? { cursor: 'default' } : null),
                     }}
                   />
                   {emptyChurch && isPastorKey && (
@@ -1182,6 +1205,18 @@ export default function PrintCornerPage() {
                       }}
                     >
                       Open Church Setup → set Presbyter / Pastor name, then Save
+                    </button>
+                  )}
+                  {emptyChurch && !isPastorKey && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/church-setup')}
+                      style={{
+                        display: 'block', marginTop: 4, padding: 0, border: 'none', background: 'none',
+                        fontSize: 11, fontWeight: 600, color: '#b45309', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      Open Church Setup to set this value
                     </button>
                   )}
                 </label>
@@ -1289,11 +1324,21 @@ export default function PrintCornerPage() {
 
           {!bulkMode && (
             <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-              {variables.filter(v => String(fieldValues[v.key] ?? '').trim()).map(v => (
-                <div key={v.key} style={{ marginBottom: 4 }}>
-                  <strong>{v.label || v.key}:</strong> {fieldValues[v.key]}
-                </div>
-              ))}
+              {variables.filter(v => {
+                const val = isChurchSetupFieldKey(v.key) && church
+                  ? churchSetupValueForKey(v.key, church)
+                  : String(fieldValues[v.key] ?? '').trim()
+                return !!val
+              }).map(v => {
+                const val = isChurchSetupFieldKey(v.key) && church
+                  ? churchSetupValueForKey(v.key, church)
+                  : fieldValues[v.key]
+                return (
+                  <div key={v.key} style={{ marginBottom: 4 }}>
+                    <strong>{v.label || v.key}:</strong> {val}
+                  </div>
+                )
+              })}
             </div>
           )}
 
