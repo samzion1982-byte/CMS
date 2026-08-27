@@ -245,36 +245,57 @@ export default function ChurchSetupPage() {
     const f = e.target.files?.[0]
     if (!f) return
     const mime = String(f.type || '').toLowerCase()
+    const name = String(f.name || '').toLowerCase()
     const ok = mime === 'application/pdf'
       || mime === 'image/jpeg' || mime === 'image/jpg'
       || mime === 'image/png' || mime === 'image/webp'
-      || /\.(pdf|jpe?g|png|webp)$/i.test(f.name)
+      || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || mime === 'application/msword'
+      || mime === 'image/vnd.adobe.photoshop'
+      || mime === 'application/x-photoshop'
+      || mime === 'application/photoshop'
+      || mime === 'application/octet-stream' && /\.(docx?|cdr|psd)$/i.test(name)
+      || /\.(pdf|jpe?g|png|webp|docx?|cdr|psd)$/i.test(name)
     if (!ok) {
-      toast('Upload a PDF or scanned JPEG/PNG of the letter pad.', 'error')
+      toast('Upload PDF, JPEG/PNG, Word (.docx), CorelDRAW (.cdr), or Photoshop (.psd).', 'error')
       return
     }
     if (f.size > 20 * 1024 * 1024) {
       toast('Letter pad file is too large (max 20 MB).', 'error')
       return
     }
+    const resolvedMime = mime && mime !== 'application/octet-stream'
+      ? mime
+      : (/\.docx$/i.test(name) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : /\.doc$/i.test(name) ? 'application/msword'
+          : /\.cdr$/i.test(name) ? 'application/x-coreldraw'
+            : /\.psd$/i.test(name) ? 'image/vnd.adobe.photoshop'
+              : /\.pdf$/i.test(name) ? 'application/pdf'
+                : mime || 'application/octet-stream')
     setLetterPadFile(f)
     setLetterPadMeta({
       fileName: f.name,
-      mimeType: mime || 'application/pdf',
+      mimeType: resolvedMime,
       url: '',
     })
     const blobUrl = URL.createObjectURL(f)
-    if (mime.startsWith('image/')) setLetterPadPreview(blobUrl)
+    if (resolvedMime.startsWith('image/') && !/\.psd$/i.test(name)) setLetterPadPreview(blobUrl)
     else setLetterPadPreview(null)
     setLetterPadMeta(m => ({ ...m, url: blobUrl }))
   }
 
   async function uploadLetterPadFile(file) {
     const mime = String(file.type || '').toLowerCase()
-    const ext = mime === 'application/pdf' ? 'pdf'
-      : mime === 'image/png' ? 'png'
-        : mime === 'image/webp' ? 'webp'
-          : (/\.png$/i.test(file.name) ? 'png' : /\.webp$/i.test(file.name) ? 'webp' : /\.pdf$/i.test(file.name) ? 'pdf' : 'jpg')
+    const name = String(file.name || '').toLowerCase()
+    let ext = 'bin'
+    if (mime === 'application/pdf' || /\.pdf$/i.test(name)) ext = 'pdf'
+    else if (mime === 'image/png' || /\.png$/i.test(name)) ext = 'png'
+    else if (mime === 'image/webp' || /\.webp$/i.test(name)) ext = 'webp'
+    else if (/\.jpe?g$/i.test(name) || mime === 'image/jpeg' || mime === 'image/jpg') ext = 'jpg'
+    else if (/\.docx$/i.test(name) || mime.includes('wordprocessingml')) ext = 'docx'
+    else if (/\.doc$/i.test(name) || mime === 'application/msword') ext = 'doc'
+    else if (/\.cdr$/i.test(name)) ext = 'cdr'
+    else if (/\.psd$/i.test(name) || mime.includes('photoshop')) ext = 'psd'
     const path = `letter-pad/church-letter-pad.${ext}`
     // Remove sibling extensions when replacing
     const siblings = [
@@ -283,9 +304,22 @@ export default function ChurchSetupPage() {
       'letter-pad/church-letter-pad.jpeg',
       'letter-pad/church-letter-pad.png',
       'letter-pad/church-letter-pad.webp',
+      'letter-pad/church-letter-pad.docx',
+      'letter-pad/church-letter-pad.doc',
+      'letter-pad/church-letter-pad.cdr',
+      'letter-pad/church-letter-pad.psd',
     ].filter(p => p !== path)
     try { await supabase.storage.from('church-logos').remove(siblings) } catch { /* ignore */ }
-    const contentType = mime || (ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`)
+    const contentType = mime && mime !== 'application/octet-stream'
+      ? mime
+      : (ext === 'pdf' ? 'application/pdf'
+        : ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : ext === 'doc' ? 'application/msword'
+            : ext === 'cdr' ? 'application/x-coreldraw'
+              : ext === 'psd' ? 'image/vnd.adobe.photoshop'
+                : ext === 'png' || ext === 'webp' ? `image/${ext}`
+                  : ext === 'jpg' ? 'image/jpeg'
+                    : 'application/octet-stream')
     const { error } = await supabase.storage.from('church-logos').upload(path, file, {
       upsert: true,
       contentType,
@@ -548,7 +582,9 @@ export default function ChurchSetupPage() {
                          'diocese-logo.png','diocese-logo.jpg','diocese-logo.jpeg',
                          'letter-pad/church-letter-pad.pdf','letter-pad/church-letter-pad.jpg',
                          'letter-pad/church-letter-pad.jpeg','letter-pad/church-letter-pad.png',
-                         'letter-pad/church-letter-pad.webp']
+                         'letter-pad/church-letter-pad.webp','letter-pad/church-letter-pad.docx',
+                         'letter-pad/church-letter-pad.doc','letter-pad/church-letter-pad.cdr',
+                         'letter-pad/church-letter-pad.psd']
       await supabase.storage.from('church-logos').remove(logoFiles)
 
       // Reset all text fields in the DB row
@@ -642,8 +678,8 @@ export default function ChurchSetupPage() {
         Print Corner — Church letter pad
       </p>
       <p className="text-xs text-slate-500 mb-4">
-        Upload a scanned blank letter pad (PDF or JPEG/PNG). Print Corner users can download it from
-        Settings → Helper Docs when creating Word / PowerPoint templates.
+        Upload a blank letter pad (PDF, JPEG/PNG, Word .docx, CorelDRAW .cdr, or Photoshop .psd).
+        Print Corner users can download it from Settings → Helper Docs when creating templates.
       </p>
       <div className="flex flex-wrap items-center gap-4">
         <div
@@ -661,7 +697,7 @@ export default function ChurchSetupPage() {
                   </svg>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  {letterPadMeta.fileName ? 'PDF ready' : 'Letter pad'}
+                  {letterPadMeta.fileName ? 'File ready' : 'Letter pad'}
                 </p>
               </div>
             )}
@@ -671,7 +707,7 @@ export default function ChurchSetupPage() {
             {letterPadMeta.fileName || letterPadFile?.name || 'No file uploaded'}
           </p>
           <p className="text-xs text-slate-500 mb-3">
-            {letterPadMeta.mimeType || letterPadFile?.type || 'PDF · JPEG · PNG · max 20 MB'}
+            {letterPadMeta.mimeType || letterPadFile?.type || 'PDF · JPEG · PNG · DOCX · CDR · PSD · max 20 MB'}
           </p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => letterPadRef.current?.click()}>
@@ -691,7 +727,7 @@ export default function ChurchSetupPage() {
         <input
           ref={letterPadRef}
           type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png"
+          accept="application/pdf,image/jpeg,image/png,image/webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,image/vnd.adobe.photoshop,.pdf,.jpg,.jpeg,.png,.webp,.docx,.doc,.cdr,.psd"
           className="hidden"
           onChange={onLetterPad}
         />
