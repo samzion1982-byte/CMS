@@ -24,6 +24,7 @@ import {
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
   applyMemberToFieldValues,
+  applyChurchToFieldValues,
   searchPrintCornerMembers,
   getPrintCornerMemberById,
   memberPhotoExistsInStorage,
@@ -238,6 +239,12 @@ export default function PrintCornerPage() {
     setFieldValues(defaultFieldValuesFromTemplate(selected, church, null))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Church profile often loads after the template — refill church-owned fields without wiping member edits
+  useEffect(() => {
+    if (!selected || !church) return
+    setFieldValues(prev => applyChurchToFieldValues({ ...prev }, church))
+  }, [church, selected?.id])
 
   // Letter / certificate PDF preview — uses cached preview.pdf when available
   useEffect(() => {

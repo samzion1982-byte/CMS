@@ -101,8 +101,11 @@ function replacePlaceholderInXml(xml: string, key: string, value: string) {
 
 function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>) {
   let out = xml
-  for (const [key, raw] of Object.entries(fieldValues || {})) {
+  // Longer keys first so {presbyter_name} is not disturbed by shorter keys like {name}
+  const keys = Object.keys(fieldValues || {}).sort((a, b) => b.length - a.length)
+  for (const key of keys) {
     if (!key || isImagePlaceholderKey(key)) continue
+    const raw = fieldValues[key]
     out = replacePlaceholderInXml(out, key, raw == null ? '' : String(raw))
   }
   return out
@@ -819,16 +822,32 @@ function ensureMediaContentTypeOverride(ctXml: string, mediaPath: string, conten
 async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>) {
   const { data: church } = await admin
     .from('churches')
-    .select('presbyter_signature_url, secretary_signature_url, treasurer_signature_url, treasurer_seal_url')
+    .select(
+      'church_name, diocese, address, city, pincode, '
+      + 'presbyter_name, pastor_name, secretary_name, treasurer_name, '
+      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url, treasurer_seal_url',
+    )
     .limit(1)
     .maybeSingle()
 
   const images: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {}
   const debug: Record<string, string> = {}
+  const mergeFields: Record<string, string> = {}
   if (!church) {
     debug.church = 'not_found'
-    return { images, debug }
+    return { images, debug, mergeFields }
   }
+
+  const churchName = String(church.church_name || '')
+  const presbyter = String(church.presbyter_name || church.pastor_name || '')
+  mergeFields.church_name = churchName
+  mergeFields.Church_name = churchName
+  mergeFields.presbyter_name = presbyter
+  mergeFields.pastor_name = presbyter
+  mergeFields.diocese = String(church.diocese || '')
+  mergeFields.secretary_name = String(church.secretary_name || '')
+  mergeFields.treasurer_name = String(church.treasurer_name || '')
+  mergeFields.address = [church.address, church.city, church.pincode].filter(Boolean).join(', ')
 
   const STORAGE_FALLBACK: Record<string, string> = {
     presbyter_signature_url: 'signatures/presbyter-signature.png',
@@ -860,7 +879,7 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
     const img = await loadColumn(column, url)
     if (img) images[placeholder] = img
   }
-  return { images, debug }
+  return { images, debug, mergeFields }
 }
 
 async function loadMemberPhotoImage(
@@ -1434,10 +1453,21 @@ serve(async (req) => {
       }
       const templateBytes = new Uint8Array(await fileBlob.arrayBuffer())
       const format: 'docx' | 'pptx' = /\.pptx$/i.test(storagePath) ? 'pptx' : 'docx'
-      const { images: signatureImages, debug: signatureLoadDebug } = await loadChurchSignatureImages(admin)
+      const { images: signatureImages, debug: signatureLoadDebug, mergeFields: churchMergeFields } =
+        await loadChurchSignatureImages(admin)
       const { img: memberPhoto, debug: memberPhotoDebug } = await loadMemberPhotoImage(admin, memberId)
       if (memberPhoto) signatureImages.member_photo = memberPhoto
       signatureLoadDebug.member_photo = memberPhotoDebug
+
+      // Church Setup wins for letterhead / office-bearer placeholders (case variants too)
+      const mergedFieldValues: Record<string, unknown> = { ...(fieldValues || {}) }
+      for (const [ck, cv] of Object.entries(churchMergeFields || {})) {
+        if (cv == null || String(cv).trim() === '') continue
+        mergedFieldValues[ck] = cv
+        for (const key of Object.keys(mergedFieldValues)) {
+          if (key.toLowerCase() === ck.toLowerCase()) mergedFieldValues[key] = cv
+        }
+      }
 
       // Warn when template likely needs a photo but none could be loaded
       const templateNeedsPhoto = /\.pptx$/i.test(storagePath)
@@ -1447,7 +1477,7 @@ serve(async (req) => {
 
       const { bytes: mergedBytes, mergeMeta } = await mergeOfficeBytes(
         templateBytes,
-        fieldValues,
+        mergedFieldValues,
         signatureImages,
         format,
       )
@@ -1507,7 +1537,7 @@ serve(async (req) => {
           member_id: memberId,
           issued_filename: outName,
           storage_path: issuedPath,
-          field_values: fieldValues,
+          field_values: mergedFieldValues,
           source: body.source || 'manual',
           cloudconvert_job: engineMeta.engine || null,
           issued_by: user.id,

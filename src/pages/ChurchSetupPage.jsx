@@ -36,6 +36,7 @@ export default function ChurchSetupPage() {
   const logoRef = useRef(null)
   const dioceseLogoRef = useRef(null)
   const sealRef = useRef(null)
+  const letterPadRef = useRef(null)
   const presbyterSigRef = useRef(null)
   const secretarySigRef = useRef(null)
   const treasurerSigRef = useRef(null)
@@ -75,6 +76,9 @@ export default function ChurchSetupPage() {
   const [dioceseLogoPreview, setDioceseLogoPreview] = useState(null)
   const [sealFile, setSealFile] = useState(null)
   const [sealPreview, setSealPreview] = useState(null)
+  const [letterPadFile, setLetterPadFile] = useState(null)
+  const [letterPadPreview, setLetterPadPreview] = useState(null)
+  const [letterPadMeta, setLetterPadMeta] = useState({ fileName: '', mimeType: '', url: '' })
   const [presbyterSigFile, setPresbyterSigFile] = useState(null)
   const [presbyterSigPreview, setPresbyterSigPreview] = useState(null)
   const [secretarySigFile, setSecretarySigFile] = useState(null)
@@ -147,6 +151,21 @@ export default function ChurchSetupPage() {
       if (data.logo_url) setLogoPreview(data.logo_url)
       if (data.diocese_logo_url) setDioceseLogoPreview(data.diocese_logo_url)
       if (data.treasurer_seal_url) setSealPreview(data.treasurer_seal_url)
+      if (data.letter_pad_url) {
+        setLetterPadMeta({
+          fileName: data.letter_pad_file_name || 'Church letter pad',
+          mimeType: data.letter_pad_mime_type || '',
+          url: data.letter_pad_url,
+        })
+        if (String(data.letter_pad_mime_type || '').startsWith('image/')) {
+          setLetterPadPreview(data.letter_pad_url)
+        } else {
+          setLetterPadPreview(null)
+        }
+      } else {
+        setLetterPadMeta({ fileName: '', mimeType: '', url: '' })
+        setLetterPadPreview(null)
+      }
       if (data.presbyter_signature_url) setPresbyterSigPreview(data.presbyter_signature_url)
       if (data.secretary_signature_url) setSecretarySigPreview(data.secretary_signature_url)
       if (data.treasurer_signature_url) setTreasurerSigPreview(data.treasurer_signature_url)
@@ -220,6 +239,66 @@ export default function ChurchSetupPage() {
   function onSeal(e) {
     const f = e.target.files?.[0]; if (!f) return
     setSealFile(f); setSealPreview(URL.createObjectURL(f))
+  }
+
+  function onLetterPad(e) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    const mime = String(f.type || '').toLowerCase()
+    const ok = mime === 'application/pdf'
+      || mime === 'image/jpeg' || mime === 'image/jpg'
+      || mime === 'image/png' || mime === 'image/webp'
+      || /\.(pdf|jpe?g|png|webp)$/i.test(f.name)
+    if (!ok) {
+      toast('Upload a PDF or scanned JPEG/PNG of the letter pad.', 'error')
+      return
+    }
+    if (f.size > 20 * 1024 * 1024) {
+      toast('Letter pad file is too large (max 20 MB).', 'error')
+      return
+    }
+    setLetterPadFile(f)
+    setLetterPadMeta({
+      fileName: f.name,
+      mimeType: mime || 'application/pdf',
+      url: '',
+    })
+    const blobUrl = URL.createObjectURL(f)
+    if (mime.startsWith('image/')) setLetterPadPreview(blobUrl)
+    else setLetterPadPreview(null)
+    setLetterPadMeta(m => ({ ...m, url: blobUrl }))
+  }
+
+  async function uploadLetterPadFile(file) {
+    const mime = String(file.type || '').toLowerCase()
+    const ext = mime === 'application/pdf' ? 'pdf'
+      : mime === 'image/png' ? 'png'
+        : mime === 'image/webp' ? 'webp'
+          : (/\.png$/i.test(file.name) ? 'png' : /\.webp$/i.test(file.name) ? 'webp' : /\.pdf$/i.test(file.name) ? 'pdf' : 'jpg')
+    const path = `letter-pad/church-letter-pad.${ext}`
+    // Remove sibling extensions when replacing
+    const siblings = [
+      'letter-pad/church-letter-pad.pdf',
+      'letter-pad/church-letter-pad.jpg',
+      'letter-pad/church-letter-pad.jpeg',
+      'letter-pad/church-letter-pad.png',
+      'letter-pad/church-letter-pad.webp',
+    ].filter(p => p !== path)
+    try { await supabase.storage.from('church-logos').remove(siblings) } catch { /* ignore */ }
+    const contentType = mime || (ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`)
+    const { error } = await supabase.storage.from('church-logos').upload(path, file, {
+      upsert: true,
+      contentType,
+      cacheControl: '0',
+    })
+    if (error) throw error
+    const base = supabase.storage.from('church-logos').getPublicUrl(path).data?.publicUrl || null
+    const url = base ? `${base.split('?')[0]}?v=${Date.now()}` : null
+    return {
+      letter_pad_url: url,
+      letter_pad_file_name: file.name,
+      letter_pad_mime_type: contentType,
+    }
   }
 
   function onSignaturePick(setFile, setPreview, e) {
@@ -325,6 +404,10 @@ export default function ChurchSetupPage() {
         payload.logo_url = logo_url
         payload.diocese_logo_url = diocese_logo_url
         payload.treasurer_seal_url = treasurer_seal_url
+        if (letterPadFile) {
+          const pad = await uploadLetterPadFile(letterPadFile)
+          Object.assign(payload, pad)
+        }
       }
       if (canBearers) {
         for (const k of BEARER_KEYS) payload[k] = form[k]
@@ -420,6 +503,15 @@ export default function ChurchSetupPage() {
       presbyter_signature_url, secretary_signature_url, treasurer_signature_url,
       updated_at: new Date().toISOString(),
     }
+    if (letterPadFile) {
+      try {
+        Object.assign(payload, await uploadLetterPadFile(letterPadFile))
+      } catch (padErr) {
+        setSaving(false)
+        toast('Letter pad upload failed: ' + (padErr.message || padErr), 'error')
+        return
+      }
+    }
     let err
     if (church) {
       const r = await supabase.from('churches').update(payload).eq('id', church.id)
@@ -453,7 +545,10 @@ export default function ChurchSetupPage() {
 
       // Remove logos from storage
       const logoFiles = ['church-logo.png','church-logo.jpg','church-logo.jpeg',
-                         'diocese-logo.png','diocese-logo.jpg','diocese-logo.jpeg']
+                         'diocese-logo.png','diocese-logo.jpg','diocese-logo.jpeg',
+                         'letter-pad/church-letter-pad.pdf','letter-pad/church-letter-pad.jpg',
+                         'letter-pad/church-letter-pad.jpeg','letter-pad/church-letter-pad.png',
+                         'letter-pad/church-letter-pad.webp']
       await supabase.storage.from('church-logos').remove(logoFiles)
 
       // Reset all text fields in the DB row
@@ -540,6 +635,69 @@ export default function ChurchSetupPage() {
   const isAdmin1     = profile?.role === 'admin1' || (!isSuperAdmin && !!profile?.role)
   // Signatures: church admins with Church Setup grant, and super_admin provisioning a church
   const canEditSignatures = isSuperAdmin || canBearers || canIdentity
+
+  const LetterPadCard = (
+    <div className="card p-6">
+      <p className="form-section form-section-blue" style={{ color: '#0f766e', borderColor: '#99f6e4' }}>
+        Print Corner — Church letter pad
+      </p>
+      <p className="text-xs text-slate-500 mb-4">
+        Upload a scanned blank letter pad (PDF or JPEG/PNG). Print Corner users can download it from
+        Settings → Helper Docs when creating Word / PowerPoint templates.
+      </p>
+      <div className="flex flex-wrap items-center gap-4">
+        <div
+          onClick={() => letterPadRef.current?.click()}
+          className="w-36 h-28 rounded-xl border-2 border-dashed border-slate-200 overflow-hidden cursor-pointer hover:border-teal-400 transition-colors flex items-center justify-center bg-slate-50"
+        >
+          {letterPadPreview
+            ? <img src={letterPadPreview} className="w-full h-full object-contain p-2" alt="Letter pad" />
+            : (
+              <div className="text-center px-2">
+                <div className="w-8 h-8 mx-auto opacity-25">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {letterPadMeta.fileName ? 'PDF ready' : 'Letter pad'}
+                </p>
+              </div>
+            )}
+        </div>
+        <div className="flex-1 min-w-[180px]">
+          <p className="text-sm font-semibold text-slate-700 mb-1">
+            {letterPadMeta.fileName || letterPadFile?.name || 'No file uploaded'}
+          </p>
+          <p className="text-xs text-slate-500 mb-3">
+            {letterPadMeta.mimeType || letterPadFile?.type || 'PDF · JPEG · PNG · max 20 MB'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => letterPadRef.current?.click()}>
+              <Upload size={11} /> {letterPadMeta.url || letterPadFile ? 'Replace' : 'Upload'}
+            </button>
+            {letterPadMeta.url && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => window.open(letterPadMeta.url, '_blank', 'noopener,noreferrer')}
+              >
+                View
+              </button>
+            )}
+          </div>
+        </div>
+        <input
+          ref={letterPadRef}
+          type="file"
+          accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png"
+          className="hidden"
+          onChange={onLetterPad}
+        />
+      </div>
+    </div>
+  )
 
   const SignatureImagesCard = (
     <div className="card p-6">
@@ -792,7 +950,7 @@ export default function ChurchSetupPage() {
 
         {/* PRINT CORNER SIGNATURES */}
         {canEditSignatures && SignatureImagesCard}
-
+        {(isSuperAdmin || canIdentity) && LetterPadCard}
         {/* ACCOUNTS MODULE */}
         <div className="card p-6">
           <p className="form-section form-section-blue" style={{color:'#16a34a',borderColor:'#86efac'}}>Accounts Module</p>
@@ -1251,6 +1409,7 @@ export default function ChurchSetupPage() {
           )}
 
           {canEditSignatures && SignatureImagesCard}
+          {(isSuperAdmin || canIdentity) && LetterPadCard}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <ZonesPanel profile={profile} toast={toast} />

@@ -738,25 +738,34 @@ export function applyMemberToFieldValues(out, member, templateKeys = null) {
   return next
 }
 
+export function applyChurchToFieldValues(out, church) {
+  if (!out || !church) return out || {}
+  const next = { ...out }
+  const churchName = church.church_name || ''
+  const presbyter = church.presbyter_name || church.pastor_name || ''
+  const diocese = church.diocese || ''
+  const address = [church.address, church.city, church.pincode].filter(Boolean).join(', ')
+  const secretary = church.secretary_name || ''
+  const treasurer = church.treasurer_name || ''
+
+  for (const key of Object.keys(next)) {
+    const n = String(key).trim().toLowerCase().replace(/[\s-]+/g, '_')
+    if (n === 'church_name') next[key] = churchName
+    else if (n === 'presbyter_name' || n === 'pastor_name') next[key] = presbyter
+    else if (n === 'diocese') next[key] = diocese
+    else if (n === 'address' && !String(next[key] || '').trim()) next[key] = address
+    else if (n === 'secretary_name') next[key] = secretary
+    else if (n === 'treasurer_name') next[key] = treasurer
+  }
+  return next
+}
+
 export function defaultFieldValuesFromTemplate(template, church = null, member = null) {
   const out = {}
   for (const v of wizardTextVariables(template?.variables)) {
     if (v.key) out[v.key] = ''
   }
-  if (church) {
-    const churchName = church.church_name || ''
-    const presbyter = church.presbyter_name || church.pastor_name || ''
-    // Fill both spellings if Word uses {Church_name} or {church_name}
-    if ('church_name' in out) out.church_name = churchName
-    if ('Church_name' in out) out.Church_name = churchName
-    if ('presbyter_name' in out) out.presbyter_name = presbyter
-    if ('diocese' in out) out.diocese = church.diocese || ''
-    if ('address' in out) {
-      out.address = [church.address, church.city, church.pincode].filter(Boolean).join(', ')
-    }
-    if ('secretary_name' in out) out.secretary_name = church.secretary_name || ''
-    if ('treasurer_name' in out) out.treasurer_name = church.treasurer_name || ''
-  }
+  if (church) applyChurchToFieldValues(out, church)
   if (member) {
     applyMemberToFieldValues(out, member, Object.keys(out))
   }
@@ -818,6 +827,7 @@ export async function getChurchForPrintCorner() {
     .select(
       'church_name, diocese, address, city, pincode, presbyter_name, pastor_name, secretary_name, treasurer_name, '
       + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url, '
+      + 'letter_pad_url, letter_pad_file_name, letter_pad_mime_type, '
       + 'whatsapp_api_type, whatsapp_receipt_mode',
     )
     .limit(1)
@@ -840,6 +850,199 @@ export function getOfficeBearerSignatureStatus(church) {
     { role: 'Secretary', ready: !!church.secretary_signature_url, url: church.secretary_signature_url },
     { role: 'Treasurer', ready: !!church.treasurer_signature_url, url: church.treasurer_signature_url },
   ]
+}
+
+/**
+ * Canonical placeholder catalogue for template authors (letters, certificates, ID cards).
+ * Groups are shown in Print Corner → Helper Docs.
+ */
+export const PRINT_CORNER_PLACEHOLDER_GUIDE = [
+  {
+    id: 'member',
+    title: 'Member identity',
+    hint: 'Auto-filled when you pick a member or type Member ID (where mapped).',
+    items: [
+      { key: 'member_id', label: 'Member ID', example: 'D01701' },
+      { key: 'Member_id', label: 'Member ID (alt casing)', example: 'D01701' },
+      { key: 'family_id', label: 'Family ID', example: 'D017' },
+      { key: 'member_name', label: 'Member name', example: 'DEVAKUMAR P' },
+      { key: 'Member_Name', label: 'Member name (alt casing)', example: 'DEVAKUMAR P' },
+      { key: 'name', label: 'Name (alias of member name)', example: 'DEVAKUMAR P' },
+      { key: 'title', label: 'Title', example: 'Mr. / Mrs. / Ms.' },
+      { key: 'father_name', label: 'Father name', example: '…' },
+      { key: 'Father_name', label: 'Father name (alt casing)', example: '…' },
+      { key: 'spouse_name', label: 'Spouse name', example: '…' },
+      { key: 'mother_name', label: 'Mother name (manual if not in Members)', example: '…' },
+      { key: 'gender', label: 'Gender', example: 'Male / Female' },
+      { key: 'aadhaar', label: 'Aadhaar', example: 'XXXX XXXX XXXX' },
+    ],
+  },
+  {
+    id: 'contact',
+    title: 'Contact & address',
+    hint: 'From the member record when available.',
+    items: [
+      { key: 'mobile', label: 'Mobile', example: '91…' },
+      { key: 'whatsapp', label: 'WhatsApp', example: '91…' },
+      { key: 'email', label: 'Email', example: 'name@example.com' },
+      { key: 'address_street', label: 'Street address', example: '…' },
+      { key: 'member_address', label: 'Full residential address (one line)', example: 'Street, area, city, state' },
+      { key: 'residential_address', label: 'Residential address (alias)', example: '…' },
+      { key: 'city', label: 'City', example: 'Trichy' },
+      { key: 'state', label: 'State', example: 'Tamil Nadu' },
+      { key: 'zonal_area', label: 'Zonal area', example: '…' },
+      { key: 'zone', label: 'Zone (alias)', example: '…' },
+    ],
+  },
+  {
+    id: 'dates_life',
+    title: 'Life & sacrament dates',
+    hint: 'Formatted as DD.MM.YYYY when pulled from Members.',
+    items: [
+      { key: 'dob', label: 'Date of birth (preferred)', example: '15.08.1990' },
+      { key: 'dob_actual', label: 'DOB (actual)', example: '15.08.1990' },
+      { key: 'dob_certificate', label: 'DOB (certificate)', example: '15.08.1990' },
+      { key: 'marital_status', label: 'Marital status', example: 'Married' },
+      { key: 'date_of_marriage', label: 'Date of marriage', example: '10.01.2015' },
+      { key: 'baptism_date', label: 'Baptism date', example: '…' },
+      { key: 'confirmation_date', label: 'Confirmation date', example: '…' },
+      { key: 'qualification', label: 'Qualification', example: '…' },
+      { key: 'profession', label: 'Profession', example: '…' },
+    ],
+  },
+  {
+    id: 'church',
+    title: 'Church / office bearers (auto from Church Setup)',
+    hint: 'Filled automatically from Church Setup. Prefer these exact keys in Word/PowerPoint.',
+    items: [
+      { key: 'church_name', label: 'Church name', example: 'CSITA St. Paul\'s Pastorate' },
+      { key: 'Church_name', label: 'Church name (alt casing)', example: '…' },
+      { key: 'diocese', label: 'Diocese', example: 'CSI … Diocese' },
+      { key: 'address', label: 'Church address (one line)', example: '…' },
+      { key: 'presbyter_name', label: 'Presbyter / Pastor name', example: 'Rev. …' },
+      { key: 'secretary_name', label: 'Secretary name', example: '…' },
+      { key: 'treasurer_name', label: 'Treasurer name', example: '…' },
+    ],
+  },
+  {
+    id: 'letter',
+    title: 'Letters (mail-merge text)',
+    hint: 'Common letter fields — type in the wizard or leave blank for manual entry.',
+    items: [
+      { key: 'ref_no', label: 'Reference number', example: 'LPC/2026/014' },
+      { key: 'date', label: 'Letter date', example: '27.08.2026' },
+      { key: 'addressee_line1', label: 'Addressee line 1', example: 'The Principal' },
+      { key: 'addressee_line2', label: 'Addressee line 2', example: 'College name' },
+      { key: 'addressee_line3', label: 'Addressee line 3', example: 'City' },
+      { key: 'home_church', label: 'Home church', example: '…' },
+      { key: 'member_since', label: 'Member since', example: '2010' },
+      { key: 'gender_type', label: 'Gender wording in prose', example: 'man / woman' },
+      { key: 'support_type', label: 'Support / ministry type', example: '…' },
+      { key: 'purpose', label: 'Purpose / aspiration', example: 'higher studies' },
+      { key: 'body', label: 'Free letter body', example: '…' },
+      { key: 'position', label: 'Position / role (e.g. ID card)', example: 'Volunteer' },
+    ],
+  },
+  {
+    id: 'images',
+    title: 'Images (Alt Text on pictures — not typed in wizard)',
+    hint: 'In Word/PowerPoint/Canva: insert a placeholder picture, set Alt Text (or description) to the tag below.',
+    items: [
+      { key: 'presbyter_sign', label: 'Presbyter signature image', example: 'Alt Text = {presbyter_sign}' },
+      { key: 'secretary_sign', label: 'Secretary signature image', example: 'Alt Text = {secretary_sign}' },
+      { key: 'treasurer_sign', label: 'Treasurer signature image', example: 'Alt Text = {treasurer_sign}' },
+      { key: 'treasurer_seal', label: 'Treasurer seal image', example: 'Alt Text = {treasurer_seal}' },
+      { key: 'member_photo', label: 'Member photo (from Member ID)', example: 'Alt Text = {member_photo}' },
+    ],
+  },
+]
+
+/** Download a print-friendly HTML guide of all Print Corner placeholders. */
+export function downloadPrintCornerPlaceholderGuide({ churchName = '' } = {}) {
+  const title = 'Print Corner — Placeholder guide'
+  const churchLine = churchName ? `<p class="sub">${escapeHtmlGuide(churchName)}</p>` : ''
+  const sections = PRINT_CORNER_PLACEHOLDER_GUIDE.map(g => {
+    const rows = g.items.map(it => (
+      `<tr>
+        <td class="key"><code>{${escapeHtmlGuide(it.key)}}</code></td>
+        <td>${escapeHtmlGuide(it.label)}</td>
+        <td class="ex">${escapeHtmlGuide(it.example || '')}</td>
+      </tr>`
+    )).join('')
+    return `
+      <section>
+        <h2>${escapeHtmlGuide(g.title)}</h2>
+        <p class="hint">${escapeHtmlGuide(g.hint || '')}</p>
+        <table>
+          <thead><tr><th>Placeholder</th><th>Meaning</th><th>Example</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </section>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>${title}</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; max-width: 880px; margin: 32px auto; padding: 0 20px; color: #1e293b; line-height: 1.45; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #64748b; margin: 0 0 20px; font-size: 14px; }
+  .intro { font-size: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 24px; }
+  h2 { font-size: 16px; margin: 28px 0 6px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  .hint { font-size: 12px; color: #64748b; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: #eff6ff; color: #1d4ed8; padding: 1px 5px; border-radius: 4px; }
+  .ex { color: #64748b; font-size: 12px; }
+  @media print { body { margin: 12px; } .intro { break-inside: avoid; } section { break-inside: avoid; } }
+</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${churchLine}
+  <div class="intro">
+    <p style="margin:0 0 8px"><strong>How to use:</strong> In Word or PowerPoint / Canva, type placeholders exactly like <code>{member_name}</code> (curly braces, no spaces).</p>
+    <p style="margin:0 0 8px">For signatures and member photo, insert a picture and set its <strong>Alt Text / Description</strong> to the image tag (e.g. <code>{presbyter_sign}</code> or <code>{member_photo}</code>).</p>
+    <p style="margin:0">Only include the tags your design needs. Extra tags on the template become empty fields in the Print Corner wizard.</p>
+  </div>
+  ${sections}
+  <p style="margin-top:32px;font-size:11px;color:#94a3b8">Generated by Church CMS · Print Corner Helper Docs</p>
+</body>
+</html>`
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'print-corner-placeholder-guide.html'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function escapeHtmlGuide(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/** Open / download the church letter pad uploaded in Church Setup. */
+export async function downloadChurchLetterPad(church = null) {
+  const row = church || await getChurchForPrintCorner()
+  const url = row?.letter_pad_url
+  if (!url) throw new Error('Church letter pad is not uploaded yet. Add it in Church Setup.')
+  const name = row.letter_pad_file_name || 'church-letter-pad'
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  a.download = name
+  a.click()
+  return { url, fileName: name }
 }
 
 /* ── Bulk letter tracker (Excel) ───────────────────────────────── */

@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Settings, ArrowLeft, Plus, Pencil, Trash2, Check, X, Loader2,
-  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown, PenLine, ClipboardList,
+  Tags, FileText, Upload, GripVertical, ChevronUp, ChevronDown, ClipboardList,
+  BookOpen, Download,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
+import { useAuth } from '../lib/AuthContext'
 import {
   getPrintCornerCategories,
   savePrintCornerCategory,
@@ -32,6 +34,9 @@ import {
   buildPrintCornerSidebarBrowseItems,
   PRINT_CORNER_FORMS_SIDEBAR_ID,
   isPrintCornerFormCategoryName,
+  PRINT_CORNER_PLACEHOLDER_GUIDE,
+  downloadPrintCornerPlaceholderGuide,
+  downloadChurchLetterPad,
 } from '../lib/printCornerLib'
 
 const INPUT = {
@@ -43,7 +48,7 @@ const INPUT = {
 const TABS = [
   { id: 'templates', label: 'Templates', icon: FileText },
   { id: 'categories', label: 'Categories', icon: Tags },
-  { id: 'signatures', label: 'Signatures', icon: PenLine },
+  { id: 'helpers', label: 'Helper Docs', icon: BookOpen },
 ]
 
 const APP_FORMS_SIDEBAR_ID = PRINT_CORNER_FORMS_SIDEBAR_ID
@@ -915,11 +920,14 @@ function TemplatesPanel() {
 }
 
 
-function SignaturesPanel() {
+function HelperDocsPanel() {
   const navigate = useNavigate()
   const toast = useToast()
+  const { profile } = useAuth()
+  const isSuperAdmin = profile?.role === 'super_admin'
   const [church, setChurch] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
 
   useEffect(() => {
     ;(async () => {
@@ -933,60 +941,210 @@ function SignaturesPanel() {
     })()
   }, [toast])
 
-  const status = getOfficeBearerSignatureStatus(church)
-  const allReady = status.every(s => s.ready)
+  async function handleLetterPad() {
+    setBusy('pad')
+    try {
+      await downloadChurchLetterPad(church)
+      toast('Opening church letter pad…', 'success')
+    } catch (e) {
+      toast(e.message || 'Letter pad not available', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function handlePlaceholderGuide() {
+    try {
+      downloadPrintCornerPlaceholderGuide({ churchName: church?.church_name || '' })
+      toast('Placeholder guide downloaded.', 'success')
+    } catch (e) {
+      toast(e.message || 'Could not download guide', 'error')
+    }
+  }
+
+  const hasPad = !!church?.letter_pad_url
+  const padIsImage = String(church?.letter_pad_mime_type || '').startsWith('image/')
+  const sigStatus = getOfficeBearerSignatureStatus(church)
+  const allSigsReady = sigStatus.every(s => s.ready)
 
   return (
-    <div className="card" style={{ padding: 20, maxWidth: 640 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Office bearer signatures</div>
-      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 16px', lineHeight: 1.55 }}>
-        Upload signatures in Church Setup. In Word, insert a placeholder image sized as you want,
-        set its Alt Text to <code style={{ fontSize: 12 }}>{'{presbyter_sign}'}</code>
-        {' '}(or secretary_sign / treasurer_sign), re-upload the .docx, then Issue PDF.
-        The placeholder picture is replaced; its size and position are kept.
-      </p>
+    <div style={{ display: 'grid', gap: 16, maxWidth: 920 }}>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Office bearer signatures</div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.55, maxWidth: 640 }}>
+              Status of signature images used in letters. In Word, set picture Alt Text to{' '}
+              <code style={{ fontSize: 12 }}>{'{presbyter_sign}'}</code>
+              {' '}(or secretary_sign / treasurer_sign). Uploads are managed in Church Setup.
+            </p>
+          </div>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => navigate('/church-setup')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8,
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              Open Church Setup
+            </button>
+          )}
+        </div>
 
-      {loading ? (
-        <Loader2 size={20} className="animate-spin" />
-      ) : (
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-          {status.map(s => (
-            <div key={s.role} style={{
-              width: 120, padding: 12, borderRadius: 8, border: '1px solid var(--card-border)',
-              background: s.ready ? '#f0fdf4' : '#fef2f2', textAlign: 'center',
+        {loading ? (
+          <Loader2 size={18} className="animate-spin" />
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+              {sigStatus.map(s => (
+                <div key={s.role} style={{
+                  width: 120, padding: 12, borderRadius: 8, border: '1px solid var(--card-border)',
+                  background: s.ready ? '#f0fdf4' : '#fef2f2', textAlign: 'center',
+                }}>
+                  <div style={{
+                    height: 56, marginBottom: 8, borderRadius: 6, background: '#fff',
+                    border: '1px dashed var(--card-border)', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', overflow: 'hidden',
+                  }}>
+                    {s.url
+                      ? <img src={s.url} alt={s.role} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                      : <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Missing</span>}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{s.role}</div>
+                  <div style={{ fontSize: 10, color: s.ready ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                    {s.ready ? 'Ready' : 'Not uploaded'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+              background: allSigsReady ? '#f0fdf4' : '#fff7ed',
+              border: `1px solid ${allSigsReady ? '#bbf7d0' : '#fed7aa'}`,
+              color: 'var(--text-2)',
             }}>
-              <div style={{
-                height: 56, marginBottom: 8, borderRadius: 6, background: '#fff',
-                border: '1px dashed var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-              }}>
-                {s.url
-                  ? <img src={s.url} alt={s.role} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                  : <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Missing</span>}
+              {allSigsReady
+                ? 'All three signature images are stored. Use Alt Text {presbyter_sign} on a sized placeholder image in Word.'
+                : isSuperAdmin
+                  ? 'Some signatures are missing. Open Church Setup → Print Corner — Signature images, then Save.'
+                  : 'Some signatures are missing. Ask a super admin to upload them in Church Setup.'}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Church letter pad</div>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.55 }}>
+          Download the scanned blank letter pad uploaded in Church Setup. Use it as a visual reference
+          when designing Word / PowerPoint / Canva templates for letters and certificates.
+        </p>
+        {loading ? (
+          <Loader2 size={18} className="animate-spin" />
+        ) : (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{
+              width: 120, height: 90, borderRadius: 8, border: '1px dashed var(--card-border)',
+              background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            }}>
+              {hasPad && padIsImage
+                ? <img src={church.letter_pad_url} alt="Letter pad" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                : (
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', textAlign: 'center', padding: 8 }}>
+                    {hasPad ? 'PDF on file' : 'Not uploaded'}
+                  </span>
+                )}
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                {hasPad ? (church.letter_pad_file_name || 'Church letter pad') : 'No letter pad yet'}
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>{s.role}</div>
-              <div style={{ fontSize: 10, color: s.ready ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
-                {s.ready ? 'Ready' : 'Not uploaded'}
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 10 }}>
+                {hasPad
+                  ? (church.letter_pad_mime_type || 'Ready to download')
+                  : isSuperAdmin
+                    ? 'Upload it in Church Setup → Print Corner — Church letter pad.'
+                    : 'Ask a super admin to upload the letter pad in Church Setup.'}
+              </div>
+              <button
+                type="button"
+                disabled={!hasPad || busy === 'pad'}
+                onClick={handleLetterPad}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                  background: hasPad ? '#0f766e' : 'var(--input-bg)', color: hasPad ? '#fff' : 'var(--text-3)',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  cursor: hasPad ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {busy === 'pad' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                Download letter pad
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Placeholder field list</div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0, lineHeight: 1.55, maxWidth: 640 }}>
+              Use these tags in Word / PowerPoint / Canva when building certificates, letters, and ID cards.
+              Text tags go in the document body; image tags go in the picture Alt Text.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePlaceholderGuide}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+              background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            <Download size={14} /> Download guide (HTML)
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 14, marginTop: 8 }}>
+          {PRINT_CORNER_PLACEHOLDER_GUIDE.map(group => (
+            <div key={group.id} style={{ border: '1px solid var(--card-border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 12px', background: 'var(--input-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{group.title}</div>
+                {group.hint && (
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2, lineHeight: 1.4 }}>{group.hint}</div>
+                )}
+              </div>
+              <div style={{ maxHeight: 220, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', color: 'var(--text-3)' }}>
+                      <th style={{ padding: '8px 12px', fontWeight: 700 }}>Placeholder</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 700 }}>Meaning</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 700 }}>Example</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map(it => (
+                      <tr key={it.key} style={{ borderTop: '1px solid var(--card-border)' }}>
+                        <td style={{ padding: '7px 12px', fontFamily: 'ui-monospace, Consolas, monospace', color: '#1d4ed8', whiteSpace: 'nowrap' }}>
+                          {`{${it.key}}`}
+                        </td>
+                        <td style={{ padding: '7px 12px', color: 'var(--text-1)' }}>{it.label}</td>
+                        <td style={{ padding: '7px 12px', color: 'var(--text-3)' }}>{it.example}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           ))}
         </div>
-      )}
-
-      <div style={{
-        padding: 12, borderRadius: 8, marginBottom: 14, fontSize: 12, lineHeight: 1.5,
-        background: allReady ? '#f0fdf4' : '#fff7ed',
-        border: `1px solid ${allReady ? '#bbf7d0' : '#fed7aa'}`,
-        color: 'var(--text-2)',
-      }}>
-        {allReady
-          ? 'All three signature images are stored. Use Alt Text {presbyter_sign} on a sized placeholder image in Word.'
-          : 'Some signatures are missing. Open Church Setup → Print Corner — Signature images, then Save.'}
       </div>
-
-      <button type="button" onClick={() => navigate('/church-setup')}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-        Open Church Setup
-      </button>
     </div>
   )
 }
@@ -997,7 +1155,7 @@ export default function PrintCornerSettingsPage() {
 
   return (
     <div className="page-container">
-      <PageHeader icon={Settings} title="Print Corner Settings" subtitle="Templates, categories, and signatures">
+      <PageHeader icon={Settings} title="Print Corner Settings" subtitle="Templates, categories, and helper docs">
         <button type="button" onClick={() => navigate('/print-corner')}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-2)' }}>
           <ArrowLeft size={14} /> Back
@@ -1024,7 +1182,7 @@ export default function PrintCornerSettingsPage() {
 
       {tab === 'categories' && <CategoriesPanel />}
       {tab === 'templates' && <TemplatesPanel />}
-      {tab === 'signatures' && <SignaturesPanel />}
+      {tab === 'helpers' && <HelperDocsPanel />}
     </div>
   )
 }
