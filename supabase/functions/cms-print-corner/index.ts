@@ -839,8 +839,18 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
   }
 
   const churchName = String(church.church_name || '')
-  // Use Church Setup → Presbyter name only (ignore legacy pastor_name)
-  const presbyter = String(church.presbyter_name || '').trim()
+  // Prefer Church Setup Presbyter name; fall back to legacy pastor_name only if it looks like a person
+  const primary = String(church.presbyter_name || '').trim()
+  const legacy = String(church.pastor_name || '').trim()
+  const looksLikeChurch = (s: string) => {
+    if (!s) return false
+    if (churchName && s.toLowerCase() === churchName.toLowerCase()) return true
+    return /\b(church|pastorate|parish|cathedral|diocese|congregation)\b/i.test(s)
+  }
+  let presbyter = ''
+  if (primary && !looksLikeChurch(primary)) presbyter = primary
+  else if (legacy && !looksLikeChurch(legacy)) presbyter = legacy
+  else if (primary) presbyter = primary
   mergeFields.church_name = churchName
   mergeFields.Church_name = churchName
   mergeFields.presbyter_name = presbyter

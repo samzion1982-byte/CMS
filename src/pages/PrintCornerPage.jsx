@@ -33,6 +33,7 @@ import {
   wizardTextVariables,
   imageFieldVariables,
   templateHasMemberPhoto,
+  isChurchSetupFieldKey,
   sortPrintCornerTemplates,
   sortPrintCornerCategories,
   buildPrintCornerSidebarBrowseItems,
@@ -216,6 +217,17 @@ export default function PrintCornerPage() {
   }, [toast, applySidebarCatalog])
 
   useEffect(() => { load() }, [load])
+
+  // Refresh Church Setup fields after user saves church profile
+  useEffect(() => {
+    function onChurchUpdated() {
+      getChurchForPrintCorner()
+        .then(setChurch)
+        .catch(() => {})
+    }
+    window.addEventListener('church-settings-updated', onChurchUpdated)
+    return () => window.removeEventListener('church-settings-updated', onChurchUpdated)
+  }, [])
 
   useEffect(() => {
     if (!selected) return
@@ -1115,27 +1127,66 @@ export default function PrintCornerPage() {
             </div>
           )}
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
-            {variables.map(v => (
-              <label key={v.key} style={{ fontSize: 12, fontWeight: 600 }}>
-                {v.label || v.key}
-                <input
-                  value={fieldValues[v.key] ?? ''}
-                  onChange={e => {
-                    clearBulk()
-                    setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
-                  }}
-                  onBlur={isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
-                  onKeyDown={isMemberIdField(v.key) ? e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      handleMemberIdLookup(e.currentTarget.value)
+            {variables.map(v => {
+              const fromChurch = isChurchSetupFieldKey(v.key)
+              const emptyChurch = fromChurch && !String(fieldValues[v.key] ?? '').trim()
+              const isPastorKey = ['presbyter_name', 'pastor_name'].includes(
+                String(v.key || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
+              )
+              return (
+                <label key={v.key} style={{ fontSize: 12, fontWeight: 600 }}>
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    {v.label || v.key}
+                    {fromChurch && (
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)' }}>
+                        (from Church Setup)
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    value={fieldValues[v.key] ?? ''}
+                    onChange={e => {
+                      clearBulk()
+                      setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
+                    }}
+                    onBlur={isMemberIdField(v.key) ? e => handleMemberIdLookup(e.target.value) : undefined}
+                    onKeyDown={isMemberIdField(v.key) ? e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleMemberIdLookup(e.currentTarget.value)
+                      }
+                    } : undefined}
+                    placeholder={
+                      isMemberIdField(v.key)
+                        ? 'Enter ID and press Enter or tab out'
+                        : emptyChurch && isPastorKey
+                          ? 'Not set — add Presbyter name in Church Setup'
+                          : emptyChurch
+                            ? 'Not set in Church Setup'
+                            : undefined
                     }
-                  } : undefined}
-                  placeholder={isMemberIdField(v.key) ? 'Enter ID and press Enter or tab out' : undefined}
-                  style={{ ...INPUT, marginTop: 4, fontWeight: 400 }}
-                />
-              </label>
-            ))}
+                    style={{
+                      ...INPUT,
+                      marginTop: 4,
+                      fontWeight: 400,
+                      ...(emptyChurch ? { borderColor: '#f59e0b' } : null),
+                    }}
+                  />
+                  {emptyChurch && isPastorKey && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/church-setup')}
+                      style={{
+                        display: 'block', marginTop: 4, padding: 0, border: 'none', background: 'none',
+                        fontSize: 11, fontWeight: 600, color: '#b45309', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      Open Church Setup → set Presbyter / Pastor name, then Save
+                    </button>
+                  )}
+                </label>
+              )
+            })}
           </div>
           <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             Review →

@@ -27,6 +27,7 @@ const VARIABLE_LABELS = {
   support_type: 'Support / ministry type',
   purpose: 'Purpose / aspiration',
   presbyter_name: 'Presbyter name',
+  pastor_name: 'Pastor / Presbyter name',
   church_name: 'Church name',
   Church_name: 'Church name',
   member_id: 'Member ID',
@@ -738,11 +739,41 @@ export function applyMemberToFieldValues(out, member, templateKeys = null) {
   return next
 }
 
+export function normalizePrintCornerFieldKey(key) {
+  return String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+/** True when this wizard key is filled from Church Setup (not member / free text). */
+export function isChurchSetupFieldKey(key) {
+  const n = normalizePrintCornerFieldKey(key)
+  return [
+    'church_name',
+    'presbyter_name',
+    'pastor_name',
+    'diocese',
+    'secretary_name',
+    'treasurer_name',
+  ].includes(n)
+}
+
+/** Skip legacy pastor_name values that are actually church labels, not a person. */
+function looksLikeChurchLabelNotPerson(value, churchName) {
+  const s = String(value || '').trim()
+  if (!s) return false
+  const church = String(churchName || '').trim()
+  if (church && s.toLowerCase() === church.toLowerCase()) return true
+  return /\b(church|pastorate|parish|cathedral|diocese|congregation)\b/i.test(s)
+}
+
 export function resolvePresbyterDisplayName(church) {
   if (!church) return ''
-  // Print Corner / letters must use Church Setup → Presbyter name only.
-  // Do not fall back to legacy pastor_name (often still holds an old church label).
-  return String(church.presbyter_name || '').trim()
+  const primary = String(church.presbyter_name || '').trim()
+  if (primary && !looksLikeChurchLabelNotPerson(primary, church.church_name)) return primary
+  const legacy = String(church.pastor_name || '').trim()
+  if (legacy && !looksLikeChurchLabelNotPerson(legacy, church.church_name)) return legacy
+  // Prefer primary even if it looks odd (user typed it in Church Setup)
+  if (primary) return primary
+  return ''
 }
 
 export function applyChurchToFieldValues(out, church) {
@@ -756,7 +787,7 @@ export function applyChurchToFieldValues(out, church) {
   const treasurer = church.treasurer_name || ''
 
   for (const key of Object.keys(next)) {
-    const n = String(key).trim().toLowerCase().replace(/[\s-]+/g, '_')
+    const n = normalizePrintCornerFieldKey(key)
     if (n === 'church_name') next[key] = churchName
     else if (n === 'presbyter_name' || n === 'pastor_name') next[key] = presbyter
     else if (n === 'diocese') next[key] = diocese
