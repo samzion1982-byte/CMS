@@ -38,6 +38,7 @@ import {
   downloadPrintCornerPlaceholderGuide,
   downloadChurchLetterPad,
 } from '../lib/printCornerLib'
+import MasterDeleteGate from '../components/printCorner/MasterDeleteGate'
 
 const INPUT = {
   height: 34, padding: '0 10px', border: '1.5px solid var(--card-border)',
@@ -230,6 +231,7 @@ function TemplatesPanel() {
   const [tplPreviewTick, setTplPreviewTick] = useState(0)
   const [tplPreviewForce, setTplPreviewForce] = useState(false)
   const [church, setChurch] = useState(null)
+  const [deletePrompt, setDeletePrompt] = useState(null) // { kind: 'template'|'form', item }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -444,17 +446,38 @@ function TemplatesPanel() {
     setBusy(false)
   }
 
-  async function handleDeleteTemplate() {
-    if (!selected) return
-    if (!window.confirm(`Delete template “${selected.label}”? This cannot be undone.`)) return
+  async function confirmDelete() {
+    if (!deletePrompt) return
     setBusy(true)
     try {
-      await deletePrintCornerTemplate(selected.id, selected.storage_path)
-      toast('Template deleted.', 'success')
-      setSelectedId(null)
+      if (deletePrompt.kind === 'template') {
+        const t = deletePrompt.item
+        await deletePrintCornerTemplate(t.id, t.storage_path)
+        if (selectedId === t.id) setSelectedId(null)
+        toast('Template deleted.', 'success')
+      } else {
+        const f = deletePrompt.item
+        await deletePrintCornerApplicationForm(f.id, f.storage_path)
+        if (selectedBlankId === f.id) setSelectedBlankId(null)
+        toast('Deleted.', 'success')
+      }
       await load()
-    } catch (e) { toast(e.message, 'error') }
-    setBusy(false)
+    } catch (e) {
+      toast(e.message, 'error')
+      throw e
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteTemplate() {
+    if (!selected) return
+    setDeletePrompt({ kind: 'template', item: selected })
+  }
+
+  async function handleDeleteBlankForm() {
+    if (!selectedBlank) return
+    setDeletePrompt({ kind: 'form', item: selectedBlank })
   }
 
   async function handleAddTemplate() {
@@ -535,21 +558,6 @@ function TemplatesPanel() {
         file_size: selectedBlank.file_size,
       })
       toast('Saved.', 'success')
-      await load()
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-    setBusy(false)
-  }
-
-  async function handleDeleteBlankForm() {
-    if (!selectedBlank) return
-    if (!window.confirm(`Delete blank form “${selectedBlank.label}”?`)) return
-    setBusy(true)
-    try {
-      await deletePrintCornerApplicationForm(selectedBlank.id, selectedBlank.storage_path)
-      toast('Deleted.', 'success')
-      setSelectedBlankId(null)
       await load()
     } catch (e) {
       toast(e.message, 'error')
@@ -678,34 +686,74 @@ function TemplatesPanel() {
               No blank forms yet. Add one and upload the scanned PDF or JPEG.
             </div>
           ) : blankForms.map(f => (
-            <button key={f.id} type="button" onClick={() => setSelectedBlankId(f.id)}
+            <div
+              key={f.id}
               style={{
-                display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none',
-                borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+                display: 'flex', alignItems: 'stretch', width: '100%',
+                borderBottom: '1px solid var(--card-border)',
                 background: selectedBlankId === f.id ? '#f5f3ff' : 'transparent',
-                fontSize: 13, opacity: f.is_active === false ? 0.55 : 1,
-              }}>
-              <div style={{ fontWeight: 600 }}>{f.label}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                {f.storage_path ? (f.mime_type?.includes('pdf') ? 'PDF' : 'Image') : 'File not uploaded'}
-              </div>
-            </button>
+                opacity: f.is_active === false ? 0.55 : 1,
+              }}
+            >
+              <button type="button" onClick={() => setSelectedBlankId(f.id)}
+                style={{
+                  display: 'block', flex: 1, minWidth: 0, textAlign: 'left', padding: '8px 14px', border: 'none',
+                  cursor: 'pointer', background: 'transparent', fontSize: 13,
+                }}>
+                <div style={{ fontWeight: 600 }}>{f.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                  {f.storage_path ? (f.mime_type?.includes('pdf') ? 'PDF' : 'Image') : 'File not uploaded'}
+                </div>
+              </button>
+              <button
+                type="button"
+                title="Delete form (master password)"
+                onClick={() => setDeletePrompt({ kind: 'form', item: f })}
+                style={{
+                  flexShrink: 0, width: 36, border: 'none', borderLeft: '1px solid var(--card-border)',
+                  background: 'transparent', color: '#b91c1c', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           ))
         ) : sidebarTemplates.length === 0 ? (
           <div style={{ padding: 20, fontSize: 12, color: 'var(--text-3)' }}>
             {grouped.length === 0 ? 'No templates yet. Add one under a category.' : 'No templates in this category.'}
           </div>
         ) : sidebarTemplates.map(t => (
-          <button key={t.id} type="button" onClick={() => setSelectedId(t.id)}
+          <div
+            key={t.id}
             style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', border: 'none',
-              borderBottom: '1px solid var(--card-border)', cursor: 'pointer',
+              display: 'flex', alignItems: 'stretch', width: '100%',
+              borderBottom: '1px solid var(--card-border)',
               background: selectedId === t.id ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
-              fontSize: 13, opacity: t.is_active === false ? 0.55 : 1,
-            }}>
-            <div style={{ fontWeight: 600 }}>{t.label}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
-          </button>
+              opacity: t.is_active === false ? 0.55 : 1,
+            }}
+          >
+            <button type="button" onClick={() => setSelectedId(t.id)}
+              style={{
+                display: 'block', flex: 1, minWidth: 0, textAlign: 'left', padding: '8px 14px', border: 'none',
+                cursor: 'pointer', background: 'transparent', fontSize: 13,
+              }}>
+              <div style={{ fontWeight: 600 }}>{t.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{t.template_key}</div>
+            </button>
+            <button
+              type="button"
+              title="Delete template (master password)"
+              onClick={() => setDeletePrompt({ kind: 'template', item: t })}
+              style={{
+                flexShrink: 0, width: 36, border: 'none', borderLeft: '1px solid var(--card-border)',
+                background: 'transparent', color: '#b91c1c', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         ))}
       </div>
 
@@ -915,6 +963,18 @@ function TemplatesPanel() {
       ) : (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>Select a template</div>
       )}
+
+      <MasterDeleteGate
+        open={!!deletePrompt}
+        title={deletePrompt?.kind === 'form' ? 'Delete application form' : 'Delete template'}
+        message={
+          deletePrompt
+            ? `Enter the master password to permanently delete “${deletePrompt.item?.label}”. This cannot be undone.`
+            : ''
+        }
+        onConfirm={confirmDelete}
+        onClose={() => setDeletePrompt(null)}
+      />
     </div>
   )
 }

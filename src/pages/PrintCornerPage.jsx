@@ -21,6 +21,8 @@ import {
   getSharedDrafts,
   saveDraft,
   deleteDraft,
+  deletePrintCornerTemplate,
+  deletePrintCornerApplicationForm,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
   applyMemberToFieldValues,
@@ -35,11 +37,13 @@ import {
   templateHasMemberPhoto,
   isChurchSetupFieldKey,
   churchSetupValueForKey,
+  getPrintCornerImagePlaceholderStatus,
   sortPrintCornerTemplates,
   sortPrintCornerCategories,
   buildPrintCornerSidebarBrowseItems,
   PRINT_CORNER_FORMS_SIDEBAR_ID,
 } from '../lib/printCornerLib'
+import MasterDeleteGate from '../components/printCorner/MasterDeleteGate'
 
 const TYPE_ICONS = {
   certificate: Award,
@@ -175,6 +179,13 @@ export default function PrintCornerPage() {
   const [shareEmail, setShareEmail] = useState('')
   const [sharing, setSharing] = useState(false)
   const memberSearchTimer = useRef(null)
+  const [deletePrompt, setDeletePrompt] = useState(null) // { kind: 'template'|'form', item }
+
+  const refreshSidebar = useCallback(async () => {
+    const fresh = await fetchPrintCornerSidebarCatalog()
+    applySidebarCatalog(fresh)
+    return fresh
+  }, [applySidebarCatalog])
 
   const applySidebarCatalog = useCallback(({ categories: cats, templates, applicationForms }) => {
     const top = (cats || []).filter(c => !c.parent_id)
@@ -423,6 +434,11 @@ export default function PrintCornerPage() {
   const churchImageVariables = useMemo(
     () => imageVariables.filter(v => v.key !== 'member_photo'),
     [imageVariables],
+  )
+
+  const signatureImageStatuses = useMemo(
+    () => getPrintCornerImagePlaceholderStatus(church, churchImageVariables.map(v => v.key)),
+    [church, churchImageVariables],
   )
 
   const bulkMode = bulkRows.length > 0
@@ -707,6 +723,65 @@ export default function PrintCornerPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function confirmSidebarDelete() {
+    if (!deletePrompt) return
+    setBusy(true)
+    try {
+      if (deletePrompt.kind === 'template') {
+        const t = deletePrompt.item
+        await deletePrintCornerTemplate(t.id, t.storage_path)
+        if (selected?.id === t.id) setSelected(null)
+        toast(`Deleted “${t.label}”.`, 'success')
+      } else {
+        const f = deletePrompt.item
+        await deletePrintCornerApplicationForm(f.id, f.storage_path)
+        if (selectedBlankForm?.id === f.id) setSelectedBlankForm(null)
+        toast(`Deleted “${f.label}”.`, 'success')
+      }
+      await refreshSidebar()
+    } catch (e) {
+      toast(e.message || 'Delete failed', 'error')
+      throw e
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function renderSharedDrafts() {
+    if (!selected || selected.template_type === 'certificate') return null
+    return (
+      <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
+        {visibleDrafts.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+            No drafts for this type yet. Save a draft from Review to share with others.
+          </p>
+        ) : (
+          <div style={{ maxHeight: 180, overflow: 'auto' }}>
+            {visibleDrafts.map(d => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: 13 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>{d.template_key}</strong>
+                  <span style={{ color: 'var(--text-3)' }}>
+                    {' '}· {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
+                  </span>
+                </div>
+                <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  <Pencil size={11} /> Edit
+                </button>
+                <button type="button" disabled={busy} onClick={() => handleDeleteDraft(d)} title="Delete draft"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  <Trash2 size={11} /> Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   function pdfErrorToast(raw) {
@@ -1106,18 +1181,75 @@ export default function PrintCornerPage() {
               Include Tamil text block
             </label>
           )}
+          {renderSharedDrafts()}
           {variables.length === 0 && imageVariables.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12 }}>
               No variables on this template yet. Upload a Word file with {'{placeholders}'} in Print Corner Settings.
             </p>
           ) : null}
-          {churchImageVariables.length > 0 && (
+          {signatureImageStatuses.length > 0 && (
             <div style={{
-              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+              marginBottom: 14, padding: '12px 14px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
               background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#5b21b6',
             }}>
-              Signature images (auto from Church Setup):{' '}
-              {churchImageVariables.map(v => `{${v.key}}`).join(', ')}
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                Signature images (auto from Church Setup)
+              </div>
+              <p style={{ margin: '0 0 10px', fontSize: 11, color: '#6d28d9' }}>
+                Set picture Alt Text to <code>{'{presbyter_sign}'}</code> or bare <code>presbyter_sign</code> in Word.
+                These replace the placeholder when you issue the letter.
+              </p>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {signatureImageStatuses.map(sig => (
+                  <div
+                    key={sig.key}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                      borderRadius: 8, background: '#fff', border: `1px solid ${sig.ready ? '#a7f3d0' : '#fde68a'}`,
+                    }}
+                  >
+                    <div style={{
+                      width: 52, height: 40, borderRadius: 6, flexShrink: 0,
+                      border: '1px solid #e9d5ff', background: '#faf5ff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                    }}>
+                      {sig.ready
+                        ? <img src={sig.url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        : <span style={{ fontSize: 9, color: '#94a3b8', textAlign: 'center', padding: 4 }}>—</span>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: '#4c1d95' }}>
+                        <code style={{ fontSize: 11 }}>{`{${sig.key}}`}</code>
+                        <span style={{ fontWeight: 500, color: '#7c3aed', marginLeft: 6 }}>{sig.label}</span>
+                      </div>
+                      <div style={{
+                        fontSize: 11, marginTop: 2,
+                        color: sig.ready ? '#047857' : '#b45309',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}>
+                        {sig.ready
+                          ? <><CheckCircle2 size={12} /> Loaded — ready for issue</>
+                          : <><AlertCircle size={12} /> Not uploaded in Church Setup</>}
+                      </div>
+                    </div>
+                    {!sig.ready && (
+                      <button
+                        type="button"
+                        onClick={() => navigate('/church-setup')}
+                        style={{
+                          flexShrink: 0, padding: '4px 8px', border: 'none', borderRadius: 6,
+                          background: '#fef3c7', color: '#b45309', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        Upload
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {!church && (
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: '#6d28d9' }}>Loading Church Setup…</p>
+              )}
             </div>
           )}
           {needsMemberPhoto && (
@@ -1127,15 +1259,6 @@ export default function PrintCornerPage() {
             }}>
               Member photo (auto): set picture Alt Text to {'{member_photo}'} in Canva/PowerPoint.
               Pick a member above — their photo replaces the placeholder.
-            </div>
-          )}
-          {variables.some(v => isChurchSetupFieldKey(v.key)) && (
-            <div style={{
-              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
-              background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af',
-            }}>
-              Church Setup fields below are filled automatically from Church Setup (same values used on the printed letter).
-              {church ? null : ' Loading church profile…'}
             </div>
           )}
           <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
@@ -1231,41 +1354,8 @@ export default function PrintCornerPage() {
     }
 
     if (step === 3) {
-      const showDrafts = selected.template_type !== 'certificate'
       return (
         <div>
-          {showDrafts && (
-          <div style={{ marginBottom: 20, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
-            {visibleDrafts.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-                No drafts for this type yet.
-              </p>
-            ) : (
-              <div style={{ maxHeight: 180, overflow: 'auto' }}>
-                {visibleDrafts.map(d => (
-                  <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: 13 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <strong>{d.template_key}</strong>
-                      <span style={{ color: 'var(--text-3)' }}>
-                        {' '}· {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
-                      </span>
-                    </div>
-                    <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                      <Pencil size={11} /> Edit
-                    </button>
-                    <button type="button" disabled={busy} onClick={() => handleDeleteDraft(d)} title="Delete draft"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                      <Trash2 size={11} /> Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          )}
-
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
             <div><strong>Template:</strong> {selected.label}</div>
             {includeTamil && <div><strong>Tamil:</strong> Yes</div>}
@@ -1738,47 +1828,65 @@ export default function PrintCornerPage() {
                     const ready = !!f.storage_path
                     const kind = f.mime_type?.includes('pdf') ? 'PDF' : (f.mime_type || '').startsWith('image/') ? 'Image' : 'File'
                     return (
-                      <button
+                      <div
                         key={f.id}
-                        type="button"
-                        onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
                         style={{
-                          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                          padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                          background: active ? FORMS_STYLE.bg : 'transparent',
+                          display: 'flex', alignItems: 'stretch', width: '100%',
                           borderBottom: '1px solid var(--card-border)',
+                          background: active ? FORMS_STYLE.bg : 'transparent',
                           boxShadow: active ? `inset 3px 0 0 ${FORMS_STYLE.accent}` : 'inset 3px 0 0 transparent',
-                          transition: 'background 0.12s ease',
                         }}
                       >
-                        <span style={{
-                          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
-                          color: FORMS_STYLE.accent,
-                        }}>
-                          <ClipboardList size={15} />
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => { setSidebarMode('forms'); setSelectedBlankForm(f) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0,
+                            padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                            background: 'transparent',
+                          }}
+                        >
                           <span style={{
-                            display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
-                            color: 'var(--text-1)', lineHeight: 1.3,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: active ? FORMS_STYLE.badgeBg : 'var(--input-bg)',
+                            color: FORMS_STYLE.accent,
                           }}>
-                            {f.label}
+                            <ClipboardList size={15} />
                           </span>
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                            {ready ? kind : 'Upload needed'}
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{
+                              display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
+                              color: 'var(--text-1)', lineHeight: 1.3,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {f.label}
+                            </span>
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                              {ready ? kind : 'Upload needed'}
+                            </span>
                           </span>
-                        </span>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
-                          background: ready ? '#dcfce7' : '#ffedd5',
-                          color: ready ? '#15803d' : '#c2410c',
-                        }}>
-                          {ready ? 'Ready' : 'Missing'}
-                        </span>
-                      </button>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                            background: ready ? '#dcfce7' : '#ffedd5',
+                            color: ready ? '#15803d' : '#c2410c',
+                          }}>
+                            {ready ? 'Ready' : 'Missing'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete form (master password)"
+                          onClick={() => setDeletePrompt({ kind: 'form', item: f })}
+                          style={{
+                            flexShrink: 0, width: 40, border: 'none', borderLeft: '1px solid var(--card-border)',
+                            background: 'transparent', color: '#b91c1c', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -1828,47 +1936,65 @@ export default function PrintCornerPage() {
                   const ready = !!t.storage_path
                   const typeLabel = TEMPLATE_TYPES[t.template_type]?.label || 'Template'
                   return (
-                    <button
+                    <div
                       key={t.id}
-                      type="button"
-                      onClick={() => { setSidebarMode('templates'); setSelected(t) }}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                        padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
-                        background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
+                        display: 'flex', alignItems: 'stretch', width: '100%',
                         borderBottom: '1px solid var(--card-border)',
+                        background: active ? 'var(--accent-subtle, #eff6ff)' : 'transparent',
                         boxShadow: active ? `inset 3px 0 0 ${accent}` : 'inset 3px 0 0 transparent',
-                        transition: 'background 0.12s ease',
                       }}
                     >
-                      <span style={{
-                        width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: active ? `${accent}18` : 'var(--input-bg)',
-                        color: accent,
-                      }}>
-                        <Icon size={15} />
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setSidebarMode('templates'); setSelected(t) }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0,
+                          padding: '11px 14px', border: 'none', textAlign: 'left', cursor: 'pointer',
+                          background: 'transparent',
+                        }}
+                      >
                         <span style={{
-                          display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
-                          color: 'var(--text-1)', lineHeight: 1.3,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: active ? `${accent}18` : 'var(--input-bg)',
+                          color: accent,
                         }}>
-                          {t.label}
+                          <Icon size={15} />
                         </span>
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                          {typeLabel}{ready ? '' : ' · file needed'}
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{
+                            display: 'block', fontSize: 13, fontWeight: active ? 700 : 600,
+                            color: 'var(--text-1)', lineHeight: 1.3,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {t.label}
+                          </span>
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                            {typeLabel}{ready ? '' : ' · file needed'}
+                          </span>
                         </span>
-                      </span>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
-                        background: ready ? '#dcfce7' : '#ffedd5',
-                        color: ready ? '#15803d' : '#c2410c',
-                      }}>
-                        {ready ? 'Ready' : 'Missing'}
-                      </span>
-                    </button>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, flexShrink: 0,
+                          background: ready ? '#dcfce7' : '#ffedd5',
+                          color: ready ? '#15803d' : '#c2410c',
+                        }}>
+                          {ready ? 'Ready' : 'Missing'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete template (master password)"
+                        onClick={() => setDeletePrompt({ kind: 'template', item: t })}
+                        style={{
+                          flexShrink: 0, width: 40, border: 'none', borderLeft: '1px solid var(--card-border)',
+                          background: 'transparent', color: '#b91c1c', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   )
                 })}
               </div>
@@ -1915,6 +2041,18 @@ export default function PrintCornerPage() {
           {renderStepContent()}
         </main>
       </div>
+
+      <MasterDeleteGate
+        open={!!deletePrompt}
+        title={deletePrompt?.kind === 'form' ? 'Delete application form' : 'Delete template'}
+        message={
+          deletePrompt
+            ? `Enter the master password to permanently delete “${deletePrompt.item?.label}”. This cannot be undone.`
+            : ''
+        }
+        onConfirm={confirmSidebarDelete}
+        onClose={() => setDeletePrompt(null)}
+      />
     </div>
   )
 }

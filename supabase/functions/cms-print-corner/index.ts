@@ -229,13 +229,17 @@ function applyPptxLongNameTextFit(xml: string, fieldValues: Record<string, unkno
 }
 
 function normalizeImageSlotKey(raw: string): string | null {
-  let s = String(raw || '').trim()
+  let s = String(raw || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
   if (!s) return null
+  const braced = s.match(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/)
+  if (braced) s = braced[1]
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
-  const lower = s.toLowerCase()
-  if (IMAGE_PLACEHOLDER_MAP[s]) return s
-  if (MEMBER_PHOTO_ALIASES.has(lower)) return 'member_photo'
-  if (lower.replace(/\s+/g, '_') === 'member_photo') return 'member_photo'
+  const norm = s.toLowerCase().replace(/[\s-]+/g, '_')
+  if (norm === 'photo') return 'member_photo'
+  for (const k of IMAGE_PLACEHOLDER_KEYS) {
+    if (norm === k.toLowerCase()) return k
+  }
+  if (IMAGE_PLACEHOLDER_MAP[norm]) return norm
   return null
 }
 
@@ -470,8 +474,17 @@ function keyFromAltAttr(raw: string | null | undefined): string | null {
   if (!val) return null
   const direct = normalizeImageSlotKey(val)
   if (direct) return direct
+  const braced = val.match(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g)
+  if (braced) {
+    for (const token of braced) {
+      const k = normalizeImageSlotKey(token)
+      if (k) return k
+    }
+  }
   for (const k of IMAGE_PLACEHOLDER_KEYS) {
-    if (val.includes('{' + k + '}') || val.toLowerCase() === k.toLowerCase()) {
+    const needle = k.toLowerCase()
+    const vLower = val.toLowerCase().replace(/[\s-]+/g, '_')
+    if (vLower === needle || vLower.includes(needle) || val.toLowerCase().includes('{' + needle + '}')) {
       return normalizeImageSlotKey(k)
     }
   }
@@ -484,7 +497,10 @@ function extractBlipEmbedId(block: string): string | null {
     || block.match(/<a:blip\b[^>]*\bembed\s*=\s*"([^"]+)"/i)
     || block.match(/<asvg:svgBlip\b[^>]*\br:embed\s*=\s*"([^"]+)"/i)
     || block.match(/<a:blip\b[^>]*\br:link\s*=\s*"([^"]+)"/i)
-  return blip?.[1] || null
+  if (blip?.[1]) return blip[1]
+  const vml = block.match(/<v:imagedata\b[^>]*\br:id\s*=\s*"([^"]+)"/i)
+    || block.match(/<v:imagedata\b[^>]*\br:id\s*=\s*'([^']+)'/i)
+  return vml?.[1] || null
 }
 
 /**
@@ -494,14 +510,14 @@ function extractBlipEmbedId(block: string): string | null {
 /** Scan slide/document for alt-text attributes that name a signature key. */
 function findAltTextHits(xml: string) {
   const hits: Array<{ attr: string, value: string, key: string, index: number }> = []
-  const re = /\b(descr|title|name)\s*=\s*"([^"]*)"/gi
+  const re = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const key = keyFromAltAttr(m[2])
     if (!key) continue
     hits.push({ attr: m[1], value: m[2], key, index: m.index })
   }
-  const reSq = /\b(descr|title|name)\s*=\s*'([^']*)'/gi
+  const reSq = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*'([^']*)'/gi
   while ((m = reSq.exec(xml)) !== null) {
     const key = keyFromAltAttr(m[2])
     if (!key) continue
@@ -515,11 +531,12 @@ type PicContainer = { tag: string, start: number, end: number, block: string }
 /** Collect image-bearing containers (same idea as Word w:drawing slots). */
 function findPictureContainers(xml: string): PicContainer[] {
   const out: PicContainer[] = []
-  const re = /<(w:drawing|p:pic|p:grpSp|p:sp)\b[\s\S]*?<\/\1>/gi
+  const re = /<(w:drawing|w:pict|p:pic|p:grpSp|p:sp)\b[\s\S]*?<\/\1>/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const block = m[0]
-    if (!/<a:blip\b/i.test(block) && !/<asvg:svgBlip\b/i.test(block)) continue
+    const hasBlip = /<a:blip\b/i.test(block) || /<asvg:svgBlip\b/i.test(block) || /<v:imagedata\b/i.test(block)
+    if (!hasBlip) continue
     out.push({
       tag: m[1],
       start: m.index,
@@ -532,8 +549,8 @@ function findPictureContainers(xml: string): PicContainer[] {
 
 /** Prefer innermost p:pic / blip shape inside a group when AltText sits on the group. */
 function pickSwapBlock(container: PicContainer, hitIndex: number): { block: string, embedId: string } | null {
-  if (container.tag === 'p:grpSp' || container.tag === 'w:drawing') {
-    const innerRe = /<(p:pic|p:sp)\b[\s\S]*?<\/\1>/gi
+  if (container.tag === 'p:grpSp' || container.tag === 'w:drawing' || container.tag === 'w:pict') {
+    const innerRe = /<(p:pic|p:sp|v:shape)\b[\s\S]*?<\/\1>/gi
     let best: { block: string, embedId: string, dist: number, len: number } | null = null
     let im: RegExpExecArray | null
     while ((im = innerRe.exec(container.block)) !== null) {
@@ -576,8 +593,8 @@ function findAltTextImageSlots(xml: string) {
   // Pass A — same as letters: key + blip inside one container
   for (const c of containers) {
     let key: string | null = null
-    for (const attr of ['descr', 'title', 'name']) {
-      const reDq = new RegExp('\\b' + attr + '\\s*=\\s*"([^"]*)"', 'gi')
+    for (const attr of ['descr', 'title', 'name', 'o:title', 'o:alt', 'alt']) {
+      const reDq = new RegExp('\\b' + attr.replace(':', '\\:') + '\\s*=\\s*"([^"]*)"', 'gi')
       let am: RegExpExecArray | null
       while ((am = reDq.exec(c.block)) !== null) {
         key = keyFromAltAttr(am[1])
@@ -631,9 +648,12 @@ function retargetPictureBlock(block: string, oldEmbedId: string, newRId: string)
   const esc = oldEmbedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   out = out.replace(new RegExp('(r:embed\\s*=\\s*")' + esc + '(")', 'gi'), '$1' + newRId + '$2')
   out = out.replace(new RegExp("(r:embed\\s*=\\s*')" + esc + "(')", 'gi'), '$1' + newRId + '$2')
+  out = out.replace(new RegExp('(r:id\\s*=\\s*")' + esc + '(")', 'gi'), '$1' + newRId + '$2')
+  out = out.replace(new RegExp("(r:id\\s*=\\s*')" + esc + "(')", 'gi'), '$1' + newRId + '$2')
   out = out.replace(new RegExp('r:link\\s*=\\s*"' + esc + '"', 'gi'), 'r:embed="' + newRId + '"')
   out = out.replace(/(<a:blip\b[^>]*\br:embed\s*=\s*")([^"]+)(")/gi, '$1' + newRId + '$3')
   out = out.replace(/(<asvg:svgBlip\b[^>]*\br:embed\s*=\s*")([^"]+)(")/gi, '$1' + newRId + '$3')
+  out = out.replace(/(<v:imagedata\b[^>]*\br:id\s*=\s*")([^"]+)(")/gi, '$1' + newRId + '$3')
   out = out.replace(/<a:ext\b[^>]*>[\s\S]*?<asvg:svgBlip\b[\s\S]*?<\/a:ext>/gi, '')
   out = out.replace(/<asvg:svgBlip\b[^>]*\/>/gi, '')
   out = out.replace(/<asvg:svgBlip\b[\s\S]*?<\/asvg:svgBlip>/gi, '')
@@ -980,8 +1000,8 @@ async function mergeOfficeBytes(
   const isPptx = format === 'pptx'
   const targets = Object.keys(zip.files).filter(n =>
     (isPptx
-      ? /^ppt\/slides\/slide\d+\.xml$/i.test(n)
-      : /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n))
+      ? /^ppt\/(slides|slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(n)
+      : /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/i.test(n))
     && !zip.files[n].dir
   )
 

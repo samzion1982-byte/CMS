@@ -56,8 +56,45 @@ export const IMAGE_PLACEHOLDER_KEYS = new Set([
   'member_photo',
 ])
 
+/** Image placeholder → Church Setup column (signatures / seal). */
+export const IMAGE_PLACEHOLDER_CHURCH_COLUMNS = {
+  presbyter_sign: 'presbyter_signature_url',
+  secretary_sign: 'secretary_signature_url',
+  seceratary_sign: 'secretary_signature_url',
+  seceratry_sign: 'secretary_signature_url',
+  treasurer_sign: 'treasurer_signature_url',
+  treasurer_seal: 'treasurer_seal_url',
+}
+
+const IMAGE_PLACEHOLDER_CANONICAL = {
+  presbyter_sign: 'presbyter_sign',
+  secretary_sign: 'secretary_sign',
+  seceratary_sign: 'secretary_sign',
+  seceratry_sign: 'secretary_sign',
+  treasurer_sign: 'treasurer_sign',
+  treasurer_seal: 'treasurer_seal',
+  member_photo: 'member_photo',
+  photo: 'member_photo',
+}
+
+/** Normalize Alt Text / description to a known image placeholder key (case/spacing tolerant). */
+export function normalizeImagePlaceholderKey(raw) {
+  if (raw == null) return null
+  let s = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+  if (!s) return null
+  const braced = s.match(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/)
+  if (braced) s = braced[1]
+  s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
+  const norm = s.toLowerCase().replace(/[\s-]+/g, '_')
+  if (IMAGE_PLACEHOLDER_CANONICAL[norm]) return IMAGE_PLACEHOLDER_CANONICAL[norm]
+  for (const key of IMAGE_PLACEHOLDER_KEYS) {
+    if (norm === key.toLowerCase()) return key
+  }
+  return null
+}
+
 export function isImagePlaceholderKey(key) {
-  return IMAGE_PLACEHOLDER_KEYS.has(String(key || '').trim())
+  return normalizeImagePlaceholderKey(key) != null
 }
 
 export const TEMPLATE_TYPES = {
@@ -509,28 +546,29 @@ export async function parseOfficePlaceholders(fileOrBlob) {
   const zip = await JSZip.loadAsync(fileOrBlob)
   const xmlNames = Object.keys(zip.files).filter(n =>
     (
-      /^word\/(document|header\d*|footer\d*)\.xml$/i.test(n)
-      || /^ppt\/slides\/slide\d+\.xml$/i.test(n)
+      /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/i.test(n)
+      || /^ppt\/(slides|slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(n)
     ) && !zip.files[n].dir
   )
   if (!xmlNames.length) throw new Error('Invalid Office file (no document/slides XML).')
 
   const found = new Set()
   const textRe = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-  const attrRe = /\b(?:descr|title|name)\s*=\s*"([^"]*)"/gi
+  const attrRe = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi
 
   for (const name of xmlNames) {
     const docXml = await zip.file(name).async('string')
 
     for (const dm of docXml.matchAll(attrRe)) {
       const val = String(dm[1] || '').trim()
+      const fromAlt = normalizeImagePlaceholderKey(val)
+      if (fromAlt) found.add(fromAlt)
       let m
       const braced = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g
-      while ((m = braced.exec(val)) !== null) found.add(m[1])
-      const bare = val.replace(/^\{+/, '').replace(/\}+$/, '').trim()
-      if (isImagePlaceholderKey(bare)) found.add(bare)
-      const normalized = bare.toLowerCase().replace(/\s+/g, '_')
-      if (normalized === 'member_photo') found.add('member_photo')
+      while ((m = braced.exec(val)) !== null) {
+        const k = normalizeImagePlaceholderKey(m[1])
+        if (k) found.add(k)
+      }
     }
 
     const plain = docXml
@@ -546,7 +584,9 @@ export async function parseOfficePlaceholders(fileOrBlob) {
     let m
     textRe.lastIndex = 0
     while ((m = textRe.exec(plain)) !== null) {
-      found.add(m[1])
+      const k = normalizeImagePlaceholderKey(m[1])
+      if (k) found.add(k)
+      else found.add(m[1])
     }
   }
 
@@ -563,6 +603,27 @@ export function labelForVariableKey(key) {
   return String(key || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+/** Status of signature/seal images for template image placeholders (Fields tab). */
+export function getPrintCornerImagePlaceholderStatus(church, keys = []) {
+  const out = []
+  const seen = new Set()
+  for (const rawKey of keys || []) {
+    const key = normalizeImagePlaceholderKey(rawKey) || String(rawKey || '').trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const col = IMAGE_PLACEHOLDER_CHURCH_COLUMNS[key]
+    const url = col && church ? (church[col] || '') : ''
+    out.push({
+      key,
+      label: VARIABLE_LABELS[key] || labelForVariableKey(key),
+      ready: !!String(url).trim(),
+      url: String(url).trim(),
+      churchColumn: col || null,
+    })
+  }
+  return out
 }
 
 export function variablesFromPlaceholderKeys(keys, existing = []) {
@@ -625,12 +686,17 @@ export function normalizeTemplateVariables(raw) {
   if (!Array.isArray(raw)) return []
   return raw
     .filter(v => v && v.key)
-    .map(v => ({
-      ...v,
-      key: String(v.key).trim(),
-      label: v.label || VARIABLE_LABELS[v.key] || v.key,
-      kind: isImagePlaceholderKey(v.key) ? 'image' : (v.kind || 'text'),
-    }))
+    .map(v => {
+      const rawKey = String(v.key).trim()
+      const imageKey = normalizeImagePlaceholderKey(rawKey)
+      const key = imageKey || rawKey
+      return {
+        ...v,
+        key,
+        label: v.label || VARIABLE_LABELS[key] || v.key,
+        kind: isImagePlaceholderKey(key) ? 'image' : (v.kind || 'text'),
+      }
+    })
 }
 
 export function textFieldVariables(variables) {
@@ -875,7 +941,7 @@ export async function getChurchForPrintCorner() {
     .from('churches')
     .select(
       'church_name, diocese, address, city, pincode, presbyter_name, pastor_name, secretary_name, treasurer_name, '
-      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url, '
+      + 'presbyter_signature_url, secretary_signature_url, treasurer_signature_url, treasurer_seal_url, '
       + 'letter_pad_url, letter_pad_file_name, letter_pad_mime_type, '
       + 'whatsapp_api_type, whatsapp_receipt_mode',
     )
