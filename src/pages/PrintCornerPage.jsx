@@ -23,6 +23,10 @@ import {
   deleteDraft,
   deletePrintCornerTemplate,
   deletePrintCornerApplicationForm,
+  getPrintCornerIssuedLog,
+  deletePrintCornerIssued,
+  purgePrintCornerIssuedOlderThan,
+  ISSUED_RETENTION_DAYS,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
   applyMemberToFieldValues,
@@ -151,6 +155,8 @@ export default function PrintCornerPage() {
   const [ping, setPing] = useState(null)
   const [busy, setBusy] = useState(false)
   const [lastPdf, setLastPdf] = useState(null)
+  const [issuedPdfs, setIssuedPdfs] = useState([])
+  const [issuedLoading, setIssuedLoading] = useState(false)
   const [bulkProgress, setBulkProgress] = useState(null)
   const [blankShareUrl, setBlankShareUrl] = useState(null)
   const [tplPreviewUrl, setTplPreviewUrl] = useState(null)
@@ -196,6 +202,17 @@ export default function PrintCornerPage() {
     return fresh
   }, [applySidebarCatalog])
 
+  const refreshIssuedPdfs = useCallback(async () => {
+    setIssuedLoading(true)
+    try {
+      setIssuedPdfs(await getPrintCornerIssuedLog(40))
+    } catch {
+      setIssuedPdfs([])
+    } finally {
+      setIssuedLoading(false)
+    }
+  }, [])
+
   const load = useCallback(async () => {
     const cached = peekPrintCornerSidebarCatalogCache()
 
@@ -228,7 +245,12 @@ export default function PrintCornerPage() {
     pingPrintCorner()
       .then(setPing)
       .catch(e => setPing({ ok: false, error: e.message }))
-  }, [toast, applySidebarCatalog])
+
+    purgePrintCornerIssuedOlderThan(ISSUED_RETENTION_DAYS)
+      .then(n => { if (n > 0) refreshIssuedPdfs() })
+      .catch(() => {})
+    refreshIssuedPdfs()
+  }, [toast, applySidebarCatalog, refreshIssuedPdfs])
 
   useEffect(() => { load() }, [load])
 
@@ -823,6 +845,101 @@ export default function PrintCornerPage() {
     )
   }
 
+  async function handleDeleteIssued(row) {
+    const label = row.field_values?.member_name || row.member_id || row.template_key || row.issued_filename
+    if (!window.confirm(`Delete issued PDF “${label}” from ${new Date(row.issued_at).toLocaleString()}?`)) return
+    setBusy(true)
+    try {
+      await deletePrintCornerIssued(row)
+      if (lastPdf?.storage_path === row.storage_path) setLastPdf(null)
+      await refreshIssuedPdfs()
+      toast('Issued PDF deleted.', 'success')
+    } catch (e) {
+      toast(e.message || 'Could not delete', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function renderIssuedHistory() {
+    return (
+      <div className="card" style={{ marginTop: 16, padding: 0, overflow: 'hidden' }}>
+        <div style={{
+          padding: '12px 16px', borderBottom: '1px solid var(--card-border)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Recent issued PDFs</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+              Kept here until you delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
+            </div>
+          </div>
+          <button type="button" disabled={issuedLoading} onClick={refreshIssuedPdfs}
+            style={{
+              padding: '6px 10px', border: '1px solid var(--card-border)', borderRadius: 7,
+              background: 'var(--card-bg)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>
+            {issuedLoading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+        {issuedLoading && issuedPdfs.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
+            <Loader2 size={18} className="animate-spin" style={{ display: 'inline' }} />
+          </div>
+        ) : issuedPdfs.length === 0 ? (
+          <div style={{ padding: 20, fontSize: 13, color: 'var(--text-3)' }}>
+            No issued PDFs yet. Use Review → Issue PDF to generate one.
+          </div>
+        ) : (
+          <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            {issuedPdfs.map(row => {
+              const memberLabel = row.field_values?.member_name || row.member_id || '—'
+              const when = new Date(row.issued_at).toLocaleString()
+              return (
+                <div
+                  key={row.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                    borderBottom: '1px solid var(--card-border)', fontSize: 13,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {row.template_key || row.issued_filename}
+                      <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {memberLabel}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                      {when}
+                      {row.issued_by_email ? ` · ${row.issued_by_email}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {row.signed_url && (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => handlePrintPdf(row.signed_url)}
+                          style={{ padding: '5px 8px', border: 'none', borderRadius: 6, background: '#dbeafe', color: '#2563eb', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                          <Printer size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => handleDownloadFile(row.signed_url, row.issued_filename)}
+                          style={{ padding: '5px 8px', border: 'none', borderRadius: 6, background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                          <Download size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                        </button>
+                      </>
+                    )}
+                    <button type="button" disabled={busy} onClick={() => handleDeleteIssued(row)} title="Delete"
+                      style={{ padding: '5px 8px', border: 'none', borderRadius: 6, background: '#fee2e2', color: '#b91c1c', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                      <Trash2 size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function pdfErrorToast(raw) {
       if (/expired or revoked|invalid_grant|Google Drive not connected/i.test(raw)) {
       toast(
@@ -868,6 +985,16 @@ export default function PrintCornerPage() {
         source: 'manual',
       })
       setLastPdf(res)
+      await refreshIssuedPdfs()
+
+      const swapped = res?.signature_merge?.swapped || []
+      const sigReady = signatureImageStatuses.some(s => s.key === 'presbyter_sign' && s.ready)
+      if (sigReady && !swapped.includes('presbyter_sign')) {
+        toast(
+          'Presbyter signature loaded but not placed in the document. Set picture Alt Text to {presbyter_sign} on the placeholder image, then re-upload the template.',
+          'error',
+        )
+      }
 
       const photoMerged = res?.signature_merge?.swapped?.includes('member_photo')
       if (needsMemberPhoto && res?.member_photo_warning) {
@@ -2001,6 +2128,8 @@ export default function PrintCornerPage() {
           {renderStepContent()}
         </main>
       </div>
+
+      {renderIssuedHistory()}
 
       <MasterDeleteGate
         open={!!deletePrompt}

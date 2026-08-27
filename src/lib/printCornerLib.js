@@ -439,6 +439,58 @@ export async function deleteDraft(id) {
   if (error) throw error
 }
 
+const ISSUED_RETENTION_DAYS = 30
+
+/** Recent issued PDFs (newest first) with fresh signed URLs. */
+export async function getPrintCornerIssuedLog(limit = 40) {
+  const { data, error } = await supabase
+    .from('print_corner_issued_log')
+    .select('id, template_key, template_type, member_id, issued_filename, storage_path, field_values, issued_by_email, issued_at')
+    .order('issued_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  const rows = data || []
+  return Promise.all(rows.map(async row => {
+    if (!row.storage_path) return { ...row, signed_url: null }
+    const { data: urlData } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(row.storage_path, 3600)
+    return { ...row, signed_url: urlData?.signedUrl || null }
+  }))
+}
+
+/** Delete one issued PDF from storage and log. */
+export async function deletePrintCornerIssued(row) {
+  if (row?.storage_path) {
+    await supabase.storage.from(BUCKET).remove([row.storage_path])
+  }
+  const { error } = await supabase.from('print_corner_issued_log').delete().eq('id', row.id)
+  if (error) throw error
+}
+
+/** Remove issued PDFs older than retention (default 30 days). */
+export async function purgePrintCornerIssuedOlderThan(days = ISSUED_RETENTION_DAYS) {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  const { data, error } = await supabase
+    .from('print_corner_issued_log')
+    .select('id, storage_path')
+    .lt('issued_at', cutoff.toISOString())
+  if (error) throw error
+  const rows = data || []
+  if (!rows.length) return 0
+  const paths = rows.map(r => r.storage_path).filter(Boolean)
+  if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
+  const { error: delErr } = await supabase
+    .from('print_corner_issued_log')
+    .delete()
+    .in('id', rows.map(r => r.id))
+  if (delErr) throw delErr
+  return rows.length
+}
+
+export { ISSUED_RETENTION_DAYS }
+
 /* ── Settings: categories ─────────────────────────────────────── */
 
 export async function getPrintCornerCategories(activeOnly = false) {

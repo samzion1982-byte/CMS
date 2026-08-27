@@ -510,14 +510,14 @@ function extractBlipEmbedId(block: string): string | null {
 /** Scan slide/document for alt-text attributes that name a signature key. */
 function findAltTextHits(xml: string) {
   const hits: Array<{ attr: string, value: string, key: string, index: number }> = []
-  const re = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi
+  const re = /\b(descr|title|name|o:title|o:alt|alt)\s*=\s*"([^"]*)"/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const key = keyFromAltAttr(m[2])
     if (!key) continue
     hits.push({ attr: m[1], value: m[2], key, index: m.index })
   }
-  const reSq = /\b(?:descr|title|name|o:title|o:alt|alt)\s*=\s*'([^']*)'/gi
+  const reSq = /\b(descr|title|name|o:title|o:alt|alt)\s*=\s*'([^']*)'/gi
   while ((m = reSq.exec(xml)) !== null) {
     const key = keyFromAltAttr(m[2])
     if (!key) continue
@@ -686,10 +686,26 @@ function mediaPathFromRels(relsXml: string, embedId: string, xmlPartPath = 'word
   return null
 }
 
+function extractWordInlineExtent(block: string): { cx: string, cy: string } | null {
+  const cx = block.match(/<wp:extent\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
+    || block.match(/<a:ext\b[^>]*\bcx\s*=\s*"(\d+)"/i)?.[1]
+  const cy = block.match(/<wp:extent\b[^>]*\bcy\s*=\s*"(\d+)"/i)?.[1]
+    || block.match(/<a:ext\b[^>]*\bcy\s*=\s*"(\d+)"/i)?.[1]
+  if (cx && cy) return { cx, cy }
+  return null
+}
+
 /** Inline signature fallback when using text {presbyter_sign} (not preferred) */
-function signatureDrawingXml(rId: string, docPrId: number, name: string, isSeal = false) {
-  const cx = isSeal ? 914400 : 1463040
-  const cy = isSeal ? 914400 : 502920
+function signatureDrawingXml(
+  rId: string,
+  docPrId: number,
+  name: string,
+  isSeal = false,
+  cxOverride?: string,
+  cyOverride?: string,
+) {
+  const cx = cxOverride || (isSeal ? '914400' : '1463040')
+  const cy = cyOverride || (isSeal ? '914400' : '502920')
   return (
     `<w:drawing>`
     + `<wp:inline distT="0" distB="0" distL="0" distR="0"`
@@ -1110,15 +1126,32 @@ async function mergeOfficeBytes(
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:replace_shape:${rId}:${xfrm.cx}x${xfrm.cy}@${xfrm.x},${xfrm.y}`)
       } else {
-        const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
-        if (newBlock !== oldBlock && xml.includes(oldBlock)) {
-          xml = xml.split(oldBlock).join(newBlock)
+        const extent = extractWordInlineExtent(oldBlock)
+        // Replace whole Word drawing so Google Drive PDF conversion picks up the new image rel
+        if (/<w:drawing\b/i.test(oldBlock) && xml.includes(oldBlock)) {
+          docPrSeq += 1
+          const drawing = signatureDrawingXml(
+            rId,
+            docPrSeq,
+            slot.key,
+            slot.key === 'treasurer_seal',
+            extent?.cx,
+            extent?.cy,
+          )
+          xml = xml.split(oldBlock).join(drawing)
           swappedKeys.add(slot.key)
-          swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
-        } else if (existingBefore) {
-          swappedKeys.add(slot.key)
+          swapLog.push(`${slot.key}:docx_replace_drawing:${rId}`)
         } else {
-          swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
+          const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
+          if (newBlock !== oldBlock && xml.includes(oldBlock)) {
+            xml = xml.split(oldBlock).join(newBlock)
+            swappedKeys.add(slot.key)
+            swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
+          } else if (existingBefore) {
+            swappedKeys.add(slot.key)
+          } else {
+            swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
+          }
         }
       }
     }
