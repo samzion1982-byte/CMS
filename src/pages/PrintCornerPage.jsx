@@ -1101,6 +1101,10 @@ export default function PrintCornerPage() {
       setLastPdf(res)
       await refreshIssuedPdfs()
 
+      if (import.meta.env.DEV && res?.signature_merge) {
+        console.info('[Print Corner] signature_merge', res.signature_merge)
+      }
+
       const swapped = res?.signature_merge?.swapped || []
       const sigReady = signatureImageStatuses.some(s => s.key === 'presbyter_sign' && s.ready)
       if (sigReady && !swapped.includes('presbyter_sign')) {
@@ -1641,16 +1645,18 @@ export default function PrintCornerPage() {
               )
             })}
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
-            {showDrafts && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+            {showDrafts ? (
               <button type="button" disabled={busy} onClick={handleSaveDraftAndReview}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer' }}>
                 <Save size={14} /> Save & go to Review
               </button>
+            ) : (
+              <button type="button" onClick={() => setStep(3)}
+                style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                Review →
+              </button>
             )}
-            <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-              Review →
-            </button>
           </div>
         </div>
       )

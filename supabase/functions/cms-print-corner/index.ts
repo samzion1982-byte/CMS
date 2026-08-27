@@ -547,9 +547,13 @@ function findPictureContainers(xml: string): PicContainer[] {
   return out
 }
 
-/** Prefer innermost p:pic / blip shape inside a group when AltText sits on the group. */
+/** Prefer innermost p:pic inside PPT groups; for Word keep the full w:drawing (Google PDF needs drawing replace). */
 function pickSwapBlock(container: PicContainer, hitIndex: number): { block: string, embedId: string } | null {
-  if (container.tag === 'p:grpSp' || container.tag === 'w:drawing' || container.tag === 'w:pict') {
+  if (container.tag === 'w:drawing' || container.tag === 'w:pict') {
+    const embedId = extractBlipEmbedId(container.block)
+    if (embedId) return { block: container.block, embedId }
+  }
+  if (container.tag === 'p:grpSp') {
     const innerRe = /<(p:pic|p:sp|v:shape)\b[\s\S]*?<\/\1>/gi
     let best: { block: string, embedId: string, dist: number, len: number } | null = null
     let im: RegExpExecArray | null
@@ -725,6 +729,25 @@ function findProximityKeywordSlots(xml: string) {
     }
   }
   return slots
+}
+
+/** Resolve partial pic:pic blocks to the enclosing Word drawing for reliable Google PDF conversion. */
+function resolveDocxSwapBlock(xml: string, slot: { embedId: string, block: string }) {
+  if (/<w:drawing\b/i.test(slot.block) || /<w:pict\b/i.test(slot.block)) return slot.block
+  const esc = slot.embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const embedNeedle = new RegExp(`(?:r:embed|r:id)\\s*=\\s*"${esc}"`, 'i')
+  for (const c of findPictureContainers(xml)) {
+    if (c.tag !== 'w:drawing' && c.tag !== 'w:pict') continue
+    if (embedNeedle.test(c.block)) return c.block
+  }
+  return slot.block
+}
+
+function stripDocxSvgBlips(xml: string) {
+  return xml
+    .replace(/<a:ext\b[^>]*>[\s\S]*?<asvg:svgBlip\b[\s\S]*?<\/a:ext>/gi, '')
+    .replace(/<asvg:svgBlip\b[^>]*\/>/gi, '')
+    .replace(/<asvg:svgBlip\b[\s\S]*?<\/asvg:svgBlip>/gi, '')
 }
 
 function canInplaceOverwriteMedia(mediaPath: string, img: { ext: string }) {
@@ -1159,6 +1182,8 @@ async function mergeOfficeBytes(
       slots: found.slots.map(s => ({ key: s.key, embedId: s.embedId, via: s.via, block_len: s.block.length })),
     })
 
+    let docPartSigSwapped = false
+
     for (const slot of found.slots) {
       slotsFound.push(`${name}:${slot.key}:${slot.embedId}:${slot.via}`)
       const img = signatureImages[slot.key]
@@ -1167,6 +1192,8 @@ async function mergeOfficeBytes(
         continue
       }
 
+      const isChurchSignature = slot.key !== 'member_photo' && !!IMAGE_PLACEHOLDER_MAP[slot.key]
+      const swapBlock = !isPptx ? resolveDocxSwapBlock(xml, slot) : slot.block
       const existingBefore = mediaPathFromRels(relsXml, slot.embedId, name)
 
       // Member photo: fit image + strip Canva srcRect crop so the circle doesn't centre-zoom
@@ -1191,18 +1218,17 @@ async function mergeOfficeBytes(
         continue
       }
 
-      // Word letters: swap bytes at the existing media path (keeps rel + drawing — Google PDF respects this)
-      if (!isPptx && existingBefore && canInplaceOverwriteMedia(existingBefore, img)) {
+      // Word letters: in-place media swap alone is ignored by Google Drive PDF — use drawing replace for signatures
+      if (!isPptx && existingBefore && canInplaceOverwriteMedia(existingBefore, img) && !isChurchSignature) {
         zip.file(existingBefore, img.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
           ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
         }
-        // Drop SVG/Canva blip overrides so the replaced PNG is used
-        if (slot.block && xml.includes(slot.block)) {
-          const cleaned = retargetPictureBlock(slot.block, slot.embedId, slot.embedId)
-          if (cleaned !== slot.block) {
-            xml = xml.split(slot.block).join(cleaned)
+        if (swapBlock && xml.includes(swapBlock)) {
+          const cleaned = retargetPictureBlock(swapBlock, slot.embedId, slot.embedId)
+          if (cleaned !== swapBlock) {
+            xml = xml.split(swapBlock).join(cleaned)
             swapLog.push(`${slot.key}:stripped_svg_blip:${slot.embedId}`)
           }
         }
@@ -1212,8 +1238,8 @@ async function mergeOfficeBytes(
       }
 
       // PPTX: always replace Canva p:pic with a clean picture (overwrite/relink alone
-      // is ignored by Google Slides). DOCX letters keep overwrite + relink.
-      if (existingBefore) {
+      // is ignored by Google Slides). DOCX church signatures: replace whole w:drawing + new media rel.
+      if (existingBefore && !isChurchSignature) {
         zip.file(existingBefore, img.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
@@ -1238,7 +1264,7 @@ async function mergeOfficeBytes(
       )
       relsDirty = true
 
-      const oldBlock = slot.block
+      const oldBlock = swapBlock
       if (isPptx && xml.includes(oldBlock)) {
         const xfrm = extractPptxXfrm(oldBlock) || { x: '0', y: '0', cx: '2000000', cy: '700000' }
         const shapeId = maxCNvPrId(xml) + 1
@@ -1261,20 +1287,41 @@ async function mergeOfficeBytes(
           )
           xml = xml.split(oldBlock).join(drawing)
           swappedKeys.add(slot.key)
+          docPartSigSwapped = docPartSigSwapped || isChurchSignature
           swapLog.push(`${slot.key}:docx_replace_drawing:${rId}`)
+        } else if (/<w:pict\b/i.test(oldBlock) && xml.includes(oldBlock)) {
+          docPrSeq += 1
+          const drawing = signatureDrawingXml(
+            rId,
+            docPrSeq,
+            slot.key,
+            slot.key === 'treasurer_seal',
+            extent?.cx,
+            extent?.cy,
+          )
+          xml = xml.split(oldBlock).join(drawing)
+          swappedKeys.add(slot.key)
+          docPartSigSwapped = docPartSigSwapped || isChurchSignature
+          swapLog.push(`${slot.key}:docx_replace_vml_pict:${rId}`)
         } else {
           const newBlock = retargetPictureBlock(oldBlock, slot.embedId, rId)
           if (newBlock !== oldBlock && xml.includes(oldBlock)) {
             xml = xml.split(oldBlock).join(newBlock)
             swappedKeys.add(slot.key)
+            docPartSigSwapped = docPartSigSwapped || isChurchSignature
             swapLog.push(`${slot.key}:relink:${slot.embedId}->${rId}`)
           } else if (existingBefore) {
             swappedKeys.add(slot.key)
+            swapLog.push(`${slot.key}:overwrite_only:${existingBefore}`)
           } else {
             swapLog.push(`${slot.key}:failed_no_media_path:embed=${slot.embedId}`)
           }
         }
       }
+    }
+
+    if (!isPptx && docPartSigSwapped) {
+      xml = stripDocxSvgBlips(xml)
     }
 
 // 2) Text tag {presbyter_sign} → inject image (Word drawing / PPT: replace text box with picture)
