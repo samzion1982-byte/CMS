@@ -470,6 +470,17 @@ export async function deletePrintCornerIssued(row) {
   if (error) throw error
 }
 
+/** Delete multiple issued PDFs. */
+export async function deletePrintCornerIssuedMany(rows) {
+  const list = rows || []
+  if (!list.length) return 0
+  const paths = list.map(r => r.storage_path).filter(Boolean)
+  if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
+  const { error } = await supabase.from('print_corner_issued_log').delete().in('id', list.map(r => r.id))
+  if (error) throw error
+  return list.length
+}
+
 /** Remove issued PDFs older than retention (default 30 days). */
 export async function purgePrintCornerIssuedOlderThan(days = ISSUED_RETENTION_DAYS) {
   const cutoff = new Date()

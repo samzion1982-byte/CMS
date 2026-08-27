@@ -25,6 +25,7 @@ import {
   deletePrintCornerApplicationForm,
   getPrintCornerIssuedLog,
   deletePrintCornerIssued,
+  deletePrintCornerIssuedMany,
   purgePrintCornerIssuedOlderThan,
   ISSUED_RETENTION_DAYS,
   getChurchForPrintCorner,
@@ -157,6 +158,7 @@ export default function PrintCornerPage() {
   const [lastPdf, setLastPdf] = useState(null)
   const [issuedPdfs, setIssuedPdfs] = useState([])
   const [issuedLoading, setIssuedLoading] = useState(false)
+  const [issuedSelected, setIssuedSelected] = useState(() => new Set())
   const [bulkProgress, setBulkProgress] = useState(null)
   const [blankShareUrl, setBlankShareUrl] = useState(null)
   const [tplPreviewUrl, setTplPreviewUrl] = useState(null)
@@ -534,6 +536,10 @@ export default function PrintCornerPage() {
     })
   }, [issuedPdfs, activeGroup, sidebarMode, tplSearch])
 
+  useEffect(() => {
+    setIssuedSelected(new Set())
+  }, [activeCategoryId, sidebarMode])
+
   function clearBulk() {
     setBulkRows([])
     setBulkProgress(null)
@@ -743,7 +749,7 @@ export default function PrintCornerPage() {
     }
   }
 
-  async function handleSaveDraft() {
+  async function handleSaveDraftAndReview() {
     if (!selected) return
     setBusy(true)
     try {
@@ -753,7 +759,7 @@ export default function PrintCornerPage() {
         template_key: selected.template_key,
         member_id: fieldValues.member_id || null,
         status: 'draft',
-        wizard_step: step,
+        wizard_step: 2,
         field_values: buildIssueFieldValues(),
         include_tamil: includeTamil,
         created_by: profile?.id,
@@ -761,7 +767,8 @@ export default function PrintCornerPage() {
       })
       setDraftId(row.id)
       setDrafts(await getSharedDrafts(30))
-      toast('Draft saved — visible to all Print Corner users.', 'success')
+      setStep(3)
+      toast('Draft saved — moved to Review.', 'success')
     } catch (e) {
       toast(e.message || 'Could not save draft', 'error')
     } finally {
@@ -831,7 +838,7 @@ export default function PrintCornerPage() {
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
         {visibleDrafts.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-            No drafts for this type yet. Save a draft from Review to share with others.
+            No drafts for this type yet. Use “Save & go to Review” on the Fields step to share with others.
           </p>
         ) : (
           <div style={{ maxHeight: 180, overflow: 'auto' }}>
@@ -859,6 +866,46 @@ export default function PrintCornerPage() {
     )
   }
 
+  async function handleDeleteIssuedMany(rows) {
+    const list = rows || []
+    if (!list.length) return
+    const label = list.length === 1
+      ? (list[0].field_values?.member_name || list[0].member_id || list[0].template_key || list[0].issued_filename)
+      : `${list.length} issued PDFs`
+    if (!window.confirm(`Delete ${label}?`)) return
+    setBusy(true)
+    try {
+      await deletePrintCornerIssuedMany(list)
+      if (lastPdf?.storage_path && list.some(r => r.storage_path === lastPdf.storage_path)) {
+        setLastPdf(null)
+      }
+      setIssuedSelected(new Set())
+      await refreshIssuedPdfs()
+      toast(`Deleted ${list.length} issued PDF${list.length === 1 ? '' : 's'}.`, 'success')
+    } catch (e) {
+      toast(e.message || 'Could not delete', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function toggleIssuedSelected(id) {
+    setIssuedSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectAllIssued(rows) {
+    setIssuedSelected(new Set(rows.map(r => r.id)))
+  }
+
+  function deselectAllIssued() {
+    setIssuedSelected(new Set())
+  }
+
   async function handleDeleteIssued(row) {
     const label = row.field_values?.member_name || row.member_id || row.template_key || row.issued_filename
     if (!window.confirm(`Delete issued PDF “${label}” from ${new Date(row.issued_at).toLocaleString()}?`)) return
@@ -880,6 +927,8 @@ export default function PrintCornerPage() {
     const catName = activeGroup?.category?.name || 'this category'
     const headerStyle = activeCatStyle
     const rows = issuedForCategory
+    const selectedRows = rows.filter(r => issuedSelected.has(r.id))
+    const allSelected = rows.length > 0 && selectedRows.length === rows.length
 
     return (
       <div className="card" style={{ marginTop: 16, padding: 0, overflow: 'hidden' }}>
@@ -896,14 +945,45 @@ export default function PrintCornerPage() {
               This category only · delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
             </div>
           </div>
-          <button type="button" disabled={issuedLoading} onClick={refreshIssuedPdfs}
-            style={{
-              padding: '6px 10px', border: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
-              borderRadius: 7, background: 'rgba(255,255,255,0.55)',
-              fontSize: 12, fontWeight: 600, cursor: 'pointer', color: headerStyle.badgeColor || 'var(--text-2)',
-            }}>
-            {issuedLoading ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {rows.length > 0 && (
+              <>
+                <button type="button" disabled={busy || allSelected} onClick={() => selectAllIssued(rows)}
+                  style={{
+                    padding: '6px 10px', border: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
+                    borderRadius: 7, background: 'rgba(255,255,255,0.55)',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', color: headerStyle.badgeColor || 'var(--text-2)',
+                  }}>
+                  Select all
+                </button>
+                <button type="button" disabled={busy || selectedRows.length === 0} onClick={deselectAllIssued}
+                  style={{
+                    padding: '6px 10px', border: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
+                    borderRadius: 7, background: 'rgba(255,255,255,0.55)',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', color: headerStyle.badgeColor || 'var(--text-2)',
+                  }}>
+                  Deselect all
+                </button>
+                {selectedRows.length > 0 && (
+                  <button type="button" disabled={busy} onClick={() => handleDeleteIssuedMany(selectedRows)}
+                    style={{
+                      padding: '6px 10px', border: 'none', borderRadius: 7, background: '#fee2e2',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#b91c1c',
+                    }}>
+                    Delete selected ({selectedRows.length})
+                  </button>
+                )}
+              </>
+            )}
+            <button type="button" disabled={issuedLoading} onClick={refreshIssuedPdfs}
+              style={{
+                padding: '6px 10px', border: `1px solid ${headerStyle.badgeBg || 'var(--card-border)'}`,
+                borderRadius: 7, background: 'rgba(255,255,255,0.55)',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', color: headerStyle.badgeColor || 'var(--text-2)',
+              }}>
+              {issuedLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
         {issuedLoading && rows.length === 0 ? (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)' }}>
@@ -918,14 +998,24 @@ export default function PrintCornerPage() {
             {rows.map(row => {
               const memberLabel = row.field_values?.member_name || row.member_id || '—'
               const when = new Date(row.issued_at).toLocaleString()
+              const checked = issuedSelected.has(row.id)
               return (
                 <div
                   key={row.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
                     borderBottom: '1px solid var(--card-border)', fontSize: 13,
+                    background: checked ? 'color-mix(in srgb, var(--accent-subtle, #eff6ff) 55%, transparent)' : undefined,
                   }}
                 >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={busy}
+                    onChange={() => toggleIssuedSelected(row.id)}
+                    aria-label={`Select ${row.template_key || row.issued_filename}`}
+                    style={{ flexShrink: 0, width: 16, height: 16, cursor: 'pointer' }}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {row.template_key || row.issued_filename}
@@ -1551,9 +1641,17 @@ export default function PrintCornerPage() {
               )
             })}
           </div>
-          <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-            Review →
-          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
+            {showDrafts && (
+              <button type="button" disabled={busy} onClick={handleSaveDraftAndReview}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <Save size={14} /> Save & go to Review
+              </button>
+            )}
+            <button type="button" onClick={() => setStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              Review →
+            </button>
+          </div>
         </div>
       )
     }
@@ -1649,12 +1747,6 @@ export default function PrintCornerPage() {
           )}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            {showDrafts && (
-            <button type="button" disabled={busy} onClick={handleSaveDraft}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <Save size={14} /> Save shared draft
-            </button>
-            )}
             {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
               bulkMode ? (
                 <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}

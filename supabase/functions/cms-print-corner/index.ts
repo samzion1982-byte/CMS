@@ -610,7 +610,6 @@ function findAltTextImageSlots(xml: string) {
 
   // Pass B — Canva: AltText attribute elsewhere; bind to nearest image container
   for (const hit of debugHits) {
-    if (slots.some(s => s.key === hit.key)) continue
     let best: PicContainer | null = null
     for (const c of containers) {
       if (hit.index < c.start || hit.index >= c.end) continue
@@ -684,6 +683,46 @@ function findImageSlotsFromEmbedScan(xml: string, relsXml: string) {
       }
     }
     slots.push({ key, embedId, block, via: 'embed_scan' })
+  }
+  return slots
+}
+
+/** Find image embeds near a placeholder keyword in XML (catches odd Word / Canva layouts). */
+function findProximityKeywordSlots(xml: string) {
+  const slots: Array<{ key: string, embedId: string, block: string, via: string }> = []
+  const seen = new Set<string>()
+  const containers = findPictureContainers(xml)
+  const lowered = xml.toLowerCase()
+
+  for (const key of IMAGE_PLACEHOLDER_KEYS) {
+    if (key === 'member_photo') continue
+    const needles = [key, `{${key}}`, key.replace(/_/g, ' ')]
+    for (const needle of needles) {
+      let from = 0
+      while (from < lowered.length) {
+        const idx = lowered.indexOf(needle, from)
+        if (idx < 0) break
+        from = idx + needle.length
+        const window = xml.slice(Math.max(0, idx - 12000), Math.min(xml.length, idx + 12000))
+        const embedRe = /(?:r:embed|r:id)\s*=\s*"(rId\d+)"/gi
+        let best: { embedId: string, dist: number } | null = null
+        let em: RegExpExecArray | null
+        while ((em = embedRe.exec(window)) !== null) {
+          const embedIdx = (em.index ?? 0) + Math.max(0, idx - 12000)
+          const dist = Math.abs(embedIdx - idx)
+          if (!best || dist < best.dist) best = { embedId: em[1], dist }
+        }
+        if (!best) continue
+        const dedupe = key + '|' + best.embedId
+        if (seen.has(dedupe)) continue
+        seen.add(dedupe)
+        let block = window
+        for (const c of containers) {
+          if (idx >= c.start && idx < c.end) { block = c.block; break }
+        }
+        slots.push({ key, embedId: best.embedId, block, via: 'proximity:' + needle })
+      }
+    }
   }
   return slots
 }
@@ -1108,6 +1147,11 @@ async function mergeOfficeBytes(
         found.slots.push(extra)
       }
     }
+    for (const extra of findProximityKeywordSlots(xml)) {
+      if (!found.slots.some(s => s.key === extra.key && s.embedId === extra.embedId)) {
+        found.slots.push(extra)
+      }
+    }
     altDebug.push({
       part: name,
       alt_hits: found.debugHits.slice(0, 20),
@@ -1153,6 +1197,14 @@ async function mergeOfficeBytes(
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, img.ext, img.contentType)
           ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, img.contentType)
+        }
+        // Drop SVG/Canva blip overrides so the replaced PNG is used
+        if (slot.block && xml.includes(slot.block)) {
+          const cleaned = retargetPictureBlock(slot.block, slot.embedId, slot.embedId)
+          if (cleaned !== slot.block) {
+            xml = xml.split(slot.block).join(cleaned)
+            swapLog.push(`${slot.key}:stripped_svg_blip:${slot.embedId}`)
+          }
         }
         swappedKeys.add(slot.key)
         swapLog.push(`${slot.key}:docx_inplace_only:${existingBefore}`)
