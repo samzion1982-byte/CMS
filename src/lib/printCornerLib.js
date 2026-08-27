@@ -738,11 +738,18 @@ export function applyMemberToFieldValues(out, member, templateKeys = null) {
   return next
 }
 
+export function resolvePresbyterDisplayName(church) {
+  if (!church) return ''
+  // Print Corner / letters must use Church Setup → Presbyter name only.
+  // Do not fall back to legacy pastor_name (often still holds an old church label).
+  return String(church.presbyter_name || '').trim()
+}
+
 export function applyChurchToFieldValues(out, church) {
   if (!out || !church) return out || {}
   const next = { ...out }
   const churchName = church.church_name || ''
-  const presbyter = church.presbyter_name || church.pastor_name || ''
+  const presbyter = resolvePresbyterDisplayName(church)
   const diocese = church.diocese || ''
   const address = [church.address, church.city, church.pincode].filter(Boolean).join(', ')
   const secretary = church.secretary_name || ''

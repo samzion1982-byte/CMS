@@ -839,7 +839,8 @@ async function loadChurchSignatureImages(admin: ReturnType<typeof createClient>)
   }
 
   const churchName = String(church.church_name || '')
-  const presbyter = String(church.presbyter_name || church.pastor_name || '')
+  // Use Church Setup → Presbyter name only (ignore legacy pastor_name)
+  const presbyter = String(church.presbyter_name || '').trim()
   mergeFields.church_name = churchName
   mergeFields.Church_name = churchName
   mergeFields.presbyter_name = presbyter
@@ -1459,13 +1460,22 @@ serve(async (req) => {
       if (memberPhoto) signatureImages.member_photo = memberPhoto
       signatureLoadDebug.member_photo = memberPhotoDebug
 
-      // Church Setup wins for letterhead / office-bearer placeholders (case variants too)
+      // Church Setup wins for letterhead / office-bearer placeholders (case variants too).
+      // Always set these keys so {presbyter_name} is replaced even when empty (clears leftovers).
       const mergedFieldValues: Record<string, unknown> = { ...(fieldValues || {}) }
-      for (const [ck, cv] of Object.entries(churchMergeFields || {})) {
-        if (cv == null || String(cv).trim() === '') continue
-        mergedFieldValues[ck] = cv
-        for (const key of Object.keys(mergedFieldValues)) {
-          if (key.toLowerCase() === ck.toLowerCase()) mergedFieldValues[key] = cv
+      const churchKeys = ['church_name', 'Church_name', 'presbyter_name', 'pastor_name', 'diocese', 'secretary_name', 'treasurer_name', 'address']
+      for (const ck of churchKeys) {
+        if (!(ck in (churchMergeFields || {}))) continue
+        const cv = churchMergeFields[ck]
+        mergedFieldValues[ck] = cv == null ? '' : String(cv)
+      }
+      for (const key of Object.keys(mergedFieldValues)) {
+        const lower = key.toLowerCase()
+        for (const ck of churchKeys) {
+          if (ck.toLowerCase() === lower && ck in (churchMergeFields || {})) {
+            const cv = churchMergeFields[ck]
+            mergedFieldValues[key] = cv == null ? '' : String(cv)
+          }
         }
       }
 

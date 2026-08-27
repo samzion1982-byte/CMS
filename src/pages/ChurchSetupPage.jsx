@@ -133,7 +133,8 @@ export default function ChurchSetupPage() {
         whatsapp_api_type:         data.whatsapp_api_type         || 'soft7',
         official_phone_number_id:  data.official_phone_number_id  || '',
         official_bearer_token:     data.official_bearer_token     || '',
-        presbyter_name:     data.presbyter_name     || '',
+        // Prefer Church Setup field; fall back to legacy pastor_name so old data is visible to edit
+        presbyter_name:     data.presbyter_name || data.pastor_name || '',
         presbyter_whatsapp: data.presbyter_whatsapp || '',
         secretary_name:     data.secretary_name     || '',
         secretary_whatsapp: data.secretary_whatsapp || '',
@@ -445,6 +446,8 @@ export default function ChurchSetupPage() {
       }
       if (canBearers) {
         for (const k of BEARER_KEYS) payload[k] = form[k]
+        // Keep legacy pastor_name in sync so Event Recorder / old queries stay correct
+        payload.pastor_name = form.presbyter_name || ''
       }
       if (canIdentity || canBearers) {
         let presbyter_signature_url = church?.presbyter_signature_url || null
@@ -535,6 +538,7 @@ export default function ChurchSetupPage() {
     const payload = {
       ...form, logo_url, diocese_logo_url, treasurer_seal_url,
       presbyter_signature_url, secretary_signature_url, treasurer_signature_url,
+      pastor_name: form.presbyter_name || '',
       updated_at: new Date().toISOString(),
     }
     if (letterPadFile) {
