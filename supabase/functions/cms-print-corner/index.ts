@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* ═══════════════════════════════════════════════════════════════
-   cms-print-corner — mail-merge Word/PowerPoint → PDF via Google Drive
-   DOCX → Google Docs export | PPTX → Google Slides export
+   cms-print-corner — mail-merge Word/PowerPoint → PDF
+   DOCX/PPTX → Gotenberg (LibreOffice) when configured, else Google Drive export
    Signatures: picture AltText {presbyter_sign} (Word or PPT)
    ═══════════════════════════════════════════════════════════════ */
 
@@ -21,6 +21,10 @@ const CORS = {
 }
 
 const BUCKET = 'print-corner'
+const GOTENBERG_URL = (Deno.env.get('GOTENBERG_URL') || '').replace(/\/$/, '')
+const GOTENBERG_API_KEY = Deno.env.get('GOTENBERG_API_KEY') || ''
+const CLOUDMERSIVE_API_KEY = Deno.env.get('CLOUDMERSIVE_API_KEY') || ''
+const PRINT_CORNER_PDF_ENGINE = (Deno.env.get('PRINT_CORNER_PDF_ENGINE') || 'auto').toLowerCase()
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 const GDOC_MIME = 'application/vnd.google-apps.document'
@@ -2325,6 +2329,152 @@ async function probeGoogleReady(admin: ReturnType<typeof createClient>) {
   }
 }
 
+function gotenbergConfigured() {
+  return !!GOTENBERG_URL
+}
+
+function cloudmersiveConfigured() {
+  return !!CLOUDMERSIVE_API_KEY
+}
+
+function useTamilPdfFromBody(body: Record<string, unknown>) {
+  return body.use_tamil_pdf === true || body.tamil_pdf === true
+}
+
+type PdfEngine = 'google_drive' | 'cloudmersive' | 'gotenberg'
+
+/** Default Google Drive; Tamil-font switch → Cloudmersive (per request). */
+function resolvePdfEngine(format: 'docx' | 'pptx', body: Record<string, unknown>): PdfEngine {
+  if (useTamilPdfFromBody(body)) {
+    if (!cloudmersiveConfigured()) {
+      throw new Error('Tamil font PDF requires CLOUDMERSIVE_API_KEY in Supabase Edge Function secrets.')
+    }
+    return 'cloudmersive'
+  }
+  if (PRINT_CORNER_PDF_ENGINE === 'gotenberg' && gotenbergConfigured()) return 'gotenberg'
+  if (PRINT_CORNER_PDF_ENGINE === 'cloudmersive' && cloudmersiveConfigured()) return 'cloudmersive'
+  return 'google_drive'
+}
+
+/** High-fidelity Office → PDF (embedded Tamil fonts). */
+async function convertOfficeViaCloudmersive(
+  fileBytes: Uint8Array,
+  displayName: string,
+  format: 'docx' | 'pptx',
+) {
+  if (!CLOUDMERSIVE_API_KEY) throw new Error('CLOUDMERSIVE_API_KEY not configured')
+  const endpoint = format === 'pptx'
+    ? 'https://api.cloudmersive.com/convert/pptx/to/pdf'
+    : 'https://api.cloudmersive.com/convert/docx/to/pdf'
+  const ext = format === 'pptx' ? 'pptx' : 'docx'
+  const mime = format === 'pptx' ? PPTX_MIME : DOCX_MIME
+  const safeName = `${displayName.replace(/\.(docx|pptx|pdf)$/i, '').slice(0, 120)}.${ext}`
+  const boundary = `pc_${crypto.randomUUID().replace(/-/g, '')}`
+  const enc = new TextEncoder()
+  const body = concatBytes([
+    enc.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="inputFile"; filename="${safeName}"\r\nContent-Type: ${mime}\r\n\r\n`,
+    ),
+    fileBytes,
+    enc.encode(`\r\n--${boundary}--\r\n`),
+  ])
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Apikey: CLOUDMERSIVE_API_KEY,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
+  })
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Cloudmersive ${res.status}: ${errText.slice(0, 300)}`)
+  }
+  const pdfBytes = new Uint8Array(await res.arrayBuffer())
+  if (!pdfBytes.length) throw new Error('Cloudmersive returned empty PDF')
+  return { pdfBytes }
+}
+
+async function convertMergedOfficeToPdf(
+  admin: ReturnType<typeof createClient>,
+  mergedBytes: Uint8Array,
+  outName: string,
+  format: 'docx' | 'pptx',
+  pdfEngine: PdfEngine,
+) {
+  const officeName = outName.replace(/\.pdf$/i, format === 'pptx' ? '.pptx' : '.docx')
+
+  if (pdfEngine === 'cloudmersive') {
+    const result = await convertOfficeViaCloudmersive(mergedBytes, officeName, format)
+    return {
+      pdfBytes: result.pdfBytes,
+      engineMeta: { engine: 'cloudmersive', source_format: format, tamil_pdf: true },
+    }
+  }
+
+  if (pdfEngine === 'gotenberg') {
+    const result = await convertOfficeViaGotenberg(mergedBytes, officeName, format)
+    return {
+      pdfBytes: result.pdfBytes,
+      engineMeta: { engine: 'gotenberg', gotenberg_url: GOTENBERG_URL, source_format: format },
+    }
+  }
+
+  const g = await resolveGoogleAccess(admin)
+  if (!g) {
+    throw new Error('Google Drive not connected. Open Backup → Connect Google, then retry Issue PDF.')
+  }
+  const result = await convertOfficeViaGoogleDrive(g.accessToken, mergedBytes, officeName, g.folderId, format)
+  return {
+    pdfBytes: result.pdfBytes,
+    engineMeta: {
+      engine: 'google_drive',
+      google_via: g.via,
+      google_email: g.email,
+      source_format: format,
+      google_mime: result.google_mime,
+      drive_temp_deleted: true,
+    },
+  }
+}
+
+/** LibreOffice convert — respects embedded fonts when font is installed or embedded in .docx */
+async function convertOfficeViaGotenberg(
+  fileBytes: Uint8Array,
+  displayName: string,
+  format: 'docx' | 'pptx',
+) {
+  const ext = format === 'pptx' ? 'pptx' : 'docx'
+  const mime = format === 'pptx' ? PPTX_MIME : DOCX_MIME
+  const safeName = `${displayName.replace(/\.(docx|pptx|pdf)$/i, '').slice(0, 120)}.${ext}`
+  const boundary = `pc_${crypto.randomUUID().replace(/-/g, '')}`
+  const enc = new TextEncoder()
+  const body = concatBytes([
+    enc.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="${safeName}"\r\nContent-Type: ${mime}\r\n\r\n`,
+    ),
+    fileBytes,
+    enc.encode(`\r\n--${boundary}--\r\n`),
+  ])
+  const headers: Record<string, string> = {
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+  }
+  if (GOTENBERG_API_KEY) headers['X-Gotenberg-Key'] = GOTENBERG_API_KEY
+
+  const res = await fetch(`${GOTENBERG_URL}/forms/libreoffice/convert`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Gotenberg ${res.status}: ${errText.slice(0, 300)}`)
+  }
+  const pdfBytes = new Uint8Array(await res.arrayBuffer())
+  if (!pdfBytes.length) throw new Error('Gotenberg returned empty PDF')
+  return { pdfBytes }
+}
+
 /** Upload merged Office file → Google Docs/Slides → export PDF → delete temp */
 async function driveUploadConvertExport(
   accessToken: string,
@@ -2435,10 +2585,16 @@ serve(async (req) => {
 
     if (action === 'ping') {
       const google = await probeGoogleReady(admin)
+      const gotenberg = gotenbergConfigured()
+      const cloudmersive = cloudmersiveConfigured()
+      const pdfReady = google.ready || cloudmersive || gotenberg
       return json({
         ok: true,
-        ready: google.ready,
-        engine: 'google_drive',
+        ready: pdfReady,
+        engine: cloudmersive ? 'cloudmersive' : (google.ready ? 'google_drive' : (gotenberg ? 'gotenberg' : null)),
+        pdf_engine_setting: PRINT_CORNER_PDF_ENGINE,
+        cloudmersive,
+        gotenberg,
         google_drive: google.ready,
         google_via: google.via,
         google_email: google.email,
@@ -2549,36 +2705,24 @@ serve(async (req) => {
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
       let outName = stampFilename(outBase, 'pdf')
 
-      const g = await resolveGoogleAccess(admin)
-      if (!g) {
-        return json({
-          error: 'Google Drive not connected. Open Backup → Connect Google, then retry Issue PDF.',
-        }, 500)
-      }
-
       let pdfBytes: Uint8Array
       let engineMeta: Record<string, unknown>
+      let pdfEngine: PdfEngine
       try {
-        const result = await convertOfficeViaGoogleDrive(
-          g.accessToken,
-          mergedBytes,
-          outName.replace(/\.pdf$/i, format === 'pptx' ? '.pptx' : '.docx'),
-          g.folderId,
-          format,
-        )
-        pdfBytes = result.pdfBytes
-        engineMeta = {
-          engine: 'google_drive',
-          google_via: g.via,
-          google_email: g.email,
-          source_format: format,
-          google_mime: result.google_mime,
-          drive_temp_deleted: true,
-        }
+        pdfEngine = resolvePdfEngine(format, body)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return json({ error: msg, signature_merge: mergeMeta }, 500)
+      }
+
+      try {
+        const converted = await convertMergedOfficeToPdf(admin, mergedBytes, outName, format, pdfEngine)
+        pdfBytes = converted.pdfBytes
+        engineMeta = converted.engineMeta
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         return json({
-          error: `google_drive: ${msg}`,
+          error: `${pdfEngine}: ${msg}`,
           signature_merge: mergeMeta,
           merged_bytes: mergedBytes.length,
         }, 500)

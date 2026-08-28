@@ -182,6 +182,7 @@ export default function PrintCornerPage() {
   const [church, setChurch] = useState(null)
   const [fieldValues, setFieldValues] = useState({})
   const [includeTamil, setIncludeTamil] = useState(false)
+  const [useTamilPdf, setUseTamilPdf] = useState(false)
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
@@ -1164,6 +1165,10 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
+    if (useTamilPdf && !ping?.cloudmersive) {
+      toast('Tamil font PDF needs CLOUDMERSIVE_API_KEY on the server. Ask your admin to add it in Supabase secrets.', 'error')
+      return
+    }
     const memberIdForPhoto = String(fieldValues.member_id || selectedMember?.member_id || '').trim()
     if (needsMemberPhoto && !memberIdForPhoto) {
       toast('Select a member — Member ID is required for the photo on this template.', 'error')
@@ -1197,6 +1202,7 @@ export default function PrintCornerPage() {
         issue: true,
         source: 'manual',
         pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
+        useTamilPdf,
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
@@ -1231,6 +1237,10 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
+    if (useTamilPdf && !ping?.cloudmersive) {
+      toast('Tamil font PDF needs CLOUDMERSIVE_API_KEY on the server. Ask your admin to add it in Supabase secrets.', 'error')
+      return
+    }
     if (!bulkRows.length) {
       toast('Upload a filled tracker first.', 'error')
       return
@@ -1256,6 +1266,7 @@ export default function PrintCornerPage() {
         rows: bulkRows,
         onProgress: setBulkProgress,
         output: bulkOutput === 'zip' ? 'zip' : 'single',
+        useTamilPdf,
       })
     } catch (e) {
       pdfErrorToast(e.message || 'Bulk convert failed')
@@ -1909,6 +1920,28 @@ export default function PrintCornerPage() {
             </div>
           )}
 
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={useTamilPdf}
+                onChange={e => setUseTamilPdf(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                <strong>Tamil font PDF (Cloudmersive)</strong>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.45 }}>
+                  Off by default — uses Google Drive. Turn on for templates with embedded Tamil fonts (ATM 35, etc.).
+                  {useTamilPdf && !ping?.cloudmersive && (
+                    <span style={{ display: 'block', color: '#b45309', marginTop: 4 }}>
+                      Server API key not configured — add CLOUDMERSIVE_API_KEY in Supabase Edge Function secrets.
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          </div>
+
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
               bulkMode ? (
@@ -2389,9 +2422,13 @@ export default function PrintCornerPage() {
                 ? <CheckCircle2 size={16} style={{ color: '#16a34a' }} />
                 : <AlertCircle size={16} style={{ color: '#dc2626' }} />}
               <span>
-                {(ping?.ready || ping?.google_drive)
-                  ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
-                  : ping?.error || 'Connect Google on Backup page for Issue PDF'}
+                {ping?.gotenberg
+                  ? `PDF ready via LibreOffice (Gotenberg) — optional server-wide engine`
+                  : ping?.cloudmersive
+                    ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''} · Tamil font PDF available (Cloudmersive)`
+                    : (ping?.ready || ping?.google_drive)
+                      ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
+                      : ping?.error || 'Connect Google on Backup page for Issue PDF'}
               </span>
             </div>
           )}

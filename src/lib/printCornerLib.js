@@ -314,6 +314,7 @@ export async function convertTemplateFromStorage({
   source = 'manual',
   forcePreview = false,
   pptxNameFit,
+  useTamilPdf = false,
 }) {
   return invokePrintCorner({
     action: 'convert_storage',
@@ -328,6 +329,7 @@ export async function convertTemplateFromStorage({
     source,
     force_preview: forcePreview,
     ...(pptxNameFit ? { pptx_name_fit: pptxNameFit } : {}),
+    ...(useTamilPdf ? { use_tamil_pdf: true } : {}),
   })
 }
 
@@ -1638,12 +1640,27 @@ function trackerCellText(cell) {
     if (v.result != null && v.result !== '') {
       if (v.result instanceof Date) return formatMergeFieldDate(v.result)
       if (typeof v.result === 'number' && v.result > 2000 && v.result < 100000) return formatMergeFieldDate(v.result)
-      return String(v.result).trim()
+      return trackerCellTextFromString(String(v.result).trim())
     }
-    if (v.text) return String(v.text).trim()
-    if (v.richText) return v.richText.map(t => t.text).join('').trim()
+    if (v.text) return trackerCellTextFromString(String(v.text).trim())
+    if (v.richText) return trackerCellTextFromString(v.richText.map(t => t.text).join('').trim())
   }
-  return String(v).trim()
+  return trackerCellTextFromString(String(v).trim())
+}
+
+function trackerCellTextFromString(s) {
+  if (!s) return ''
+  if (/GMT|India Standard Time|GMT\+/.test(s)) return formatMergeFieldDate(s)
+  return s
+}
+
+/** Tracker cell value — always short date text for *_date fields (never JS Date strings). */
+function trackerFieldValue(key, raw) {
+  if (raw == null || raw === '') return ''
+  if (isDateMergeFieldKey(key)) return formatMergeFieldDate(raw)
+  const s = String(raw).trim()
+  if (/GMT|India Standard Time|GMT\+/.test(s)) return formatMergeFieldDate(s)
+  return s
 }
 
 function trackerCellBorder(isTop, isBottom, isLeft, isRight) {
@@ -1721,6 +1738,18 @@ function formatRentalTenantSheet(ws, colCount, lastRow) {
   }
 
   autoFitTrackerSheetColumns(ws, colCount, lastRow, 3)
+}
+
+function applyTrackerDateColumnsAsText(ws, keys, lastRow, rental = false) {
+  const offset = rental ? 1 : 2
+  const dateCols = keys
+    .map((key, i) => (isDateMergeFieldKey(key) ? i + offset : 0))
+    .filter(c => c > 0)
+  for (const colIdx of dateCols) {
+    for (let r = 2; r <= lastRow; r++) {
+      ws.getCell(r, colIdx).numFmt = '@'
+    }
+  }
 }
 
 function trackerDataColumnNumber(keyIndexInKeys, rental = false) {
@@ -1817,9 +1846,10 @@ async function buildPrintCornerTrackerWorkbook({
   const tamilMonthColIdx = keys.findIndex(k => normTrackerKey(k) === 'tamil_month')
 
   function addTrackerDataRow(rowNum, rowIndex, values) {
+    const mapVal = k => trackerFieldValue(k, values?.[k])
     const rowValues = rental
-      ? keys.map(k => values?.[k] ?? '')
-      : [rowIndex, ...keys.map(k => values?.[k] ?? '')]
+      ? keys.map(mapVal)
+      : [rowIndex, ...keys.map(mapVal)]
     const row = ws.addRow(rowValues)
     if (rental && tamilMonthColIdx >= 0 && monthColIdx >= 0) {
       const monthLetter = excelColumnLetter(trackerDataColumnNumber(monthColIdx, true))
@@ -1850,9 +1880,11 @@ async function buildPrintCornerTrackerWorkbook({
   const colCount = headers.length
 
   if (rental) {
+    applyTrackerDateColumnsAsText(ws, keys, lastRow, true)
     formatRentalTenantSheet(ws, colCount, lastRow)
     addWorkingTamilMonthsSheet(wb)
   } else {
+    applyTrackerDateColumnsAsText(ws, keys, lastRow, false)
     ws.columns = headers.map((h, i) => ({
       width: i === 0 ? 8 : Math.max(14, String(h).length + 4),
     }))
@@ -1873,7 +1905,7 @@ export async function downloadPrintCornerTracker({
     templateKey,
     templateLabel,
     variables,
-    fieldValues,
+    fieldValues: sanitizeMergeFieldValues(fieldValues),
     blankRows,
   })
   const buffer = await wb.xlsx.writeBuffer()
@@ -1883,17 +1915,18 @@ export async function downloadPrintCornerTracker({
 /** Re-read pasted tracker data and download a clean, formatted copy (rental: strips duplicate columns). */
 export async function reformatPrintCornerTrackerFile(file, variables, template = null) {
   const rows = await parsePrintCornerTrackerFile(file, variables, template)
+  const sanitizedRows = rows.map(row => sanitizeMergeFieldValues(row))
   const templateKey = template?.template_key || 'letter'
   const wb = await buildPrintCornerTrackerWorkbook({
     templateKey,
     templateLabel: template?.label || '',
     variables,
-    dataRows: rows,
-    blankRows: Math.max(49, rows.length + 10),
+    dataRows: sanitizedRows,
+    blankRows: Math.max(49, sanitizedRows.length + 10),
   })
   const buffer = await wb.xlsx.writeBuffer()
   triggerTrackerFileDownload(buffer, templateKey)
-  return rows
+  return sanitizedRows
 }
 
 /** Map canonical tracker row keys → wizard variable keys (rental placeholder spellings). */
@@ -1952,7 +1985,7 @@ export async function parsePrintCornerTrackerFile(file, variables, template = nu
     for (const key of keys) {
       const col = keyToCol.get(key)
       const val = col ? trackerCellText(row.getCell(col)) : ''
-      fieldValues[key] = val
+      fieldValues[key] = trackerFieldValue(key, val)
       if (val) hasData = true
     }
     if (hasData) rows.push(fieldValues)
@@ -1982,6 +2015,7 @@ export async function convertBulkLettersToPdf({
   rows,
   onProgress,
   output = 'single',
+  useTamilPdf = false,
 }) {
   const results = []
   const pdfParts = []
@@ -2001,6 +2035,7 @@ export async function convertBulkLettersToPdf({
       issue: true,
       source: 'manual',
       pptxNameFit,
+      useTamilPdf,
     })
 
     if (!res?.signed_url) throw new Error(`Row ${i + 1}: no PDF URL returned`)

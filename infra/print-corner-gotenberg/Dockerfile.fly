@@ -1,0 +1,24 @@
+# Fly.io / Railway: Gotenberg + API-key gate (Caddy) + optional Tamil fonts.
+# Listens on 8080 (Fly/Railway terminate HTTPS).
+
+FROM gotenberg/gotenberg:8
+
+USER root
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends caddy fontconfig \
+  && mkdir -p /usr/local/share/fonts/truetype/custom \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY fonts/ /usr/local/share/fonts/truetype/custom/
+RUN fc-cache -f -v
+
+COPY Caddyfile.fly /etc/caddy/Caddyfile
+COPY entrypoint-fly.sh /entrypoint-fly.sh
+RUN chmod +x /entrypoint-fly.sh
+
+ENV PORT=8080
+EXPOSE 8080
+
+USER root
+ENTRYPOINT ["/entrypoint-fly.sh"]

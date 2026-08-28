@@ -6,7 +6,7 @@
 
 services:
   gotenberg:
-    image: gotenberg/gotenberg:8
+    image: ${GOTENBERG_IMAGE:-gotenberg/gotenberg:8}
     restart: unless-stopped
     # Do not publish 3000 to the public internet — Caddy is the only entry point.
     ports:

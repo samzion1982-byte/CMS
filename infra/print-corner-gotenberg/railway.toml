@@ -1,0 +1,11 @@
+# Railway — deploy from this folder: railway up
+# Set RAM to 1 GB in dashboard (Free 0.5 GB is too small for LibreOffice).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.fly"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"

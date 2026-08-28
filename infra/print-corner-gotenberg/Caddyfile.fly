@@ -1,0 +1,13 @@
+# API key gate — header must match GOTENBERG_API_KEY (set via Fly/Railway secrets).
+:8080 {
+	handle /health* {
+		reverse_proxy 127.0.0.1:3000
+	}
+	@authorized header X-Gotenberg-Key {$GOTENBERG_API_KEY}
+	handle @authorized {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		respond "Unauthorized" 401
+	}
+}
