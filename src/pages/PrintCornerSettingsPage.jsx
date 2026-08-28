@@ -430,6 +430,16 @@ function TemplatesPanel() {
     setTplPreviewTick(t => t + 1)
   }
 
+  function moveVarRow(index, dir) {
+    setVarRows(rows => {
+      const j = index + dir
+      if (j < 0 || j >= rows.length) return rows
+      const next = [...rows]
+      ;[next[index], next[j]] = [next[j], next[index]]
+      return next
+    })
+  }
+
   async function handleSaveMeta() {
     if (!selected || !form) return
     if (!form.category_id) {
@@ -800,7 +810,10 @@ function TemplatesPanel() {
 
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700 }}>Wizard variables</span>
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Wizard variables</span>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>Order controls Fields step and Download tracker columns.</p>
+              </div>
               <button type="button" onClick={() => setVarRows(r => [...r, { key: '', label: '' }])}
                 style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer' }}>
                 + Add field
@@ -811,7 +824,17 @@ function TemplatesPanel() {
                 Upload a .docx or .pptx with {'{tags}'} — fields appear here automatically.
               </p>
             ) : varRows.map((v, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8 }}>
+              <div key={`${v.key}-${i}`} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <button type="button" disabled={i === 0} onClick={() => moveVarRow(i, -1)} title="Move up"
+                    style={{ padding: '2px 4px', border: '1px solid var(--card-border)', borderRadius: 4, background: 'var(--card-bg)', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.35 : 1 }}>
+                    <ChevronUp size={12} />
+                  </button>
+                  <button type="button" disabled={i === varRows.length - 1} onClick={() => moveVarRow(i, 1)} title="Move down"
+                    style={{ padding: '2px 4px', border: '1px solid var(--card-border)', borderRadius: 4, background: 'var(--card-bg)', cursor: i === varRows.length - 1 ? 'default' : 'pointer', opacity: i === varRows.length - 1 ? 0.35 : 1 }}>
+                    <ChevronDown size={12} />
+                  </button>
+                </div>
                 <input placeholder="key e.g. member_name" value={v.key} onChange={e => setVarRows(rows => rows.map((r, j) => j === i ? { ...r, key: e.target.value } : r))} style={INPUT} />
                 <input placeholder="Label" value={v.label} onChange={e => setVarRows(rows => rows.map((r, j) => j === i ? { ...r, label: e.target.value } : r))} style={INPUT} />
                 <button type="button" onClick={() => setVarRows(rows => rows.filter((_, j) => j !== i))} style={{ padding: '6px 8px', border: 'none', background: '#fee2e2', color: '#b91c1c', borderRadius: 6, cursor: 'pointer' }}><Trash2 size={13} /></button>

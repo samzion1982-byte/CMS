@@ -870,20 +870,29 @@ export function templateHasMemberPhoto(variables, meta = null) {
   return false
 }
 
-/** Merge scanned + saved keys; ensure member_id when photo placeholder is used. */
+/** Merge scanned + saved keys; preserve explicit key order when provided. */
 export function finalizeTemplateVariables(keys, existing = []) {
-  const keySet = new Set()
+  const existingVars = normalizeTemplateVariables(existing)
+  const ordered = []
+  const seen = new Set()
   for (const k of keys || []) {
     const t = String(k || '').trim()
-    if (t) keySet.add(t)
+    if (t && !seen.has(t)) {
+      ordered.push(t)
+      seen.add(t)
+    }
   }
-  for (const v of normalizeTemplateVariables(existing)) {
-    if (v.key) keySet.add(v.key)
+  for (const v of existingVars) {
+    if (v.key && !seen.has(v.key)) {
+      ordered.push(v.key)
+      seen.add(v.key)
+    }
   }
-  if (keySet.has('member_photo') && !keySet.has('member_id') && !keySet.has('Member_id')) {
-    keySet.add('member_id')
+  if (seen.has('member_photo') && !seen.has('member_id') && !seen.has('Member_id')) {
+    ordered.push('member_id')
+    seen.add('member_id')
   }
-  return normalizeTemplateVariables(variablesFromPlaceholderKeys([...keySet], existing))
+  return normalizeTemplateVariables(variablesFromPlaceholderKeys(ordered, existing))
 }
 
 /** Text fields shown in wizard + tracker; injects member_id when template uses {member_photo}. */
@@ -1373,35 +1382,149 @@ export async function downloadChurchLetterPad(church = null) {
 
 const TRACKER_SNO = 'S.No'
 
-export function trackerColumnKeys(variables) {
-  return wizardTextVariables(variables).map(v => v.key).filter(Boolean)
+const TAMIL_MONTHS_LOOKUP = [
+  [1, 'ஜனவரி'],
+  [2, 'பிப்ரவரி'],
+  [3, 'மார்ச்'],
+  [4, 'ஏப்ரல்'],
+  [5, 'மே'],
+  [6, 'ஜூன்'],
+  [7, 'ஜூலை'],
+  [8, 'ஆகஸ்ட்'],
+  [9, 'செப்டம்பர்'],
+  [10, 'அக்டோபர்'],
+  [11, 'நவம்பர்'],
+  [12, 'டிசம்பர்'],
+]
+
+/** Rental agreement tracker column order (matches church rental Word template). */
+const RENTAL_TRACKER_FIELD_ORDER = [
+  'shop_no', 'floor', 'sq_ft', 'eb_meter',
+  'north_side_shop', 'n_side_shop', 'south_side', 'western_side', 'eastern_side',
+  'shop_name', 'shop_description',
+  'monthly_rent', 'rent_in_tamil',
+  'security_deposit', 'sd_in_tamil',
+  'agreement_date', 'year', 'month', 'tamil_month', 'day',
+  'from_date', 'to_date',
+  'tenant_name', 'tenant_father_name', 'tenant_address',
+  'aadhaar_number', 'aadhar_number', 'pan_number', 'ration_card_number', 'phone_number',
+  'ward',
+  'asst_treasurer', 'asst_treas_father', 'asst_treasurer_designation',
+  'asst_secretary', 'asst_sec_father', 'sec_designation',
+  'facing_side',
+]
+
+function normTrackerKey(key) {
+  return String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+export function isRentalAgreementTemplate(template = {}) {
+  const hay = `${template?.label || ''} ${template?.template_key || ''}`.toLowerCase()
+  return hay.includes('rental')
+}
+
+function sortRentalTrackerKeys(keys) {
+  const rank = new Map(RENTAL_TRACKER_FIELD_ORDER.map((k, i) => [normTrackerKey(k), i]))
+  return [...keys].sort((a, b) => {
+    const ra = rank.get(normTrackerKey(a))
+    const rb = rank.get(normTrackerKey(b))
+    if (ra != null && rb != null) return ra - rb
+    if (ra != null) return -1
+    if (rb != null) return 1
+    return 0
+  })
+}
+
+function excelColumnLetter(colNum) {
+  let n = colNum
+  let s = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    s = String.fromCharCode(65 + rem) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
+
+function trackerCellText(cell) {
+  const v = cell?.value
+  if (v == null) return ''
+  if (typeof v === 'object') {
+    if (v.result != null && v.result !== '') return String(v.result).trim()
+    if (v.text) return String(v.text).trim()
+    if (v.richText) return v.richText.map(t => t.text).join('').trim()
+  }
+  return String(v).trim()
+}
+
+function addWorkingTamilMonthsSheet(wb) {
+  const ws = wb.addWorksheet('Working')
+  TAMIL_MONTHS_LOOKUP.forEach(([num, name], i) => {
+    ws.getCell(i + 1, 1).value = num
+    ws.getCell(i + 1, 2).value = name
+  })
+  ws.columns = [{ width: 8 }, { width: 18 }]
+}
+
+export function trackerColumnKeys(variables, template = null) {
+  const meta = template ? templateMetaFromTemplate(template) : null
+  let keys = wizardTextVariables(variables, meta).map(v => v.key).filter(Boolean)
+  if (template && isRentalAgreementTemplate(template)) {
+    keys = sortRentalTrackerKeys(keys)
+  }
+  return keys
 }
 
 /** Build header row: S.No + variable keys */
-export function trackerHeaders(variables) {
-  return [TRACKER_SNO, ...trackerColumnKeys(variables)]
+export function trackerHeaders(variables, template = null) {
+  return [TRACKER_SNO, ...trackerColumnKeys(variables, template)]
 }
 
 /** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
-export async function downloadPrintCornerTracker({ templateKey, variables, fieldValues, blankRows = 49 }) {
+export async function downloadPrintCornerTracker({
+  templateKey,
+  templateLabel = '',
+  variables,
+  fieldValues,
+  blankRows = 49,
+}) {
   const ExcelJS = (await import('exceljs')).default
-  const keys = trackerColumnKeys(variables)
+  const template = { template_key: templateKey, label: templateLabel }
+  const rental = isRentalAgreementTemplate(template)
+  const keys = trackerColumnKeys(variables, template)
   if (!keys.length) throw new Error('No variables on this template.')
 
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Tracker', { views: [{ state: 'frozen', ySplit: 1 }] })
-  const headers = trackerHeaders(variables)
+  if (rental) addWorkingTamilMonthsSheet(wb)
+
+  const sheetName = rental ? 'Tenant' : 'Tracker'
+  const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 1 }] })
+  const headers = trackerHeaders(variables, template)
 
   ws.addRow(headers)
   const headerRow = ws.getRow(1)
   headerRow.font = { bold: true }
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
 
-  const firstRow = [1, ...keys.map(k => fieldValues?.[k] ?? '')]
-  ws.addRow(firstRow)
+  const monthColIdx = keys.findIndex(k => normTrackerKey(k) === 'month')
+  const tamilMonthColIdx = keys.findIndex(k => normTrackerKey(k) === 'tamil_month')
 
+  function addTrackerDataRow(rowNum, sno, values) {
+    const rowValues = [sno, ...keys.map(k => values?.[k] ?? '')]
+    const row = ws.addRow(rowValues)
+    if (rental && tamilMonthColIdx >= 0 && monthColIdx >= 0) {
+      const monthLetter = excelColumnLetter(monthColIdx + 2)
+      const tamilCol = tamilMonthColIdx + 2
+      row.getCell(tamilCol).value = {
+        formula: `VLOOKUP(${monthLetter}${rowNum},Working!$A$1:$B$12,2,FALSE)`,
+      }
+    }
+    return row
+  }
+
+  addTrackerDataRow(2, 1, fieldValues)
   for (let i = 2; i <= blankRows + 1; i++) {
-    ws.addRow([i, ...keys.map(() => '')])
+    addTrackerDataRow(i + 1, i, null)
   }
 
   ws.columns = headers.map((h, i) => ({
@@ -1421,14 +1544,15 @@ export async function downloadPrintCornerTracker({ templateKey, variables, field
 }
 
 /** Parse uploaded tracker .xlsx → array of field value objects (skips empty rows) */
-export async function parsePrintCornerTrackerFile(file, variables) {
-  const keys = trackerColumnKeys(variables)
+export async function parsePrintCornerTrackerFile(file, variables, template = null) {
+  const keys = trackerColumnKeys(variables, template)
   if (!keys.length) throw new Error('No variables on this template.')
 
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(await file.arrayBuffer())
-  const ws = wb.worksheets[0]
+  const rental = template && isRentalAgreementTemplate(template)
+  const ws = (rental ? wb.getWorksheet('Tenant') : null) || wb.worksheets[0]
   if (!ws) throw new Error('Empty spreadsheet.')
 
   const headerRow = ws.getRow(1)
@@ -1451,7 +1575,7 @@ export async function parsePrintCornerTrackerFile(file, variables) {
     let hasData = false
     for (const key of keys) {
       const col = headerMap.get(key)
-      const val = col ? String(row.getCell(col).value ?? '').trim() : ''
+      const val = col ? trackerCellText(row.getCell(col)) : ''
       fieldValues[key] = val
       if (val) hasData = true
     }

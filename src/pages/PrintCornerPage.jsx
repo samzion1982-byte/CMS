@@ -521,21 +521,21 @@ export default function PrintCornerPage() {
 
   const bulkMode = bulkRows.length > 0
 
-  /** Drafts for letters/forms only (certificates skip shared drafts). */
+  /** Shared drafts for the active sidebar category only (not all letters/forms). */
   const visibleDrafts = useMemo(() => {
-    if (!selected || selected.template_type === 'certificate') return []
-    const keysOfType = new Set(
-      groups
-        .flatMap(g => g.templates)
-        .filter(t => t.template_type === selected.template_type)
-        .map(t => t.template_key),
-    )
-    return drafts.filter(d =>
-      d.template_id === selected.id
-      || d.template_key === selected.template_key
-      || keysOfType.has(d.template_key),
-    )
-  }, [drafts, selected, groups])
+    if (sidebarMode === 'forms' || tplSearch.trim()) return []
+    const templatesInCat = activeGroup?.templates || []
+    if (!templatesInCat.length) return []
+    const draftable = templatesInCat.filter(t => t.template_type !== 'certificate')
+    if (!draftable.length) return []
+    const keys = new Set(draftable.map(t => t.template_key))
+    const ids = new Set(draftable.map(t => t.id))
+    return drafts.filter(d => {
+      if (d.template_id && ids.has(d.template_id)) return true
+      if (d.template_key && keys.has(d.template_key)) return true
+      return false
+    })
+  }, [drafts, activeGroup, sidebarMode, tplSearch])
 
   const showDrafts = !!selected && selected.template_type !== 'certificate'
 
@@ -859,7 +859,7 @@ export default function PrintCornerPage() {
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
         {visibleDrafts.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-            No drafts for this type yet. Use “Save & go to Review” on the Fields step to share with others.
+            No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others.
           </p>
         ) : (
           <div style={{ maxHeight: 180, overflow: 'auto' }}>
@@ -1201,6 +1201,7 @@ export default function PrintCornerPage() {
     try {
       await downloadPrintCornerTracker({
         templateKey: selected.template_key,
+        templateLabel: selected.label || '',
         variables,
         fieldValues,
       })
@@ -1216,7 +1217,7 @@ export default function PrintCornerPage() {
     if (!file || !selected) return
     setBusy(true)
     try {
-      const rows = await parsePrintCornerTrackerFile(file, variables)
+      const rows = await parsePrintCornerTrackerFile(file, variables, selected)
       setBulkRows(rows)
       toast(`${rows.length} row(s) loaded from tracker — use Multi PDF to generate.`, 'success')
     } catch (err) {
