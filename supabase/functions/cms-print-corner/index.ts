@@ -99,6 +99,56 @@ function replacePlaceholderInXml(xml: string, key: string, value: string) {
   return xml.replace(new RegExp(chars.join('(?:<[^>]+>)*'), 'g'), safe)
 }
 
+function isDateMergeFieldKey(key: string) {
+  const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (n === 'date') return true
+  return n.endsWith('date')
+}
+
+function formatMergeFieldDate(value: unknown): string {
+  if (value == null || value === '') return ''
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return ''
+    const dd = String(value.getDate()).padStart(2, '0')
+    const mm = String(value.getMonth() + 1).padStart(2, '0')
+    return `${dd}.${mm}.${value.getFullYear()}`
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 2000 && value < 100000) {
+    const d = new Date(Math.round((value - 25569) * 86400 * 1000))
+    if (Number.isNaN(d.getTime())) return String(value)
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    return `${dd}.${mm}.${d.getUTCFullYear()}`
+  }
+  const s = String(value).trim()
+  if (!s) return ''
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s
+  if (/GMT|India Standard Time|GMT\+|\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      return `${dd}.${mm}.${d.getFullYear()}`
+    }
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+function mergeFieldToString(key: string, raw: unknown): string {
+  if (raw == null) return ''
+  if (isDateMergeFieldKey(key)) return formatMergeFieldDate(raw)
+  if (raw instanceof Date) return formatMergeFieldDate(raw)
+  const s = String(raw).trim()
+  if (/GMT|India Standard Time|GMT\+/.test(s)) return formatMergeFieldDate(s)
+  return String(raw)
+}
+
 function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>) {
   let out = xml
   // Longer keys first so {presbyter_name} is not disturbed by shorter keys like {name}
@@ -106,7 +156,7 @@ function applyFieldValuesToXml(xml: string, fieldValues: Record<string, unknown>
   for (const key of keys) {
     if (!key || isImagePlaceholderKey(key)) continue
     const raw = fieldValues[key]
-    out = replacePlaceholderInXml(out, key, raw == null ? '' : String(raw))
+    out = replacePlaceholderInXml(out, key, mergeFieldToString(key, raw))
   }
   return out
 }

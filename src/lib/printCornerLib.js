@@ -323,7 +323,7 @@ export async function convertTemplateFromStorage({
     template_id: templateId,
     template_label: templateLabel,
     member_id: memberId,
-    field_values: fieldValues,
+    field_values: sanitizeMergeFieldValues(fieldValues),
     issue,
     source,
     force_preview: forcePreview,
@@ -885,9 +885,33 @@ export function wizardTextVariables(variables) {
 }
 
 function formatPrintCornerDate(value) {
-  if (!value) return ''
+  return formatMergeFieldDate(value)
+}
+
+/** Format dates for mail-merge (DD.MM.YYYY). Handles Excel dates, Date objects, and JS date strings. */
+export function formatMergeFieldDate(value) {
+  if (value == null || value === '') return ''
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return ''
+    const dd = String(value.getDate()).padStart(2, '0')
+    const mm = String(value.getMonth() + 1).padStart(2, '0')
+    return `${dd}.${mm}.${value.getFullYear()}`
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 2000 && value < 100000) {
+    const ms = Math.round((value - 25569) * 86400 * 1000)
+    return formatMergeFieldDate(new Date(ms))
+  }
   const s = String(value).trim()
+  if (!s) return ''
   if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s
+  if (/GMT|India Standard Time|GMT\+|\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      return `${dd}.${mm}.${d.getFullYear()}`
+    }
+  }
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (m) return `${m[3]}.${m[2]}.${m[1]}`
   const d = new Date(s)
@@ -895,6 +919,22 @@ function formatPrintCornerDate(value) {
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   return `${dd}.${mm}.${d.getFullYear()}`
+}
+
+export function isDateMergeFieldKey(key) {
+  const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (n === 'date') return true
+  return n.endsWith('date')
+}
+
+/** Normalize date placeholders before merge (tracker Excel dates, Date objects, etc.). */
+export function sanitizeMergeFieldValues(fieldValues = {}) {
+  const out = { ...fieldValues }
+  for (const [key, val] of Object.entries(out)) {
+    if (!isDateMergeFieldKey(key)) continue
+    out[key] = formatMergeFieldDate(val)
+  }
+  return out
 }
 
 function memberAddressLine(member) {
@@ -1590,8 +1630,16 @@ function excelColumnLetter(colNum) {
 function trackerCellText(cell) {
   const v = cell?.value
   if (v == null) return ''
+  if (v instanceof Date) return formatMergeFieldDate(v)
+  if (typeof v === 'number' && Number.isFinite(v) && v > 2000 && v < 100000) {
+    return formatMergeFieldDate(v)
+  }
   if (typeof v === 'object') {
-    if (v.result != null && v.result !== '') return String(v.result).trim()
+    if (v.result != null && v.result !== '') {
+      if (v.result instanceof Date) return formatMergeFieldDate(v.result)
+      if (typeof v.result === 'number' && v.result > 2000 && v.result < 100000) return formatMergeFieldDate(v.result)
+      return String(v.result).trim()
+    }
     if (v.text) return String(v.text).trim()
     if (v.richText) return v.richText.map(t => t.text).join('').trim()
   }
@@ -1949,7 +1997,7 @@ export async function convertBulkLettersToPdf({
       templateId,
       templateLabel,
       memberId: fieldValues.member_id || null,
-      fieldValues,
+      fieldValues: sanitizeMergeFieldValues(fieldValues),
       issue: true,
       source: 'manual',
       pptxNameFit,
