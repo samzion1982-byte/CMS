@@ -133,22 +133,36 @@ function extractPptxFirstFontSz(spXml: string) {
   return m ? Number(m[1]) || 2400 : 2400
 }
 
+type PptxNameFitMode = 'standard' | 'gentle'
+
+const PPTX_NAME_FIT_PRESETS: Record<PptxNameFitMode, { minScale: number, padPt: number, wrap: 'square' | 'none' }> = {
+  // Letters / certificates — allow more shrink for very long names
+  standard: { minScale: 38000, padPt: 16, wrap: 'square' },
+  // ID cards — shrink to stay on one line, but keep text readable (≥ ~50%)
+  gentle: { minScale: 50000, padPt: 10, wrap: 'none' },
+}
+
 /** EMU width → shrink fontScale (100000 = 100%) so text fits with side padding. */
-function estimatePptxNameFontScale(text: string, widthEmu: number, fontSzHundredths: number) {
+function estimatePptxNameFontScale(
+  text: string,
+  widthEmu: number,
+  fontSzHundredths: number,
+  mode: PptxNameFitMode = 'standard',
+) {
   const len = text.trim().length
   if (len < 14) return 100000
+  const preset = PPTX_NAME_FIT_PRESETS[mode]
   const fontPt = fontSzHundredths / 100
   const widthPt = (widthEmu / 914400) * 72
-  const padPt = 16
-  const usablePt = Math.max(24, widthPt - padPt)
+  const usablePt = Math.max(24, widthPt - preset.padPt)
   const charW = fontPt * 0.62
   const maxChars = usablePt / charW
   if (len <= maxChars) return 100000
   const scale = Math.floor((maxChars / len) * 100000)
-  return Math.max(38000, Math.min(100000, scale))
+  return Math.max(preset.minScale, Math.min(100000, scale))
 }
 
-function patchPptxTxBodyAutofit(spXml: string, fontScale: number) {
+function patchPptxTxBodyAutofit(spXml: string, fontScale: number, wrap: 'square' | 'none' = 'square') {
   const txBodyRe = /<p:txBody\b[\s\S]*?<\/p:txBody>/i
   const txBodyMatch = spXml.match(txBodyRe)
   if (!txBodyMatch) return spXml
@@ -159,8 +173,8 @@ function patchPptxTxBodyAutofit(spXml: string, fontScale: number) {
     txBody = txBody.replace(/<a:bodyPr\b[^>]*\/?>/i, (tag) => {
       const selfClose = /\/>\s*$/.test(tag)
       let attrs = tag.replace(/^<a:bodyPr/i, '').replace(/\/?>$/, '').trim()
-      if (/wrap="/i.test(attrs)) attrs = attrs.replace(/wrap="[^"]*"/i, 'wrap="square"')
-      else attrs += ' wrap="square"'
+      if (/wrap="/i.test(attrs)) attrs = attrs.replace(/wrap="[^"]*"/i, `wrap="${wrap}"`)
+      else attrs += ` wrap="${wrap}"`
       if (!/anchor="/i.test(attrs)) attrs += ' anchor="ctr"'
       if (!/horzOverflow="/i.test(attrs)) attrs += ' horzOverflow="clip"'
       return selfClose
@@ -177,7 +191,7 @@ function patchPptxTxBodyAutofit(spXml: string, fontScale: number) {
   } else {
     txBody = txBody.replace(
       /<p:txBody\b[^>]*>/i,
-      `<p:txBody><a:bodyPr wrap="square" anchor="ctr" horzOverflow="clip">${autofitXml}</a:bodyPr>`,
+      `<p:txBody><a:bodyPr wrap="${wrap}" anchor="ctr" horzOverflow="clip">${autofitXml}</a:bodyPr>`,
     )
   }
 
@@ -209,7 +223,12 @@ function shapeTextMatchesLongNameField(text: string, fieldValues: Record<string,
 }
 
 /** Shrink long member names in PPTX text boxes so they stay inside the frame padding. */
-function applyPptxLongNameTextFit(xml: string, fieldValues: Record<string, unknown>) {
+function applyPptxLongNameTextFit(
+  xml: string,
+  fieldValues: Record<string, unknown>,
+  mode: PptxNameFitMode = 'standard',
+) {
+  const preset = PPTX_NAME_FIT_PRESETS[mode]
   const re = /<p:sp\b[\s\S]*?<\/p:sp>/gi
   return xml.replace(re, (sp) => {
     if (!/<p:txBody/i.test(sp)) return sp
@@ -220,9 +239,9 @@ function applyPptxLongNameTextFit(xml: string, fieldValues: Record<string, unkno
     const widthEmu = Number(xfrm.cx)
     if (!widthEmu) return sp
     const fontSz = extractPptxFirstFontSz(sp)
-    const fontScale = estimatePptxNameFontScale(text, widthEmu, fontSz)
+    const fontScale = estimatePptxNameFontScale(text, widthEmu, fontSz, mode)
     if (fontScale >= 100000) return sp
-    let patched = patchPptxTxBodyAutofit(sp, fontScale)
+    let patched = patchPptxTxBodyAutofit(sp, fontScale, preset.wrap)
     patched = patchPptxRunFontSizes(patched, fontScale)
     return patched
   })
@@ -233,10 +252,12 @@ function bodyLooksLikeIdCard(body: Record<string, unknown>) {
   return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
 }
 
-function shouldShrinkLongPptxNames(body: Record<string, unknown>) {
-  if (body.shrink_long_pptx_names === false) return false
-  if (body.shrink_long_pptx_names === true) return true
-  return !bodyLooksLikeIdCard(body)
+function resolvePptxNameFitMode(body: Record<string, unknown>): PptxNameFitMode | 'off' {
+  if (body.shrink_long_pptx_names === false || body.pptx_name_fit === 'off') return 'off'
+  const fit = String(body.pptx_name_fit || '').toLowerCase()
+  if (fit === 'gentle' || fit === 'standard') return fit
+  if (bodyLooksLikeIdCard(body)) return 'gentle'
+  return 'standard'
 }
 
 function normalizeImageSlotKey(raw: string): string | null {
@@ -1500,9 +1521,9 @@ async function mergeOfficeBytes(
   fieldValues: Record<string, unknown>,
   signatureImages: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {},
   format: 'docx' | 'pptx' = 'docx',
-  mergeOptions: { shrinkLongPptxNames?: boolean } = {},
+  mergeOptions: { pptxNameFit?: PptxNameFitMode | 'off' } = {},
 ) {
-  const shrinkLongPptxNames = mergeOptions.shrinkLongPptxNames !== false
+  const pptxNameFit = mergeOptions.pptxNameFit ?? 'standard'
   const zip = await JSZip.loadAsync(officeBytes)
   const isPptx = format === 'pptx'
   const targets = Object.keys(zip.files).filter(n =>
@@ -2023,7 +2044,7 @@ async function mergeOfficeBytes(
 
     // 4) Text mail-merge
     xml = applyFieldValuesToXml(xml, fieldValues)
-    if (isPptx && shrinkLongPptxNames) xml = applyPptxLongNameTextFit(xml, fieldValues)
+    if (isPptx && pptxNameFit !== 'off') xml = applyPptxLongNameTextFit(xml, fieldValues, pptxNameFit)
     zip.file(name, xml)
     if (relsDirty) zip.file(relsName, relsXml)
   }
@@ -2384,7 +2405,7 @@ serve(async (req) => {
         mergedFieldValues,
         signatureImages,
         format,
-        { shrinkLongPptxNames: shouldShrinkLongPptxNames(body) },
+        { pptxNameFit: resolvePptxNameFitMode(body) },
       )
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')

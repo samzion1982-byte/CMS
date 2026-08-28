@@ -313,7 +313,7 @@ export async function convertTemplateFromStorage({
   issue = true,
   source = 'manual',
   forcePreview = false,
-  shrinkLongPptxNames,
+  pptxNameFit,
 }) {
   return invokePrintCorner({
     action: 'convert_storage',
@@ -327,7 +327,7 @@ export async function convertTemplateFromStorage({
     issue,
     source,
     force_preview: forcePreview,
-    ...(shrinkLongPptxNames === undefined ? {} : { shrink_long_pptx_names: shrinkLongPptxNames }),
+    ...(pptxNameFit ? { pptx_name_fit: pptxNameFit } : {}),
   })
 }
 
@@ -423,7 +423,7 @@ export async function previewPrintCornerTemplate(template, church = null, { forc
     issue: false,
     source: 'blank',
     forcePreview: force,
-    shrinkLongPptxNames: !isIdCardTemplate(template),
+    pptxNameFit: isIdCardTemplate(template) ? 'gentle' : 'standard',
   })
   if (res?.signed_url) rememberPreviewUrl(template.storage_path, res.signed_url)
   return res

@@ -1122,7 +1122,7 @@ export default function PrintCornerPage() {
         fieldValues: buildIssueFieldValues(),
         issue: true,
         source: 'manual',
-        shrinkLongPptxNames: !isIdCardTemplate(selected, selectedCategoryName),
+        pptxNameFit: isIdCardTemplate(selected, selectedCategoryName) ? 'gentle' : 'standard',
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
