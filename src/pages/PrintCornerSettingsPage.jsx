@@ -29,7 +29,8 @@ import {
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
   warmTemplatePreview,
-  TEMPLATE_TYPES,
+  inferTemplateTypeFromCategory,
+  resolveTemplateTypeDisplay,
   sortPrintCornerCategories,
   sortPrintCornerTemplates,
   buildPrintCornerSidebarBrowseItems,
@@ -493,9 +494,8 @@ function TemplatesPanel() {
     const key = newTpl.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       || `template-${Date.now()}`
     const cat = mergeCategories.find(c => c.id === newTpl.category_id)
-    const catName = String(cat?.name || '').toLowerCase()
-    let templateType = 'letter'
-    if (catName.includes('cert')) templateType = 'certificate'
+    const catName = String(cat?.name || '')
+    const templateType = inferTemplateTypeFromCategory(catName)
 
     setBusy(true)
     try {
@@ -708,7 +708,7 @@ function TemplatesPanel() {
         <div className="card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{TEMPLATE_TYPES[selected.template_type]?.label} · {selected.template_key}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{resolveTemplateTypeDisplay(selected, activeGroup?.category?.name).label} · {selected.template_key}</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" disabled={busy} onClick={handleDeleteTemplate}

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import {
-  Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList,
+  Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList, CreditCard,
   CheckCircle2, AlertCircle, Save, Download, Upload,
   Pencil, Trash2, Search, MessageCircle, X,
 } from 'lucide-react'
@@ -17,7 +17,8 @@ import {
   convertBulkLettersToPdf,
   downloadPrintCornerTracker,
   parsePrintCornerTrackerFile,
-  TEMPLATE_TYPES,
+  resolveTemplateTypeDisplay,
+  isIdCardTemplate,
   getSharedDrafts,
   saveDraft,
   deleteDraft,
@@ -58,6 +59,7 @@ const TYPE_ICONS = {
   certificate: Award,
   letter: Mail,
   form: ClipboardList,
+  id_card: CreditCard,
 }
 
 const STEPS = [
@@ -109,6 +111,9 @@ function categoryHeaderStyle(name, index = 0) {
   const n = String(name || '').toLowerCase()
   if (n.includes('letter')) {
     return { bg: '#eff6ff', accent: '#2563eb', badgeBg: '#dbeafe', badgeColor: '#1d4ed8', Icon: Mail }
+  }
+  if (n.includes('id card') || n.includes('idcard')) {
+    return { bg: '#ecfeff', accent: '#0891b2', badgeBg: '#a5f3fc', badgeColor: '#0e7490', Icon: CreditCard }
   }
   if (n.includes('cert')) {
     return { bg: '#fffbeb', accent: '#d97706', badgeBg: '#fde68a', badgeColor: '#b45309', Icon: Award }
@@ -439,17 +444,17 @@ export default function PrintCornerPage() {
     return categoryHeaderStyle(activeGroup?.category?.name, Math.max(0, idx))
   }, [filteredGroups, activeGroup])
 
-  const selectedMeta = useMemo(() => {
-    if (!selected) return null
-    return TEMPLATE_TYPES[selected.template_type] || TEMPLATE_TYPES.letter
-  }, [selected])
-
   const selectedCategoryName = useMemo(() => {
     if (!selected) return ''
     const g = groups.find(x => x.category.id === selected.category_id)
       || groups.find(x => x.templates.some(t => t.id === selected.id))
     return g?.category?.name || ''
   }, [groups, selected])
+
+  const selectedMeta = useMemo(() => {
+    if (!selected) return null
+    return resolveTemplateTypeDisplay(selected, selectedCategoryName)
+  }, [selected, selectedCategoryName])
 
   const templateMeta = useMemo(
     () => templateMetaFromTemplate(selected, selectedCategoryName),
@@ -1112,10 +1117,12 @@ export default function PrintCornerPage() {
         templateKey: selected.template_key,
         templateType: templateStorageType(selected.template_type),
         templateId: selected.id,
+        templateLabel: selected.label || '',
         memberId: fieldValues.member_id || null,
         fieldValues: buildIssueFieldValues(),
         issue: true,
         source: 'manual',
+        shrinkLongPptxNames: !isIdCardTemplate(selected, selectedCategoryName),
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
@@ -2019,9 +2026,10 @@ export default function PrintCornerPage() {
                           TEMPLATES · {tplHits.length}
                         </div>
                         {tplHits.map(({ t, catName }) => {
-                          const Icon = TYPE_ICONS[t.template_type] || FileText
+                          const display = resolveTemplateTypeDisplay(t, catName)
+                          const Icon = TYPE_ICONS[display.iconKey] || FileText
                           const active = selected?.id === t.id
-                          const accent = TEMPLATE_TYPES[t.template_type]?.color || '#2563eb'
+                          const accent = display.color || '#2563eb'
                           const ready = !!t.storage_path
                           return (
                             <button
@@ -2169,12 +2177,13 @@ export default function PrintCornerPage() {
                     </span>
                   </div>
                 )}
-                {sidebarTemplates.map(({ t }) => {
-                  const Icon = TYPE_ICONS[t.template_type] || FileText
+                {sidebarTemplates.map(({ t, catName }) => {
+                  const display = resolveTemplateTypeDisplay(t, catName)
+                  const Icon = TYPE_ICONS[display.iconKey] || FileText
                   const active = selected?.id === t.id
-                  const accent = TEMPLATE_TYPES[t.template_type]?.color || activeCatStyle.accent
+                  const accent = display.color || activeCatStyle.accent
                   const ready = !!t.storage_path
-                  const typeLabel = TEMPLATE_TYPES[t.template_type]?.label || 'Template'
+                  const typeLabel = display.label || 'Template'
                   return (
                     <div
                       key={t.id}

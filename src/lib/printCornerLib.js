@@ -103,6 +103,15 @@ export const TEMPLATE_TYPES = {
   certificate: { label: 'Certificate', color: '#2563eb' },
   letter:      { label: 'Letter',      color: '#7c3aed' },
   form:        { label: 'Form',        color: '#16a34a' },
+  id_card:     { label: 'ID Card',     color: '#0891b2' },
+}
+
+/** Infer DB template_type when creating a template from its category name. */
+export function inferTemplateTypeFromCategory(categoryName = '') {
+  const n = String(categoryName || '').toLowerCase()
+  if (n.includes('form') || n.includes('application')) return 'form'
+  if (n.includes('cert') || categoryIsIdCardsOnly(categoryName)) return 'certificate'
+  return 'letter'
 }
 
 /** Categories/templates sort by Settings order (sort_order), not alphabetical. */
@@ -298,11 +307,13 @@ export async function convertTemplateFromStorage({
   templateKey,
   templateType = 'letters',
   templateId = null,
+  templateLabel = '',
   memberId = null,
   fieldValues = {},
   issue = true,
   source = 'manual',
   forcePreview = false,
+  shrinkLongPptxNames,
 }) {
   return invokePrintCorner({
     action: 'convert_storage',
@@ -310,11 +321,13 @@ export async function convertTemplateFromStorage({
     template_key: templateKey,
     template_type: templateType,
     template_id: templateId,
+    template_label: templateLabel,
     member_id: memberId,
     field_values: fieldValues,
     issue,
     source,
     force_preview: forcePreview,
+    ...(shrinkLongPptxNames === undefined ? {} : { shrink_long_pptx_names: shrinkLongPptxNames }),
   })
 }
 
@@ -405,10 +418,12 @@ export async function previewPrintCornerTemplate(template, church = null, { forc
     storagePath: template.storage_path,
     templateKey: template.template_key,
     templateType,
+    templateLabel: template.label || '',
     fieldValues,
     issue: false,
     source: 'blank',
     forcePreview: force,
+    shrinkLongPptxNames: !isIdCardTemplate(template),
   })
   if (res?.signed_url) rememberPreviewUrl(template.storage_path, res.signed_url)
   return res
@@ -811,15 +826,27 @@ export function templateMetaFromTemplate(template, categoryName = '') {
   }
 }
 
-function templateLooksLikeIdCard(meta = {}) {
+export function templateLooksLikeIdCard(meta = {}) {
   const hay = `${meta.label || ''} ${meta.template_key || ''}`.toLowerCase()
   return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
 }
 
 /** Category name alone must not trigger ID-card behaviour (e.g. "Certificates/ID Cards"). */
-function categoryIsIdCardsOnly(categoryName = '') {
+export function categoryIsIdCardsOnly(categoryName = '') {
   const cat = String(categoryName || '').trim().toLowerCase()
   return cat === 'id cards' || cat === 'id card' || cat === 'identity cards'
+}
+
+export function isIdCardTemplate(template, categoryName = '') {
+  const meta = templateMetaFromTemplate(template, categoryName)
+  return templateLooksLikeIdCard(meta) || categoryIsIdCardsOnly(meta.categoryName)
+}
+
+/** Sidebar label, accent colour, and icon key — ID cards override stored template_type. */
+export function resolveTemplateTypeDisplay(template, categoryName = '') {
+  if (isIdCardTemplate(template, categoryName)) return { ...TEMPLATE_TYPES.id_card, iconKey: 'id_card' }
+  const dbType = template?.template_type || 'letter'
+  return { ...(TEMPLATE_TYPES[dbType] || TEMPLATE_TYPES.letter), iconKey: dbType }
 }
 
 export function templateHasMemberPhoto(variables, meta = null) {

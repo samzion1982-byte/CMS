@@ -228,6 +228,17 @@ function applyPptxLongNameTextFit(xml: string, fieldValues: Record<string, unkno
   })
 }
 
+function bodyLooksLikeIdCard(body: Record<string, unknown>) {
+  const hay = `${body.template_key || ''} ${body.template_label || ''}`.toLowerCase()
+  return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
+}
+
+function shouldShrinkLongPptxNames(body: Record<string, unknown>) {
+  if (body.shrink_long_pptx_names === false) return false
+  if (body.shrink_long_pptx_names === true) return true
+  return !bodyLooksLikeIdCard(body)
+}
+
 function normalizeImageSlotKey(raw: string): string | null {
   let s = String(raw || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
   if (!s) return null
@@ -1489,7 +1500,9 @@ async function mergeOfficeBytes(
   fieldValues: Record<string, unknown>,
   signatureImages: Record<string, { bytes: Uint8Array, ext: string, contentType: string }> = {},
   format: 'docx' | 'pptx' = 'docx',
+  mergeOptions: { shrinkLongPptxNames?: boolean } = {},
 ) {
+  const shrinkLongPptxNames = mergeOptions.shrinkLongPptxNames !== false
   const zip = await JSZip.loadAsync(officeBytes)
   const isPptx = format === 'pptx'
   const targets = Object.keys(zip.files).filter(n =>
@@ -2010,7 +2023,7 @@ async function mergeOfficeBytes(
 
     // 4) Text mail-merge
     xml = applyFieldValuesToXml(xml, fieldValues)
-    if (isPptx) xml = applyPptxLongNameTextFit(xml, fieldValues)
+    if (isPptx && shrinkLongPptxNames) xml = applyPptxLongNameTextFit(xml, fieldValues)
     zip.file(name, xml)
     if (relsDirty) zip.file(relsName, relsXml)
   }
@@ -2371,6 +2384,7 @@ serve(async (req) => {
         mergedFieldValues,
         signatureImages,
         format,
+        { shrinkLongPptxNames: shouldShrinkLongPptxNames(body) },
       )
 
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
