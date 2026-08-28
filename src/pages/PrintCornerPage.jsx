@@ -20,6 +20,7 @@ import {
   reformatPrintCornerTrackerFile,
   isRentalAgreementTemplate,
   draftRecordSummary,
+  mapTrackerRowToWizardFieldValues,
   resolveTemplateTypeDisplay,
   resolvePptxNameFit,
   getSharedDrafts,
@@ -183,6 +184,7 @@ export default function PrintCornerPage() {
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
+  const [singleRowFromBulk, setSingleRowFromBulk] = useState(null)
   const [bulkOutput, setBulkOutput] = useState('single') // 'single' | 'zip'
   const [tplSearch, setTplSearch] = useState('')
   const [activeCategoryId, setActiveCategoryId] = useState(null)
@@ -286,6 +288,7 @@ export default function PrintCornerPage() {
     setStep(1)
     setDraftId(null)
     setBulkRows([])
+    setSingleRowFromBulk(null)
     setLastPdf(null)
     setBulkProgress(null)
     setIncludeTamil(!!selected.include_tamil)
@@ -478,7 +481,7 @@ export default function PrintCornerPage() {
   }
 
   function setOverridableField(key, val) {
-    clearBulk()
+    if (singleRowFromBulk === null) clearBulk()
     setFieldValues(f => {
       const next = { ...f, [key]: val }
       const n = normalizePrintCornerFieldKey(key)
@@ -526,7 +529,8 @@ export default function PrintCornerPage() {
     [church, churchImageVariables],
   )
 
-  const bulkMode = bulkRows.length > 0
+  const bulkMode = bulkRows.length > 0 && singleRowFromBulk === null
+  const singleRowEditMode = singleRowFromBulk !== null
 
   /** Shared drafts for the active sidebar category only (not all letters/forms). */
   const visibleDrafts = useMemo(() => {
@@ -566,21 +570,32 @@ export default function PrintCornerPage() {
 
   function clearBulk() {
     setBulkRows([])
+    setSingleRowFromBulk(null)
     setBulkProgress(null)
     setBulkOutput('single')
   }
 
+  function returnToBulkList() {
+    setSingleRowFromBulk(null)
+    setStep(3)
+    toast('Back to bulk tracker — pick another row or use Multi PDF.', 'info')
+  }
+
   /** Rental: pull one tracker row into the wizard for shared-draft edit + single Issue PDF. */
-  function loadBulkRowIntoEditor(row) {
+  function loadBulkRowIntoEditor(row, rowIndex) {
     if (!row || !selected) return
-    clearBulk()
-    setDraftId(null)
+    const idx = rowIndex ?? bulkRows.indexOf(row)
+    const mapped = mapTrackerRowToWizardFieldValues(row, selected.variables, selected)
+    const base = defaultFieldValuesFromTemplate(selected, church, null, selectedCategoryName)
+    const merged = { ...base, ...mapped }
     const values = church
-      ? applyChurchToFieldValues({ ...row }, church, { preserveOverrides: true })
-      : { ...row }
+      ? applyChurchToFieldValues(merged, church, { preserveOverrides: true })
+      : merged
+    setDraftId(null)
     setFieldValues(values)
     setSelectedMember(null)
     setMemberQuery('')
+    setSingleRowFromBulk(idx >= 0 ? idx : 0)
     setStep(2)
     toast(`Loaded ${draftRecordSummary(selected, row)} — edit, Save & go to Review, then Issue PDF.`, 'info')
   }
@@ -828,6 +843,7 @@ export default function PrintCornerPage() {
     setFieldValues(church ? applyChurchToFieldValues({ ...draftValues }, church, { preserveOverrides: true }) : draftValues)
     setIncludeTamil(!!d.include_tamil)
     setBulkRows([])
+    setSingleRowFromBulk(null)
     setSelectedMember(null)
     setMemberQuery(d.field_values?.member_name || d.member_id || '')
     setSharePhone(d.field_values?.whatsapp || d.field_values?.mobile || '')
@@ -1253,6 +1269,7 @@ export default function PrintCornerPage() {
         ? await reformatPrintCornerTrackerFile(file, variables, selected)
         : await parsePrintCornerTrackerFile(file, variables, selected)
       setBulkRows(rows)
+      setSingleRowFromBulk(null)
       toast(
         rental
           ? `${rows.length} row(s) loaded — formatted tracker downloaded. Use Multi PDF to generate.`
@@ -1524,6 +1541,20 @@ export default function PrintCornerPage() {
             </label>
           )}
           {renderSharedDrafts()}
+          {singleRowEditMode && bulkRows[singleRowFromBulk] && (
+            <div style={{
+              marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.45,
+              background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a',
+            }}>
+              <strong>Editing tracker row {singleRowFromBulk + 1}</strong>
+              {' — '}{draftRecordSummary(selected, bulkRows[singleRowFromBulk])}.
+              {' '}Bulk tracker ({bulkRows.length} rows) is still loaded.
+              <button type="button" onClick={returnToBulkList}
+                style={{ display: 'block', marginTop: 8, padding: 0, border: 'none', background: 'none', color: '#2563eb', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
+                ← Back to bulk list on Review
+              </button>
+            </div>
+          )}
           {variables.length === 0 && imageVariables.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12 }}>
               No variables on this template yet. Upload a Word file with {'{placeholders}'} in Print Corner Settings.
@@ -1635,7 +1666,7 @@ export default function PrintCornerPage() {
                     onChange={readOnly ? undefined : e => {
                       if (overridable) setOverridableField(v.key, e.target.value)
                       else {
-                        clearBulk()
+                        if (singleRowFromBulk === null) clearBulk()
                         setFieldValues(f => ({ ...f, [v.key]: e.target.value }))
                       }
                     }}
@@ -1744,7 +1775,7 @@ export default function PrintCornerPage() {
                           key={i}
                           type="button"
                           disabled={busy}
-                          onClick={() => loadBulkRowIntoEditor(row)}
+                          onClick={() => loadBulkRowIntoEditor(row, i)}
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                             padding: '6px 10px', borderRadius: 6, border: '1px solid #bfdbfe',
@@ -1802,11 +1833,27 @@ export default function PrintCornerPage() {
                 </div>
               </div>
             )}
+            {singleRowEditMode && bulkRows[singleRowFromBulk] && (
+              <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: 12, color: '#166534', fontWeight: 600, marginBottom: 6 }}>
+                  Single tenant — row {singleRowFromBulk + 1}: {draftRecordSummary(selected, bulkRows[singleRowFromBulk])}
+                </div>
+                <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.45 }}>
+                  Bulk tracker still has {bulkRows.length} row(s). Use Issue PDF for this tenant only, or return to the bulk list.
+                </p>
+                <button type="button" onClick={returnToBulkList}
+                  style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #86efac', background: '#fff', color: '#15803d', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  ← Back to bulk list
+                </button>
+              </div>
+            )}
           </div>
 
           {!bulkMode && (
             <div style={{ padding: 12, borderRadius: 8, background: 'var(--input-bg)', border: '1px solid var(--card-border)', marginBottom: 16, maxHeight: 200, overflow: 'auto', fontSize: 12 }}>
-              {variables.filter(v => String(resolvedFieldValue(v.key) ?? '').trim()).map(v => (
+              {variables.filter(v => String(resolvedFieldValue(v.key) ?? '').trim()).length === 0 ? (
+                <p style={{ margin: 0, color: 'var(--text-3)' }}>No field values yet — go to Fields or pick a tracker row.</p>
+              ) : variables.filter(v => String(resolvedFieldValue(v.key) ?? '').trim()).map(v => (
                   <div key={v.key} style={{ marginBottom: 4 }}>
                     <strong>{v.label || v.key}:</strong> {resolvedFieldValue(v.key)}
                   </div>

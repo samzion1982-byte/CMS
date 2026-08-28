@@ -1835,6 +1835,35 @@ export async function reformatPrintCornerTrackerFile(file, variables, template =
   return rows
 }
 
+/** Map canonical tracker row keys → wizard variable keys (rental placeholder spellings). */
+export function mapTrackerRowToWizardFieldValues(row, variables, template = null) {
+  const wizardVars = orderTemplateTextVariables(variables, template)
+  const out = {}
+  const rowEntries = Object.entries(row || {})
+
+  function valueForWizardKey(wizardKey) {
+    const direct = row[wizardKey]
+    if (direct != null && String(direct).trim() !== '') return direct
+
+    const wNorm = normTrackerKey(wizardKey)
+    const wFam = rentalNormFamily(wNorm)
+    const wRank = rentalFieldRank(wizardKey)
+
+    for (const [k, val] of rowEntries) {
+      if (val == null || String(val).trim() === '') continue
+      const kNorm = normTrackerKey(k)
+      if (kNorm === wNorm || rentalNormFamily(kNorm) === wFam) return val
+      if (wRank != null && rentalFieldRank(k) === wRank) return val
+    }
+    return ''
+  }
+
+  for (const v of wizardVars) {
+    if (v?.key) out[v.key] = valueForWizardKey(v.key)
+  }
+  return out
+}
+
 /** Parse uploaded tracker .xlsx → array of field value objects (skips empty rows) */
 export async function parsePrintCornerTrackerFile(file, variables, template = null) {
   const keys = trackerColumnKeys(variables, template)
