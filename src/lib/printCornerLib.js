@@ -873,14 +873,35 @@ export function finalizeTemplateVariables(keys, existing = []) {
 }
 
 /** Text fields shown in wizard + tracker; injects member_id when template uses {member_photo}. */
+function sortWizardTextVariables(rows) {
+  return rows
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => {
+      const rank = (key) => {
+        const n = String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+        if (n === 'member_id') return 0
+        if (n === 'member_name') return 1
+        return 2
+      }
+      const ra = rank(a.v.key)
+      const rb = rank(b.v.key)
+      if (ra !== rb) return ra - rb
+      return a.i - b.i
+    })
+    .map(x => x.v)
+}
+
 export function wizardTextVariables(variables, meta = null) {
-  const text = textFieldVariables(variables)
-  if (!templateHasMemberPhoto(variables, meta)) return text
-  if (text.some(v => v.key === 'member_id' || v.key === 'Member_id')) return text
-  return [
-    { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
-    ...text,
-  ]
+  let text = textFieldVariables(variables)
+  if (templateHasMemberPhoto(variables, meta)) {
+    if (!text.some(v => v.key === 'member_id' || v.key === 'Member_id')) {
+      text = [
+        { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
+        ...text,
+      ]
+    }
+  }
+  return sortWizardTextVariables(text)
 }
 
 function formatPrintCornerDate(value) {

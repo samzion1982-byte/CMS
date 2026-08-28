@@ -84,12 +84,10 @@ function groupTemplates(categories, templates) {
     byCatId.get(t.category_id).push(t)
   }
   const known = new Set(sortedCategories.map(c => c.id))
-  const groups = sortedCategories
-    .map(c => ({
-      category: c,
-      templates: sortPrintCornerTemplates(byCatId.get(c.id) || []),
-    }))
-    .filter(g => g.templates.length > 0)
+  const groups = sortedCategories.map(c => ({
+    category: c,
+    templates: sortPrintCornerTemplates(byCatId.get(c.id) || []),
+  }))
   const orphans = templates.filter(t => !known.has(t.category_id))
   if (orphans.length) {
     groups.push({
@@ -430,8 +428,8 @@ export default function PrintCornerPage() {
 
   const activeGroup = useMemo(() => {
     if (tplSearch.trim()) return null
-    return filteredGroups.find(g => g.category.id === activeCategoryId) || filteredGroups[0] || null
-  }, [filteredGroups, activeCategoryId, tplSearch])
+    return groups.find(g => g.category.id === activeCategoryId) ?? null
+  }, [groups, activeCategoryId, tplSearch])
 
   const sidebarTemplates = useMemo(() => {
     if (tplSearch.trim()) return filteredGroups.flatMap(g => g.templates.map(t => ({ t, catName: g.category.name })))
@@ -440,9 +438,9 @@ export default function PrintCornerPage() {
   }, [filteredGroups, activeGroup, tplSearch])
 
   const activeCatStyle = useMemo(() => {
-    const idx = filteredGroups.findIndex(g => g.category.id === (activeGroup?.category.id))
+    const idx = groups.findIndex(g => g.category.id === (activeGroup?.category.id))
     return categoryHeaderStyle(activeGroup?.category?.name, Math.max(0, idx))
-  }, [filteredGroups, activeGroup])
+  }, [groups, activeGroup])
 
   const selectedCategoryName = useMemo(() => {
     if (!selected) return ''
@@ -591,9 +589,13 @@ export default function PrintCornerPage() {
     setSidebarMode('templates')
     setSelectedBlankForm(null)
     setActiveCategoryId(value)
-    const g = filteredGroups.find(x => x.category.id === value)
-    const first = g?.templates[0]
-    if (first && !g?.templates.some(t => t.id === selected?.id)) setSelected(first)
+    const g = groups.find(x => x.category.id === value)
+    if (!g?.templates.length) {
+      setSelected(null)
+      return
+    }
+    const first = g.templates[0]
+    if (first && !g.templates.some(t => t.id === selected?.id)) setSelected(first)
   }
 
   function mergeMemberFields(member) {
