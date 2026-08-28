@@ -215,6 +215,178 @@ function flushMetaForTable(tbl) {
   return TABLE_FLUSH_META[tbl] || { category: 'other', sub: 'misc' }
 }
 
+const FLUSH_SCAN_CACHE_TTL_MS = 10 * 60 * 1000
+const FLUSH_SCAN_SESSION_KEY = 'cms_flush_scan_cache_v1'
+let flushScanMemoryCache = null
+let flushScanInFlight = null
+
+const FLUSH_STORAGE_BUCKETS = [
+  { bucket: 'member-photos',        folder: 'active',  label: 'Photos — Active Members',  category: 'members',       sub: 'photos' },
+  { bucket: 'member-photos',        folder: 'deleted', label: 'Photos — Deleted Members', category: 'members',       sub: 'photos' },
+  { bucket: 'family-records',       folder: '',        label: 'Family Records',           category: 'members',       sub: 'roster' },
+  { bucket: 'event-media',          folder: '',        label: 'Event Media (incl. quarantine)',     category: 'events',        sub: 'recorder' },
+  { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos (incl. quarantine)',    category: 'assets',        sub: 'movable' },
+  { bucket: 'fixed-asset-docs',     folder: '',        label: 'Fixed Asset Docs (incl. quarantine)', category: 'assets',       sub: 'fixed' },
+  { bucket: 'church-documents',     folder: '',            label: 'Church Documents (incl. quarantine)', category: 'assets',       sub: 'documents' },
+  { bucket: 'auction-reports',      folder: '',            label: 'Auction Reports (files)',             category: 'receipts',     sub: 'auction' },
+  { bucket: 'church-documents',     folder: 'auction-ref',  label: 'Auction Reports (legacy files)',      category: 'receipts',     sub: 'auction' },
+  { bucket: 'church-logos',         folder: '',        label: 'Church Logos',              category: 'other',         sub: 'misc' },
+  { bucket: 'member-reports',       folder: '',        label: 'Member Reports',            category: 'members',       sub: 'roster' },
+  { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs (incl. quarantine)',    category: 'receipts',      sub: 'files' },
+  { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
+  { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
+  { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
+  { bucket: 'print-corner',         folder: 'templates',         label: 'Print Corner — Template files (.docx/.pptx)', category: 'print-corner', sub: 'templates' },
+  { bucket: 'print-corner',         folder: 'application-forms', label: 'Print Corner — Blank application forms',    category: 'print-corner', sub: 'templates' },
+  { bucket: 'print-corner',         folder: 'previews',          label: 'Print Corner — Template previews',          category: 'print-corner', sub: 'templates' },
+  { bucket: 'print-corner',         folder: 'issued',            label: 'Print Corner — Generated PDF files',        category: 'print-corner', sub: 'generated-pdfs' },
+]
+
+function flushTableLabel(tbl) {
+  if (tbl === 'cms_recycle_bin') return 'CMS Recycle Bin (database)'
+  if (tbl === 'cms_audit_log') return 'Audit Trail (cms_audit_log)'
+  if (tbl === 'auction_tracker') return 'Auction tracker'
+  if (tbl === 'auction_seasons') return 'Auction seasons'
+  if (tbl === 'auction_close_balances') return 'Auction close balances'
+  if (tbl === 'receipt_transfer_batches') return 'Transfer Report'
+  if (tbl === 'print_corner_categories') return 'Print Corner — Categories'
+  if (tbl === 'print_corner_templates') return 'Print Corner — Templates'
+  if (tbl === 'print_corner_application_forms') return 'Print Corner — Application forms'
+  if (tbl === 'print_corner_drafts') return 'Print Corner — Drafts'
+  if (tbl === 'print_corner_issued_log') return 'Print Corner — Issued PDF log'
+  return tbl
+}
+
+function readFlushScanSessionCache() {
+  try {
+    const raw = sessionStorage.getItem(FLUSH_SCAN_SESSION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.items?.length || !parsed.fetchedAt) return null
+    if (Date.now() - parsed.fetchedAt > FLUSH_SCAN_CACHE_TTL_MS) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeFlushScanSessionCache(items) {
+  try {
+    sessionStorage.setItem(FLUSH_SCAN_SESSION_KEY, JSON.stringify({ items, fetchedAt: Date.now() }))
+  } catch { /* quota / private mode */ }
+}
+
+function getFlushScanCache() {
+  if (flushScanMemoryCache && Date.now() - flushScanMemoryCache.fetchedAt <= FLUSH_SCAN_CACHE_TTL_MS) {
+    return flushScanMemoryCache
+  }
+  const session = readFlushScanSessionCache()
+  if (session) {
+    flushScanMemoryCache = session
+    return session
+  }
+  return null
+}
+
+function invalidateFlushScanCache() {
+  flushScanMemoryCache = null
+  try { sessionStorage.removeItem(FLUSH_SCAN_SESSION_KEY) } catch { /* ignore */ }
+}
+
+async function countFlushStorageFiles(bucket, folder) {
+  const rootPath = folder || ''
+  let count = 0
+  async function walk(dir) {
+    const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
+    if (error || !data?.length) return
+    for (const item of data) {
+      if (item.name === '.emptyFolderPlaceholder') continue
+      const full = dir ? `${dir}/${item.name}` : item.name
+      if (item.metadata || item.id) count++
+      else await walk(full)
+    }
+  }
+  try {
+    await walk(rootPath)
+    return { count, error: null }
+  } catch (e) {
+    return { count: null, error: e.message || String(e) }
+  }
+}
+
+function sortFlushScanItems(discovered) {
+  const catOrder = Object.fromEntries(FLUSH_CATEGORIES.map((c, i) => [c.key, i]))
+  const subOrder = {}
+  for (const c of FLUSH_CATEGORIES) {
+    ;(c.subs || []).forEach((s, i) => { subOrder[`${c.key}::${s.key}`] = i })
+  }
+  discovered.sort((a, b) => {
+    const ca = catOrder[a.category] ?? 999
+    const cb = catOrder[b.category] ?? 999
+    if (ca !== cb) return ca - cb
+    const sa = subOrder[`${a.category}::${a.sub}`] ?? 999
+    const sb = subOrder[`${b.category}::${b.sub}`] ?? 999
+    if (sa !== sb) return sa - sb
+    return a.label.localeCompare(b.label)
+  })
+  return discovered
+}
+
+async function scanFlushItems() {
+  const discovered = []
+
+  let knownTables = ['members']
+  try {
+    const { data: tables } = await supabase.rpc('get_user_tables')
+    if (tables?.length) {
+      knownTables = tables.map(t => t.table_name).filter(n => !EXCLUDED_TABLES.includes(n))
+    }
+  } catch (_) {}
+
+  await Promise.all(knownTables.map(async (tbl) => {
+    try {
+      const { count, error } = await adminSupabase.from(tbl).select('*', { count: 'exact', head: true })
+      if (!error) {
+        const meta = flushMetaForTable(tbl)
+        discovered.push({
+          id: `table::${tbl}`,
+          label: flushTableLabel(tbl),
+          type: 'table',
+          count: count || 0,
+          checked: false,
+          category: meta.category,
+          sub: meta.sub,
+        })
+      }
+    } catch (_) {}
+  }))
+
+  await Promise.all(FLUSH_STORAGE_BUCKETS.map(async ({ bucket, folder, label, category, sub }) => {
+    try {
+      const { count, error } = await countFlushStorageFiles(bucket, folder)
+      if (error) return
+      const id = folder ? `storage::${bucket}::${folder}` : `storage::${bucket}::`
+      discovered.push({
+        id, label, type: 'storage', count: count || 0, checked: false, category, sub,
+      })
+    } catch (_) {}
+  }))
+
+  return sortFlushScanItems(discovered)
+}
+
+function prefetchFlushScanIfStale() {
+  if (getFlushScanCache() || flushScanInFlight) return
+  flushScanInFlight = scanFlushItems()
+    .then(items => {
+      const entry = { items, fetchedAt: Date.now() }
+      flushScanMemoryCache = entry
+      writeFlushScanSessionCache(items)
+    })
+    .catch(() => {})
+    .finally(() => { flushScanInFlight = null })
+}
+
 /**
  * Child tables first so Flush All does not hit FK violations mid-wipe.
  * Lower number = deleted earlier. Unknown tables default to 50.
@@ -624,123 +796,45 @@ function PasswordModal({ open, onClose }) {
 function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast }) {
   const [items, setItems]       = useState([])   // { id, label, type, checked, count, category, sub }
   const [loading, setLoading]   = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [cacheAgeMs, setCacheAgeMs] = useState(null)
   const [flushing, setFlushing] = useState(false)
   const [progress, setProgress] = useState('')
 
   useEffect(() => { if (open) loadItems() }, [open])
 
-  async function countStorageFiles(bucket, folder) {
-    // Recursive count so nested paths (incl. _quarantine/{id}/…) are included for fresh-setup Flush
-    const rootPath = folder || ''
-    let count = 0
-    async function walk(dir) {
-      const { data, error } = await adminSupabase.storage.from(bucket).list(dir || '', { limit: 10000 })
-      if (error || !data?.length) return
-      for (const item of data) {
-        if (item.name === '.emptyFolderPlaceholder') continue
-        const full = dir ? `${dir}/${item.name}` : item.name
-        if (item.metadata || item.id) count++
-        else await walk(full)
-      }
+  async function loadItems({ force = false } = {}) {
+    const now = Date.now()
+    const cached = force ? null : getFlushScanCache()
+    const hasVisibleItems = items.length > 0
+
+    if (cached?.items?.length) {
+      setItems(cached.items.map(it => ({ ...it, checked: false })))
+      setCacheAgeMs(now - cached.fetchedAt)
+      setLoading(false)
+      if (!force && now - cached.fetchedAt < FLUSH_SCAN_CACHE_TTL_MS) return
+      setRefreshing(true)
+    } else if (hasVisibleItems && force) {
+      setRefreshing(true)
+      setLoading(false)
+    } else {
+      setLoading(true)
+      setCacheAgeMs(null)
     }
+
     try {
-      await walk(rootPath)
-      return { count, error: null }
-    } catch (e) {
-      return { count: null, error: e.message || String(e) }
+      const discovered = await scanFlushItems()
+      const entry = { items: discovered, fetchedAt: Date.now() }
+      flushScanMemoryCache = entry
+      writeFlushScanSessionCache(discovered)
+      setItems(discovered)
+      setCacheAgeMs(0)
+    } catch (_) {
+      if (!cached?.items?.length && !hasVisibleItems) toast('Failed to scan tables and storage.', 'error')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
-  }
-
-  async function loadItems() {
-    setLoading(true)
-    const discovered = []
-
-    let knownTables = ['members']
-    try {
-      const { data: tables } = await supabase.rpc('get_user_tables')
-      if (tables?.length) {
-        knownTables = tables.map(t => t.table_name).filter(n => !EXCLUDED_TABLES.includes(n))
-      }
-    } catch (_) {}
-
-    await Promise.all(knownTables.map(async (tbl) => {
-      try {
-        const { count, error } = await adminSupabase.from(tbl).select('*', { count: 'exact', head: true })
-        if (!error) {
-          const meta = flushMetaForTable(tbl)
-          discovered.push({
-            id: `table::${tbl}`,
-            label: tbl === 'cms_recycle_bin' ? 'CMS Recycle Bin (database)'
-              : tbl === 'cms_audit_log' ? 'Audit Trail (cms_audit_log)'
-              : tbl === 'auction_tracker' ? 'Auction tracker'
-              : tbl === 'auction_seasons' ? 'Auction seasons'
-              : tbl === 'auction_close_balances' ? 'Auction close balances'
-              : tbl === 'receipt_transfer_batches' ? 'Transfer Report'
-              : tbl === 'print_corner_categories' ? 'Print Corner — Categories'
-              : tbl === 'print_corner_templates' ? 'Print Corner — Templates'
-              : tbl === 'print_corner_application_forms' ? 'Print Corner — Application forms'
-              : tbl === 'print_corner_drafts' ? 'Print Corner — Drafts'
-              : tbl === 'print_corner_issued_log' ? 'Print Corner — Issued PDF log'
-              : tbl,
-            type: 'table',
-            count: count || 0,
-            checked: false,
-            category: meta.category,
-            sub: meta.sub,
-          })
-        }
-      } catch (_) {}
-    }))
-
-    const KNOWN_STORAGE = [
-      { bucket: 'member-photos',        folder: 'active',  label: 'Photos — Active Members',  category: 'members',       sub: 'photos' },
-      { bucket: 'member-photos',        folder: 'deleted', label: 'Photos — Deleted Members', category: 'members',       sub: 'photos' },
-      { bucket: 'family-records',       folder: '',        label: 'Family Records',           category: 'members',       sub: 'roster' },
-      { bucket: 'event-media',          folder: '',        label: 'Event Media (incl. quarantine)',     category: 'events',        sub: 'recorder' },
-      { bucket: 'asset-photos',         folder: '',        label: 'Asset Photos (incl. quarantine)',    category: 'assets',        sub: 'movable' },
-      { bucket: 'fixed-asset-docs',     folder: '',        label: 'Fixed Asset Docs (incl. quarantine)', category: 'assets',       sub: 'fixed' },
-      { bucket: 'church-documents',     folder: '',            label: 'Church Documents (incl. quarantine)', category: 'assets',       sub: 'documents' },
-      { bucket: 'auction-reports',      folder: '',            label: 'Auction Reports (files)',             category: 'receipts',     sub: 'auction' },
-      { bucket: 'church-documents',     folder: 'auction-ref',  label: 'Auction Reports (legacy files)',      category: 'receipts',     sub: 'auction' },
-      { bucket: 'church-logos',         folder: '',        label: 'Church Logos',              category: 'other',         sub: 'misc' },
-      { bucket: 'member-reports',       folder: '',        label: 'Member Reports',            category: 'members',       sub: 'roster' },
-      { bucket: 'receipt-pdfs',         folder: '',        label: 'Receipt PDFs (incl. quarantine)',    category: 'receipts',      sub: 'files' },
-      { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
-      { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
-      { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
-      { bucket: 'print-corner',         folder: 'templates',         label: 'Print Corner — Template files (.docx/.pptx)', category: 'print-corner', sub: 'templates' },
-      { bucket: 'print-corner',         folder: 'application-forms', label: 'Print Corner — Blank application forms',    category: 'print-corner', sub: 'templates' },
-      { bucket: 'print-corner',         folder: 'previews',          label: 'Print Corner — Template previews',          category: 'print-corner', sub: 'templates' },
-      { bucket: 'print-corner',         folder: 'issued',            label: 'Print Corner — Generated PDF files',        category: 'print-corner', sub: 'generated-pdfs' },
-    ]
-    await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category, sub }) => {
-      try {
-        const { count, error } = await countStorageFiles(bucket, folder)
-        if (error) return
-        const id = folder ? `storage::${bucket}::${folder}` : `storage::${bucket}::`
-        discovered.push({
-          id, label, type: 'storage', count: count || 0, checked: false, category, sub,
-        })
-      } catch (_) {}
-    }))
-
-    const catOrder = Object.fromEntries(FLUSH_CATEGORIES.map((c, i) => [c.key, i]))
-    const subOrder = {}
-    for (const c of FLUSH_CATEGORIES) {
-      ;(c.subs || []).forEach((s, i) => { subOrder[`${c.key}::${s.key}`] = i })
-    }
-    discovered.sort((a, b) => {
-      const ca = catOrder[a.category] ?? 999
-      const cb = catOrder[b.category] ?? 999
-      if (ca !== cb) return ca - cb
-      const sa = subOrder[`${a.category}::${a.sub}`] ?? 999
-      const sb = subOrder[`${b.category}::${b.sub}`] ?? 999
-      if (sa !== sb) return sa - sb
-      return a.label.localeCompare(b.label)
-    })
-
-    setItems(discovered)
-    setLoading(false)
   }
 
   function toggle(id) {
@@ -850,6 +944,7 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
         toast(`${done} item${done !== 1 ? 's' : ''} flushed successfully.`, 'success')
       }
       onDone()
+      invalidateFlushScanCache()
       onClose()
     } catch (err) {
       toast(`Flush failed: ${err.message}`, 'error')
@@ -910,10 +1005,37 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'calc(100% - 48px)', maxWidth: 540, maxHeight: '82vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 3000, overflow: 'hidden' }}>
 
         <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid #e2e8f0' }}>
-          <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 500, color: '#0f172a' }}>Flush data</p>
-          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
-            Records only — table structures and folder containers are preserved.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 500, color: '#0f172a' }}>Flush data</p>
+              <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+                Records only — table structures and folder containers are preserved.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadItems({ force: true })}
+              disabled={loading || refreshing || flushing}
+              title="Refresh counts"
+              style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 7,
+                border: '1px solid #e2e8f0', background: '#fff', color: '#475569',
+                cursor: loading || refreshing || flushing ? 'default' : 'pointer',
+                opacity: loading || refreshing || flushing ? 0.55 : 1,
+              }}
+            >
+              <RefreshCw size={12} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
+              Refresh
+            </button>
+          </div>
+          {!loading && cacheAgeMs != null && cacheAgeMs > 0 && (
+            <p style={{ margin: '8px 0 0', fontSize: 11, color: '#94a3b8' }}>
+              {refreshing
+                ? 'Updating counts in background…'
+                : `Counts cached ${cacheAgeMs < 60000 ? 'just now' : `${Math.round(cacheAgeMs / 60000)} min ago`}`}
+            </p>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
@@ -3059,7 +3181,7 @@ export default function ImportPage() {
     setHistoryLoading(false)
   }, [])
 
-  useEffect(() => { refreshStats(); loadHistory() }, [loadHistory])
+  useEffect(() => { refreshStats(); loadHistory(); prefetchFlushScanIfStale() }, [loadHistory])
 
   async function flushRow(entry) {
     const label = entry.source_file || entry.category
@@ -3071,6 +3193,7 @@ export default function ImportPage() {
         .update({ status:'flushed', flushed_at: new Date().toISOString(), flushed_by: profile?.email })
         .eq('category', entry.category)
       toast(`"${label}" flushed.`, 'success')
+      invalidateFlushScanCache()
       loadHistory(); refreshStats()
     } catch (err) {
       toast(`Flush failed: ${err.message}`, 'error')
