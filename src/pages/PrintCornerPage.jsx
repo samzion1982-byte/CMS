@@ -36,6 +36,7 @@ import {
   defaultFieldValuesFromTemplate,
   syncFieldValuesToTemplateVariables,
   templateVariableKeysSignature,
+  resyncTemplateVariablesFromStorage,
   applyMemberToFieldValues,
   applyChurchToFieldValues,
   isOverridableChurchFieldKey,
@@ -183,6 +184,8 @@ export default function PrintCornerPage() {
   const [step, setStep] = useState(1)
   const [church, setChurch] = useState(null)
   const [fieldValues, setFieldValues] = useState({})
+  const [wizardVariables, setWizardVariables] = useState(null)
+  const [variablesResyncing, setVariablesResyncing] = useState(false)
   const [includeTamil, setIncludeTamil] = useState(false)
   const [useTamilPdf, setUseTamilPdf] = useState(false)
   const [bulkRows, setBulkRows] = useState([])
@@ -298,12 +301,19 @@ export default function PrintCornerPage() {
     setMemberHits([])
     setSharePhone('')
     setShareEmail('')
+    setWizardVariables(null)
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const effectiveTemplate = useMemo(() => {
+    if (!selected) return null
+    if (!wizardVariables) return selected
+    return { ...selected, variables: wizardVariables }
+  }, [selected, wizardVariables])
+
   const templateVarSig = useMemo(
-    () => (selected ? templateVariableKeysSignature(selected) : ''),
-    [selected],
+    () => (effectiveTemplate ? templateVariableKeysSignature(effectiveTemplate) : ''),
+    [effectiveTemplate],
   )
 
   const fieldSyncRef = useRef({ id: null, sig: '' })
@@ -315,13 +325,41 @@ export default function PrintCornerPage() {
     if (lastId === selected.id && lastSig === templateVarSig) return
     fieldSyncRef.current = { id: selected.id, sig: templateVarSig }
     setFieldValues(prev => syncFieldValuesToTemplateVariables(
-      selected,
+      effectiveTemplate || selected,
       lastId === selected.id ? prev : {},
       church,
       selectedMember,
       selectedCategoryName,
     ))
   }, [templateVarSig, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setWizardVariables(null)
+  }, [selected?.id, selected?.storage_path])
+
+  // Re-scan stored file when Fields opens — source of truth is the uploaded deck, not stale DB rows
+  useEffect(() => {
+    if (step !== 2 || sidebarMode === 'forms' || !selected?.storage_path) return
+    let cancelled = false
+    setVariablesResyncing(true)
+    ;(async () => {
+      try {
+        const result = await resyncTemplateVariablesFromStorage(selected)
+        if (cancelled) return
+        setWizardVariables(result.variables)
+        if (result.changed && result.template) {
+          setSelected(result.template)
+          await refreshSidebar()
+        }
+      } catch (e) {
+        console.warn('[print-corner] Fields variable resync failed', e)
+        if (!cancelled) setWizardVariables(null)
+      } finally {
+        if (!cancelled) setVariablesResyncing(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [step, selected?.id, selected?.storage_path, sidebarMode, refreshSidebar])
 
   // Sidebar catalog may refresh while `selected` still holds an older snapshot
   useEffect(() => {
@@ -342,8 +380,15 @@ export default function PrintCornerPage() {
     function onCatalogUpdated() {
       refreshSidebar().catch(() => {})
     }
+    function onStorageInvalidate(e) {
+      if (e.key === 'print_corner_catalog_invalidate') refreshSidebar().catch(() => {})
+    }
     window.addEventListener('print-corner-catalog-updated', onCatalogUpdated)
-    return () => window.removeEventListener('print-corner-catalog-updated', onCatalogUpdated)
+    window.addEventListener('storage', onStorageInvalidate)
+    return () => {
+      window.removeEventListener('print-corner-catalog-updated', onCatalogUpdated)
+      window.removeEventListener('storage', onStorageInvalidate)
+    }
   }, [refreshSidebar])
 
   useEffect(() => {
@@ -516,9 +561,9 @@ export default function PrintCornerPage() {
   )
 
   const variables = useMemo(() => {
-    if (!selected) return []
-    return orderTemplateTextVariables(selected.variables, selected)
-  }, [selected])
+    if (!effectiveTemplate) return []
+    return orderTemplateTextVariables(effectiveTemplate.variables, effectiveTemplate)
+  }, [effectiveTemplate])
 
   function resolvedFieldValue(key) {
     if (isOverridableChurchFieldKey(key)) {
@@ -560,13 +605,13 @@ export default function PrintCornerPage() {
   }
 
   const imageVariables = useMemo(
-    () => imageFieldVariables(selected?.variables),
-    [selected],
+    () => imageFieldVariables(effectiveTemplate?.variables),
+    [effectiveTemplate],
   )
 
   const needsMemberPhoto = useMemo(
-    () => templateHasMemberPhoto(selected?.variables, templateMeta),
-    [selected, templateMeta],
+    () => templateHasMemberPhoto(effectiveTemplate?.variables, templateMeta),
+    [effectiveTemplate, templateMeta],
   )
 
   const churchImageVariables = useMemo(
@@ -1567,7 +1612,12 @@ export default function PrintCornerPage() {
               </button>
             </div>
           )}
-          {variables.length === 0 && imageVariables.length === 0 ? (
+          {variablesResyncing && (
+            <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+              Refreshing fields from template…
+            </p>
+          )}
+          {variables.length === 0 && imageVariables.length === 0 && !variablesResyncing ? (
             <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12 }}>
               No variables on this template yet. Upload a Word file with {'{placeholders}'} in Print Corner Settings.
             </p>

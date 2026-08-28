@@ -18,6 +18,7 @@ import {
   savePrintCornerTemplate,
   deletePrintCornerTemplate,
   uploadPrintCornerTemplateDocx,
+  resyncTemplateVariablesFromStorage,
   orderTemplateTextVariables,
   getChurchForPrintCorner,
   getOfficeBearerSignatureStatus,
@@ -362,6 +363,21 @@ function TemplatesPanel() {
       label: v.label || v.key || '',
     })))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
+
+    if (!selected.storage_path) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const result = await resyncTemplateVariablesFromStorage(selected)
+        if (cancelled || !result.changed) return
+        setTemplates(prev => prev.map(t => (t.id === result.template.id ? result.template : t)))
+        setVarRows(orderTemplateTextVariables(result.variables, result.template).map(v => ({
+          key: v.key || '',
+          label: v.label || v.key || '',
+        })))
+      } catch { /* ignore — manual upload still works */ }
+    })()
+    return () => { cancelled = true }
   }, [selectedId, selected, isAppFormsMode])
 
   useEffect(() => {

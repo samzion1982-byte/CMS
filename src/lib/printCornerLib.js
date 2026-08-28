@@ -232,6 +232,9 @@ export function invalidatePrintCornerCatalogCache() {
   try {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('print-corner-catalog-updated'))
+      // Notify other tabs (storage event does not fire in the tab that wrote).
+      localStorage.setItem('print_corner_catalog_invalidate', String(Date.now()))
+      localStorage.removeItem('print_corner_catalog_invalidate')
     }
   } catch { /* ignore */ }
 }
@@ -639,15 +642,18 @@ export async function countTemplatesInCategory(categoryId) {
  * Read {placeholder} tags from Word .docx or PowerPoint .pptx.
  * - Text tags in document/slides XML
  * - Image Alt Text (descr) e.g. {presbyter_sign}
+ * @param {{ pptxScope?: 'all' | 'slides-only' }} options
+ *   slides-only — content slides only (excludes layout/master boilerplate on reused Canva decks)
  */
-export async function parseOfficePlaceholders(fileOrBlob) {
+export async function parseOfficePlaceholders(fileOrBlob, { pptxScope = 'all' } = {}) {
   const zip = await JSZip.loadAsync(fileOrBlob)
-  const xmlNames = Object.keys(zip.files).filter(n =>
-    (
-      /^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/i.test(n)
-      || /^ppt\/(slides|slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(n)
-    ) && !zip.files[n].dir
-  )
+  const xmlNames = Object.keys(zip.files).filter(n => {
+    if (zip.files[n].dir) return false
+    if (/^word\/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/i.test(n)) return true
+    if (/^ppt\/slides\/slide[^/]+\.xml$/i.test(n)) return true
+    if (pptxScope === 'all' && /^ppt\/(slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(n)) return true
+    return false
+  })
   if (!xmlNames.length) throw new Error('Invalid Office file (no document/slides XML).')
 
   const found = new Set()
@@ -751,6 +757,64 @@ export function variablesFromPlaceholderKeys(keys, existing = []) {
   }))
 }
 
+/** Wizard field scan — PPTX content slides only (skip layout/master ghost placeholders). */
+export function wizardPlaceholderScanOptions(templateOrPath) {
+  const path = typeof templateOrPath === 'string'
+    ? templateOrPath
+    : String(templateOrPath?.storage_path || '')
+  return { pptxScope: path.toLowerCase().endsWith('.pptx') ? 'slides-only' : 'all' }
+}
+
+/** Re-read stored template file and align saved variables to on-slide placeholders. */
+export async function resyncTemplateVariablesFromStorage(template, { persist = true } = {}) {
+  const empty = {
+    template,
+    placeholders: [],
+    variables: normalizeTemplateVariables(template?.variables),
+    changed: false,
+  }
+  if (!template?.storage_path) return empty
+
+  const { data, error } = await supabase.storage.from(BUCKET).download(template.storage_path)
+  if (error) throw error
+
+  let keys = []
+  try {
+    keys = await parseOfficePlaceholders(data, wizardPlaceholderScanOptions(template))
+  } catch (e) {
+    console.warn('[print-corner] placeholder resync failed', e)
+    return empty
+  }
+
+  let vars = variablesFromPlaceholderKeys(keys, template.variables)
+  if (isRentalAgreementTemplate(template)) {
+    vars = sortRentalVariableRows(normalizeTemplateVariables(vars))
+  } else {
+    vars = normalizeTemplateVariables(vars)
+  }
+
+  const nextSig = vars.map(v => v.key).join('\0')
+  const curSig = normalizeTemplateVariables(template.variables).map(v => v.key).join('\0')
+  const changed = nextSig !== curSig
+
+  if (changed && persist && template.id) {
+    const saved = await savePrintCornerTemplate({ id: template.id, variables: vars })
+    return {
+      template: saved,
+      placeholders: keys,
+      variables: normalizeTemplateVariables(saved.variables),
+      changed: true,
+    }
+  }
+
+  return {
+    template: changed ? { ...template, variables: vars } : template,
+    placeholders: keys,
+    variables: vars,
+    changed,
+  }
+}
+
 export async function uploadPrintCornerTemplateDocx(file, template, { updateVariables = true } = {}) {
   const name = (file?.name || '').toLowerCase()
   const isPptx = name.endsWith('.pptx')
@@ -769,7 +833,7 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
 
   let keys = []
   try {
-    keys = await parseOfficePlaceholders(file)
+    keys = await parseOfficePlaceholders(file, wizardPlaceholderScanOptions(isPptx ? 'source.pptx' : 'source.docx'))
   } catch (e) {
     console.warn('[print-corner] placeholder scan failed', e)
   }
