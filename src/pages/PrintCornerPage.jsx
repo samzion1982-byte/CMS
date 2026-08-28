@@ -37,6 +37,7 @@ import {
   syncFieldValuesToTemplateVariables,
   templateVariableKeysSignature,
   resyncTemplateVariablesFromStorage,
+  isMemberIdVariableKey,
   applyMemberToFieldValues,
   applyChurchToFieldValues,
   isOverridableChurchFieldKey,
@@ -305,6 +306,13 @@ export default function PrintCornerPage() {
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const selectedCategoryName = useMemo(() => {
+    if (!selected) return ''
+    const g = groups.find(x => x.category.id === selected.category_id)
+      || groups.find(x => x.templates.some(t => t.id === selected.id))
+    return g?.category?.name || ''
+  }, [groups, selected])
+
   const effectiveTemplate = useMemo(() => {
     if (!selected) return null
     if (!wizardVariables) return selected
@@ -312,8 +320,8 @@ export default function PrintCornerPage() {
   }, [selected, wizardVariables])
 
   const templateVarSig = useMemo(
-    () => (effectiveTemplate ? templateVariableKeysSignature(effectiveTemplate) : ''),
-    [effectiveTemplate],
+    () => (effectiveTemplate ? templateVariableKeysSignature(effectiveTemplate, selectedCategoryName) : ''),
+    [effectiveTemplate, selectedCategoryName],
   )
 
   const fieldSyncRef = useRef({ id: null, sig: '' })
@@ -344,7 +352,10 @@ export default function PrintCornerPage() {
     setVariablesResyncing(true)
     ;(async () => {
       try {
-        const result = await resyncTemplateVariablesFromStorage(selected)
+        const result = await resyncTemplateVariablesFromStorage(selected, {
+          persist: true,
+          categoryName: selectedCategoryName,
+        })
         if (cancelled) return
         setWizardVariables(result.variables)
         if (result.changed && result.template) {
@@ -359,7 +370,7 @@ export default function PrintCornerPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [step, selected?.id, selected?.storage_path, sidebarMode, refreshSidebar])
+  }, [step, selected?.id, selected?.storage_path, sidebarMode, refreshSidebar, selectedCategoryName])
 
   // Sidebar catalog may refresh while `selected` still holds an older snapshot
   useEffect(() => {
@@ -370,7 +381,7 @@ export default function PrintCornerPage() {
       const stale =
         fresh.storage_path !== selected.storage_path
         || fresh.updated_at !== selected.updated_at
-        || templateVariableKeysSignature(fresh) !== templateVariableKeysSignature(selected)
+        || templateVariableKeysSignature(fresh, selectedCategoryName) !== templateVariableKeysSignature(selected, selectedCategoryName)
       if (stale) setSelected(fresh)
       break
     }
@@ -543,13 +554,6 @@ export default function PrintCornerPage() {
     return categoryHeaderStyle(activeGroup?.category?.name, Math.max(0, idx))
   }, [groups, activeGroup])
 
-  const selectedCategoryName = useMemo(() => {
-    if (!selected) return ''
-    const g = groups.find(x => x.category.id === selected.category_id)
-      || groups.find(x => x.templates.some(t => t.id === selected.id))
-    return g?.category?.name || ''
-  }, [groups, selected])
-
   const selectedMeta = useMemo(() => {
     if (!selected) return null
     return resolveTemplateTypeDisplay(selected, selectedCategoryName)
@@ -562,8 +566,8 @@ export default function PrintCornerPage() {
 
   const variables = useMemo(() => {
     if (!effectiveTemplate) return []
-    return orderTemplateTextVariables(effectiveTemplate.variables, effectiveTemplate)
-  }, [effectiveTemplate])
+    return orderTemplateTextVariables(effectiveTemplate.variables, effectiveTemplate, selectedCategoryName)
+  }, [effectiveTemplate, selectedCategoryName])
 
   function resolvedFieldValue(key) {
     if (isOverridableChurchFieldKey(key)) {
@@ -810,7 +814,7 @@ export default function PrintCornerPage() {
   }
 
   function isMemberIdField(key) {
-    return key === 'member_id' || key === 'Member_id'
+    return isMemberIdVariableKey(key)
   }
 
   async function handleShareWhatsApp(pdfUrl, label) {

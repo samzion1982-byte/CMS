@@ -322,6 +322,13 @@ function TemplatesPanel() {
   const selected = templates.find(t => t.id === selectedId)
   const selectedBlank = blankForms.find(f => f.id === selectedBlankId) || null
 
+  const selectedCategoryName = useMemo(() => {
+    if (!selected) return ''
+    const g = grouped.find(x => x.category.id === selected.category_id)
+      || grouped.find(x => x.templates.some(t => t.id === selected.id))
+    return g?.category?.name || ''
+  }, [grouped, selected])
+
   useEffect(() => {
     if (!sidebarBrowseItems.length || browseSeededRef.current) return
     browseSeededRef.current = true
@@ -358,7 +365,7 @@ function TemplatesPanel() {
       category_id: selected.category_id || '',
       is_active: selected.is_active !== false,
     })
-    setVarRows(orderTemplateTextVariables(selected.variables, selected).map(v => ({
+    setVarRows(orderTemplateTextVariables(selected.variables, selected, selectedCategoryName).map(v => ({
       key: v.key || '',
       label: v.label || v.key || '',
     })))
@@ -368,17 +375,17 @@ function TemplatesPanel() {
     let cancelled = false
     ;(async () => {
       try {
-        const result = await resyncTemplateVariablesFromStorage(selected)
+        const result = await resyncTemplateVariablesFromStorage(selected, { categoryName: selectedCategoryName })
         if (cancelled || !result.changed) return
         setTemplates(prev => prev.map(t => (t.id === result.template.id ? result.template : t)))
-        setVarRows(orderTemplateTextVariables(result.variables, result.template).map(v => ({
+        setVarRows(orderTemplateTextVariables(result.variables, result.template, selectedCategoryName).map(v => ({
           key: v.key || '',
           label: v.label || v.key || '',
         })))
       } catch { /* ignore — manual upload still works */ }
     })()
     return () => { cancelled = true }
-  }, [selectedId, selected, isAppFormsMode])
+  }, [selectedId, selected, isAppFormsMode, selectedCategoryName])
 
   useEffect(() => {
     if (!selectedBlank) { setBlankForm(null); return }

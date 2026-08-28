@@ -766,7 +766,10 @@ export function wizardPlaceholderScanOptions(templateOrPath) {
 }
 
 /** Re-read stored template file and align saved variables to on-slide placeholders. */
-export async function resyncTemplateVariablesFromStorage(template, { persist = true } = {}) {
+export async function resyncTemplateVariablesFromStorage(
+  template,
+  { persist = true, categoryName = '' } = {},
+) {
   const empty = {
     template,
     placeholders: [],
@@ -787,11 +790,7 @@ export async function resyncTemplateVariablesFromStorage(template, { persist = t
   }
 
   let vars = variablesFromPlaceholderKeys(keys, template.variables)
-  if (isRentalAgreementTemplate(template)) {
-    vars = sortRentalVariableRows(normalizeTemplateVariables(vars))
-  } else {
-    vars = normalizeTemplateVariables(vars)
-  }
+  vars = finalizeWizardVariables(template, vars, categoryName)
 
   const nextSig = vars.map(v => v.key).join('\0')
   const curSig = normalizeTemplateVariables(template.variables).map(v => v.key).join('\0')
@@ -855,11 +854,7 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
     storage_path: storagePath,
   }
   if (updateVariables) {
-    let vars = variablesFromPlaceholderKeys(keys, template.variables)
-    if (isRentalAgreementTemplate(template)) {
-      vars = sortRentalVariableRows(normalizeTemplateVariables(vars))
-    }
-    patch.variables = vars
+    patch.variables = finalizeWizardVariables(template, variablesFromPlaceholderKeys(keys, template.variables))
   }
 
   const saved = await savePrintCornerTemplate(patch)
@@ -943,6 +938,27 @@ export function templateHasMemberPhoto(variables, meta = null) {
   if (meta && templateLooksLikeIdCard(meta)) return true
   if (meta && categoryIsIdCardsOnly(meta.categoryName)) return true
   return false
+}
+
+export function isMemberIdVariableKey(key) {
+  const n = normalizePrintCornerFieldKey(key)
+  return n === 'member_id' || n === 'memberid'
+}
+
+/** ID cards / member-photo templates always expose Member ID — required for photo lookup. */
+export function finalizeWizardVariables(template, variables, categoryName = '') {
+  let vars = normalizeTemplateVariables(variables)
+  const meta = templateMetaFromTemplate(template, categoryName)
+  if (templateHasMemberPhoto(vars, meta) && !vars.some(v => isMemberIdVariableKey(v.key))) {
+    vars = [
+      { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
+      ...vars,
+    ]
+  }
+  if (template && isRentalAgreementTemplate(template)) {
+    return sortRentalVariableRows(vars)
+  }
+  return vars
 }
 
 /** Merge scanned placeholder keys with saved labels (no extra fixed fields). */
@@ -1200,9 +1216,9 @@ export function churchSetupValueForKey(key, church) {
 }
 
 /** Stable signature of text placeholder keys — detects template re-upload / variable edits. */
-export function templateVariableKeysSignature(template) {
+export function templateVariableKeysSignature(template, categoryName = '') {
   if (!template) return ''
-  return orderTemplateTextVariables(template.variables, template)
+  return orderTemplateTextVariables(template.variables, template, categoryName)
     .map(v => v.key)
     .filter(Boolean)
     .join('\0')
@@ -1216,7 +1232,7 @@ export function syncFieldValuesToTemplateVariables(
   member = null,
   categoryName = '',
 ) {
-  const keys = orderTemplateTextVariables(template?.variables, template)
+  const keys = orderTemplateTextVariables(template?.variables, template, categoryName)
     .map(v => v.key)
     .filter(Boolean)
   const out = {}
@@ -1739,11 +1755,11 @@ function sortRentalVariableRows(rows) {
     .map(x => x.v)
 }
 
-/** Text fields for wizard/tracker — rental templates use the standard rental field order. */
-export function orderTemplateTextVariables(variables, template = null) {
+/** Text fields for wizard/tracker — rental order + ID card Member ID when photo is required. */
+export function orderTemplateTextVariables(variables, template = null, categoryName = '') {
   const rows = textFieldVariables(variables)
-  if (template && isRentalAgreementTemplate(template)) return sortRentalVariableRows(rows)
-  return rows
+  if (!template) return rows
+  return finalizeWizardVariables(template, rows, categoryName)
 }
 
 function excelColumnLetter(colNum) {
