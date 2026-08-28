@@ -20,6 +20,7 @@ import {
   reformatPrintCornerTrackerFile,
   isRentalAgreementTemplate,
   draftRecordSummary,
+  supportsPrintCornerTracker,
   mapTrackerRowToWizardFieldValues,
   resolveTemplateTypeDisplay,
   resolvePptxNameFit,
@@ -581,23 +582,47 @@ export default function PrintCornerPage() {
     toast('Back to bulk tracker — pick another row or use Multi PDF.', 'info')
   }
 
-  /** Rental: pull one tracker row into the wizard for shared-draft edit + single Issue PDF. */
-  function loadBulkRowIntoEditor(row, rowIndex) {
+  /** Pull one tracker row into Fields for edit + single Issue PDF (all tracker templates). */
+  async function loadBulkRowIntoEditor(row, rowIndex) {
     if (!row || !selected) return
     const idx = rowIndex ?? bulkRows.indexOf(row)
     const mapped = mapTrackerRowToWizardFieldValues(row, selected.variables, selected)
     const base = defaultFieldValuesFromTemplate(selected, church, null, selectedCategoryName)
-    const merged = { ...base, ...mapped }
+    let merged = { ...base, ...mapped }
+
+    const memberId = String(merged.member_id || row.member_id || '').trim()
+    let member = null
+    if (memberId) {
+      try {
+        member = await getPrintCornerMemberById(memberId)
+      } catch {
+        member = null
+      }
+    }
+    if (member) {
+      const keys = variables.map(v => v.key).filter(Boolean)
+      merged = applyMemberToFieldValues(merged, member, keys)
+      if (needsMemberPhoto) merged.member_id = member.member_id || memberId
+    }
+
     const values = church
       ? applyChurchToFieldValues(merged, church, { preserveOverrides: true })
       : merged
     setDraftId(null)
     setFieldValues(values)
-    setSelectedMember(null)
-    setMemberQuery('')
+    if (member) {
+      setSelectedMember(member)
+      setMemberQuery(member.member_name || member.member_id || '')
+      setSharePhone(member.whatsapp || member.mobile || '')
+      setShareEmail(member.email || '')
+    } else {
+      setSelectedMember(null)
+      setMemberQuery(memberId || '')
+    }
     setSingleRowFromBulk(idx >= 0 ? idx : 0)
     setStep(2)
-    toast(`Loaded ${draftRecordSummary(selected, row)} — edit, Save & go to Review, then Issue PDF.`, 'info')
+    const saveHint = showDrafts ? 'Save & go to Review' : 'Review'
+    toast(`Loaded ${draftRecordSummary(selected, row)} — edit, ${saveHint}, then Issue PDF.`, 'info')
   }
 
   const showMemberApproach = selected?.template_type === 'letter' || needsMemberPhoto
@@ -649,7 +674,7 @@ export default function PrintCornerPage() {
 
   function pickMember(m) {
     if (!m) return
-    clearBulk()
+    if (singleRowFromBulk === null) clearBulk()
     setSelectedMember(m)
     setMemberQuery(m.member_name || m.member_id || '')
     setMemberHits([])
@@ -679,7 +704,7 @@ export default function PrintCornerPage() {
         toast(`No member found for ID “${id}”.`, 'error')
         return
       }
-      clearBulk()
+      if (singleRowFromBulk === null) clearBulk()
       setSelectedMember(m)
       setMemberQuery(m.member_name || m.member_id || '')
       mergeMemberFields(m)
@@ -900,7 +925,7 @@ export default function PrintCornerPage() {
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
             {isRentalAgreementTemplate(selected)
               ? 'No drafts yet. Fill one tenant on Fields → “Save & go to Review” to share. From a loaded tracker, use “Edit single” on Review to open one row here.'
-              : 'No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others.'}
+              : 'No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others. From a loaded tracker, use “Edit single” on Review for one row.'}
           </p>
         ) : (
           <div style={{ maxHeight: 180, overflow: 'auto' }}>
@@ -1761,13 +1786,16 @@ export default function PrintCornerPage() {
                     Clear
                   </button>
                 </div>
-                {isRentalAgreementTemplate(selected) && (
-                  <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #bfdbfe' }}>
+                <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #bfdbfe' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 6 }}>
-                      Edit one tenant (shared draft + single PDF)
+                      {isRentalAgreementTemplate(selected)
+                        ? 'Edit one tenant (shared draft + single PDF)'
+                        : 'Edit one row (single PDF)'}
                     </div>
                     <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.45 }}>
-                      Pick a row to open it in Fields. Edit if needed, use “Save & go to Review” to share the draft, then Issue PDF.
+                      {showDrafts
+                        ? 'Pick a row to open it in Fields. Edit if needed, use “Save & go to Review” to share the draft, then Issue PDF.'
+                        : 'Pick a row to open it in Fields. Edit if needed, go to Review, then Issue PDF.'}
                     </p>
                     <div style={{ maxHeight: 160, overflow: 'auto', display: 'grid', gap: 4 }}>
                       {bulkRows.map((row, i) => (
@@ -1791,7 +1819,6 @@ export default function PrintCornerPage() {
                       ))}
                     </div>
                   </div>
-                )}
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 8 }}>Download as</div>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <label style={{
@@ -1836,10 +1863,10 @@ export default function PrintCornerPage() {
             {singleRowEditMode && bulkRows[singleRowFromBulk] && (
               <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                 <div style={{ fontSize: 12, color: '#166534', fontWeight: 600, marginBottom: 6 }}>
-                  Single tenant — row {singleRowFromBulk + 1}: {draftRecordSummary(selected, bulkRows[singleRowFromBulk])}
+                  Single row {singleRowFromBulk + 1}: {draftRecordSummary(selected, bulkRows[singleRowFromBulk])}
                 </div>
                 <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.45 }}>
-                  Bulk tracker still has {bulkRows.length} row(s). Use Issue PDF for this tenant only, or return to the bulk list.
+                  Bulk tracker still has {bulkRows.length} row(s). Use Issue PDF for this copy only, or return to the bulk list.
                 </p>
                 <button type="button" onClick={returnToBulkList}
                   style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #86efac', background: '#fff', color: '#15803d', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
@@ -1865,8 +1892,8 @@ export default function PrintCornerPage() {
             <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk print (tracker)</div>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                For multiple copies: download the tracker, fill rows, upload it, then use Multi PDF
-                (one combined multi-page PDF). For a single copy, use Issue PDF.
+                For multiple copies: download the tracker, fill rows, upload it, then use Multi PDF.
+                For one copy: use <strong>Edit single</strong> on a row above, or fill Fields manually and use Issue PDF.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" disabled={busy || !variables.length} onClick={handleDownloadTracker}

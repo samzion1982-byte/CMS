@@ -1529,7 +1529,7 @@ export function isRentalAgreementTemplate(template = {}) {
   return hay.includes('rental')
 }
 
-/** Short label for shared drafts / tracker rows (rental → tenant + shop). */
+/** Short label for shared drafts / tracker rows. */
 export function draftRecordSummary(template = {}, fieldValues = {}) {
   if (isRentalAgreementTemplate(template)) {
     const tenant = String(fieldValues.tenant_name || '').trim()
@@ -1539,7 +1539,20 @@ export function draftRecordSummary(template = {}, fieldValues = {}) {
     if (shop) return `Shop ${shop}`
     return 'blank tenant'
   }
-  return fieldValues.member_name || fieldValues.member_id || 'blank'
+  const name = String(
+    fieldValues.member_name || fieldValues.name || fieldValues.recipient_name || '',
+  ).trim()
+  const id = String(fieldValues.member_id || fieldValues.ref_no || '').trim()
+  if (name && id) return `${name} (${id})`
+  if (name) return name
+  if (id) return id
+  return 'blank'
+}
+
+/** Templates that support bulk tracker + single-row edit from Review. */
+export function supportsPrintCornerTracker(template = {}) {
+  const t = template?.template_type
+  return t === 'letter' || t === 'form' || t === 'certificate'
 }
 
 function sortRentalVariableRows(rows) {
