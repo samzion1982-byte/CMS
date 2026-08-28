@@ -58,6 +58,7 @@ import {
   sortPrintCornerCategories,
   buildPrintCornerSidebarBrowseItems,
   PRINT_CORNER_FORMS_SIDEBAR_ID,
+  formatPrintCornerDisplayDate,
 } from '../lib/printCornerLib'
 import MasterDeleteGate from '../components/printCorner/MasterDeleteGate'
 
@@ -545,37 +546,28 @@ export default function PrintCornerPage() {
   )
   const singleRowEditMode = singleRowFromBulk !== null
 
-  /** Shared drafts for the active sidebar category only (not all letters/forms). */
+  /** Shared drafts for the selected template only. */
   const visibleDrafts = useMemo(() => {
-    if (sidebarMode === 'forms' || tplSearch.trim()) return []
-    const templatesInCat = activeGroup?.templates || []
-    if (!templatesInCat.length) return []
-    const draftable = templatesInCat.filter(t => t.template_type !== 'certificate')
-    if (!draftable.length) return []
-    const keys = new Set(draftable.map(t => t.template_key))
-    const ids = new Set(draftable.map(t => t.id))
+    if (sidebarMode === 'forms' || tplSearch.trim() || !selected) return []
+    if (selected.template_type === 'certificate') return []
     return drafts.filter(d => {
-      if (d.template_id && ids.has(d.template_id)) return true
-      if (d.template_key && keys.has(d.template_key)) return true
+      if (selected.id && d.template_id === selected.id) return true
+      if (d.template_key && d.template_key === selected.template_key) return true
       return false
     })
-  }, [drafts, activeGroup, sidebarMode, tplSearch])
+  }, [drafts, selected, sidebarMode, tplSearch])
 
   const showDrafts = !!selected && selected.template_type !== 'certificate'
 
-  /** Issued PDFs for the active sidebar category only (not all history). */
-  const issuedForCategory = useMemo(() => {
-    if (sidebarMode === 'forms' || tplSearch.trim()) return []
-    const templatesInCat = activeGroup?.templates || []
-    if (!templatesInCat.length) return []
-    const keys = new Set(templatesInCat.map(t => t.template_key))
-    const ids = new Set(templatesInCat.map(t => t.id))
+  /** Issued PDFs for the selected template (Review step). */
+  const issuedForTemplate = useMemo(() => {
+    if (sidebarMode === 'forms' || tplSearch.trim() || !selected) return []
     return issuedPdfs.filter(row => {
-      if (row.template_id && ids.has(row.template_id)) return true
-      if (row.template_key && keys.has(row.template_key)) return true
+      if (selected.id && row.template_id === selected.id) return true
+      if (row.template_key && row.template_key === selected.template_key) return true
       return false
     })
-  }, [issuedPdfs, activeGroup, sidebarMode, tplSearch])
+  }, [issuedPdfs, selected, sidebarMode, tplSearch])
 
   useEffect(() => {
     setIssuedSelected(new Set())
@@ -954,8 +946,8 @@ export default function PrintCornerPage() {
         {visibleDrafts.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
             {isRentalAgreementTemplate(selected)
-              ? 'No drafts yet. Fill one tenant on Fields → “Save & go to Review” to share. From a loaded tracker, use “Edit single” on Review to open one row here.'
-              : 'No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others. From a loaded tracker, use “Edit single” on Review for one row.'}
+              ? `No drafts yet for “${selected.label}”. Fill one tenant on Fields → “Save & go to Review” to share.`
+              : `No drafts yet for “${selected.label}”. Use “Save & go to Review” on Fields to share with others.`}
           </p>
         ) : (
           <div style={{ maxHeight: 180, overflow: 'auto' }}>
@@ -967,7 +959,7 @@ export default function PrintCornerPage() {
                     {' '}· {draftRecordSummary(
                       groups.flatMap(g => g.templates).find(t => t.id === d.template_id) || { template_key: d.template_key },
                       d.field_values,
-                    )} · {new Date(d.updated_at).toLocaleString()}
+                    )} · {formatPrintCornerDisplayDate(d.updated_at)}
                   </span>
                 </div>
                 <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
@@ -1028,7 +1020,7 @@ export default function PrintCornerPage() {
 
   async function handleDeleteIssued(row) {
     const label = row.field_values?.member_name || row.member_id || row.template_key || row.issued_filename
-    if (!window.confirm(`Delete issued PDF “${label}” from ${new Date(row.issued_at).toLocaleString()}?`)) return
+    if (!window.confirm(`Delete issued PDF “${label}” from ${formatPrintCornerDisplayDate(row.issued_at)}?`)) return
     setBusy(true)
     try {
       await deletePrintCornerIssued(row)
@@ -1043,10 +1035,10 @@ export default function PrintCornerPage() {
   }
 
   function renderIssuedHistory() {
-    if (sidebarMode === 'forms' || tplSearch.trim()) return null
-    const catName = activeGroup?.category?.name || 'this category'
+    if (sidebarMode === 'forms' || tplSearch.trim() || !selected || step !== 3) return null
+    const tplName = selected.label || selected.template_key || 'this template'
     const headerStyle = activeCatStyle
-    const rows = issuedForCategory
+    const rows = issuedForTemplate
     const selectedRows = rows.filter(r => issuedSelected.has(r.id))
     const allSelected = rows.length > 0 && selectedRows.length === rows.length
 
@@ -1059,10 +1051,10 @@ export default function PrintCornerPage() {
         }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: headerStyle.badgeColor || 'var(--text-1)' }}>
-              Recent issued PDFs — {catName}
+              Recent issued PDFs — {tplName}
             </div>
             <div style={{ fontSize: 11, color: headerStyle.accent || 'var(--text-3)', marginTop: 2, opacity: 0.9 }}>
-              This category only · delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
+              This template only · delete manually · auto-removed after {ISSUED_RETENTION_DAYS} days
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1111,13 +1103,13 @@ export default function PrintCornerPage() {
           </div>
         ) : rows.length === 0 ? (
           <div style={{ padding: 20, fontSize: 13, color: 'var(--text-3)' }}>
-            No issued PDFs for {catName} yet. Select a template → Review → Issue PDF.
+            No issued PDFs for {tplName} yet. Go to Review → Issue PDF.
           </div>
         ) : (
           <div style={{ maxHeight: 280, overflowY: 'auto' }}>
             {rows.map(row => {
               const memberLabel = row.field_values?.member_name || row.member_id || '—'
-              const when = new Date(row.issued_at).toLocaleString()
+              const when = formatPrintCornerDisplayDate(row.issued_at)
               const checked = issuedSelected.has(row.id)
               return (
                 <div

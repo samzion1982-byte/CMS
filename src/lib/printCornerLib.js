@@ -927,6 +927,22 @@ export function formatMergeFieldDate(value) {
   return `${dd}.${mm}.${d.getFullYear()}`
 }
 
+/** List timestamps in Print Corner UI (dd-mm-yyyy). */
+export function formatPrintCornerDisplayDate(iso, { withTime = true } = {}) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  if (!withTime) return `${dd}-${mm}-${yyyy}`
+  const h = d.getHours()
+  const min = String(d.getMinutes()).padStart(2, '0')
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 || 12
+  return `${dd}-${mm}-${yyyy}, ${h12}:${min} ${ampm}`
+}
+
 export function isDateMergeFieldKey(key) {
   const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   if (n === 'date') return true
