@@ -55,7 +55,9 @@ async function requireUser(req: Request) {
 
 function stampFilename(base: string, ext = 'pdf') {
   const now = new Date()
-  const date = now.toISOString().slice(0, 10)
+  const dd = String(now.getDate()).padStart(2, '0')
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const date = `${dd}-${mm}-${now.getFullYear()}`
   const time = now.toISOString().slice(11, 19).replace(/:/g, '')
   const safe = String(base || 'document').replace(/[^\w.-]+/g, '_').slice(0, 80)
   return `${date}_${time}_${safe}.${ext}`
@@ -128,7 +130,7 @@ function formatMergeFieldDate(value: unknown): string {
     if (Number.isNaN(value.getTime())) return ''
     const dd = String(value.getDate()).padStart(2, '0')
     const mm = String(value.getMonth() + 1).padStart(2, '0')
-    return `${dd}.${mm}.${value.getFullYear()}`
+    return `${dd}-${mm}-${value.getFullYear()}`
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (isLikelyCalendarYearNumber(value)) return String(Math.trunc(value))
@@ -137,28 +139,30 @@ function formatMergeFieldDate(value: unknown): string {
       if (Number.isNaN(d.getTime())) return String(value)
       const dd = String(d.getUTCDate()).padStart(2, '0')
       const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-      return `${dd}.${mm}.${d.getUTCFullYear()}`
+      return `${dd}-${mm}-${d.getUTCFullYear()}`
     }
     return String(value)
   }
   const s = String(value).trim()
   if (!s) return ''
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s
+  const dotted = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (dotted) return `${dotted[1]}-${dotted[2]}-${dotted[3]}`
+  if (/^\d{2}-\d{2}-\d{4}$/.test(s)) return s
   if (/GMT|India Standard Time|GMT\+|\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s)
     if (!Number.isNaN(d.getTime())) {
       const dd = String(d.getDate()).padStart(2, '0')
       const mm = String(d.getMonth() + 1).padStart(2, '0')
-      return `${dd}.${mm}.${d.getFullYear()}`
+      return `${dd}-${mm}-${d.getFullYear()}`
     }
   }
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (m) return `${m[3]}.${m[2]}.${m[1]}`
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${dd}.${mm}.${d.getFullYear()}`
+  return `${dd}-${mm}-${d.getFullYear()}`
 }
 
 function mergeFieldToString(key: string, raw: unknown): string {

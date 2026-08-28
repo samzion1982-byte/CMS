@@ -1184,14 +1184,14 @@ function formatPrintCornerDate(value) {
   return formatMergeFieldDate(value)
 }
 
-/** Format dates for mail-merge (DD.MM.YYYY). Handles Excel dates, Date objects, and JS date strings. */
+/** Format dates for mail-merge (DD-MM-YYYY). Handles Excel dates, Date objects, and JS date strings. */
 export function formatMergeFieldDate(value) {
   if (value == null || value === '') return ''
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return ''
     const dd = String(value.getDate()).padStart(2, '0')
     const mm = String(value.getMonth() + 1).padStart(2, '0')
-    return `${dd}.${mm}.${value.getFullYear()}`
+    return `${dd}-${mm}-${value.getFullYear()}`
   }
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (isLikelyCalendarYearNumber(value)) return String(Math.trunc(value))
@@ -1203,22 +1203,34 @@ export function formatMergeFieldDate(value) {
   }
   const s = String(value).trim()
   if (!s) return ''
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s
+  const dotted = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (dotted) return `${dotted[1]}-${dotted[2]}-${dotted[3]}`
+  const dashed = s.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (dashed) return s
   if (/GMT|India Standard Time|GMT\+|\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s)
     if (!Number.isNaN(d.getTime())) {
       const dd = String(d.getDate()).padStart(2, '0')
       const mm = String(d.getMonth() + 1).padStart(2, '0')
-      return `${dd}.${mm}.${d.getFullYear()}`
+      return `${dd}-${mm}-${d.getFullYear()}`
     }
   }
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (m) return `${m[3]}.${m[2]}.${m[1]}`
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
   const dd = String(d.getDate()).padStart(2, '0')
   const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${dd}.${mm}.${d.getFullYear()}`
+  return `${dd}-${mm}-${d.getFullYear()}`
+}
+
+/** dd-mm-yyyy for bulk download / issued filenames. */
+export function formatPrintCornerFileDate(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) return ''
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}-${mm}-${d.getFullYear()}`
 }
 
 /** List timestamps in Print Corner UI (dd-mm-yyyy). */
@@ -1579,13 +1591,13 @@ export const PRINT_CORNER_PLACEHOLDER_GUIDE = [
   {
     id: 'dates_life',
     title: 'Life & sacrament dates',
-    hint: 'Formatted as DD.MM.YYYY when pulled from Members.',
+    hint: 'Formatted as DD-MM-YYYY when pulled from Members.',
     items: [
-      { key: 'dob', label: 'Date of birth (preferred)', example: '15.08.1990' },
-      { key: 'dob_actual', label: 'DOB (actual)', example: '15.08.1990' },
-      { key: 'dob_certificate', label: 'DOB (certificate)', example: '15.08.1990' },
+      { key: 'dob', label: 'Date of birth (preferred)', example: '15-08-1990' },
+      { key: 'dob_actual', label: 'DOB (actual)', example: '15-08-1990' },
+      { key: 'dob_certificate', label: 'DOB (certificate)', example: '15-08-1990' },
       { key: 'marital_status', label: 'Marital status', example: 'Married' },
-      { key: 'date_of_marriage', label: 'Date of marriage', example: '10.01.2015' },
+      { key: 'date_of_marriage', label: 'Date of marriage', example: '10-01-2015' },
       { key: 'baptism_date', label: 'Baptism date', example: '…' },
       { key: 'confirmation_date', label: 'Confirmation date', example: '…' },
       { key: 'qualification', label: 'Qualification', example: '…' },
@@ -1613,7 +1625,7 @@ export const PRINT_CORNER_PLACEHOLDER_GUIDE = [
     hint: 'Common letter fields — type in the wizard or leave blank for manual entry.',
     items: [
       { key: 'ref_no', label: 'Reference number', example: 'LPC/2026/014' },
-      { key: 'date', label: 'Letter date', example: '27.08.2026' },
+      { key: 'date', label: 'Letter date', example: '27-08-2026' },
       { key: 'addressee_line1', label: 'Addressee line 1', example: 'The Principal' },
       { key: 'addressee_line2', label: 'Addressee line 2', example: 'College name' },
       { key: 'addressee_line3', label: 'Addressee line 3', example: 'City' },
@@ -2445,7 +2457,7 @@ export async function convertBulkLettersToPdf({
     results.push({ ...res, fieldValues })
   }
 
-  const stamp = new Date().toISOString().slice(0, 10)
+  const stamp = formatPrintCornerFileDate(new Date())
 
   if (output === 'zip') {
     const zip = new JSZip()
