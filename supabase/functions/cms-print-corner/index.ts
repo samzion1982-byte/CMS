@@ -133,18 +133,25 @@ function extractPptxFirstFontSz(spXml: string) {
   return m ? Number(m[1]) || 2400 : 2400
 }
 
-type PptxNameFitMode = 'standard' | 'gentle'
+type PptxNameFitMode = 'standard' | 'gentle' | 'certificate'
 
 const PPTX_NAME_FIT_PRESETS: Record<PptxNameFitMode, {
   minScale: number
   sideMarginRatio: number
   charWidthRatio: number
   wrap: 'square' | 'none'
+  slideAware: boolean
 }> = {
-  // Letters / certificates — text box width, allow more shrink
-  standard: { minScale: 38000, sideMarginRatio: 0, charWidthRatio: 0.62, wrap: 'square' },
-  // ID cards — use slide free width (side margins), shrink only when needed
-  gentle: { minScale: 72000, sideMarginRatio: 0.06, charWidthRatio: 0.54, wrap: 'none' },
+  // Letters — text box width only, allow more shrink (legacy PPTX letters)
+  standard: { minScale: 38000, sideMarginRatio: 0, charWidthRatio: 0.62, wrap: 'square', slideAware: false },
+  // ID cards — slide free width, single-line, readable minimum
+  gentle: { minScale: 72000, sideMarginRatio: 0.06, charWidthRatio: 0.54, wrap: 'none', slideAware: true },
+  // Certificates — same slide-aware logic; wider side margin for border art, script names
+  certificate: { minScale: 72000, sideMarginRatio: 0.08, charWidthRatio: 0.50, wrap: 'none', slideAware: true },
+}
+
+function pptxNameFitIsSlideAware(mode: PptxNameFitMode) {
+  return PPTX_NAME_FIT_PRESETS[mode].slideAware
 }
 
 function extractPptxSlideSize(presentationXml: string): { cx: number, cy: number } | null {
@@ -163,16 +170,16 @@ function extractPptxSlideSize(presentationXml: string): { cx: number, cy: number
   return null
 }
 
-/** Horizontal space for a name — ID cards use slide width minus side clearance, not a narrow Canva text box. */
+/** Horizontal space for a name — slide-aware modes use slide width minus side clearance, not a narrow Canva text box. */
 function estimatePptxNameUsableWidthEmu(
   shapeXfrm: { x: string, y: string, cx: string, cy: string },
   slideSize: { cx: number, cy: number } | null,
   mode: PptxNameFitMode,
 ) {
   const shapeW = Number(shapeXfrm.cx) || 0
-  if (mode !== 'gentle' || !slideSize?.cx) return shapeW
+  const preset = PPTX_NAME_FIT_PRESETS[mode]
+  if (!preset.slideAware || !slideSize?.cx) return shapeW
   const slideW = Number(slideSize.cx)
-  const preset = PPTX_NAME_FIT_PRESETS.gentle
   const sideMargin = Math.round(slideW * preset.sideMarginRatio)
   const freeW = Math.max(shapeW, slideW - sideMargin * 2)
   return freeW
@@ -213,7 +220,7 @@ function estimatePptxNameFontScale(
   const preset = PPTX_NAME_FIT_PRESETS[mode]
   const fontPt = fontSzHundredths / 100
   const widthPt = (widthEmu / 914400) * 72
-  const padPt = mode === 'gentle' ? 4 : 16
+  const padPt = preset.slideAware ? 4 : 16
   const usablePt = Math.max(24, widthPt - padPt)
   const charW = fontPt * preset.charWidthRatio
   const maxChars = usablePt / charW
@@ -300,15 +307,15 @@ function applyPptxLongNameTextFit(
     const usableW = estimatePptxNameUsableWidthEmu(xfrm, slideSize, mode)
     if (!usableW) return sp
     let patched = sp
-    if (mode === 'gentle' && slideSize?.cx && usableW > Number(xfrm.cx)) {
+    if (pptxNameFitIsSlideAware(mode) && slideSize?.cx && usableW > Number(xfrm.cx)) {
       patched = patchPptxShapeWidth(patched, usableW, slideSize.cx)
     }
     const fontSz = extractPptxFirstFontSz(patched)
     const fontScale = estimatePptxNameFontScale(text, usableW, fontSz, mode)
     if (fontScale >= 100000) return patched
     patched = patchPptxTxBodyAutofit(patched, fontScale, preset.wrap)
-    // Gentle: normAutofit only — patching run sz as well double-shrinks in Google PDF convert
-    if (mode !== 'gentle') patched = patchPptxRunFontSizes(patched, fontScale)
+    // Slide-aware: normAutofit only — patching run sz as well double-shrinks in Google PDF convert
+    if (!pptxNameFitIsSlideAware(mode)) patched = patchPptxRunFontSizes(patched, fontScale)
     return patched
   })
 }
@@ -318,11 +325,19 @@ function bodyLooksLikeIdCard(body: Record<string, unknown>) {
   return /id[\s_-]*card|idcard|identity[\s_-]*card|member[\s_-]*card|photo[\s_-]*card/.test(hay)
 }
 
+function bodyIsCertificateTemplate(body: Record<string, unknown>) {
+  const t = String(body.template_type || '').toLowerCase()
+  if (t === 'certificate' || t === 'certificates') return true
+  const hay = `${body.template_key || ''} ${body.template_label || ''}`.toLowerCase()
+  return /certificate|certification|appreciation|participation|achievement|award/.test(hay)
+}
+
 function resolvePptxNameFitMode(body: Record<string, unknown>): PptxNameFitMode | 'off' {
   if (body.shrink_long_pptx_names === false || body.pptx_name_fit === 'off') return 'off'
   const fit = String(body.pptx_name_fit || '').toLowerCase()
-  if (fit === 'gentle' || fit === 'standard') return fit
+  if (fit === 'gentle' || fit === 'certificate' || fit === 'standard') return fit as PptxNameFitMode
   if (bodyLooksLikeIdCard(body)) return 'gentle'
+  if (bodyIsCertificateTemplate(body)) return 'certificate'
   return 'standard'
 }
 

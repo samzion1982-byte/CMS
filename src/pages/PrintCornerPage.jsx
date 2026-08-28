@@ -18,7 +18,7 @@ import {
   downloadPrintCornerTracker,
   parsePrintCornerTrackerFile,
   resolveTemplateTypeDisplay,
-  isIdCardTemplate,
+  resolvePptxNameFit,
   getSharedDrafts,
   saveDraft,
   deleteDraft,
@@ -1124,7 +1124,7 @@ export default function PrintCornerPage() {
         fieldValues: buildIssueFieldValues(),
         issue: true,
         source: 'manual',
-        pptxNameFit: isIdCardTemplate(selected, selectedCategoryName) ? 'gentle' : 'standard',
+        pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
@@ -1180,7 +1180,7 @@ export default function PrintCornerPage() {
         templateType: templateStorageType(selected.template_type),
         templateId: selected.id,
         templateLabel: selected.label || '',
-        pptxNameFit: isIdCardTemplate(selected, selectedCategoryName) ? 'gentle' : 'standard',
+        pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
         rows: bulkRows,
         onProgress: setBulkProgress,
         output: bulkOutput === 'zip' ? 'zip' : 'single',

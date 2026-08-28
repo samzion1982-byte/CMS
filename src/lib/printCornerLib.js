@@ -423,7 +423,7 @@ export async function previewPrintCornerTemplate(template, church = null, { forc
     issue: false,
     source: 'blank',
     forcePreview: force,
-    pptxNameFit: isIdCardTemplate(template) ? 'gentle' : 'standard',
+    pptxNameFit: resolvePptxNameFit(template),
   })
   if (res?.signed_url) rememberPreviewUrl(template.storage_path, res.signed_url)
   return res
@@ -837,9 +837,23 @@ export function categoryIsIdCardsOnly(categoryName = '') {
   return cat === 'id cards' || cat === 'id card' || cat === 'identity cards'
 }
 
+export function isCertificateTemplate(template, categoryName = '') {
+  if (template?.template_type === 'certificate') return true
+  const cat = String(categoryName || '').trim().toLowerCase()
+  if (cat.includes('cert') && !categoryIsIdCardsOnly(categoryName)) return true
+  return false
+}
+
 export function isIdCardTemplate(template, categoryName = '') {
   const meta = templateMetaFromTemplate(template, categoryName)
   return templateLooksLikeIdCard(meta) || categoryIsIdCardsOnly(meta.categoryName)
+}
+
+/** PPTX name scaling mode sent to the merge edge function. */
+export function resolvePptxNameFit(template, categoryName = '') {
+  if (isIdCardTemplate(template, categoryName)) return 'gentle'
+  if (isCertificateTemplate(template, categoryName)) return 'certificate'
+  return 'standard'
 }
 
 /** Sidebar label, accent colour, and icon key — ID cards override stored template_type. */
