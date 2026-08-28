@@ -17,6 +17,9 @@ import {
   convertBulkLettersToPdf,
   downloadPrintCornerTracker,
   parsePrintCornerTrackerFile,
+  reformatPrintCornerTrackerFile,
+  isRentalAgreementTemplate,
+  draftRecordSummary,
   resolveTemplateTypeDisplay,
   resolvePptxNameFit,
   getSharedDrafts,
@@ -567,6 +570,21 @@ export default function PrintCornerPage() {
     setBulkOutput('single')
   }
 
+  /** Rental: pull one tracker row into the wizard for shared-draft edit + single Issue PDF. */
+  function loadBulkRowIntoEditor(row) {
+    if (!row || !selected) return
+    clearBulk()
+    setDraftId(null)
+    const values = church
+      ? applyChurchToFieldValues({ ...row }, church, { preserveOverrides: true })
+      : { ...row }
+    setFieldValues(values)
+    setSelectedMember(null)
+    setMemberQuery('')
+    setStep(2)
+    toast(`Loaded ${draftRecordSummary(selected, row)} — edit, Save & go to Review, then Issue PDF.`, 'info')
+  }
+
   const showMemberApproach = selected?.template_type === 'letter' || needsMemberPhoto
 
   const filteredBlankForms = useMemo(() => {
@@ -815,7 +833,7 @@ export default function PrintCornerPage() {
     setSharePhone(d.field_values?.whatsapp || d.field_values?.mobile || '')
     setShareEmail(d.field_values?.email || '')
     setStep(2)
-    toast('Draft loaded — edit fields, then Review.', 'info')
+    toast(`Draft loaded — ${draftRecordSummary(tpl || selected, draftValues)}. Edit fields, then Review.`, 'info')
   }
 
   async function handleDeleteDraft(d) {
@@ -864,7 +882,9 @@ export default function PrintCornerPage() {
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
         {visibleDrafts.length === 0 ? (
           <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-            No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others.
+            {isRentalAgreementTemplate(selected)
+              ? 'No drafts yet. Fill one tenant on Fields → “Save & go to Review” to share. From a loaded tracker, use “Edit single” on Review to open one row here.'
+              : 'No drafts in this category yet. Use “Save & go to Review” on the Fields step to share with others.'}
           </p>
         ) : (
           <div style={{ maxHeight: 180, overflow: 'auto' }}>
@@ -873,7 +893,10 @@ export default function PrintCornerPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{d.template_key}</strong>
                   <span style={{ color: 'var(--text-3)' }}>
-                    {' '}· {d.field_values?.member_name || d.member_id || 'blank'} · {new Date(d.updated_at).toLocaleString()}
+                    {' '}· {draftRecordSummary(
+                      groups.flatMap(g => g.templates).find(t => t.id === d.template_id) || { template_key: d.template_key },
+                      d.field_values,
+                    )} · {new Date(d.updated_at).toLocaleString()}
                   </span>
                 </div>
                 <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
@@ -1225,9 +1248,17 @@ export default function PrintCornerPage() {
     if (!file || !selected) return
     setBusy(true)
     try {
-      const rows = await parsePrintCornerTrackerFile(file, variables, selected)
+      const rental = isRentalAgreementTemplate(selected)
+      const rows = rental
+        ? await reformatPrintCornerTrackerFile(file, variables, selected)
+        : await parsePrintCornerTrackerFile(file, variables, selected)
       setBulkRows(rows)
-      toast(`${rows.length} row(s) loaded from tracker — use Multi PDF to generate.`, 'success')
+      toast(
+        rental
+          ? `${rows.length} row(s) loaded — formatted tracker downloaded. Use Multi PDF to generate.`
+          : `${rows.length} row(s) loaded from tracker — use Multi PDF to generate.`,
+        'success',
+      )
     } catch (err) {
       toast(err.message || 'Could not read tracker', 'error')
     } finally {
@@ -1699,6 +1730,37 @@ export default function PrintCornerPage() {
                     Clear
                   </button>
                 </div>
+                {isRentalAgreementTemplate(selected) && (
+                  <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #bfdbfe' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 6 }}>
+                      Edit one tenant (shared draft + single PDF)
+                    </div>
+                    <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.45 }}>
+                      Pick a row to open it in Fields. Edit if needed, use “Save & go to Review” to share the draft, then Issue PDF.
+                    </p>
+                    <div style={{ maxHeight: 160, overflow: 'auto', display: 'grid', gap: 4 }}>
+                      {bulkRows.map((row, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => loadBulkRowIntoEditor(row)}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #bfdbfe',
+                            background: '#fff', cursor: 'pointer', fontSize: 12, color: '#1e3a8a', textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>Row {i + 1}</span>
+                          <span style={{ flex: 1, minWidth: 0, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {draftRecordSummary(selected, row)}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', flexShrink: 0 }}>Edit single →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 8 }}>Download as</div>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <label style={{

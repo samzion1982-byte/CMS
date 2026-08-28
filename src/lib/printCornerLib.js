@@ -1455,6 +1455,7 @@ function rentalTrackerVariableRows(variables, template = null) {
   }
 
   const merged = []
+  const consumed = new Set()
   for (const group of RENTAL_FIELD_ORDER_GROUPS) {
     let hit = null
     for (const alias of group) {
@@ -1466,9 +1467,11 @@ function rentalTrackerVariableRows(variables, template = null) {
     }
     const canonical = group[0]
     if (hit) {
+      consumed.add(normTrackerKey(hit.key))
       merged.push({
         ...hit,
-        label: hit.label || rentalFieldLabel(hit.key),
+        key: canonical,
+        label: rentalFieldLabel(canonical),
       })
     } else {
       merged.push({
@@ -1480,16 +1483,17 @@ function rentalTrackerVariableRows(variables, template = null) {
   }
 
   for (const v of sorted) {
-    if (rentalFieldRank(v.key) == null) merged.push(v)
+    const n = normTrackerKey(v.key)
+    if (consumed.has(n)) continue
+    if (rentalFieldRank(v.key) != null) continue
+    merged.push(v)
   }
   return merged
 }
 
+/** Collapse punctuation/spacing so Dia.Treasurer, dia_treasurer, DiaTreasurer all match. */
 function normTrackerKey(key) {
-  return String(key || '').trim().toLowerCase()
-    .replace(/\./g, '_')
-    .replace(/[\s-]+/g, '_')
-    .replace(/_+/g, '_')
+  return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 function rentalFieldRank(key) {
@@ -1503,6 +1507,19 @@ function rentalFieldRank(key) {
 export function isRentalAgreementTemplate(template = {}) {
   const hay = `${template?.label || ''} ${template?.template_key || ''}`.toLowerCase()
   return hay.includes('rental')
+}
+
+/** Short label for shared drafts / tracker rows (rental → tenant + shop). */
+export function draftRecordSummary(template = {}, fieldValues = {}) {
+  if (isRentalAgreementTemplate(template)) {
+    const tenant = String(fieldValues.tenant_name || '').trim()
+    const shop = String(fieldValues.shop_no || '').trim()
+    if (tenant && shop) return `${tenant} · Shop ${shop}`
+    if (tenant) return tenant
+    if (shop) return `Shop ${shop}`
+    return 'blank tenant'
+  }
+  return fieldValues.member_name || fieldValues.member_id || 'blank'
 }
 
 function sortRentalVariableRows(rows) {
@@ -1645,29 +1662,48 @@ export function trackerHeaders(variables, template = null) {
 function buildTrackerHeaderColumnMap(ws, variables, template) {
   const rows = rentalTrackerVariableRows(variables, template)
   const headerRow = ws.getRow(1)
-  const colCount = Math.max(headerRow.cellCount, rows.length)
+  const colCount = Math.max(headerRow.cellCount, rows.length, ws.columnCount || 0)
   const byHeader = new Map()
+  const byNormHeader = new Map()
   for (let c = 1; c <= colCount; c++) {
-    const h = String(headerRow.getCell(c).value ?? '').trim()
-    if (h && h !== TRACKER_SNO) byHeader.set(h, c)
+    const h = trackerCellText(headerRow.getCell(c))
+    if (!h || h === TRACKER_SNO) continue
+    byHeader.set(h, c)
+    const n = normTrackerKey(h)
+    if (n && !byNormHeader.has(n)) byNormHeader.set(n, c)
   }
   const keyToCol = new Map()
   for (const v of rows) {
     const key = v.key
     const label = v.label || rentalFieldLabel(key)
-    const col = byHeader.get(key) ?? byHeader.get(label)
+    const col = byHeader.get(key)
+      ?? byHeader.get(label)
+      ?? byNormHeader.get(normTrackerKey(key))
+      ?? byNormHeader.get(normTrackerKey(label))
     if (col) keyToCol.set(key, col)
   }
   return { keyToCol, rows }
 }
 
-/** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
-export async function downloadPrintCornerTracker({
+function triggerTrackerFileDownload(buffer, templateKey) {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${templateKey || 'letter'}_tracker.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function buildPrintCornerTrackerWorkbook({
   templateKey,
   templateLabel = '',
   variables,
-  fieldValues,
+  fieldValues = {},
   blankRows = 49,
+  dataRows = null,
 }) {
   const ExcelJS = (await import('exceljs')).default
   const template = { template_key: templateKey, label: templateLabel }
@@ -1708,12 +1744,22 @@ export async function downloadPrintCornerTracker({
     return row
   }
 
-  addTrackerDataRow(2, 1, fieldValues)
-  for (let i = 2; i <= blankRows + 1; i++) {
-    addTrackerDataRow(i + 1, i, null)
+  let lastRow
+  if (dataRows?.length) {
+    dataRows.forEach((values, i) => addTrackerDataRow(i + 2, i + 1, values))
+    const trailingBlank = Math.max(blankRows, 10)
+    for (let i = 0; i < trailingBlank; i++) {
+      addTrackerDataRow(dataRows.length + i + 2, dataRows.length + i + 1, null)
+    }
+    lastRow = dataRows.length + trailingBlank + 1
+  } else {
+    addTrackerDataRow(2, 1, fieldValues)
+    for (let i = 2; i <= blankRows + 1; i++) {
+      addTrackerDataRow(i + 1, i, null)
+    }
+    lastRow = blankRows + 1
   }
 
-  const lastRow = blankRows + 1
   const colCount = headers.length
 
   if (rental) {
@@ -1725,16 +1771,42 @@ export async function downloadPrintCornerTracker({
     }))
   }
 
-  const buffer = await wb.xlsx.writeBuffer()
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  return wb
+}
+
+/** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
+export async function downloadPrintCornerTracker({
+  templateKey,
+  templateLabel = '',
+  variables,
+  fieldValues,
+  blankRows = 49,
+}) {
+  const wb = await buildPrintCornerTrackerWorkbook({
+    templateKey,
+    templateLabel,
+    variables,
+    fieldValues,
+    blankRows,
   })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${templateKey || 'letter'}_tracker.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
+  const buffer = await wb.xlsx.writeBuffer()
+  triggerTrackerFileDownload(buffer, templateKey)
+}
+
+/** Re-read pasted tracker data and download a clean, formatted copy (rental: strips duplicate columns). */
+export async function reformatPrintCornerTrackerFile(file, variables, template = null) {
+  const rows = await parsePrintCornerTrackerFile(file, variables, template)
+  const templateKey = template?.template_key || 'letter'
+  const wb = await buildPrintCornerTrackerWorkbook({
+    templateKey,
+    templateLabel: template?.label || '',
+    variables,
+    dataRows: rows,
+    blankRows: Math.max(49, rows.length + 10),
+  })
+  const buffer = await wb.xlsx.writeBuffer()
+  triggerTrackerFileDownload(buffer, templateKey)
+  return rows
 }
 
 /** Parse uploaded tracker .xlsx → array of field value objects (skips empty rows) */
