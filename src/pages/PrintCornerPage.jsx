@@ -40,6 +40,7 @@ import {
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
   textFieldVariables,
+  orderTemplateTextVariables,
   imageFieldVariables,
   templateHasMemberPhoto,
   templateMetaFromTemplate,
@@ -458,10 +459,10 @@ export default function PrintCornerPage() {
     [selected, selectedCategoryName],
   )
 
-  const variables = useMemo(
-    () => textFieldVariables(selected?.variables),
-    [selected],
-  )
+  const variables = useMemo(() => {
+    if (!selected) return []
+    return orderTemplateTextVariables(selected.variables, selected)
+  }, [selected])
 
   function resolvedFieldValue(key) {
     if (isOverridableChurchFieldKey(key)) {

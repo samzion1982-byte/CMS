@@ -784,8 +784,11 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
     storage_path: storagePath,
   }
   if (updateVariables) {
-    // Replace with scanned placeholders only — preserve labels for keys that still exist
-    patch.variables = variablesFromPlaceholderKeys(keys, template.variables)
+    let vars = variablesFromPlaceholderKeys(keys, template.variables)
+    if (isRentalAgreementTemplate(template)) {
+      vars = sortRentalVariableRows(normalizeTemplateVariables(vars))
+    }
+    patch.variables = vars
   }
 
   const saved = await savePrintCornerTemplate(patch)
@@ -1046,7 +1049,7 @@ export function churchSetupValueForKey(key, church) {
 
 export function defaultFieldValuesFromTemplate(template, church = null, member = null, categoryName = '') {
   const out = {}
-  for (const v of wizardTextVariables(template?.variables)) {
+  for (const v of orderTemplateTextVariables(template?.variables, template)) {
     if (v.key) out[v.key] = ''
   }
   if (church) applyChurchToFieldValues(out, church)
@@ -1350,25 +1353,59 @@ const TAMIL_MONTHS_LOOKUP = [
   [12, 'டிசம்பர்'],
 ]
 
-/** Rental agreement tracker column order (matches church rental Word template). */
-const RENTAL_TRACKER_FIELD_ORDER = [
-  'shop_no', 'floor', 'sq_ft', 'eb_meter',
-  'north_side_shop', 'n_side_shop', 'south_side', 'western_side', 'eastern_side',
-  'shop_name', 'shop_description',
-  'monthly_rent', 'rent_in_tamil',
-  'security_deposit', 'sd_in_tamil',
-  'agreement_date', 'year', 'month', 'tamil_month', 'day',
-  'from_date', 'to_date',
-  'tenant_name', 'tenant_father_name', 'tenant_address',
-  'aadhaar_number', 'aadhar_number', 'pan_number', 'ration_card_number', 'phone_number',
-  'ward',
-  'asst_treasurer', 'asst_treas_father', 'asst_treasurer_designation',
-  'asst_secretary', 'asst_sec_father', 'sec_designation',
-  'facing_side',
+/** Rental agreement field order (tracker + wizard). Each group lists accepted placeholder key variants. */
+const RENTAL_FIELD_ORDER_GROUPS = [
+  ['shop_no'],
+  ['floor'],
+  ['sq_ft', 'sqft'],
+  ['eb_meter'],
+  ['north_side_shop_no', 'north_side_shop', 'n_side_shop'],
+  ['south_side'],
+  ['western_side'],
+  ['eastern_side'],
+  ['shop_name'],
+  ['shop_description'],
+  ['monthly_rent'],
+  ['rent_in_tamil'],
+  ['security_deposit'],
+  ['sd_in_tamil'],
+  ['agreement_date'],
+  ['year'],
+  ['month'],
+  ['tamil_month'],
+  ['day'],
+  ['from_date'],
+  ['to_date'],
+  ['tenant_name'],
+  ['tenant_father_name'],
+  ['tenant_address'],
+  ['aadhaar_number', 'aadhar_number'],
+  ['pan_number'],
+  ['ration_card_number'],
+  ['phone_number'],
+  ['ward'],
+  ['dia_treasurer', 'asst_treasurer'],
+  ['dia_treas_father', 'asst_treas_father'],
+  ['tres_designation', 'asst_treasurer_designation'],
+  ['dia_seceretary', 'dia_secretary', 'asst_secretary'],
+  ['dia_sec_father', 'asst_sec_father'],
+  ['sec_designation'],
+  ['facing_side'],
 ]
 
 function normTrackerKey(key) {
-  return String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return String(key || '').trim().toLowerCase()
+    .replace(/\./g, '_')
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_')
+}
+
+function rentalFieldRank(key) {
+  const n = normTrackerKey(key)
+  for (let i = 0; i < RENTAL_FIELD_ORDER_GROUPS.length; i++) {
+    if (RENTAL_FIELD_ORDER_GROUPS[i].some(alias => normTrackerKey(alias) === n)) return i
+  }
+  return null
 }
 
 export function isRentalAgreementTemplate(template = {}) {
@@ -1376,16 +1413,25 @@ export function isRentalAgreementTemplate(template = {}) {
   return hay.includes('rental')
 }
 
-function sortRentalTrackerKeys(keys) {
-  const rank = new Map(RENTAL_TRACKER_FIELD_ORDER.map((k, i) => [normTrackerKey(k), i]))
-  return [...keys].sort((a, b) => {
-    const ra = rank.get(normTrackerKey(a))
-    const rb = rank.get(normTrackerKey(b))
-    if (ra != null && rb != null) return ra - rb
-    if (ra != null) return -1
-    if (rb != null) return 1
-    return 0
-  })
+function sortRentalVariableRows(rows) {
+  return [...rows]
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => {
+      const ra = rentalFieldRank(a.v.key)
+      const rb = rentalFieldRank(b.v.key)
+      if (ra != null && rb != null) return ra - rb
+      if (ra != null) return -1
+      if (rb != null) return 1
+      return a.i - b.i
+    })
+    .map(x => x.v)
+}
+
+/** Text fields for wizard/tracker — rental templates use the standard rental field order. */
+export function orderTemplateTextVariables(variables, template = null) {
+  const rows = textFieldVariables(variables)
+  if (template && isRentalAgreementTemplate(template)) return sortRentalVariableRows(rows)
+  return rows
 }
 
 function excelColumnLetter(colNum) {
@@ -1410,6 +1456,17 @@ function trackerCellText(cell) {
   return String(v).trim()
 }
 
+function trackerCellBorder(isTop, isBottom, isLeft, isRight) {
+  const inner = { style: 'thin', color: { argb: 'FFC5CEE0' } }
+  const outer = { style: 'medium', color: { argb: 'FF1E3A5F' } }
+  return {
+    top: isTop ? outer : inner,
+    bottom: isBottom ? outer : inner,
+    left: isLeft ? outer : inner,
+    right: isRight ? outer : inner,
+  }
+}
+
 function addWorkingTamilMonthsSheet(wb) {
   const ws = wb.addWorksheet('Working')
   TAMIL_MONTHS_LOOKUP.forEach(([num, name], i) => {
@@ -1417,24 +1474,62 @@ function addWorkingTamilMonthsSheet(wb) {
     ws.getCell(i + 1, 2).value = name
   })
   ws.columns = [{ width: 8 }, { width: 18 }]
+  ws.state = 'hidden'
 }
 
-function trackerDataColumnNumber(keyIndexInKeys) {
-  // Column A = S.No; first template field starts at column B (index 0 → column 2).
-  return keyIndexInKeys + 2
+/** Header borders, zebra rows, column widths, and auto-filter for rental Tenant sheet. */
+function formatRentalTenantSheet(ws, colCount, lastRow, headers) {
+  ws.getRow(1).height = 24
+  ws.getRow(1).eachCell({ includeEmpty: true }, (cell, colIdx) => {
+    if (colIdx > colCount) return
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+    cell.border = trackerCellBorder(true, false, colIdx === 1, colIdx === colCount)
+  })
+
+  for (let r = 2; r <= lastRow; r++) {
+    const row = ws.getRow(r)
+    const isLast = r === lastRow
+    const isAlt = r % 2 === 0
+    row.height = 18
+    row.eachCell({ includeEmpty: true }, (cell, colIdx) => {
+      if (colIdx > colCount) return
+      cell.font = { size: 10, name: 'Calibri' }
+      cell.alignment = { vertical: 'middle', horizontal: 'left' }
+      cell.border = trackerCellBorder(false, isLast, colIdx === 1, colIdx === colCount)
+      if (isAlt) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF3FA' } }
+      }
+    })
+  }
+
+  ws.columns = headers.map(h => ({
+    width: Math.min(Math.max(String(h).length + 4, 12), 36),
+  }))
+
+  if (colCount > 0 && lastRow > 1) {
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: lastRow, column: colCount },
+    }
+  }
+}
+
+function trackerDataColumnNumber(keyIndexInKeys, rental = false) {
+  // Rental: col A = first field. Others: col A = S.No, first field = col B.
+  return keyIndexInKeys + (rental ? 1 : 2)
 }
 
 export function trackerColumnKeys(variables, template = null) {
-  let keys = textFieldVariables(variables).map(v => v.key).filter(Boolean)
-  if (template && isRentalAgreementTemplate(template)) {
-    keys = sortRentalTrackerKeys(keys)
-  }
-  return keys
+  return orderTemplateTextVariables(variables, template).map(v => v.key).filter(Boolean)
 }
 
-/** Build header row: S.No + variable keys */
+/** Build header row — rental has no S.No column. */
 export function trackerHeaders(variables, template = null) {
-  return [TRACKER_SNO, ...trackerColumnKeys(variables, template)]
+  const keys = trackerColumnKeys(variables, template)
+  const rental = template && isRentalAgreementTemplate(template)
+  return rental ? keys : [TRACKER_SNO, ...keys]
 }
 
 /** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
@@ -1452,26 +1547,31 @@ export async function downloadPrintCornerTracker({
   if (!keys.length) throw new Error('No variables on this template.')
 
   const wb = new ExcelJS.Workbook()
-  if (rental) addWorkingTamilMonthsSheet(wb)
+  wb.creator = 'Church CMS'
+  wb.created = new Date()
 
   const sheetName = rental ? 'Tenant' : 'Tracker'
   const ws = wb.addWorksheet(sheetName, { views: [{ state: 'frozen', ySplit: 1 }] })
   const headers = trackerHeaders(variables, template)
 
   ws.addRow(headers)
-  const headerRow = ws.getRow(1)
-  headerRow.font = { bold: true }
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+  if (!rental) {
+    const headerRow = ws.getRow(1)
+    headerRow.font = { bold: true }
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+  }
 
   const monthColIdx = keys.findIndex(k => normTrackerKey(k) === 'month')
   const tamilMonthColIdx = keys.findIndex(k => normTrackerKey(k) === 'tamil_month')
 
-  function addTrackerDataRow(rowNum, sno, values) {
-    const rowValues = [sno, ...keys.map(k => values?.[k] ?? '')]
+  function addTrackerDataRow(rowNum, rowIndex, values) {
+    const rowValues = rental
+      ? keys.map(k => values?.[k] ?? '')
+      : [rowIndex, ...keys.map(k => values?.[k] ?? '')]
     const row = ws.addRow(rowValues)
     if (rental && tamilMonthColIdx >= 0 && monthColIdx >= 0) {
-      const monthLetter = excelColumnLetter(trackerDataColumnNumber(monthColIdx))
-      const tamilCol = trackerDataColumnNumber(tamilMonthColIdx)
+      const monthLetter = excelColumnLetter(trackerDataColumnNumber(monthColIdx, true))
+      const tamilCol = trackerDataColumnNumber(tamilMonthColIdx, true)
       row.getCell(tamilCol).value = {
         formula: `VLOOKUP(${monthLetter}${rowNum},Working!$A$1:$B$12,2,FALSE)`,
       }
@@ -1484,9 +1584,17 @@ export async function downloadPrintCornerTracker({
     addTrackerDataRow(i + 1, i, null)
   }
 
-  ws.columns = headers.map((h, i) => ({
-    width: i === 0 ? 8 : Math.max(14, String(h).length + 4),
-  }))
+  const lastRow = blankRows + 1
+  const colCount = headers.length
+
+  if (rental) {
+    formatRentalTenantSheet(ws, colCount, lastRow, headers)
+    addWorkingTamilMonthsSheet(wb)
+  } else {
+    ws.columns = headers.map((h, i) => ({
+      width: i === 0 ? 8 : Math.max(14, String(h).length + 4),
+    }))
+  }
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], {

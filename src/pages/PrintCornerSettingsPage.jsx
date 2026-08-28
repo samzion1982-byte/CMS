@@ -18,7 +18,7 @@ import {
   savePrintCornerTemplate,
   deletePrintCornerTemplate,
   uploadPrintCornerTemplateDocx,
-  normalizeTemplateVariables,
+  orderTemplateTextVariables,
   getChurchForPrintCorner,
   getOfficeBearerSignatureStatus,
   getPrintCornerApplicationForms,
@@ -357,7 +357,7 @@ function TemplatesPanel() {
       category_id: selected.category_id || '',
       is_active: selected.is_active !== false,
     })
-    setVarRows(normalizeTemplateVariables(selected.variables).map(v => ({
+    setVarRows(orderTemplateTextVariables(selected.variables, selected).map(v => ({
       key: v.key || '',
       label: v.label || v.key || '',
     })))
@@ -452,11 +452,12 @@ function TemplatesPanel() {
         label: form.label,
         category_id: form.category_id,
         is_active: form.is_active,
-        variables: normalizeTemplateVariables(
+        variables: orderTemplateTextVariables(
           varRows.filter(v => v.key.trim()).map(v => ({
             key: v.key.trim(),
             label: (v.label || v.key).trim(),
           })),
+          selected,
         ),
       })
       toast('Template saved.', 'success')
