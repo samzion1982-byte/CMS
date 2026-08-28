@@ -1387,7 +1387,7 @@ const RENTAL_FIELD_ORDER_GROUPS = [
   ['dia_treasurer', 'asst_treasurer'],
   ['dia_treas_father', 'asst_treas_father'],
   ['tres_designation', 'asst_treasurer_designation'],
-  ['dia_seceretary', 'dia_secretary', 'asst_secretary'],
+  ['dia_seceretary', 'dia_seceratary', 'dia_secretary', 'asst_secretary'],
   ['dia_sec_father', 'asst_sec_father'],
   ['sec_designation'],
   ['facing_side'],
@@ -1434,9 +1434,10 @@ const RENTAL_FIELD_LABELS = {
 }
 
 function rentalFieldLabel(key) {
-  const n = normTrackerKey(key)
+  const n = rentalNormFamily(normTrackerKey(key))
   for (const group of RENTAL_FIELD_ORDER_GROUPS) {
-    if (group.some(alias => normTrackerKey(alias) === n)) {
+    const familyNorms = new Set(group.map(alias => rentalNormFamily(normTrackerKey(alias))))
+    if (familyNorms.has(n)) {
       const canonical = group[0]
       return RENTAL_FIELD_LABELS[canonical] || labelForVariableKey(canonical)
     }
@@ -1457,17 +1458,12 @@ function rentalTrackerVariableRows(variables, template = null) {
   const merged = []
   const consumed = new Set()
   for (const group of RENTAL_FIELD_ORDER_GROUPS) {
-    let hit = null
-    for (const alias of group) {
-      const v = byNorm.get(normTrackerKey(alias))
-      if (v) {
-        hit = v
-        break
-      }
-    }
+    const hit = findRentalVarForGroup(group, byNorm)
     const canonical = group[0]
     if (hit) {
-      consumed.add(normTrackerKey(hit.key))
+      const hitNorm = normTrackerKey(hit.key)
+      consumed.add(hitNorm)
+      consumed.add(rentalNormFamily(hitNorm))
       merged.push({
         ...hit,
         key: canonical,
@@ -1484,7 +1480,8 @@ function rentalTrackerVariableRows(variables, template = null) {
 
   for (const v of sorted) {
     const n = normTrackerKey(v.key)
-    if (consumed.has(n)) continue
+    const fam = rentalNormFamily(n)
+    if (consumed.has(n) || consumed.has(fam)) continue
     if (rentalFieldRank(v.key) != null) continue
     merged.push(v)
   }
@@ -1496,10 +1493,33 @@ function normTrackerKey(key) {
   return String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+/** Fold common rental placeholder typos (e.g. Seceretary vs Seceratary vs Secretary). */
+function rentalNormFamily(norm) {
+  if (!norm) return norm
+  if (norm.startsWith('diasecre')) return 'diaseceretary'
+  if (norm.startsWith('asstsec') && norm.includes('tar')) return 'asstsecretary'
+  return norm
+}
+
+function findRentalVarForGroup(group, byNorm) {
+  const familyNorms = new Set(group.map(alias => rentalNormFamily(normTrackerKey(alias))))
+  for (const alias of group) {
+    const v = byNorm.get(normTrackerKey(alias))
+    if (v) return v
+  }
+  for (const [n, v] of byNorm) {
+    if (familyNorms.has(rentalNormFamily(n))) return v
+  }
+  return null
+}
+
 function rentalFieldRank(key) {
-  const n = normTrackerKey(key)
+  const n = rentalNormFamily(normTrackerKey(key))
   for (let i = 0; i < RENTAL_FIELD_ORDER_GROUPS.length; i++) {
-    if (RENTAL_FIELD_ORDER_GROUPS[i].some(alias => normTrackerKey(alias) === n)) return i
+    const familyNorms = new Set(
+      RENTAL_FIELD_ORDER_GROUPS[i].map(alias => rentalNormFamily(normTrackerKey(alias))),
+    )
+    if (familyNorms.has(n)) return i
   }
   return null
 }
@@ -1670,16 +1690,22 @@ function buildTrackerHeaderColumnMap(ws, variables, template) {
     if (!h || h === TRACKER_SNO) continue
     byHeader.set(h, c)
     const n = normTrackerKey(h)
+    const fam = rentalNormFamily(n)
     if (n && !byNormHeader.has(n)) byNormHeader.set(n, c)
+    if (fam && !byNormHeader.has(fam)) byNormHeader.set(fam, c)
   }
   const keyToCol = new Map()
   for (const v of rows) {
     const key = v.key
     const label = v.label || rentalFieldLabel(key)
+    const keyNorm = normTrackerKey(key)
+    const labelNorm = normTrackerKey(label)
     const col = byHeader.get(key)
       ?? byHeader.get(label)
-      ?? byNormHeader.get(normTrackerKey(key))
-      ?? byNormHeader.get(normTrackerKey(label))
+      ?? byNormHeader.get(keyNorm)
+      ?? byNormHeader.get(rentalNormFamily(keyNorm))
+      ?? byNormHeader.get(labelNorm)
+      ?? byNormHeader.get(rentalNormFamily(labelNorm))
     if (col) keyToCol.set(key, col)
   }
   return { keyToCol, rows }
