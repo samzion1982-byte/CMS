@@ -2343,6 +2343,10 @@ function useTamilPdfFromBody(body: Record<string, unknown>) {
   return body.use_tamil_pdf === true || body.tamil_pdf === true
 }
 
+function isSuperAdminProf(prof: { role?: string } | null | undefined) {
+  return prof?.role === 'super_admin'
+}
+
 type PdfEngine = 'google_drive' | 'cloudmersive' | 'gotenberg'
 
 /** Default Google Drive; Tamil-font switch → Cloudmersive (per request). */
@@ -2591,7 +2595,7 @@ serve(async (req) => {
       const google = await probeGoogleReady(admin)
       const gotenberg = gotenbergConfigured()
       const cloudmersiveApiKey = await loadCloudmersiveApiKey(admin)
-      const cloudmersive = !!cloudmersiveApiKey
+      const cloudmersive = isSuperAdminProf(prof) && !!cloudmersiveApiKey
       const pdfReady = google.ready || cloudmersive || gotenberg
       return json({
         ok: true,
@@ -2710,10 +2714,14 @@ serve(async (req) => {
       const outBase = templateKey + (memberId ? `_${memberId}` : '_blank')
       let outName = stampFilename(outBase, 'pdf')
 
+      const cloudmersiveApiKey = await loadCloudmersiveApiKey(admin)
+      if (useTamilPdfFromBody(body) && !isSuperAdminProf(prof)) {
+        return json({ error: 'Tamil font PDF is only available to Super Admin.' }, 403)
+      }
+
       let pdfBytes: Uint8Array
       let engineMeta: Record<string, unknown>
       let pdfEngine: PdfEngine
-      const cloudmersiveApiKey = await loadCloudmersiveApiKey(admin)
       try {
         pdfEngine = resolvePdfEngine(format, body, cloudmersiveApiKey)
       } catch (e) {

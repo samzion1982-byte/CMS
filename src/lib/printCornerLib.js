@@ -1801,14 +1801,14 @@ function buildTrackerHeaderColumnMap(ws, variables, template) {
   return { keyToCol, rows }
 }
 
-function triggerTrackerFileDownload(buffer, templateKey) {
+function triggerTrackerFileDownload(buffer, templateKey, nameSuffix = '') {
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${templateKey || 'letter'}_tracker.xlsx`
+  a.download = `${templateKey || 'letter'}_tracker${nameSuffix}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -1893,7 +1893,7 @@ async function buildPrintCornerTrackerWorkbook({
   return wb
 }
 
-/** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
+/** Download .xlsx tracker — blank rows, or row 2 pre-filled from current wizard values */
 export async function downloadPrintCornerTracker({
   templateKey,
   templateLabel = '',
@@ -1910,6 +1910,28 @@ export async function downloadPrintCornerTracker({
   })
   const buffer = await wb.xlsx.writeBuffer()
   triggerTrackerFileDownload(buffer, templateKey)
+}
+
+/** Download tracker with currently loaded bulk rows (re-edit and re-upload). */
+export async function downloadPrintCornerLoadedTracker({
+  templateKey,
+  templateLabel = '',
+  variables,
+  rows,
+  blankRows = 10,
+}) {
+  if (!rows?.length) throw new Error('No tracker rows loaded.')
+  const sanitizedRows = rows.map(row => sanitizeMergeFieldValues(row))
+  const wb = await buildPrintCornerTrackerWorkbook({
+    templateKey,
+    templateLabel,
+    variables,
+    dataRows: sanitizedRows,
+    blankRows: Math.max(blankRows, 10),
+  })
+  const buffer = await wb.xlsx.writeBuffer()
+  triggerTrackerFileDownload(buffer, templateKey, '_loaded')
+  return sanitizedRows.length
 }
 
 /** Re-read pasted tracker data and download a clean, formatted copy (rental: strips duplicate columns). */

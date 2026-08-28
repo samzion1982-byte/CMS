@@ -16,6 +16,7 @@ import {
   convertTemplateFromStorage,
   convertBulkLettersToPdf,
   downloadPrintCornerTracker,
+  downloadPrintCornerLoadedTracker,
   parsePrintCornerTrackerFile,
   reformatPrintCornerTrackerFile,
   isRentalAgreementTemplate,
@@ -153,6 +154,7 @@ export default function PrintCornerPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { profile } = useAuth()
+  const isSuperAdmin = profile?.role === 'super_admin'
   const trackerInputRef = useRef(null)
   const initialSidebar = useMemo(() => initialSidebarFromCache(), [])
 
@@ -186,6 +188,7 @@ export default function PrintCornerPage() {
   const [draftId, setDraftId] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
+  const [bulkRowEnabled, setBulkRowEnabled] = useState(() => new Set())
   const [singleRowFromBulk, setSingleRowFromBulk] = useState(null)
   const [bulkOutput, setBulkOutput] = useState('single') // 'single' | 'zip'
   const [tplSearch, setTplSearch] = useState('')
@@ -535,6 +538,11 @@ export default function PrintCornerPage() {
   )
 
   const bulkMode = bulkRows.length > 0 && singleRowFromBulk === null
+  const bulkSelectedCount = bulkRowEnabled.size
+  const bulkRowsForPdf = useMemo(
+    () => bulkRows.filter((_, i) => bulkRowEnabled.has(i)),
+    [bulkRows, bulkRowEnabled],
+  )
   const singleRowEditMode = singleRowFromBulk !== null
 
   /** Shared drafts for the active sidebar category only (not all letters/forms). */
@@ -573,8 +581,26 @@ export default function PrintCornerPage() {
     setIssuedSelected(new Set())
   }, [activeCategoryId, sidebarMode])
 
+  useEffect(() => {
+    setBulkRowEnabled(new Set(bulkRows.map((_, i) => i)))
+  }, [bulkRows])
+
+  function toggleBulkRow(index) {
+    setBulkRowEnabled(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  function setAllBulkRowsEnabled(enabled) {
+    setBulkRowEnabled(enabled ? new Set(bulkRows.map((_, i) => i)) : new Set())
+  }
+
   function clearBulk() {
     setBulkRows([])
+    setBulkRowEnabled(new Set())
     setSingleRowFromBulk(null)
     setBulkProgress(null)
     setBulkOutput('single')
@@ -1168,7 +1194,7 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
-    if (useTamilPdf && !ping?.cloudmersive) {
+    if (isSuperAdmin && useTamilPdf && !ping?.cloudmersive) {
       toast('Tamil font PDF needs a Cloudmersive API key. Add it in Church Setup → Print Corner — Signature images, then Save changes.', 'error')
       return
     }
@@ -1205,7 +1231,7 @@ export default function PrintCornerPage() {
         issue: true,
         source: 'manual',
         pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
-        useTamilPdf,
+        useTamilPdf: isSuperAdmin && useTamilPdf,
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
@@ -1240,7 +1266,7 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
-    if (useTamilPdf && !ping?.cloudmersive) {
+    if (isSuperAdmin && useTamilPdf && !ping?.cloudmersive) {
       toast('Tamil font PDF needs a Cloudmersive API key. Add it in Church Setup → Print Corner — Signature images, then Save changes.', 'error')
       return
     }
@@ -1248,8 +1274,12 @@ export default function PrintCornerPage() {
       toast('Upload a filled tracker first.', 'error')
       return
     }
+    if (!bulkRowsForPdf.length) {
+      toast('Select at least one row to include in Multi PDF.', 'error')
+      return
+    }
     if (needsMemberPhoto) {
-      const missing = bulkRows.filter(r => !String(r.member_id || '').trim()).length
+      const missing = bulkRowsForPdf.filter(r => !String(r.member_id || '').trim()).length
       if (missing) {
         toast(`${missing} tracker row(s) missing member_id — required for member photo templates.`, 'error')
         return
@@ -1257,7 +1287,7 @@ export default function PrintCornerPage() {
     }
 
     setBusy(true)
-    setBulkProgress({ current: 0, total: bulkRows.length, label: '' })
+    setBulkProgress({ current: 0, total: bulkRowsForPdf.length, label: '' })
     try {
       await convertBulkLettersToPdf({
         storagePath: selected.storage_path,
@@ -1266,10 +1296,10 @@ export default function PrintCornerPage() {
         templateId: selected.id,
         templateLabel: selected.label || '',
         pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
-        rows: bulkRows,
+        rows: bulkRowsForPdf,
         onProgress: setBulkProgress,
         output: bulkOutput === 'zip' ? 'zip' : 'single',
-        useTamilPdf,
+        useTamilPdf: isSuperAdmin && useTamilPdf,
       })
     } catch (e) {
       pdfErrorToast(e.message || 'Bulk convert failed')
@@ -1291,9 +1321,31 @@ export default function PrintCornerPage() {
         variables,
         fieldValues,
       })
-      toast('Tracker downloaded.', 'success')
+      toast('Blank tracker downloaded.', 'success')
     } catch (e) {
       toast(e.message || 'Could not download tracker', 'error')
+    }
+  }
+
+  async function handleDownloadLoadedTracker() {
+    if (!selected || !variables.length) {
+      toast('No variables on this template.', 'error')
+      return
+    }
+    if (!bulkRows.length) {
+      toast('Upload a tracker first, or use Download blank tracker.', 'error')
+      return
+    }
+    try {
+      const count = await downloadPrintCornerLoadedTracker({
+        templateKey: selected.template_key,
+        templateLabel: selected.label || '',
+        variables,
+        rows: bulkRows,
+      })
+      toast(`${count} row(s) exported — edit in Excel and upload again.`, 'success')
+    } catch (e) {
+      toast(e.message || 'Could not download loaded tracker', 'error')
     }
   }
 
@@ -1794,10 +1846,19 @@ export default function PrintCornerPage() {
               <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 600 }}>
-                    Bulk mode: {bulkRows.length} row(s) loaded from tracker
+                    Bulk mode: {bulkRows.length} row(s) loaded
+                    {bulkSelectedCount < bulkRows.length
+                      ? ` — ${bulkSelectedCount} selected for PDF`
+                      : ' — all selected'}
                   </span>
                   <button type="button" onClick={clearBulk} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
                     Clear
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <button type="button" disabled={busy || !variables.length} onClick={handleDownloadLoadedTracker}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: '#fff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#1d4ed8' }}>
+                    <Download size={12} /> Download loaded tracker ({bulkRows.length})
                   </button>
                 </div>
                 <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #bfdbfe' }}>
@@ -1810,26 +1871,59 @@ export default function PrintCornerPage() {
                       {showDrafts
                         ? 'Pick a row to open it in Fields. Edit if needed, use “Save & go to Review” to share the draft, then Issue PDF.'
                         : 'Pick a row to open it in Fields. Edit if needed, go to Review, then Issue PDF.'}
+                      {' '}Uncheck rows you want to skip in Multi PDF.
                     </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>
+                        Include in Multi PDF: <strong>{bulkSelectedCount}</strong> of {bulkRows.length}
+                      </span>
+                      <span style={{ fontSize: 11, display: 'flex', gap: 6 }}>
+                        <button type="button" onClick={() => setAllBulkRowsEnabled(true)}
+                          style={{ padding: 0, border: 'none', background: 'none', color: '#2563eb', fontWeight: 700, cursor: 'pointer', fontSize: 11 }}>
+                          All
+                        </button>
+                        <span style={{ color: '#cbd5e1' }}>|</span>
+                        <button type="button" onClick={() => setAllBulkRowsEnabled(false)}
+                          style={{ padding: 0, border: 'none', background: 'none', color: '#2563eb', fontWeight: 700, cursor: 'pointer', fontSize: 11 }}>
+                          None
+                        </button>
+                      </span>
+                    </div>
                     <div style={{ maxHeight: 160, overflow: 'auto', display: 'grid', gap: 4 }}>
                       {bulkRows.map((row, i) => (
-                        <button
+                        <div
                           key={i}
-                          type="button"
-                          disabled={busy}
-                          onClick={() => loadBulkRowIntoEditor(row, i)}
                           style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                            padding: '6px 10px', borderRadius: 6, border: '1px solid #bfdbfe',
-                            background: '#fff', cursor: 'pointer', fontSize: 12, color: '#1e3a8a', textAlign: 'left',
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '4px 6px 4px 8px', borderRadius: 6, border: '1px solid #bfdbfe',
+                            background: bulkRowEnabled.has(i) ? '#fff' : '#f8fafc',
                           }}
                         >
-                          <span style={{ fontWeight: 600 }}>Row {i + 1}</span>
-                          <span style={{ flex: 1, minWidth: 0, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {draftRecordSummary(selected, row)}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', flexShrink: 0 }}>Edit single →</span>
-                        </button>
+                          <input
+                            type="checkbox"
+                            checked={bulkRowEnabled.has(i)}
+                            onChange={() => toggleBulkRow(i)}
+                            title="Include in Multi PDF"
+                            style={{ flexShrink: 0, margin: 0, cursor: 'pointer' }}
+                          />
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => loadBulkRowIntoEditor(row, i)}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                              flex: 1, minWidth: 0, padding: '2px 4px', border: 'none',
+                              background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#1e3a8a', textAlign: 'left',
+                              opacity: bulkRowEnabled.has(i) ? 1 : 0.5,
+                            }}
+                          >
+                            <span style={{ fontWeight: 600 }}>Row {i + 1}</span>
+                            <span style={{ flex: 1, minWidth: 0, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {draftRecordSummary(selected, row)}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', flexShrink: 0 }}>Edit single →</span>
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1850,7 +1944,7 @@ export default function PrintCornerPage() {
                     />
                     <span>
                       <strong>One multi-page PDF</strong>
-                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>All copies combined in a single file</span>
+                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>Selected rows combined in a single file</span>
                     </span>
                   </label>
                   <label style={{
@@ -1868,7 +1962,7 @@ export default function PrintCornerPage() {
                     />
                     <span>
                       <strong>Separate PDFs in a ZIP</strong>
-                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>One PDF per row, packed in a ZIP archive</span>
+                      <span style={{ display: 'block', color: '#64748b', marginTop: 2 }}>One PDF per selected row, packed in a ZIP archive</span>
                     </span>
                   </label>
                 </div>
@@ -1906,13 +2000,18 @@ export default function PrintCornerPage() {
             <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: 'var(--text-2)' }}>Bulk print (tracker)</div>
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                For multiple copies: download the tracker, fill rows, upload it, then use Multi PDF.
-                For one copy: use <strong>Edit single</strong> on a row above, or fill Fields manually and use Issue PDF.
+                Download a blank tracker to fill from scratch, or upload a filled tracker for Multi PDF.
+                {bulkRows.length > 0 && ' Use Download loaded tracker to export your current rows, edit in Excel, and upload again.'}
+                {' '}For one copy: use <strong>Edit single</strong> on a row above, or fill Fields manually and use Issue PDF.
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" disabled={busy || !variables.length} onClick={handleDownloadTracker}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  <Download size={14} /> Download tracker
+                  <Download size={14} /> Blank tracker
+                </button>
+                <button type="button" disabled={busy || !variables.length || !bulkRows.length} onClick={handleDownloadLoadedTracker}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: bulkRows.length ? 1 : 0.55 }}>
+                  <Download size={14} /> Loaded tracker{bulkRows.length ? ` (${bulkRows.length})` : ''}
                 </button>
                 <button type="button" disabled={busy} onClick={() => trackerInputRef.current?.click()}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'var(--card-bg)', border: '1.5px solid var(--card-border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -1923,35 +2022,37 @@ export default function PrintCornerPage() {
             </div>
           )}
 
-          <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={useTamilPdf}
-                onChange={e => setUseTamilPdf(e.target.checked)}
-                style={{ marginTop: 2 }}
-              />
-              <span>
-                <strong>Tamil font PDF (Cloudmersive)</strong>
-                <span style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.45 }}>
-                  Off by default — uses Google Drive. Turn on for templates with embedded Tamil fonts (ATM 35, etc.).
-                  {useTamilPdf && !ping?.cloudmersive && (
-                    <span style={{ display: 'block', color: '#b45309', marginTop: 4 }}>
-                      API key not configured — add it in Church Setup → Print Corner — Signature images, then Save changes.
-                    </span>
-                  )}
+          {isSuperAdmin && (
+            <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: '1px dashed var(--card-border)', background: 'var(--card-bg)' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={useTamilPdf}
+                  onChange={e => setUseTamilPdf(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  <strong>Tamil font PDF (Cloudmersive)</strong>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.45 }}>
+                    Super Admin only — off by default (Google Drive). Turn on for embedded Tamil fonts (ATM 35, etc.).
+                    {useTamilPdf && !ping?.cloudmersive && (
+                      <span style={{ display: 'block', color: '#b45309', marginTop: 4 }}>
+                        API key not configured — add it in Church Setup → Print Corner — Signature images, then Save changes.
+                      </span>
+                    )}
+                  </span>
                 </span>
-              </span>
-            </label>
-          </div>
+              </label>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {selected.template_type === 'letter' || selected.template_type === 'form' || selected.template_type === 'certificate' ? (
               bulkMode ? (
-                <button type="button" disabled={busy || !selected.storage_path} onClick={handleMultiPdf}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: !selected.storage_path ? 0.5 : 1 }}>
+                <button type="button" disabled={busy || !selected.storage_path || bulkSelectedCount === 0} onClick={handleMultiPdf}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: (!selected.storage_path || bulkSelectedCount === 0) ? 0.5 : 1 }}>
                   {busy ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-                  Multi PDF
+                  Multi PDF{bulkSelectedCount > 0 ? ` (${bulkSelectedCount})` : ''}
                 </button>
               ) : (
                 <button type="button" disabled={busy || !selected.storage_path} onClick={handleIssuePdf}
@@ -2427,7 +2528,7 @@ export default function PrintCornerPage() {
               <span>
                 {ping?.gotenberg
                   ? `PDF ready via LibreOffice (Gotenberg) — optional server-wide engine`
-                  : ping?.cloudmersive
+                  : (isSuperAdmin && ping?.cloudmersive)
                     ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''} · Tamil font PDF available (Cloudmersive)`
                     : (ping?.ready || ping?.google_drive)
                       ? `PDF ready via Google Drive${ping.google_email ? ` (${ping.google_email})` : ''}`
