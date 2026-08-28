@@ -2333,8 +2333,10 @@ function gotenbergConfigured() {
   return !!GOTENBERG_URL
 }
 
-function cloudmersiveConfigured() {
-  return !!CLOUDMERSIVE_API_KEY
+async function loadCloudmersiveApiKey(admin: ReturnType<typeof createClient>): Promise<string> {
+  if (CLOUDMERSIVE_API_KEY) return CLOUDMERSIVE_API_KEY.trim()
+  const { data } = await admin.from('churches').select('cloudmersive_api_key').limit(1).maybeSingle()
+  return String(data?.cloudmersive_api_key || '').trim()
 }
 
 function useTamilPdfFromBody(body: Record<string, unknown>) {
@@ -2344,15 +2346,15 @@ function useTamilPdfFromBody(body: Record<string, unknown>) {
 type PdfEngine = 'google_drive' | 'cloudmersive' | 'gotenberg'
 
 /** Default Google Drive; Tamil-font switch → Cloudmersive (per request). */
-function resolvePdfEngine(format: 'docx' | 'pptx', body: Record<string, unknown>): PdfEngine {
+function resolvePdfEngine(format: 'docx' | 'pptx', body: Record<string, unknown>, apiKey: string): PdfEngine {
   if (useTamilPdfFromBody(body)) {
-    if (!cloudmersiveConfigured()) {
-      throw new Error('Tamil font PDF requires CLOUDMERSIVE_API_KEY in Supabase Edge Function secrets.')
+    if (!apiKey) {
+      throw new Error('Tamil font PDF requires a Cloudmersive API key. Add it in Church Setup → Print Corner — Signature images.')
     }
     return 'cloudmersive'
   }
   if (PRINT_CORNER_PDF_ENGINE === 'gotenberg' && gotenbergConfigured()) return 'gotenberg'
-  if (PRINT_CORNER_PDF_ENGINE === 'cloudmersive' && cloudmersiveConfigured()) return 'cloudmersive'
+  if (PRINT_CORNER_PDF_ENGINE === 'cloudmersive' && apiKey) return 'cloudmersive'
   return 'google_drive'
 }
 
@@ -2361,8 +2363,9 @@ async function convertOfficeViaCloudmersive(
   fileBytes: Uint8Array,
   displayName: string,
   format: 'docx' | 'pptx',
+  apiKey: string,
 ) {
-  if (!CLOUDMERSIVE_API_KEY) throw new Error('CLOUDMERSIVE_API_KEY not configured')
+  if (!apiKey) throw new Error('Cloudmersive API key not configured')
   const endpoint = format === 'pptx'
     ? 'https://api.cloudmersive.com/convert/pptx/to/pdf'
     : 'https://api.cloudmersive.com/convert/docx/to/pdf'
@@ -2381,7 +2384,7 @@ async function convertOfficeViaCloudmersive(
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Apikey: CLOUDMERSIVE_API_KEY,
+      Apikey: apiKey,
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
     },
     body,
@@ -2401,11 +2404,12 @@ async function convertMergedOfficeToPdf(
   outName: string,
   format: 'docx' | 'pptx',
   pdfEngine: PdfEngine,
+  cloudmersiveApiKey: string,
 ) {
   const officeName = outName.replace(/\.pdf$/i, format === 'pptx' ? '.pptx' : '.docx')
 
   if (pdfEngine === 'cloudmersive') {
-    const result = await convertOfficeViaCloudmersive(mergedBytes, officeName, format)
+    const result = await convertOfficeViaCloudmersive(mergedBytes, officeName, format, cloudmersiveApiKey)
     return {
       pdfBytes: result.pdfBytes,
       engineMeta: { engine: 'cloudmersive', source_format: format, tamil_pdf: true },
@@ -2586,7 +2590,8 @@ serve(async (req) => {
     if (action === 'ping') {
       const google = await probeGoogleReady(admin)
       const gotenberg = gotenbergConfigured()
-      const cloudmersive = cloudmersiveConfigured()
+      const cloudmersiveApiKey = await loadCloudmersiveApiKey(admin)
+      const cloudmersive = !!cloudmersiveApiKey
       const pdfReady = google.ready || cloudmersive || gotenberg
       return json({
         ok: true,
@@ -2708,15 +2713,16 @@ serve(async (req) => {
       let pdfBytes: Uint8Array
       let engineMeta: Record<string, unknown>
       let pdfEngine: PdfEngine
+      const cloudmersiveApiKey = await loadCloudmersiveApiKey(admin)
       try {
-        pdfEngine = resolvePdfEngine(format, body)
+        pdfEngine = resolvePdfEngine(format, body, cloudmersiveApiKey)
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         return json({ error: msg, signature_merge: mergeMeta }, 500)
       }
 
       try {
-        const converted = await convertMergedOfficeToPdf(admin, mergedBytes, outName, format, pdfEngine)
+        const converted = await convertMergedOfficeToPdf(admin, mergedBytes, outName, format, pdfEngine, cloudmersiveApiKey)
         pdfBytes = converted.pdfBytes
         engineMeta = converted.engineMeta
       } catch (e) {

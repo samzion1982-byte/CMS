@@ -274,6 +274,9 @@ export default function PrintCornerPage() {
       getChurchForPrintCorner()
         .then(setChurch)
         .catch(() => {})
+      pingPrintCorner()
+        .then(setPing)
+        .catch(() => {})
     }
     window.addEventListener('church-settings-updated', onChurchUpdated)
     return () => window.removeEventListener('church-settings-updated', onChurchUpdated)
@@ -1166,7 +1169,7 @@ export default function PrintCornerPage() {
       return
     }
     if (useTamilPdf && !ping?.cloudmersive) {
-      toast('Tamil font PDF needs CLOUDMERSIVE_API_KEY on the server. Ask your admin to add it in Supabase secrets.', 'error')
+      toast('Tamil font PDF needs a Cloudmersive API key. Add it in Church Setup → Print Corner — Signature images, then Save changes.', 'error')
       return
     }
     const memberIdForPhoto = String(fieldValues.member_id || selectedMember?.member_id || '').trim()
@@ -1238,7 +1241,7 @@ export default function PrintCornerPage() {
       return
     }
     if (useTamilPdf && !ping?.cloudmersive) {
-      toast('Tamil font PDF needs CLOUDMERSIVE_API_KEY on the server. Ask your admin to add it in Supabase secrets.', 'error')
+      toast('Tamil font PDF needs a Cloudmersive API key. Add it in Church Setup → Print Corner — Signature images, then Save changes.', 'error')
       return
     }
     if (!bulkRows.length) {
@@ -1934,7 +1937,7 @@ export default function PrintCornerPage() {
                   Off by default — uses Google Drive. Turn on for templates with embedded Tamil fonts (ATM 35, etc.).
                   {useTamilPdf && !ping?.cloudmersive && (
                     <span style={{ display: 'block', color: '#b45309', marginTop: 4 }}>
-                      Server API key not configured — add CLOUDMERSIVE_API_KEY in Supabase Edge Function secrets.
+                      API key not configured — add it in Church Setup → Print Corner — Signature images, then Save changes.
                     </span>
                   )}
                 </span>

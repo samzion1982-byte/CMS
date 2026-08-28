@@ -189,6 +189,7 @@ export default function ChurchSetupPage() {
     address: '', city: '', state: 'Tamil Nadu', pincode: '',
     whatsapp_number: '', whatsapp_url: '', instance_id: '', access_token: '',
     whatsapp_api_type: 'soft7', official_phone_number_id: '', official_bearer_token: '',
+    cloudmersive_api_key: '',
     presbyter_name: '', presbyter_whatsapp: '',
     secretary_name: '', secretary_whatsapp: '',
     treasurer_name: '', treasurer_whatsapp: '',
@@ -224,6 +225,7 @@ export default function ChurchSetupPage() {
         whatsapp_api_type:         data.whatsapp_api_type         || 'soft7',
         official_phone_number_id:  data.official_phone_number_id  || '',
         official_bearer_token:     data.official_bearer_token     || '',
+        cloudmersive_api_key:      data.cloudmersive_api_key      || '',
         // Prefer Church Setup field; fall back to legacy pastor_name so old data is visible to edit
         presbyter_name:     data.presbyter_name || data.pastor_name || '',
         presbyter_whatsapp: data.presbyter_whatsapp || '',
@@ -543,7 +545,7 @@ export default function ChurchSetupPage() {
         // Keep legacy pastor_name in sync so Event Recorder / old queries stay correct
         payload.pastor_name = form.presbyter_name || ''
       }
-      if (canIdentity || canBearers) {
+      if (canIdentity || canBearers || isSuperAdmin) {
         let presbyter_signature_url = church?.presbyter_signature_url || null
         let secretary_signature_url = church?.secretary_signature_url || null
         let treasurer_signature_url = church?.treasurer_signature_url || null
@@ -559,6 +561,7 @@ export default function ChurchSetupPage() {
         payload.presbyter_signature_url = presbyter_signature_url
         payload.secretary_signature_url = secretary_signature_url
         payload.treasurer_signature_url = treasurer_signature_url
+        payload.cloudmersive_api_key = String(form.cloudmersive_api_key || '').trim() || null
       }
       const { error } = await supabase.from('churches').update(payload).eq('id', church.id)
       if (error) throw error
@@ -692,6 +695,7 @@ export default function ChurchSetupPage() {
         address:'', city:'', state:'', pincode:'',
         whatsapp_number:'', whatsapp_url:'', instance_id:'', access_token:'',
         whatsapp_api_type:'soft7', official_phone_number_id:'', official_bearer_token:'',
+        cloudmersive_api_key: null,
         presbyter_name:'', presbyter_whatsapp:'',
         secretary_name:'', secretary_whatsapp:'',
         treasurer_name:'', treasurer_whatsapp:'',
@@ -861,6 +865,25 @@ export default function ChurchSetupPage() {
             </button>
           </div>
         ))}
+        <div className="flex flex-col gap-2 min-w-[200px] flex-1 max-w-sm">
+          <p className="text-xs font-semibold text-slate-600">Tamil font PDF (Cloudmersive)</p>
+          <input
+            type="password"
+            className="field-input text-sm"
+            value={form.cloudmersive_api_key}
+            onChange={e => s('cloudmersive_api_key', e.target.value)}
+            placeholder="Cloudmersive API key"
+            autoComplete="off"
+          />
+          <p className="text-[10px] text-slate-500 leading-snug">
+            Optional. Used when Print Corner → Review → <strong>Tamil font PDF</strong> is turned on.
+            Get a key at{' '}
+            <a href="https://cloudmersive.com" target="_blank" rel="noopener noreferrer" className="text-violet-600 hover:underline">
+              cloudmersive.com
+            </a>
+            , paste here, then Save changes.
+          </p>
+        </div>
       </div>
     </div>
   )
