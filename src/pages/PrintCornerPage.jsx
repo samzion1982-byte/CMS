@@ -60,6 +60,8 @@ import {
   buildPrintCornerSidebarBrowseItems,
   PRINT_CORNER_FORMS_SIDEBAR_ID,
   formatPrintCornerDisplayDate,
+  isCloudmersiveSizeError,
+  CLOUDMERSIVE_MAX_INPUT_BYTES,
 } from '../lib/printCornerLib'
 import MasterDeleteGate from '../components/printCorner/MasterDeleteGate'
 
@@ -1152,6 +1154,11 @@ export default function PrintCornerPage() {
         'Google rejected the merged Word file (not a login issue). Redeploy cms-print-corner with the latest index.ts, then retry Issue PDF.',
         'error',
       )
+    } else if (isCloudmersiveSizeError(raw)) {
+      toast(
+        'Merged file exceeds Cloudmersive 3 MB limit. Turn off Tamil font PDF (uses Google Drive) or use a smaller template/photo.',
+        'error',
+      )
     } else {
       toast(raw, 'error')
     }
@@ -2001,6 +2008,7 @@ export default function PrintCornerPage() {
                   <strong>Tamil font PDF (Cloudmersive)</strong>
                   <span style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.45 }}>
                     Super Admin only — off by default (Google Drive). Turn on for embedded Tamil fonts (ATM 35, etc.).
+                    Merged file must stay under {(CLOUDMERSIVE_MAX_INPUT_BYTES / (1024 * 1024)).toFixed(0)} MB (Cloudmersive free tier).
                     {useTamilPdf && !ping?.cloudmersive && (
                       <span style={{ display: 'block', color: '#b45309', marginTop: 4 }}>
                         API key not configured — add it in Church Setup → Print Corner — Signature images, then Save changes.

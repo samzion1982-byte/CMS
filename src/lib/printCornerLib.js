@@ -11,6 +11,20 @@ export { buildMasterTree as buildPrintCornerCategoryTree, getAllMasterDescendant
 
 const BUCKET = 'print-corner'
 
+/** Cloudmersive free tier — merged .docx/.pptx sent for Tamil PDF must stay under 3 MB. */
+export const CLOUDMERSIVE_MAX_INPUT_BYTES = 3 * 1024 * 1024
+
+export function formatPrintCornerFileSize(bytes) {
+  if (bytes == null || !Number.isFinite(bytes)) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+export function isCloudmersiveSizeError(message) {
+  return /cloudmersive.*3\s*mb|under 3\s*mb|paid plan required|larger than the limit/i.test(String(message || ''))
+}
+
 /** Friendly labels for common mail-merge keys (wizard + Settings). */
 const VARIABLE_LABELS = {
   ref_no: 'Ref. No.',

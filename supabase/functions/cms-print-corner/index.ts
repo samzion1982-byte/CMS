@@ -2369,6 +2369,21 @@ function isSuperAdminProf(prof: { role?: string } | null | undefined) {
 
 type PdfEngine = 'google_drive' | 'cloudmersive' | 'gotenberg'
 
+/** Cloudmersive free tier — input Office file must stay under 3 MB. */
+const CLOUDMERSIVE_MAX_INPUT_BYTES = 3 * 1024 * 1024
+
+function formatBytesMb(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function assertCloudmersiveInputSize(bytes: Uint8Array) {
+  if (bytes.length >= CLOUDMERSIVE_MAX_INPUT_BYTES) {
+    throw new Error(
+      `Merged file is ${formatBytesMb(bytes.length)} — Cloudmersive accepts files under 3 MB. Turn off Tamil font PDF to use Google Drive, or use a smaller template/photo.`,
+    )
+  }
+}
+
 /** Default Google Drive; Tamil-font switch → Cloudmersive (per request). */
 function resolvePdfEngine(format: 'docx' | 'pptx', body: Record<string, unknown>, apiKey: string): PdfEngine {
   if (useTamilPdfFromBody(body)) {
@@ -2390,6 +2405,7 @@ async function convertOfficeViaCloudmersive(
   apiKey: string,
 ) {
   if (!apiKey) throw new Error('Cloudmersive API key not configured')
+  assertCloudmersiveInputSize(fileBytes)
   const endpoint = format === 'pptx'
     ? 'https://api.cloudmersive.com/convert/pptx/to/pdf'
     : 'https://api.cloudmersive.com/convert/docx/to/pdf'
@@ -2415,6 +2431,11 @@ async function convertOfficeViaCloudmersive(
   })
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
+    if (/3\s*mb|paid plan required|larger than the limit/i.test(errText)) {
+      throw new Error(
+        `Merged file exceeds Cloudmersive 3 MB limit (${formatBytesMb(fileBytes.length)}). Turn off Tamil font PDF to use Google Drive, or use a smaller template/photo.`,
+      )
+    }
     throw new Error(`Cloudmersive ${res.status}: ${errText.slice(0, 300)}`)
   }
   const pdfBytes = new Uint8Array(await res.arrayBuffer())
