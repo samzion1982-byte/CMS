@@ -15,6 +15,7 @@ export const RECYCLE_MODULES = [
   { value: 'assets', label: 'Assets' },
   { value: 'finance', label: 'Finance' },
   { value: 'directory', label: 'Phone Directory' },
+  { value: 'print_corner', label: 'Print Corner' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -31,6 +32,7 @@ export const QUARANTINE_BUCKETS = [
   'fixed-asset-docs',
   'church-documents',
   'auction-reports',
+  'print-corner',
 ]
 
 /** List all file object paths under a storage folder (recursive, one bucket). */
@@ -759,6 +761,14 @@ export async function restoreRecycleBinItem(id, actor = null) {
   if (item.table_name === 'church_documents' && rowToInsert.category_id) {
     const { data: cat } = await supabase
       .from('church_document_categories')
+      .select('id')
+      .eq('id', rowToInsert.category_id)
+      .maybeSingle()
+    if (!cat) rowToInsert.category_id = null
+  }
+  if (item.table_name === 'print_corner_templates' && rowToInsert.category_id) {
+    const { data: cat } = await supabase
+      .from('print_corner_categories')
       .select('id')
       .eq('id', rowToInsert.category_id)
       .maybeSingle()

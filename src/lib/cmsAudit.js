@@ -151,6 +151,7 @@ export const AUDIT_MODULES = [
   { value: 'announcements', label: 'Announcements' },
   { value: 'finance', label: 'Finance' },
   { value: 'auction', label: 'Auction Reports' },
+  { value: 'print_corner', label: 'Print Corner' },
   { value: 'recycle_bin', label: 'Recycle Bin' },
 ]
 

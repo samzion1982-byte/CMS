@@ -24,6 +24,8 @@ export const FULL_BACKUP_TABLES = [
   'announcements_log', 'announcement_settings', 'announcement_exclusions', 'bible_verses',
   'directory_categories', 'directory_contacts',
   'auction_tracker', 'auction_seasons', 'auction_close_balances',
+  'print_corner_categories', 'print_corner_templates', 'print_corner_application_forms',
+  'print_corner_drafts', 'print_corner_issued_log',
   'cms_audit_log', 'login_logs',
 ]
 
@@ -780,6 +782,7 @@ export async function listBackupSources() {
         'member-photos', 'receipt-pdfs', 'church-logos', 'event-media', 'asset-photos',
         'fixed-asset-docs', 'church-documents', 'auction-reports', 'family-records',
         'announcement-cards', 'announcement-reports', 'member-reports', 'payment-pages',
+        'print-corner',
       ].map((name) => ({ name, files: null, sync: true })),
       sync_buckets: 'all',
       sync_all_storage: true,

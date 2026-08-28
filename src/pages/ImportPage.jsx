@@ -111,6 +111,13 @@ const FLUSH_CATEGORIES = [
     ],
   },
   {
+    key: 'print-corner', label: 'Print Corner', color: '#2563eb',
+    subs: [
+      { key: 'templates',       label: 'Templates & forms', color: '#3b82f6' },
+      { key: 'generated-pdfs',  label: 'Generated PDFs',    color: '#60a5fa' },
+    ],
+  },
+  {
     key: 'logs', label: 'Logs', color: '#64748b',
     subs: [
       { key: 'login',    label: 'Login Details',       color: '#78829a' },
@@ -190,6 +197,12 @@ const TABLE_FLUSH_META = {
   directory_contacts:      { category: 'directory', sub: 'contacts' },
   directory_categories:    { category: 'directory', sub: 'categories' },
 
+  print_corner_issued_log:        { category: 'print-corner', sub: 'generated-pdfs' },
+  print_corner_drafts:            { category: 'print-corner', sub: 'templates' },
+  print_corner_templates:         { category: 'print-corner', sub: 'templates' },
+  print_corner_application_forms: { category: 'print-corner', sub: 'templates' },
+  print_corner_categories:        { category: 'print-corner', sub: 'templates' },
+
   login_logs:              { category: 'logs', sub: 'login' },
   whatsapp_receipt_logs:   { category: 'logs', sub: 'whatsapp' },
   payment_request_logs:    { category: 'logs', sub: 'payment' },
@@ -216,6 +229,8 @@ const FLUSH_TABLE_ORDER = {
   event_task_buckets: 14,
   directory_contacts: 10,
   church_documents: 10,
+  print_corner_issued_log: 10,
+  print_corner_drafts: 12,
   auction_close_balances: 10,
   user_alert_recipients: 9,
   user_alerts: 10,
@@ -227,6 +242,9 @@ const FLUSH_TABLE_ORDER = {
   event_plans: 20,
   directory_categories: 20,
   church_document_categories: 20,
+  print_corner_templates: 20,
+  print_corner_application_forms: 20,
+  print_corner_categories: 22,
   auction_seasons: 18,
   auction_tracker: 22,
   receipt_transfer_batches: 24,
@@ -658,6 +676,11 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
               : tbl === 'auction_seasons' ? 'Auction seasons'
               : tbl === 'auction_close_balances' ? 'Auction close balances'
               : tbl === 'receipt_transfer_batches' ? 'Transfer Report'
+              : tbl === 'print_corner_categories' ? 'Print Corner — Categories'
+              : tbl === 'print_corner_templates' ? 'Print Corner — Templates'
+              : tbl === 'print_corner_application_forms' ? 'Print Corner — Application forms'
+              : tbl === 'print_corner_drafts' ? 'Print Corner — Drafts'
+              : tbl === 'print_corner_issued_log' ? 'Print Corner — Issued PDF log'
               : tbl,
             type: 'table',
             count: count || 0,
@@ -685,6 +708,10 @@ function FlushAllModal({ open, onClose, onDone, setPasswordModal, profile, toast
       { bucket: 'payment-pages',        folder: '',        label: 'Payment Pages',            category: 'receipts',      sub: 'payments' },
       { bucket: 'announcement-cards',   folder: '',        label: 'Announcement Cards',       category: 'announcements', sub: 'files' },
       { bucket: 'announcement-reports', folder: '',        label: 'Announcement Reports',     category: 'announcements', sub: 'files' },
+      { bucket: 'print-corner',         folder: 'templates',         label: 'Print Corner — Template files (.docx/.pptx)', category: 'print-corner', sub: 'templates' },
+      { bucket: 'print-corner',         folder: 'application-forms', label: 'Print Corner — Blank application forms',    category: 'print-corner', sub: 'templates' },
+      { bucket: 'print-corner',         folder: 'previews',          label: 'Print Corner — Template previews',          category: 'print-corner', sub: 'templates' },
+      { bucket: 'print-corner',         folder: 'issued',            label: 'Print Corner — Generated PDF files',        category: 'print-corner', sub: 'generated-pdfs' },
     ]
     await Promise.all(KNOWN_STORAGE.map(async ({ bucket, folder, label, category, sub }) => {
       try {

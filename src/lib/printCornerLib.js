@@ -6,10 +6,31 @@ import JSZip from 'jszip'
 import { PDFDocument } from 'pdf-lib'
 import { supabase } from './supabase'
 import { buildMasterTree, getAllMasterDescendants, moveMasterItem } from './assetsLib'
+import { logCmsAudit } from './cmsAudit'
+import { captureDeletedRecord, quarantineStoragePaths } from './cmsRecycleBin'
 
 export { buildMasterTree as buildPrintCornerCategoryTree, getAllMasterDescendants }
 
 const BUCKET = 'print-corner'
+const PRINT_CORNER_AUDIT_MODULE = 'print_corner'
+
+function templateStoragePaths(templateOrPath) {
+  const paths = []
+  const storagePath = typeof templateOrPath === 'string'
+    ? templateOrPath
+    : templateOrPath?.storage_path
+  if (storagePath) paths.push(storagePath)
+  const preview = templatePreviewStoragePath(storagePath)
+  if (preview) paths.push(preview)
+  return paths
+}
+
+async function quarantinePrintCornerFiles(snapshotId, paths) {
+  const unique = [...new Set((paths || []).filter(Boolean))]
+  if (!snapshotId || !unique.length) return
+  await quarantineStoragePaths({ bucket: BUCKET, paths: unique, snapshotId })
+    .catch((e) => console.warn('[print-corner] quarantine', e))
+}
 
 /** Cloudmersive free tier — merged .docx/.pptx sent for Tamil PDF must stay under 3 MB. */
 export const CLOUDMERSIVE_MAX_INPUT_BYTES = 3 * 1024 * 1024
@@ -479,16 +500,51 @@ export async function saveDraft(payload) {
   if (row.id) {
     const { data, error } = await supabase.from('print_corner_drafts').update(row).eq('id', row.id).select('*').single()
     if (error) throw error
+    await logCmsAudit({
+      action: 'updated',
+      module: PRINT_CORNER_AUDIT_MODULE,
+      entityType: 'print_corner_drafts',
+      entityId: data.id,
+      entityLabel: data.title || data.template_key || data.id,
+      summary: `Updated draft ${data.title || data.template_key || data.id}`,
+    })
     return data
   }
   const { data, error } = await supabase.from('print_corner_drafts').insert(row).select('*').single()
   if (error) throw error
+  await logCmsAudit({
+    action: 'created',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_drafts',
+    entityId: data.id,
+    entityLabel: data.title || data.template_key || data.id,
+    summary: `Created draft ${data.title || data.template_key || data.id}`,
+  })
   return data
 }
 
 export async function deleteDraft(id) {
+  const { data: draft } = await supabase.from('print_corner_drafts').select('*').eq('id', id).maybeSingle()
+  const snap = await captureDeletedRecord({
+    module: PRINT_CORNER_AUDIT_MODULE,
+    tableName: 'print_corner_drafts',
+    recordId: id,
+    recordLabel: draft?.title || draft?.template_key || id,
+    row: draft,
+  })
+  if (draft?.preview_path && snap?.id) {
+    await quarantinePrintCornerFiles(snap.id, [draft.preview_path])
+  }
   const { error } = await supabase.from('print_corner_drafts').delete().eq('id', id)
   if (error) throw error
+  await logCmsAudit({
+    action: 'deleted',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_drafts',
+    entityId: id,
+    entityLabel: draft?.title || draft?.template_key || id,
+    summary: `Deleted draft ${draft?.title || draft?.template_key || id} (Recycle Bin)`,
+  })
 }
 
 const ISSUED_RETENTION_DAYS = 30
@@ -511,23 +567,42 @@ export async function getPrintCornerIssuedLog(limit = 40) {
   }))
 }
 
-/** Delete one issued PDF from storage and log. */
-export async function deletePrintCornerIssued(row) {
-  if (row?.storage_path) {
-    await supabase.storage.from(BUCKET).remove([row.storage_path])
+/** Delete one issued PDF — snapshot to Recycle Bin, quarantine storage. */
+export async function deletePrintCornerIssued(row, { skipAudit = false } = {}) {
+  if (!row?.id) return
+  const snap = await captureDeletedRecord({
+    module: PRINT_CORNER_AUDIT_MODULE,
+    tableName: 'print_corner_issued_log',
+    recordId: row.id,
+    recordLabel: row.issued_filename || row.member_id || row.template_key || row.id,
+    row,
+  })
+  if (row.storage_path && snap?.id) {
+    await quarantinePrintCornerFiles(snap.id, [row.storage_path])
+  } else if (row.storage_path) {
+    await supabase.storage.from(BUCKET).remove([row.storage_path]).catch(() => {})
   }
   const { error } = await supabase.from('print_corner_issued_log').delete().eq('id', row.id)
   if (error) throw error
+  if (!skipAudit) {
+    await logCmsAudit({
+      action: 'deleted',
+      module: PRINT_CORNER_AUDIT_MODULE,
+      entityType: 'print_corner_issued_log',
+      entityId: row.id,
+      entityLabel: row.issued_filename || row.member_id || row.id,
+      summary: `Deleted issued PDF ${row.issued_filename || row.id} (Recycle Bin)`,
+    })
+  }
 }
 
 /** Delete multiple issued PDFs. */
 export async function deletePrintCornerIssuedMany(rows) {
   const list = rows || []
   if (!list.length) return 0
-  const paths = list.map(r => r.storage_path).filter(Boolean)
-  if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
-  const { error } = await supabase.from('print_corner_issued_log').delete().in('id', list.map(r => r.id))
-  if (error) throw error
+  for (const row of list) {
+    await deletePrintCornerIssued(row)
+  }
   return list.length
 }
 
@@ -537,19 +612,38 @@ export async function purgePrintCornerIssuedOlderThan(days = ISSUED_RETENTION_DA
   cutoff.setDate(cutoff.getDate() - days)
   const { data, error } = await supabase
     .from('print_corner_issued_log')
-    .select('id, storage_path')
+    .select('*')
     .lt('issued_at', cutoff.toISOString())
   if (error) throw error
   const rows = data || []
   if (!rows.length) return 0
-  const paths = rows.map(r => r.storage_path).filter(Boolean)
-  if (paths.length) await supabase.storage.from(BUCKET).remove(paths)
-  const { error: delErr } = await supabase
-    .from('print_corner_issued_log')
-    .delete()
-    .in('id', rows.map(r => r.id))
-  if (delErr) throw delErr
+  for (const row of rows) {
+    await deletePrintCornerIssued(row, { skipAudit: true })
+  }
+  await logCmsAudit({
+    action: 'purged',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_issued_log',
+    summary: `Auto-purged ${rows.length} issued PDF(s) older than ${days} days (Recycle Bin)`,
+  })
   return rows.length
+}
+
+/** Audit log entry after a successful Issue PDF. */
+export async function logPrintCornerIssuedPdf({
+  template = null,
+  memberId = null,
+  issuedFilename = '',
+  storagePath = null,
+} = {}) {
+  await logCmsAudit({
+    action: 'posted',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'issued_pdf',
+    entityId: storagePath || template?.id,
+    entityLabel: template?.label || template?.template_key || issuedFilename,
+    summary: `Issued PDF ${issuedFilename || ''}${memberId ? ` for ${memberId}` : ''} (${template?.label || template?.template_key || 'template'})`,
+  })
 }
 
 export { ISSUED_RETENTION_DAYS }
@@ -576,24 +670,86 @@ export async function savePrintCornerCategory({ id, name, sort_order, is_active,
     const { data, error } = await supabase.from('print_corner_categories').update(payload).eq('id', id).select().single()
     if (error) throw error
     invalidatePrintCornerCatalogCache()
+    await logCmsAudit({
+      action: 'updated',
+      module: PRINT_CORNER_AUDIT_MODULE,
+      entityType: 'print_corner_categories',
+      entityId: data.id,
+      entityLabel: data.name,
+      summary: `Updated category ${data.name}`,
+    })
     return data
   }
   const { data, error } = await supabase.from('print_corner_categories').insert(payload).select().single()
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'created',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_categories',
+    entityId: data.id,
+    entityLabel: data.name,
+    summary: `Created category ${data.name}`,
+  })
   return data
 }
 
 export async function deactivatePrintCornerCategory(id) {
-  const { error } = await supabase.from('print_corner_categories').update({ is_active: false }).eq('id', id)
+  const { data, error } = await supabase
+    .from('print_corner_categories')
+    .update({ is_active: false })
+    .eq('id', id)
+    .select('name')
+    .single()
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'deactivated',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_categories',
+    entityId: id,
+    entityLabel: data?.name || id,
+    summary: `Deactivated category ${data?.name || id}`,
+  })
 }
 
 export async function deletePrintCornerCategory(id) {
+  const { data: cat } = await supabase
+    .from('print_corner_categories')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  const { data: templates } = await supabase
+    .from('print_corner_templates')
+    .select('*')
+    .eq('category_id', id)
+
+  const snap = await captureDeletedRecord({
+    module: PRINT_CORNER_AUDIT_MODULE,
+    tableName: 'print_corner_categories',
+    recordId: id,
+    recordLabel: cat?.name || id,
+    row: cat,
+    related: templates?.length ? { print_corner_templates: templates } : null,
+  })
+  if (snap?.id && templates?.length) {
+    await quarantinePrintCornerFiles(
+      snap.id,
+      templates.flatMap(t => templateStoragePaths(t)),
+    )
+  }
+
   const { error } = await supabase.from('print_corner_categories').delete().eq('id', id)
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'deleted',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_categories',
+    entityId: id,
+    entityLabel: cat?.name || id,
+    summary: `Deleted category ${cat?.name || id}${templates?.length ? ` and ${templates.length} template(s)` : ''} (Recycle Bin)`,
+  })
 }
 
 export async function movePrintCornerCategory(dragNode, targetNode, dropPos, allRows) {
@@ -619,6 +775,14 @@ export async function savePrintCornerTemplate(payload) {
     const { data, error } = await supabase.from('print_corner_templates').update(row).eq('id', row.id).select('*').single()
     if (error) throw error
     invalidatePrintCornerCatalogCache()
+    await logCmsAudit({
+      action: 'updated',
+      module: PRINT_CORNER_AUDIT_MODULE,
+      entityType: 'print_corner_templates',
+      entityId: data.id,
+      entityLabel: data.label || data.template_key,
+      summary: `Updated template ${data.label || data.template_key}`,
+    })
     return data
   }
   if (!row.template_key?.trim()) throw new Error('Template key is required.')
@@ -627,19 +791,50 @@ export async function savePrintCornerTemplate(payload) {
   const { data, error } = await supabase.from('print_corner_templates').insert(row).select('*').single()
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'created',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_templates',
+    entityId: data.id,
+    entityLabel: data.label || data.template_key,
+    summary: `Created template ${data.label || data.template_key}`,
+  })
   return data
 }
 
-/** Hard-delete template row; best-effort remove storage .docx */
+/** Hard-delete template row; snapshot to Recycle Bin and quarantine storage. */
 export async function deletePrintCornerTemplate(id, storagePath = null) {
-  if (storagePath) {
+  const { data: tpl } = await supabase
+    .from('print_corner_templates')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  const paths = templateStoragePaths(tpl || storagePath)
+  const snap = await captureDeletedRecord({
+    module: PRINT_CORNER_AUDIT_MODULE,
+    tableName: 'print_corner_templates',
+    recordId: id,
+    recordLabel: tpl?.label || tpl?.template_key || id,
+    row: tpl,
+  })
+  if (snap?.id) {
+    await quarantinePrintCornerFiles(snap.id, paths)
+  } else if (paths.length) {
     try {
-      await supabase.storage.from(BUCKET).remove([storagePath])
-    } catch { /* ignore storage cleanup errors */ }
+      await supabase.storage.from(BUCKET).remove(paths)
+    } catch { /* ignore */ }
   }
   const { error } = await supabase.from('print_corner_templates').delete().eq('id', id)
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'deleted',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_templates',
+    entityId: id,
+    entityLabel: tpl?.label || tpl?.template_key || id,
+    summary: `Deleted template ${tpl?.label || tpl?.template_key || id} (Recycle Bin)`,
+  })
 }
 
 /** Count templates still attached to a category (for delete confirm) */
@@ -2365,6 +2560,14 @@ export async function savePrintCornerApplicationForm({
       .single()
     if (error) throw error
     invalidatePrintCornerCatalogCache()
+    await logCmsAudit({
+      action: 'updated',
+      module: PRINT_CORNER_AUDIT_MODULE,
+      entityType: 'print_corner_application_forms',
+      entityId: data.id,
+      entityLabel: data.label || data.form_key,
+      summary: `Updated application form ${data.label || data.form_key}`,
+    })
     return data
   }
 
@@ -2376,18 +2579,49 @@ export async function savePrintCornerApplicationForm({
     .single()
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'created',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_application_forms',
+    entityId: data.id,
+    entityLabel: data.label || data.form_key,
+    summary: `Created application form ${data.label || data.form_key}`,
+  })
   return data
 }
 
 export async function deletePrintCornerApplicationForm(id, storagePath = null) {
-  if (storagePath) {
+  const { data: form } = await supabase
+    .from('print_corner_application_forms')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  const path = storagePath || form?.storage_path
+  const snap = await captureDeletedRecord({
+    module: PRINT_CORNER_AUDIT_MODULE,
+    tableName: 'print_corner_application_forms',
+    recordId: id,
+    recordLabel: form?.label || form?.form_key || id,
+    row: form,
+  })
+  if (path && snap?.id) {
+    await quarantinePrintCornerFiles(snap.id, [path])
+  } else if (path) {
     try {
-      await supabase.storage.from(BUCKET).remove([storagePath])
+      await supabase.storage.from(BUCKET).remove([path])
     } catch { /* ignore */ }
   }
   const { error } = await supabase.from('print_corner_application_forms').delete().eq('id', id)
   if (error) throw error
   invalidatePrintCornerCatalogCache()
+  await logCmsAudit({
+    action: 'deleted',
+    module: PRINT_CORNER_AUDIT_MODULE,
+    entityType: 'print_corner_application_forms',
+    entityId: id,
+    entityLabel: form?.label || form?.form_key || id,
+    summary: `Deleted application form ${form?.label || form?.form_key || id} (Recycle Bin)`,
+  })
 }
 
 export async function uploadPrintCornerApplicationFormFile(file, formRow) {

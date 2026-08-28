@@ -60,6 +60,7 @@ import {
   buildPrintCornerSidebarBrowseItems,
   PRINT_CORNER_FORMS_SIDEBAR_ID,
   formatPrintCornerDisplayDate,
+  logPrintCornerIssuedPdf,
   isCloudmersiveSizeError,
   CLOUDMERSIVE_MAX_INPUT_BYTES,
 } from '../lib/printCornerLib'
@@ -1210,6 +1211,12 @@ export default function PrintCornerPage() {
       })
       setLastPdf(res)
       await refreshIssuedPdfs()
+      await logPrintCornerIssuedPdf({
+        template: selected,
+        memberId: memberIdForPhoto || null,
+        issuedFilename: res?.issued_filename || res?.storage_path?.split('/').pop(),
+        storagePath: res?.storage_path || null,
+      })
 
       if (import.meta.env.DEV && res?.signature_merge) {
         console.info('[Print Corner] signature_merge', res.signature_merge)

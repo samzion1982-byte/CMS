@@ -78,6 +78,8 @@ const FALLBACK_TABLES = [
   'directory_categories', 'directory_contacts',
   'organization_units', 'page_permissions', 'roles', 'user_profiles',
   'devices', 'device_sessions', 'church_settings',
+  'print_corner_categories', 'print_corner_templates', 'print_corner_application_forms',
+  'print_corner_drafts', 'print_corner_issued_log',
 ]
 
 const KNOWN_BUCKETS = [
@@ -2198,6 +2200,8 @@ async function runCompleteRestore(body, req) {
     const priority = [
       'roles', 'profiles', 'user_profiles', 'church_settings', 'churches', 'church_zones',
       'organization_units', 'cms_role_page_access', 'members', 'families',
+      'print_corner_categories', 'print_corner_templates', 'print_corner_application_forms',
+      'print_corner_drafts', 'print_corner_issued_log',
     ]
     const ordered = [
       ...priority.filter((t) => tables.includes(t)),
