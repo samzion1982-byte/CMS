@@ -784,7 +784,8 @@ export async function uploadPrintCornerTemplateDocx(file, template, { updateVari
     storage_path: storagePath,
   }
   if (updateVariables) {
-    patch.variables = finalizeTemplateVariables(keys, template.variables)
+    // Replace with scanned placeholders only — preserve labels for keys that still exist
+    patch.variables = variablesFromPlaceholderKeys(keys, template.variables)
   }
 
   const saved = await savePrintCornerTemplate(patch)
@@ -870,61 +871,14 @@ export function templateHasMemberPhoto(variables, meta = null) {
   return false
 }
 
-/** Merge scanned + saved keys; preserve explicit key order when provided. */
+/** Merge scanned placeholder keys with saved labels (no extra fixed fields). */
 export function finalizeTemplateVariables(keys, existing = []) {
-  const existingVars = normalizeTemplateVariables(existing)
-  const ordered = []
-  const seen = new Set()
-  for (const k of keys || []) {
-    const t = String(k || '').trim()
-    if (t && !seen.has(t)) {
-      ordered.push(t)
-      seen.add(t)
-    }
-  }
-  for (const v of existingVars) {
-    if (v.key && !seen.has(v.key)) {
-      ordered.push(v.key)
-      seen.add(v.key)
-    }
-  }
-  if (seen.has('member_photo') && !seen.has('member_id') && !seen.has('Member_id')) {
-    ordered.push('member_id')
-    seen.add('member_id')
-  }
-  return normalizeTemplateVariables(variablesFromPlaceholderKeys(ordered, existing))
+  return variablesFromPlaceholderKeys(keys, existing)
 }
 
-/** Text fields shown in wizard + tracker; injects member_id when template uses {member_photo}. */
-function sortWizardTextVariables(rows) {
-  return rows
-    .map((v, i) => ({ v, i }))
-    .sort((a, b) => {
-      const rank = (key) => {
-        const n = String(key || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-        if (n === 'member_id') return 0
-        if (n === 'member_name') return 1
-        return 2
-      }
-      const ra = rank(a.v.key)
-      const rb = rank(b.v.key)
-      if (ra !== rb) return ra - rb
-      return a.i - b.i
-    })
-    .map(x => x.v)
-}
-
-export function wizardTextVariables(variables, meta = null) {
-  let text = textFieldVariables(variables)
-  if (templateHasMemberPhoto(variables, meta)) {
-    if (!text.some(v => v.key === 'member_id' || v.key === 'Member_id')) {
-      text = [
-        { key: 'member_id', label: VARIABLE_LABELS.member_id || 'Member ID', kind: 'text' },
-        ...text,
-      ]
-    }
-  }
-  return sortWizardTextVariables(text)
+/** Text fields shown in wizard + tracker — template placeholders only, saved order. */
+export function wizardTextVariables(variables) {
+  return textFieldVariables(variables)
 }
 
 function formatPrintCornerDate(value) {
@@ -1092,8 +1046,7 @@ export function churchSetupValueForKey(key, church) {
 
 export function defaultFieldValuesFromTemplate(template, church = null, member = null, categoryName = '') {
   const out = {}
-  const meta = templateMetaFromTemplate(template, categoryName)
-  for (const v of wizardTextVariables(template?.variables, meta)) {
+  for (const v of wizardTextVariables(template?.variables)) {
     if (v.key) out[v.key] = ''
   }
   if (church) applyChurchToFieldValues(out, church)
@@ -1466,9 +1419,13 @@ function addWorkingTamilMonthsSheet(wb) {
   ws.columns = [{ width: 8 }, { width: 18 }]
 }
 
+function trackerDataColumnNumber(keyIndexInKeys) {
+  // Column A = S.No; first template field starts at column B (index 0 → column 2).
+  return keyIndexInKeys + 2
+}
+
 export function trackerColumnKeys(variables, template = null) {
-  const meta = template ? templateMetaFromTemplate(template) : null
-  let keys = wizardTextVariables(variables, meta).map(v => v.key).filter(Boolean)
+  let keys = textFieldVariables(variables).map(v => v.key).filter(Boolean)
   if (template && isRentalAgreementTemplate(template)) {
     keys = sortRentalTrackerKeys(keys)
   }
@@ -1513,8 +1470,8 @@ export async function downloadPrintCornerTracker({
     const rowValues = [sno, ...keys.map(k => values?.[k] ?? '')]
     const row = ws.addRow(rowValues)
     if (rental && tamilMonthColIdx >= 0 && monthColIdx >= 0) {
-      const monthLetter = excelColumnLetter(monthColIdx + 2)
-      const tamilCol = tamilMonthColIdx + 2
+      const monthLetter = excelColumnLetter(trackerDataColumnNumber(monthColIdx))
+      const tamilCol = trackerDataColumnNumber(tamilMonthColIdx)
       row.getCell(tamilCol).value = {
         formula: `VLOOKUP(${monthLetter}${rowNum},Working!$A$1:$B$12,2,FALSE)`,
       }

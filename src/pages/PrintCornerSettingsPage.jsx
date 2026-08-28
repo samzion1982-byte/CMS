@@ -19,7 +19,6 @@ import {
   deletePrintCornerTemplate,
   uploadPrintCornerTemplateDocx,
   normalizeTemplateVariables,
-  finalizeTemplateVariables,
   getChurchForPrintCorner,
   getOfficeBearerSignatureStatus,
   getPrintCornerApplicationForms,
@@ -358,10 +357,10 @@ function TemplatesPanel() {
       category_id: selected.category_id || '',
       is_active: selected.is_active !== false,
     })
-    setVarRows(finalizeTemplateVariables(
-      normalizeTemplateVariables(selected.variables).map(v => v.key),
-      selected.variables,
-    ).map(v => ({ key: v.key || '', label: v.label || v.key || '' })))
+    setVarRows(normalizeTemplateVariables(selected.variables).map(v => ({
+      key: v.key || '',
+      label: v.label || v.key || '',
+    })))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selectedId, selected, isAppFormsMode])
 
@@ -453,9 +452,11 @@ function TemplatesPanel() {
         label: form.label,
         category_id: form.category_id,
         is_active: form.is_active,
-        variables: finalizeTemplateVariables(
-          varRows.filter(v => v.key.trim()).map(v => v.key.trim()),
-          varRows.filter(v => v.key.trim()).map(v => ({ key: v.key.trim(), label: (v.label || v.key).trim() })),
+        variables: normalizeTemplateVariables(
+          varRows.filter(v => v.key.trim()).map(v => ({
+            key: v.key.trim(),
+            label: (v.label || v.key).trim(),
+          })),
         ),
       })
       toast('Template saved.', 'success')
@@ -812,7 +813,7 @@ function TemplatesPanel() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div>
                 <span style={{ fontSize: 12, fontWeight: 700 }}>Wizard variables</span>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>Order controls Fields step and Download tracker columns.</p>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-3)' }}>From the uploaded template only. Re-upload to refresh keys; arrows reorder Fields + tracker.</p>
               </div>
               <button type="button" onClick={() => setVarRows(r => [...r, { key: '', label: '' }])}
                 style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--card-border)', background: 'var(--card-bg)', cursor: 'pointer' }}>

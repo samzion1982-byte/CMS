@@ -39,11 +39,10 @@ import {
   memberPhotoExistsInStorage,
   getApplicationFormSignedUrl,
   previewPrintCornerTemplate,
-  wizardTextVariables,
+  textFieldVariables,
   imageFieldVariables,
   templateHasMemberPhoto,
   templateMetaFromTemplate,
-  finalizeTemplateVariables,
   isChurchSetupFieldKey,
   churchSetupValueForKey,
   normalizePrintCornerFieldKey,
@@ -460,8 +459,8 @@ export default function PrintCornerPage() {
   )
 
   const variables = useMemo(
-    () => wizardTextVariables(selected?.variables, templateMeta),
-    [selected, templateMeta],
+    () => textFieldVariables(selected?.variables),
+    [selected],
   )
 
   function resolvedFieldValue(key) {
@@ -495,6 +494,10 @@ export default function PrintCornerPage() {
     const out = { ...fieldValues }
     for (const v of variables) {
       out[v.key] = resolvedFieldValue(v.key)
+    }
+    if (needsMemberPhoto) {
+      const mid = String(out.member_id || selectedMember?.member_id || '').trim()
+      if (mid) out.member_id = mid
     }
     return out
   }
@@ -604,6 +607,7 @@ export default function PrintCornerPage() {
     setFieldValues(prev => {
       const base = {}
       for (const key of keys) base[key] = prev[key] ?? ''
+      if (needsMemberPhoto && member.member_id) base.member_id = member.member_id
       const withMember = applyMemberToFieldValues(base, member, keys)
       return church ? applyChurchToFieldValues(withMember, church, { preserveOverrides: true }) : withMember
     })
@@ -1095,19 +1099,22 @@ export default function PrintCornerPage() {
       toast('Upload a template file in Print Corner Settings first.', 'error')
       return
     }
-    if (needsMemberPhoto && !String(fieldValues.member_id || '').trim()) {
+    const memberIdForPhoto = String(fieldValues.member_id || selectedMember?.member_id || '').trim()
+    if (needsMemberPhoto && !memberIdForPhoto) {
       toast('Select a member — Member ID is required for the photo on this template.', 'error')
       return
     }
     setBusy(true)
     try {
       if (needsMemberPhoto) {
-        const m = await getPrintCornerMemberById(fieldValues.member_id)
+        const m = selectedMember?.member_id === memberIdForPhoto
+          ? selectedMember
+          : await getPrintCornerMemberById(memberIdForPhoto)
         if (!m) {
-          toast(`Member “${fieldValues.member_id}” not found.`, 'error')
+          toast(`Member “${memberIdForPhoto}” not found.`, 'error')
           return
         }
-        const hasPhoto = m.photo_url || await memberPhotoExistsInStorage(m.member_id || fieldValues.member_id)
+        const hasPhoto = m.photo_url || await memberPhotoExistsInStorage(m.member_id || memberIdForPhoto)
         if (!hasPhoto) {
           toast(`Member ${m.member_name || m.member_id} has no photo in storage. Upload one in Members first.`, 'error')
           return
@@ -1120,7 +1127,7 @@ export default function PrintCornerPage() {
         templateType: templateStorageType(selected.template_type),
         templateId: selected.id,
         templateLabel: selected.label || '',
-        memberId: fieldValues.member_id || null,
+        memberId: memberIdForPhoto || null,
         fieldValues: buildIssueFieldValues(),
         issue: true,
         source: 'manual',
