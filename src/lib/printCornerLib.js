@@ -1393,6 +1393,98 @@ const RENTAL_FIELD_ORDER_GROUPS = [
   ['facing_side'],
 ]
 
+/** Display labels for rental tracker columns (canonical keys). */
+const RENTAL_FIELD_LABELS = {
+  shop_no: 'Shop No',
+  floor: 'Floor',
+  sq_ft: 'Sq.Ft',
+  eb_meter: 'eb_meter',
+  north_side_shop_no: 'North Side shop No',
+  south_side: 'South side',
+  western_side: 'Western Side',
+  eastern_side: 'Eastern Side',
+  shop_name: 'Shop Name',
+  shop_description: 'Shop Description',
+  monthly_rent: 'Monthly Rent',
+  rent_in_tamil: 'Rent in Tamil',
+  security_deposit: 'Security Deposit',
+  sd_in_tamil: 'S.D in Tamil',
+  agreement_date: 'Agreement Date',
+  year: 'Year',
+  month: 'Month',
+  tamil_month: 'Tamil Month',
+  day: 'Day',
+  from_date: 'From Date',
+  to_date: 'To Date',
+  tenant_name: 'Tenant Name',
+  tenant_father_name: 'Tenant Father Name',
+  tenant_address: 'Tenant Address',
+  aadhaar_number: 'Aadhar Number',
+  pan_number: 'PAN Number',
+  ration_card_number: 'Ration Card Number',
+  phone_number: 'Phone Number',
+  ward: 'Ward',
+  dia_treasurer: 'Dia.Treasurer',
+  dia_treas_father: 'Dia.Treas. Father',
+  tres_designation: 'Tres.Designation',
+  dia_seceretary: 'Dia.Seceretary',
+  dia_sec_father: 'Dia.Sec.Father',
+  sec_designation: 'Sec.Designation',
+  facing_side: 'Facing Side',
+}
+
+function rentalFieldLabel(key) {
+  const n = normTrackerKey(key)
+  for (const group of RENTAL_FIELD_ORDER_GROUPS) {
+    if (group.some(alias => normTrackerKey(alias) === n)) {
+      const canonical = group[0]
+      return RENTAL_FIELD_LABELS[canonical] || labelForVariableKey(canonical)
+    }
+  }
+  return labelForVariableKey(key)
+}
+
+/** Rental tracker includes every standard column (e.g. Facing Side) even if not yet in the template scan. */
+function rentalTrackerVariableRows(variables, template = null) {
+  const sorted = orderTemplateTextVariables(variables, template)
+  if (!template || !isRentalAgreementTemplate(template)) return sorted
+
+  const byNorm = new Map()
+  for (const v of sorted) {
+    if (v?.key) byNorm.set(normTrackerKey(v.key), v)
+  }
+
+  const merged = []
+  for (const group of RENTAL_FIELD_ORDER_GROUPS) {
+    let hit = null
+    for (const alias of group) {
+      const v = byNorm.get(normTrackerKey(alias))
+      if (v) {
+        hit = v
+        break
+      }
+    }
+    const canonical = group[0]
+    if (hit) {
+      merged.push({
+        ...hit,
+        label: hit.label || rentalFieldLabel(hit.key),
+      })
+    } else {
+      merged.push({
+        key: canonical,
+        label: RENTAL_FIELD_LABELS[canonical] || labelForVariableKey(canonical),
+        kind: 'text',
+      })
+    }
+  }
+
+  for (const v of sorted) {
+    if (rentalFieldRank(v.key) == null) merged.push(v)
+  }
+  return merged
+}
+
 function normTrackerKey(key) {
   return String(key || '').trim().toLowerCase()
     .replace(/\./g, '_')
@@ -1477,43 +1569,60 @@ function addWorkingTamilMonthsSheet(wb) {
   ws.state = 'hidden'
 }
 
-/** Header borders, zebra rows, column widths, and auto-filter for rental Tenant sheet. */
-function formatRentalTenantSheet(ws, colCount, lastRow, headers) {
-  ws.getRow(1).height = 24
-  ws.getRow(1).eachCell({ includeEmpty: true }, (cell, colIdx) => {
-    if (colIdx > colCount) return
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' }
+/** Header borders, zebra rows, fit-to-content widths — no auto-filter. */
+const TRACKER_FONT_SIZE = 11
+
+function trackerCellDisplayText(cell) {
+  const v = cell?.value
+  if (v == null) return ''
+  if (typeof v === 'object') {
+    if (v.formula) return ''
+    if (v.result != null) return String(v.result)
+    if (v.text) return String(v.text)
+    if (v.richText) return v.richText.map(t => t.text).join('')
+  }
+  return String(v)
+}
+
+function autoFitTrackerSheetColumns(ws, colCount, lastRow, padding = 3) {
+  const widths = []
+  for (let c = 1; c <= colCount; c++) {
+    let maxLen = 8
+    for (let r = 1; r <= lastRow; r++) {
+      const len = trackerCellDisplayText(ws.getCell(r, c)).length
+      if (len > maxLen) maxLen = len
+    }
+    widths.push(Math.min(maxLen + padding, 52))
+  }
+  ws.columns = widths.map(width => ({ width }))
+}
+
+function formatRentalTenantSheet(ws, colCount, lastRow) {
+  for (let colIdx = 1; colIdx <= colCount; colIdx++) {
+    const cell = ws.getCell(1, colIdx)
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: TRACKER_FONT_SIZE, name: 'Calibri' }
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false }
     cell.border = trackerCellBorder(true, false, colIdx === 1, colIdx === colCount)
-  })
+  }
+  ws.getRow(1).height = 22
 
   for (let r = 2; r <= lastRow; r++) {
-    const row = ws.getRow(r)
     const isLast = r === lastRow
     const isAlt = r % 2 === 0
-    row.height = 18
-    row.eachCell({ includeEmpty: true }, (cell, colIdx) => {
-      if (colIdx > colCount) return
-      cell.font = { size: 10, name: 'Calibri' }
-      cell.alignment = { vertical: 'middle', horizontal: 'left' }
+    ws.getRow(r).height = 20
+    for (let colIdx = 1; colIdx <= colCount; colIdx++) {
+      const cell = ws.getCell(r, colIdx)
+      cell.font = { size: TRACKER_FONT_SIZE, name: 'Calibri' }
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false }
       cell.border = trackerCellBorder(false, isLast, colIdx === 1, colIdx === colCount)
       if (isAlt) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF3FA' } }
       }
-    })
-  }
-
-  ws.columns = headers.map(h => ({
-    width: Math.min(Math.max(String(h).length + 4, 12), 36),
-  }))
-
-  if (colCount > 0 && lastRow > 1) {
-    ws.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: lastRow, column: colCount },
     }
   }
+
+  autoFitTrackerSheetColumns(ws, colCount, lastRow, 3)
 }
 
 function trackerDataColumnNumber(keyIndexInKeys, rental = false) {
@@ -1522,14 +1631,34 @@ function trackerDataColumnNumber(keyIndexInKeys, rental = false) {
 }
 
 export function trackerColumnKeys(variables, template = null) {
-  return orderTemplateTextVariables(variables, template).map(v => v.key).filter(Boolean)
+  return rentalTrackerVariableRows(variables, template).map(v => v.key).filter(Boolean)
 }
 
-/** Build header row — rental has no S.No column. */
+/** Build header row — rental uses friendly labels; others use S.No + keys. */
 export function trackerHeaders(variables, template = null) {
-  const keys = trackerColumnKeys(variables, template)
+  const rows = rentalTrackerVariableRows(variables, template)
   const rental = template && isRentalAgreementTemplate(template)
-  return rental ? keys : [TRACKER_SNO, ...keys]
+  if (rental) return rows.map(v => v.label || rentalFieldLabel(v.key))
+  return [TRACKER_SNO, ...rows.map(v => v.key)]
+}
+
+function buildTrackerHeaderColumnMap(ws, variables, template) {
+  const rows = rentalTrackerVariableRows(variables, template)
+  const headerRow = ws.getRow(1)
+  const colCount = Math.max(headerRow.cellCount, rows.length)
+  const byHeader = new Map()
+  for (let c = 1; c <= colCount; c++) {
+    const h = String(headerRow.getCell(c).value ?? '').trim()
+    if (h && h !== TRACKER_SNO) byHeader.set(h, c)
+  }
+  const keyToCol = new Map()
+  for (const v of rows) {
+    const key = v.key
+    const label = v.label || rentalFieldLabel(key)
+    const col = byHeader.get(key) ?? byHeader.get(label)
+    if (col) keyToCol.set(key, col)
+  }
+  return { keyToCol, rows }
 }
 
 /** Download .xlsx tracker — row 1 headers, row 2 pre-filled from current wizard values, + blank rows */
@@ -1588,7 +1717,7 @@ export async function downloadPrintCornerTracker({
   const colCount = headers.length
 
   if (rental) {
-    formatRentalTenantSheet(ws, colCount, lastRow, headers)
+    formatRentalTenantSheet(ws, colCount, lastRow)
     addWorkingTamilMonthsSheet(wb)
   } else {
     ws.columns = headers.map((h, i) => ({
@@ -1620,15 +1749,9 @@ export async function parsePrintCornerTrackerFile(file, variables, template = nu
   const ws = (rental ? wb.getWorksheet('Tenant') : null) || wb.worksheets[0]
   if (!ws) throw new Error('Empty spreadsheet.')
 
-  const headerRow = ws.getRow(1)
-  const colCount = headerRow.cellCount
-  const headerMap = new Map()
-  for (let c = 1; c <= colCount; c++) {
-    const h = String(headerRow.getCell(c).value ?? '').trim()
-    if (h && h !== TRACKER_SNO) headerMap.set(h, c)
-  }
+  const { keyToCol } = buildTrackerHeaderColumnMap(ws, variables, template)
 
-  const missing = keys.filter(k => !headerMap.has(k))
+  const missing = keys.filter(k => !keyToCol.has(k))
   if (missing.length) {
     throw new Error(`Tracker missing columns: ${missing.join(', ')}. Download a fresh tracker and try again.`)
   }
@@ -1639,7 +1762,7 @@ export async function parsePrintCornerTrackerFile(file, variables, template = nu
     const fieldValues = {}
     let hasData = false
     for (const key of keys) {
-      const col = headerMap.get(key)
+      const col = keyToCol.get(key)
       const val = col ? trackerCellText(row.getCell(col)) : ''
       fieldValues[key] = val
       if (val) hasData = true
