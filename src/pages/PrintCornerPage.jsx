@@ -34,6 +34,8 @@ import {
   ISSUED_RETENTION_DAYS,
   getChurchForPrintCorner,
   defaultFieldValuesFromTemplate,
+  syncFieldValuesToTemplateVariables,
+  templateVariableKeysSignature,
   applyMemberToFieldValues,
   applyChurchToFieldValues,
   isOverridableChurchFieldKey,
@@ -296,9 +298,58 @@ export default function PrintCornerPage() {
     setMemberHits([])
     setSharePhone('')
     setShareEmail('')
-    setFieldValues(defaultFieldValuesFromTemplate(selected, church, null, selectedCategoryName))
     if (selected.category_id) setActiveCategoryId(selected.category_id)
   }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const templateVarSig = useMemo(
+    () => (selected ? templateVariableKeysSignature(selected) : ''),
+    [selected],
+  )
+
+  const fieldSyncRef = useRef({ id: null, sig: '' })
+
+  // Template switch or re-upload — keep values only for keys on the current template
+  useEffect(() => {
+    if (!selected || !templateVarSig) return
+    const { id: lastId, sig: lastSig } = fieldSyncRef.current
+    if (lastId === selected.id && lastSig === templateVarSig) return
+    fieldSyncRef.current = { id: selected.id, sig: templateVarSig }
+    setFieldValues(prev => syncFieldValuesToTemplateVariables(
+      selected,
+      lastId === selected.id ? prev : {},
+      church,
+      selectedMember,
+      selectedCategoryName,
+    ))
+  }, [templateVarSig, selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sidebar catalog may refresh while `selected` still holds an older snapshot
+  useEffect(() => {
+    if (!selected?.id || sidebarMode === 'forms') return
+    for (const g of groups) {
+      const fresh = g.templates.find(t => t.id === selected.id)
+      if (!fresh) continue
+      const stale =
+        fresh.storage_path !== selected.storage_path
+        || fresh.updated_at !== selected.updated_at
+        || templateVariableKeysSignature(fresh) !== templateVariableKeysSignature(selected)
+      if (stale) setSelected(fresh)
+      break
+    }
+  }, [groups, selected, sidebarMode])
+
+  useEffect(() => {
+    function onCatalogUpdated() {
+      refreshSidebar().catch(() => {})
+    }
+    window.addEventListener('print-corner-catalog-updated', onCatalogUpdated)
+    return () => window.removeEventListener('print-corner-catalog-updated', onCatalogUpdated)
+  }, [refreshSidebar])
+
+  useEffect(() => {
+    if (step !== 2 || sidebarMode === 'forms' || !selected?.id) return
+    refreshSidebar().catch(() => {})
+  }, [step, selected?.id, sidebarMode, refreshSidebar])
 
   // Church profile often loads after the template — refill church-owned fields without wiping member edits
   useEffect(() => {

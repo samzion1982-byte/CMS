@@ -229,6 +229,11 @@ export function invalidatePrintCornerCatalogCache() {
   try {
     sessionStorage.removeItem(PRINT_CORNER_CATALOG_CACHE_KEY)
   } catch { /* ignore */ }
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('print-corner-catalog-updated'))
+    }
+  } catch { /* ignore */ }
 }
 
 /** Sync read — instant sidebar hydrate on repeat visits. */
@@ -1130,20 +1135,38 @@ export function churchSetupValueForKey(key, church) {
   return String(patch[key] ?? '').trim()
 }
 
-export function defaultFieldValuesFromTemplate(template, church = null, member = null, categoryName = '') {
+/** Stable signature of text placeholder keys — detects template re-upload / variable edits. */
+export function templateVariableKeysSignature(template) {
+  if (!template) return ''
+  return orderTemplateTextVariables(template.variables, template)
+    .map(v => v.key)
+    .filter(Boolean)
+    .join('\0')
+}
+
+/** Keep field values only for keys on the current template; refill church/member defaults. */
+export function syncFieldValuesToTemplateVariables(
+  template,
+  prev = {},
+  church = null,
+  member = null,
+  categoryName = '',
+) {
+  const keys = orderTemplateTextVariables(template?.variables, template)
+    .map(v => v.key)
+    .filter(Boolean)
   const out = {}
-  for (const v of orderTemplateTextVariables(template?.variables, template)) {
-    if (v.key) out[v.key] = ''
-  }
-  if (church) applyChurchToFieldValues(out, church)
-  if (member) {
-    applyMemberToFieldValues(out, member, Object.keys(out))
-  }
-  // Sensible date default when template asks for {date}
+  for (const key of keys) out[key] = prev[key] ?? ''
+  if (church) applyChurchToFieldValues(out, church, { preserveOverrides: true })
+  if (member) applyMemberToFieldValues(out, member, keys)
   if ('date' in out && !out.date) {
     out.date = formatPrintCornerDate(new Date().toISOString().slice(0, 10))
   }
   return out
+}
+
+export function defaultFieldValuesFromTemplate(template, church = null, member = null, categoryName = '') {
+  return syncFieldValuesToTemplateVariables(template, {}, church, member, categoryName)
 }
 
 const MEMBER_SEARCH_SELECT = [
