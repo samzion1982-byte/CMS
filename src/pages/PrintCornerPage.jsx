@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import {
   Printer, Settings, Loader2, FileText, Award, Mail, ClipboardList, CreditCard,
-  CheckCircle2, AlertCircle, Save, Download, Upload,
-  Pencil, Trash2, Search, MessageCircle, X,
+  CheckCircle2, AlertCircle, Download, Upload,
+  Trash2, Search, MessageCircle, X,
 } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import { useToast } from '../lib/toast'
@@ -25,9 +25,6 @@ import {
   mapTrackerRowToWizardFieldValues,
   resolveTemplateTypeDisplay,
   resolvePptxNameFit,
-  getSharedDrafts,
-  saveDraft,
-  deleteDraft,
   deletePrintCornerTemplate,
   deletePrintCornerApplicationForm,
   getPrintCornerIssuedLog,
@@ -186,8 +183,6 @@ export default function PrintCornerPage() {
   const [fieldValues, setFieldValues] = useState({})
   const [includeTamil, setIncludeTamil] = useState(false)
   const [useTamilPdf, setUseTamilPdf] = useState(false)
-  const [draftId, setDraftId] = useState(null)
-  const [drafts, setDrafts] = useState([])
   const [bulkRows, setBulkRows] = useState([])
   const [bulkRowEnabled, setBulkRowEnabled] = useState(() => new Set())
   const [singleRowFromBulk, setSingleRowFromBulk] = useState(null)
@@ -256,10 +251,6 @@ export default function PrintCornerPage() {
       .then(setChurch)
       .catch(() => {})
 
-    getSharedDrafts(30)
-      .then(setDrafts)
-      .catch(() => {})
-
     pingPrintCorner()
       .then(setPing)
       .catch(e => setPing({ ok: false, error: e.message }))
@@ -295,7 +286,6 @@ export default function PrintCornerPage() {
     setTplPreviewCached(false)
     setTplPreviewForce(false)
     setStep(1)
-    setDraftId(null)
     setBulkRows([])
     setSingleRowFromBulk(null)
     setLastPdf(null)
@@ -546,19 +536,6 @@ export default function PrintCornerPage() {
   )
   const singleRowEditMode = singleRowFromBulk !== null
 
-  /** Shared drafts for the selected template only. */
-  const visibleDrafts = useMemo(() => {
-    if (sidebarMode === 'forms' || tplSearch.trim() || !selected) return []
-    if (selected.template_type === 'certificate') return []
-    return drafts.filter(d => {
-      if (selected.id && d.template_id === selected.id) return true
-      if (d.template_key && d.template_key === selected.template_key) return true
-      return false
-    })
-  }, [drafts, selected, sidebarMode, tplSearch])
-
-  const showDrafts = !!selected && selected.template_type !== 'certificate'
-
   /** Issued PDFs for the selected template (Review step). */
   const issuedForTemplate = useMemo(() => {
     if (sidebarMode === 'forms' || tplSearch.trim() || !selected) return []
@@ -630,7 +607,6 @@ export default function PrintCornerPage() {
     const values = church
       ? applyChurchToFieldValues(merged, church, { preserveOverrides: true })
       : merged
-    setDraftId(null)
     setFieldValues(values)
     if (member) {
       setSelectedMember(member)
@@ -643,8 +619,7 @@ export default function PrintCornerPage() {
     }
     setSingleRowFromBulk(idx >= 0 ? idx : 0)
     setStep(2)
-    const saveHint = showDrafts ? 'Save & go to Review' : 'Review'
-    toast(`Loaded ${draftRecordSummary(selected, row)} — edit, ${saveHint}, then Issue PDF.`, 'info')
+    toast(`Loaded ${draftRecordSummary(selected, row)} — edit, then Review → Issue PDF.`, 'info')
   }
 
   const showMemberApproach = selected?.template_type === 'letter' || needsMemberPhoto
@@ -855,65 +830,6 @@ export default function PrintCornerPage() {
     }
   }
 
-  async function handleSaveDraftAndReview() {
-    if (!selected) return
-    setBusy(true)
-    try {
-      const row = await saveDraft({
-        id: draftId || undefined,
-        template_id: selected.id,
-        template_key: selected.template_key,
-        member_id: fieldValues.member_id || null,
-        status: 'draft',
-        wizard_step: 2,
-        field_values: buildIssueFieldValues(),
-        include_tamil: includeTamil,
-        created_by: profile?.id,
-        created_by_email: profile?.email,
-      })
-      setDraftId(row.id)
-      setDrafts(await getSharedDrafts(30))
-      setStep(3)
-      toast('Draft saved — moved to Review.', 'success')
-    } catch (e) {
-      toast(e.message || 'Could not save draft', 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function loadDraft(d) {
-    const tpl = groups.flatMap(g => g.templates).find(t => t.id === d.template_id || t.template_key === d.template_key)
-    if (tpl) setSelected(tpl)
-    setDraftId(d.id)
-    const draftValues = d.field_values || {}
-    setFieldValues(church ? applyChurchToFieldValues({ ...draftValues }, church, { preserveOverrides: true }) : draftValues)
-    setIncludeTamil(!!d.include_tamil)
-    setBulkRows([])
-    setSingleRowFromBulk(null)
-    setSelectedMember(null)
-    setMemberQuery(d.field_values?.member_name || d.member_id || '')
-    setSharePhone(d.field_values?.whatsapp || d.field_values?.mobile || '')
-    setShareEmail(d.field_values?.email || '')
-    setStep(2)
-    toast(`Draft loaded — ${draftRecordSummary(tpl || selected, draftValues)}. Edit fields, then Review.`, 'info')
-  }
-
-  async function handleDeleteDraft(d) {
-    if (!window.confirm(`Delete shared draft for “${d.template_key}”?`)) return
-    setBusy(true)
-    try {
-      await deleteDraft(d.id)
-      if (draftId === d.id) setDraftId(null)
-      setDrafts(await getSharedDrafts(30))
-      toast('Draft deleted.', 'success')
-    } catch (e) {
-      toast(e.message || 'Could not delete draft', 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function confirmSidebarDelete() {
     if (!deletePrompt) return
     setBusy(true)
@@ -936,46 +852,6 @@ export default function PrintCornerPage() {
     } finally {
       setBusy(false)
     }
-  }
-
-  function renderSharedDrafts() {
-    if (!selected || selected.template_type === 'certificate') return null
-    return (
-      <div style={{ marginBottom: 16, padding: 14, borderRadius: 10, background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Shared drafts</div>
-        {visibleDrafts.length === 0 ? (
-          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
-            {isRentalAgreementTemplate(selected)
-              ? `No drafts yet for “${selected.label}”. Fill one tenant on Fields → “Save & go to Review” to share.`
-              : `No drafts yet for “${selected.label}”. Use “Save & go to Review” on Fields to share with others.`}
-          </p>
-        ) : (
-          <div style={{ maxHeight: 180, overflow: 'auto' }}>
-            {visibleDrafts.map(d => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: 13 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong>{d.template_key}</strong>
-                  <span style={{ color: 'var(--text-3)' }}>
-                    {' '}· {draftRecordSummary(
-                      groups.flatMap(g => g.templates).find(t => t.id === d.template_id) || { template_key: d.template_key },
-                      d.field_values,
-                    )} · {formatPrintCornerDisplayDate(d.updated_at)}
-                  </span>
-                </div>
-                <button type="button" disabled={busy} onClick={() => loadDraft(d)} title="Edit draft"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#dbeafe', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                  <Pencil size={11} /> Edit
-                </button>
-                <button type="button" disabled={busy} onClick={() => handleDeleteDraft(d)} title="Delete draft"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                  <Trash2 size={11} /> Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    )
   }
 
   async function handleDeleteIssuedMany(rows) {
@@ -1625,7 +1501,7 @@ export default function PrintCornerPage() {
               Include Tamil text block
             </label>
           )}
-          {renderSharedDrafts()}
+
           {singleRowEditMode && bulkRows[singleRowFromBulk] && (
             <div style={{
               marginBottom: 14, padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.45,
@@ -1814,17 +1690,10 @@ export default function PrintCornerPage() {
             })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-            {showDrafts ? (
-              <button type="button" disabled={busy} onClick={handleSaveDraftAndReview}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: busy ? 'wait' : 'pointer' }}>
-                <Save size={14} /> Save & go to Review
-              </button>
-            ) : (
-              <button type="button" onClick={() => setStep(3)}
-                style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                Review →
-              </button>
-            )}
+            <button type="button" onClick={() => setStep(3)}
+              style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              Review →
+            </button>
           </div>
         </div>
       )
@@ -1858,13 +1727,11 @@ export default function PrintCornerPage() {
                 <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #bfdbfe' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a8a', marginBottom: 6 }}>
                       {isRentalAgreementTemplate(selected)
-                        ? 'Edit one tenant (shared draft + single PDF)'
+                        ? 'Edit one tenant (single PDF)'
                         : 'Edit one row (single PDF)'}
                     </div>
                     <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 8px', lineHeight: 1.45 }}>
-                      {showDrafts
-                        ? 'Pick a row to open it in Fields. Edit if needed, use “Save & go to Review” to share the draft, then Issue PDF.'
-                        : 'Pick a row to open it in Fields. Edit if needed, go to Review, then Issue PDF.'}
+                      Pick a row to open it in Fields. Edit if needed, go to Review, then Issue PDF.
                       {' '}Uncheck rows you want to skip in Multi PDF.
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
