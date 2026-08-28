@@ -135,11 +135,70 @@ function extractPptxFirstFontSz(spXml: string) {
 
 type PptxNameFitMode = 'standard' | 'gentle'
 
-const PPTX_NAME_FIT_PRESETS: Record<PptxNameFitMode, { minScale: number, padPt: number, wrap: 'square' | 'none' }> = {
-  // Letters / certificates — allow more shrink for very long names
-  standard: { minScale: 38000, padPt: 16, wrap: 'square' },
-  // ID cards — shrink to stay on one line, but keep text readable (≥ ~50%)
-  gentle: { minScale: 50000, padPt: 10, wrap: 'none' },
+const PPTX_NAME_FIT_PRESETS: Record<PptxNameFitMode, {
+  minScale: number
+  sideMarginRatio: number
+  charWidthRatio: number
+  wrap: 'square' | 'none'
+}> = {
+  // Letters / certificates — text box width, allow more shrink
+  standard: { minScale: 38000, sideMarginRatio: 0, charWidthRatio: 0.62, wrap: 'square' },
+  // ID cards — use slide free width (side margins), shrink only when needed
+  gentle: { minScale: 72000, sideMarginRatio: 0.06, charWidthRatio: 0.54, wrap: 'none' },
+}
+
+function extractPptxSlideSize(presentationXml: string): { cx: number, cy: number } | null {
+  let m = presentationXml.match(/<p:sldSz\b[^>]*\bcx\s*=\s*"(\d+)"[^>]*\bcy\s*=\s*"(\d+)"/i)
+  if (m) {
+    const cx = Number(m[1])
+    const cy = Number(m[2])
+    return cx > 0 && cy > 0 ? { cx, cy } : null
+  }
+  m = presentationXml.match(/<p:sldSz\b[^>]*\bcy\s*=\s*"(\d+)"[^>]*\bcx\s*=\s*"(\d+)"/i)
+  if (m) {
+    const cy = Number(m[1])
+    const cx = Number(m[2])
+    return cx > 0 && cy > 0 ? { cx, cy } : null
+  }
+  return null
+}
+
+/** Horizontal space for a name — ID cards use slide width minus side clearance, not a narrow Canva text box. */
+function estimatePptxNameUsableWidthEmu(
+  shapeXfrm: { x: string, y: string, cx: string, cy: string },
+  slideSize: { cx: number, cy: number } | null,
+  mode: PptxNameFitMode,
+) {
+  const shapeW = Number(shapeXfrm.cx) || 0
+  if (mode !== 'gentle' || !slideSize?.cx) return shapeW
+  const slideW = Number(slideSize.cx)
+  const preset = PPTX_NAME_FIT_PRESETS.gentle
+  const sideMargin = Math.round(slideW * preset.sideMarginRatio)
+  const freeW = Math.max(shapeW, slideW - sideMargin * 2)
+  return freeW
+}
+
+function patchPptxShapeWidth(
+  spXml: string,
+  newCx: number,
+  slideWidth: number,
+) {
+  const xfrm = extractPptxXfrm(spXml)
+  if (!xfrm) return spXml
+  const oldCx = Number(xfrm.cx) || 0
+  if (newCx <= oldCx) return spXml
+  const centeredX = Math.max(0, Math.round((slideWidth - newCx) / 2))
+  const replaceExt = (block: string) => block.replace(
+    /(<a:ext\b[^>]*\bcx\s*=\s*")(\d+)("[^>]*>)/i,
+    `$1${Math.round(newCx)}$3`,
+  ).replace(
+    /(<a:off\b[^>]*\bx\s*=\s*")(-?\d+)("[^>]*>)/i,
+    `$1${centeredX}$3`,
+  )
+  if (/<p:spPr\b/i.test(spXml)) {
+    return spXml.replace(/<p:spPr\b[\s\S]*?<\/p:spPr>/i, (block) => replaceExt(block))
+  }
+  return spXml
 }
 
 /** EMU width → shrink fontScale (100000 = 100%) so text fits with side padding. */
@@ -154,8 +213,9 @@ function estimatePptxNameFontScale(
   const preset = PPTX_NAME_FIT_PRESETS[mode]
   const fontPt = fontSzHundredths / 100
   const widthPt = (widthEmu / 914400) * 72
-  const usablePt = Math.max(24, widthPt - preset.padPt)
-  const charW = fontPt * 0.62
+  const padPt = mode === 'gentle' ? 4 : 16
+  const usablePt = Math.max(24, widthPt - padPt)
+  const charW = fontPt * preset.charWidthRatio
   const maxChars = usablePt / charW
   if (len <= maxChars) return 100000
   const scale = Math.floor((maxChars / len) * 100000)
@@ -227,6 +287,7 @@ function applyPptxLongNameTextFit(
   xml: string,
   fieldValues: Record<string, unknown>,
   mode: PptxNameFitMode = 'standard',
+  slideSize: { cx: number, cy: number } | null = null,
 ) {
   const preset = PPTX_NAME_FIT_PRESETS[mode]
   const re = /<p:sp\b[\s\S]*?<\/p:sp>/gi
@@ -236,20 +297,25 @@ function applyPptxLongNameTextFit(
     if (!shapeTextMatchesLongNameField(text, fieldValues)) return sp
     const xfrm = extractPptxXfrm(sp)
     if (!xfrm?.cx) return sp
-    const widthEmu = Number(xfrm.cx)
-    if (!widthEmu) return sp
-    const fontSz = extractPptxFirstFontSz(sp)
-    const fontScale = estimatePptxNameFontScale(text, widthEmu, fontSz, mode)
-    if (fontScale >= 100000) return sp
-    let patched = patchPptxTxBodyAutofit(sp, fontScale, preset.wrap)
-    patched = patchPptxRunFontSizes(patched, fontScale)
+    const usableW = estimatePptxNameUsableWidthEmu(xfrm, slideSize, mode)
+    if (!usableW) return sp
+    let patched = sp
+    if (mode === 'gentle' && slideSize?.cx && usableW > Number(xfrm.cx)) {
+      patched = patchPptxShapeWidth(patched, usableW, slideSize.cx)
+    }
+    const fontSz = extractPptxFirstFontSz(patched)
+    const fontScale = estimatePptxNameFontScale(text, usableW, fontSz, mode)
+    if (fontScale >= 100000) return patched
+    patched = patchPptxTxBodyAutofit(patched, fontScale, preset.wrap)
+    // Gentle: normAutofit only — patching run sz as well double-shrinks in Google PDF convert
+    if (mode !== 'gentle') patched = patchPptxRunFontSizes(patched, fontScale)
     return patched
   })
 }
 
 function bodyLooksLikeIdCard(body: Record<string, unknown>) {
   const hay = `${body.template_key || ''} ${body.template_label || ''}`.toLowerCase()
-  return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
+  return /id[\s_-]*card|idcard|identity[\s_-]*card|member[\s_-]*card|photo[\s_-]*card/.test(hay)
 }
 
 function resolvePptxNameFitMode(body: Record<string, unknown>): PptxNameFitMode | 'off' {
@@ -1526,6 +1592,11 @@ async function mergeOfficeBytes(
   const pptxNameFit = mergeOptions.pptxNameFit ?? 'standard'
   const zip = await JSZip.loadAsync(officeBytes)
   const isPptx = format === 'pptx'
+  let pptxSlideSize: { cx: number, cy: number } | null = null
+  if (isPptx) {
+    const presXml = await zip.file('ppt/presentation.xml')?.async('string')
+    if (presXml) pptxSlideSize = extractPptxSlideSize(presXml)
+  }
   const targets = Object.keys(zip.files).filter(n =>
     (isPptx
       ? /^ppt\/(slides|slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(n)
@@ -2044,7 +2115,9 @@ async function mergeOfficeBytes(
 
     // 4) Text mail-merge
     xml = applyFieldValuesToXml(xml, fieldValues)
-    if (isPptx && pptxNameFit !== 'off') xml = applyPptxLongNameTextFit(xml, fieldValues, pptxNameFit)
+    if (isPptx && pptxNameFit !== 'off') {
+      xml = applyPptxLongNameTextFit(xml, fieldValues, pptxNameFit, pptxSlideSize)
+    }
     zip.file(name, xml)
     if (relsDirty) zip.file(relsName, relsXml)
   }

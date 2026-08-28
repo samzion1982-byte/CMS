@@ -828,7 +828,7 @@ export function templateMetaFromTemplate(template, categoryName = '') {
 
 export function templateLooksLikeIdCard(meta = {}) {
   const hay = `${meta.label || ''} ${meta.template_key || ''}`.toLowerCase()
-  return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
+  return /id[\s_-]*card|idcard|identity[\s_-]*card|member[\s_-]*card|photo[\s_-]*card/.test(hay)
 }
 
 /** Category name alone must not trigger ID-card behaviour (e.g. "Certificates/ID Cards"). */
@@ -1441,6 +1441,9 @@ export async function convertBulkLettersToPdf({
   storagePath,
   templateKey,
   templateType = 'letters',
+  templateId = null,
+  templateLabel = '',
+  pptxNameFit,
   rows,
   onProgress,
   output = 'single',
@@ -1456,10 +1459,13 @@ export async function convertBulkLettersToPdf({
       storagePath,
       templateKey,
       templateType,
+      templateId,
+      templateLabel,
       memberId: fieldValues.member_id || null,
       fieldValues,
       issue: true,
       source: 'manual',
+      pptxNameFit,
     })
 
     if (!res?.signed_url) throw new Error(`Row ${i + 1}: no PDF URL returned`)
