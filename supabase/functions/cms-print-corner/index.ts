@@ -235,7 +235,9 @@ function normalizeImageSlotKey(raw: string): string | null {
   if (braced) s = braced[1]
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
   const norm = s.toLowerCase().replace(/[\s-]+/g, '_')
-  if (norm === 'photo') return 'member_photo'
+  // Bare "photo" is Canva's default on every image — only accept explicit member_photo tags
+  if (norm === 'member_photo' || norm === 'memberphoto') return 'member_photo'
+  if (norm === 'photo') return null
   for (const k of IMAGE_PLACEHOLDER_KEYS) {
     if (norm === k.toLowerCase()) return k
   }
@@ -480,11 +482,22 @@ function ensureContentTypeDefault(ctXml: string, ext: string, contentType: strin
   )
 }
 
+/** True only for explicit member-photo alt text — not Canva's generic "Photo" label. */
+function isMemberPhotoAlt(raw: string | null | undefined): boolean {
+  if (raw == null) return false
+  const val = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+  if (!val) return false
+  if (/\{member_photo\}/i.test(val) || /\{photo\}/i.test(val)) return true
+  const bare = val.replace(/^\{+/, '').replace(/\}+$/, '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return bare === 'member_photo' || bare === 'memberphoto'
+}
+
 /** Pull a signature key from alt-text-like attribute values. */
 function keyFromAltAttr(raw: string | null | undefined): string | null {
   if (raw == null) return null
   const val = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
   if (!val) return null
+  if (isMemberPhotoAlt(val)) return 'member_photo'
   const direct = normalizeImageSlotKey(val)
   if (direct) return direct
   const braced = val.match(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g)
@@ -495,6 +508,7 @@ function keyFromAltAttr(raw: string | null | undefined): string | null {
     }
   }
   for (const k of IMAGE_PLACEHOLDER_KEYS) {
+    if (k === 'member_photo') continue
     const needle = k.toLowerCase()
     const vLower = val.toLowerCase().replace(/[\s-]+/g, '_')
     if (vLower === needle || vLower.includes(needle) || val.toLowerCase().includes('{' + needle + '}')) {
@@ -502,6 +516,24 @@ function keyFromAltAttr(raw: string | null | undefined): string | null {
     }
   }
   return null
+}
+
+function scoreMemberPhotoSlot(slot: { block: string, via: string }) {
+  let score = 0
+  if (/\{member_photo\}/i.test(slot.block)) score += 100
+  if (/member_photo/i.test(slot.via)) score += 40
+  if (/direct:/.test(slot.via)) score += 15
+  const xfrm = extractPptxXfrm(slot.block)
+  if (xfrm) score += Math.min(40, (Number(xfrm.cx) * Number(xfrm.cy)) / 400000)
+  return score
+}
+
+/** Canva sets alt "Photo" on many shapes — keep only the best {member_photo} target per part. */
+function dedupeMemberPhotoSlots<T extends { key: string, block: string, via: string }>(slots: T[]): T[] {
+  const photos = slots.filter(s => s.key === 'member_photo')
+  if (photos.length <= 1) return slots
+  const best = photos.reduce((a, b) => (scoreMemberPhotoSlot(b) > scoreMemberPhotoSlot(a) ? b : a))
+  return [...slots.filter(s => s.key !== 'member_photo'), best]
 }
 
 function extractBlipEmbedId(block: string): string | null {
@@ -926,6 +958,45 @@ function mediaPathFromRels(relsXml: string, embedId: string, xmlPartPath = 'word
     return resolveRelTargetToZipPath(xmlPartPath, target)
   }
   return null
+}
+
+/** Canva reuses one media file (and rId) for many shapes — count blips before in-place overwrite. */
+async function countBlipsUsingMediaFile(zip: JSZip, mediaPath: string): Promise<number> {
+  const fileName = String(mediaPath || '').replace(/^.*\//, '')
+  if (!fileName) return 0
+
+  const embedIds = new Set<string>()
+  for (const path of Object.keys(zip.files)) {
+    if (!path.includes('_rels/') || !path.endsWith('.rels')) continue
+    const file = zip.file(path)
+    if (!file) continue
+    const relsXml = await file.async('string')
+    for (const m of relsXml.matchAll(/<Relationship\b[^>]*\/?>/gi)) {
+      const tag = m[0]
+      if (!/relationships\/image/i.test(tag)) continue
+      const target = tag.match(/\bTarget\s*=\s*"([^"]+)"/i)?.[1]
+      if (!target || !target.endsWith(fileName)) continue
+      const id = tag.match(/\bId\s*=\s*"([^"]+)"/i)?.[1]
+      if (id) embedIds.add(id)
+    }
+  }
+  if (!embedIds.size) return 0
+
+  let blipCount = 0
+  const xmlParts = Object.keys(zip.files).filter(n =>
+    (/^ppt\//.test(n) || /^word\//.test(n)) && n.endsWith('.xml') && !zip.files[n].dir,
+  )
+  for (const partPath of xmlParts) {
+    const file = zip.file(partPath)
+    if (!file) continue
+    const partXml = await file.async('string')
+    for (const embedId of embedIds) {
+      const esc = embedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      blipCount += (partXml.match(new RegExp(`r:embed="${esc}"`, 'gi')) || []).length
+      blipCount += (partXml.match(new RegExp(`r:id="${esc}"`, 'gi')) || []).length
+    }
+  }
+  return blipCount
 }
 
 /** Point an existing image relationship at a new media/… target (keeps rId for reuse_rel). */
@@ -1475,6 +1546,7 @@ async function mergeOfficeBytes(
         }
       }
     }
+    found.slots = dedupeMemberPhotoSlots(found.slots)
     altDebug.push({
       part: name,
       alt_hits: found.debugHits.slice(0, 20),
@@ -1563,25 +1635,76 @@ async function mergeOfficeBytes(
         continue
       }
 
-      // Member photo: fit image + strip Canva srcRect crop so the circle doesn't centre-zoom
-      if (slot.key === 'member_photo' && existingBefore) {
+      // Member photo: fit + swap ONLY the one {member_photo} shape — never overwrite shared Canva media
+      if (slot.key === 'member_photo') {
+        if (swappedKeys.has('member_photo')) {
+          swapLog.push(`${slot.key}:skipped_extra:${slot.embedId}`)
+          continue
+        }
         let fitted = img
         try {
-          fitted = await prepareMemberPhotoForFrame(zip, img, existingBefore, slot.block)
+          fitted = await prepareMemberPhotoForFrame(zip, img, existingBefore, swapBlock)
           swapLog.push(`${slot.key}:fitted:${fitted.bytes.length}b`)
         } catch (e) {
           swapLog.push(`${slot.key}:fit_failed:${e instanceof Error ? e.message : String(e)}`)
         }
-        zip.file(existingBefore, fitted.bytes)
+
+        let block = isPptx ? resolvePptxSwapBlock(xml, slot) : resolveDocxSwapBlock(xml, slot)
+        if (!xml.includes(block)) {
+          const exact = isPptx
+            ? findExactPptxBlockByEmbedId(xml, slot.embedId)
+            : findExactWordDrawingByEmbedId(xml, slot.embedId)
+          if (exact) block = exact
+        }
+
+        const mediaShared = isPptx || (existingBefore
+          ? (await countBlipsUsingMediaFile(zip, existingBefore)) > 1
+          : false)
+
+        if (existingBefore && !mediaShared) {
+          zip.file(existingBefore, fitted.bytes)
+          if (ctXml) {
+            ctXml = ensureContentTypeDefault(ctXml, fitted.ext, fitted.contentType)
+            ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, fitted.contentType)
+          }
+          const beforeLen = xml.length
+          xml = clearMemberPhotoCropInSlide(xml, slot.embedId, block)
+          if (xml.length !== beforeLen) swapLog.push(`${slot.key}:cleared_srcRect`)
+          swappedKeys.add(slot.key)
+          swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
+          continue
+        }
+
+        mediaSeq += 1
+        const mediaName = `member_photo_${mediaSeq}.${fitted.ext}`
+        const mediaPath = `${mediaFolder}/${mediaName}`
+        zip.file(mediaPath, fitted.bytes)
         if (ctXml) {
           ctXml = ensureContentTypeDefault(ctXml, fitted.ext, fitted.contentType)
-          ctXml = ensureMediaContentTypeOverride(ctXml, existingBefore, fitted.contentType)
+          ctXml = ensureMediaContentTypeOverride(ctXml, mediaPath, fitted.contentType)
         }
-        const beforeLen = xml.length
-        xml = clearMemberPhotoCropInSlide(xml, slot.embedId, slot.block)
-        if (xml.length !== beforeLen) swapLog.push(`${slot.key}:cleared_srcRect`)
-        swappedKeys.add(slot.key)
-        swapLog.push(`${slot.key}:overwrite_in_place:${existingBefore}`)
+        const rId = nextRelationshipId(relsXml)
+        relsXml = relsXml.replace(
+          '</Relationships>',
+          `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relTargetPrefix}${mediaName}"/></Relationships>`,
+        )
+        relsDirty = true
+
+        if (block && xml.includes(block)) {
+          if (isPptx) {
+            const refreshed = refreshPptxBlipInBlock(stripPptxSvgBlips(block), rId)
+            xml = xml.split(block).join(refreshed)
+            xml = clearMemberPhotoCropInSlide(xml, rId, refreshed)
+            swapLog.push(`${slot.key}:pptx_split_media:${rId}:${mediaPath}${mediaShared ? ':shared_src' : ''}`)
+          } else {
+            const refreshed = refreshDocxPictureBlipInBlock(block, rId)
+            xml = xml.split(block).join(refreshed)
+            swapLog.push(`${slot.key}:docx_split_media:${rId}:${mediaPath}${mediaShared ? ':shared_src' : ''}`)
+          }
+          swappedKeys.add(slot.key)
+        } else {
+          swapLog.push(`${slot.key}:split_media_no_block:embed=${slot.embedId}`)
+        }
         continue
       }
 

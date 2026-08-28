@@ -73,8 +73,7 @@ const IMAGE_PLACEHOLDER_CANONICAL = {
   seceratry_sign: 'secretary_sign',
   treasurer_sign: 'treasurer_sign',
   treasurer_seal: 'treasurer_seal',
-  member_photo: 'member_photo',
-  photo: 'member_photo',
+  // Do not map bare "photo" — Canva uses it on every image
 }
 
 /** Normalize Alt Text / description to a known image placeholder key (case/spacing tolerant). */
@@ -86,9 +85,11 @@ export function normalizeImagePlaceholderKey(raw) {
   if (braced) s = braced[1]
   s = s.replace(/^\{+/, '').replace(/\}+$/, '').trim()
   const norm = s.toLowerCase().replace(/[\s-]+/g, '_')
-  if (IMAGE_PLACEHOLDER_CANONICAL[norm]) return IMAGE_PLACEHOLDER_CANONICAL[norm]
   if (norm === 'member_photo' || norm === 'memberphoto') return 'member_photo'
+  if (norm === 'photo') return null
+  if (IMAGE_PLACEHOLDER_CANONICAL[norm]) return IMAGE_PLACEHOLDER_CANONICAL[norm]
   for (const key of IMAGE_PLACEHOLDER_KEYS) {
+    if (key === 'member_photo') continue
     if (norm === key.toLowerCase()) return key
   }
   return null
@@ -646,7 +647,9 @@ export async function parseOfficePlaceholders(fileOrBlob) {
     }
     const bare = String(val || '').replace(/^\{+/, '').replace(/\}+$/, '').trim()
     const bareNorm = bare.toLowerCase().replace(/[\s-]+/g, '_')
-    if (bareNorm === 'member_photo' || bareNorm === 'memberphoto' || bareNorm === 'photo') {
+    if (bareNorm === 'member_photo' || bareNorm === 'memberphoto') {
+      found.add('member_photo')
+    } else if (/\{photo\}/i.test(val) || /\{member_photo\}/i.test(val)) {
       found.add('member_photo')
     } else if (isImagePlaceholderKey(bare)) {
       found.add(normalizeImagePlaceholderKey(bare) || bare)
@@ -809,13 +812,20 @@ export function templateMetaFromTemplate(template, categoryName = '') {
 }
 
 function templateLooksLikeIdCard(meta = {}) {
-  const hay = `${meta.label || ''} ${meta.template_key || ''} ${meta.categoryName || ''}`.toLowerCase()
+  const hay = `${meta.label || ''} ${meta.template_key || ''}`.toLowerCase()
   return /id\s*card|idcard|identity\s*card|member\s*card|photo\s*card/.test(hay)
+}
+
+/** Category name alone must not trigger ID-card behaviour (e.g. "Certificates/ID Cards"). */
+function categoryIsIdCardsOnly(categoryName = '') {
+  const cat = String(categoryName || '').trim().toLowerCase()
+  return cat === 'id cards' || cat === 'id card' || cat === 'identity cards'
 }
 
 export function templateHasMemberPhoto(variables, meta = null) {
   if (normalizeTemplateVariables(variables).some(v => v.key === 'member_photo')) return true
   if (meta && templateLooksLikeIdCard(meta)) return true
+  if (meta && categoryIsIdCardsOnly(meta.categoryName)) return true
   return false
 }
 
