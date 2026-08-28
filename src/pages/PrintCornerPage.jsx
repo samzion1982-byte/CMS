@@ -1295,6 +1295,8 @@ export default function PrintCornerPage() {
         templateType: templateStorageType(selected.template_type),
         templateId: selected.id,
         templateLabel: selected.label || '',
+        template: selected,
+        variables: selected.variables || [],
         pptxNameFit: resolvePptxNameFit(selected, selectedCategoryName),
         rows: bulkRowsForPdf,
         onProgress: setBulkProgress,

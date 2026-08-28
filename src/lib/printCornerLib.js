@@ -899,9 +899,13 @@ export function formatMergeFieldDate(value) {
     const mm = String(value.getMonth() + 1).padStart(2, '0')
     return `${dd}.${mm}.${value.getFullYear()}`
   }
-  if (typeof value === 'number' && Number.isFinite(value) && value > 2000 && value < 100000) {
-    const ms = Math.round((value - 25569) * 86400 * 1000)
-    return formatMergeFieldDate(new Date(ms))
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (isLikelyCalendarYearNumber(value)) return String(Math.trunc(value))
+    if (isLikelyExcelSerialDateNumber(value)) {
+      const ms = Math.round((value - 25569) * 86400 * 1000)
+      return formatMergeFieldDate(new Date(ms))
+    }
+    return String(value)
   }
   const s = String(value).trim()
   if (!s) return ''
@@ -927,6 +931,27 @@ export function isDateMergeFieldKey(key) {
   const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   if (n === 'date') return true
   return n.endsWith('date')
+}
+
+/** Year / month / day — never Excel serial dates. */
+export function isPlainIntegerFieldKey(key) {
+  const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  return n === 'year' || n === 'month' || n === 'day'
+}
+
+function isLikelyExcelSerialDateNumber(n) {
+  return Number.isFinite(n) && n >= 30000 && n < 100000
+}
+
+function isLikelyCalendarYearNumber(n) {
+  return Number.isFinite(n) && Number.isInteger(n) && n >= 1900 && n <= 2100
+}
+
+function formatNumberForMergeField(key, n) {
+  if (isPlainIntegerFieldKey(key) || isLikelyCalendarYearNumber(n)) return String(Math.trunc(n))
+  if (isDateMergeFieldKey(key) && isLikelyExcelSerialDateNumber(n)) return formatMergeFieldDate(n)
+  if (isLikelyExcelSerialDateNumber(n)) return formatMergeFieldDate(n)
+  return String(n)
 }
 
 /** Normalize date placeholders before merge (tracker Excel dates, Date objects, etc.). */
@@ -1629,27 +1654,34 @@ function excelColumnLetter(colNum) {
   return s
 }
 
-function trackerCellText(cell) {
+function trackerCellText(cell, key = '') {
   const v = cell?.value
   if (v == null) return ''
-  if (v instanceof Date) return formatMergeFieldDate(v)
-  if (typeof v === 'number' && Number.isFinite(v) && v > 2000 && v < 100000) {
-    return formatMergeFieldDate(v)
+  if (v instanceof Date) {
+    return isPlainIntegerFieldKey(key) ? String(v.getFullYear()) : formatMergeFieldDate(v)
+  }
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return formatNumberForMergeField(key, v)
   }
   if (typeof v === 'object') {
     if (v.result != null && v.result !== '') {
-      if (v.result instanceof Date) return formatMergeFieldDate(v.result)
-      if (typeof v.result === 'number' && v.result > 2000 && v.result < 100000) return formatMergeFieldDate(v.result)
-      return trackerCellTextFromString(String(v.result).trim())
+      if (v.result instanceof Date) {
+        return isPlainIntegerFieldKey(key) ? String(v.result.getFullYear()) : formatMergeFieldDate(v.result)
+      }
+      if (typeof v.result === 'number' && Number.isFinite(v.result)) {
+        return formatNumberForMergeField(key, v.result)
+      }
+      return trackerCellTextFromString(String(v.result).trim(), key)
     }
-    if (v.text) return trackerCellTextFromString(String(v.text).trim())
-    if (v.richText) return trackerCellTextFromString(v.richText.map(t => t.text).join('').trim())
+    if (v.text) return trackerCellTextFromString(String(v.text).trim(), key)
+    if (v.richText) return trackerCellTextFromString(v.richText.map(t => t.text).join('').trim(), key)
   }
-  return trackerCellTextFromString(String(v).trim())
+  return trackerCellTextFromString(String(v).trim(), key)
 }
 
-function trackerCellTextFromString(s) {
+function trackerCellTextFromString(s, key = '') {
   if (!s) return ''
+  if (isPlainIntegerFieldKey(key)) return s
   if (/GMT|India Standard Time|GMT\+/.test(s)) return formatMergeFieldDate(s)
   return s
 }
@@ -1657,6 +1689,7 @@ function trackerCellTextFromString(s) {
 /** Tracker cell value — always short date text for *_date fields (never JS Date strings). */
 function trackerFieldValue(key, raw) {
   if (raw == null || raw === '') return ''
+  if (typeof raw === 'number' && Number.isFinite(raw)) return formatNumberForMergeField(key, raw)
   if (isDateMergeFieldKey(key)) return formatMergeFieldDate(raw)
   const s = String(raw).trim()
   if (/GMT|India Standard Time|GMT\+/.test(s)) return formatMergeFieldDate(s)
@@ -1742,10 +1775,10 @@ function formatRentalTenantSheet(ws, colCount, lastRow) {
 
 function applyTrackerDateColumnsAsText(ws, keys, lastRow, rental = false) {
   const offset = rental ? 1 : 2
-  const dateCols = keys
-    .map((key, i) => (isDateMergeFieldKey(key) ? i + offset : 0))
+  const textCols = keys
+    .map((key, i) => (isDateMergeFieldKey(key) || isPlainIntegerFieldKey(key) ? i + offset : 0))
     .filter(c => c > 0)
-  for (const colIdx of dateCols) {
+  for (const colIdx of textCols) {
     for (let r = 2; r <= lastRow; r++) {
       ws.getCell(r, colIdx).numFmt = '@'
     }
@@ -1846,11 +1879,23 @@ async function buildPrintCornerTrackerWorkbook({
   const tamilMonthColIdx = keys.findIndex(k => normTrackerKey(k) === 'tamil_month')
 
   function addTrackerDataRow(rowNum, rowIndex, values) {
-    const mapVal = k => trackerFieldValue(k, values?.[k])
+    const mapVal = k => {
+      const raw = values?.[k]
+      if (raw == null || raw === '') return ''
+      if (isPlainIntegerFieldKey(k)) return String(raw).trim()
+      return trackerFieldValue(k, raw)
+    }
     const rowValues = rental
       ? keys.map(mapVal)
       : [rowIndex, ...keys.map(mapVal)]
     const row = ws.addRow(rowValues)
+    if (rental) {
+      keys.forEach((k, i) => {
+        if (isPlainIntegerFieldKey(k)) {
+          row.getCell(i + 1).numFmt = '@'
+        }
+      })
+    }
     if (rental && tamilMonthColIdx >= 0 && monthColIdx >= 0) {
       const monthLetter = excelColumnLetter(trackerDataColumnNumber(monthColIdx, true))
       const tamilCol = trackerDataColumnNumber(tamilMonthColIdx, true)
@@ -2006,7 +2051,7 @@ export async function parsePrintCornerTrackerFile(file, variables, template = nu
     let hasData = false
     for (const key of keys) {
       const col = keyToCol.get(key)
-      const val = col ? trackerCellText(row.getCell(col)) : ''
+      const val = col ? trackerCellText(row.getCell(col), key) : ''
       fieldValues[key] = trackerFieldValue(key, val)
       if (val) hasData = true
     }
@@ -2033,6 +2078,8 @@ export async function convertBulkLettersToPdf({
   templateType = 'letters',
   templateId = null,
   templateLabel = '',
+  template = null,
+  variables = [],
   pptxNameFit,
   rows,
   onProgress,
@@ -2041,10 +2088,11 @@ export async function convertBulkLettersToPdf({
 }) {
   const results = []
   const pdfParts = []
+  const tpl = template || { template_key: templateKey, label: templateLabel, variables }
 
   for (let i = 0; i < rows.length; i++) {
-    const fieldValues = rows[i]
-    onProgress?.({ current: i + 1, total: rows.length, label: fieldValues.member_name || `Row ${i + 1}` })
+    const fieldValues = mapTrackerRowToWizardFieldValues(rows[i], variables, tpl)
+    onProgress?.({ current: i + 1, total: rows.length, label: fieldValues.member_name || fieldValues.tenant_name || `Row ${i + 1}` })
 
     const res = await convertTemplateFromStorage({
       storagePath,

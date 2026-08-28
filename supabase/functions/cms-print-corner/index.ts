@@ -109,6 +109,19 @@ function isDateMergeFieldKey(key: string) {
   return n.endsWith('date')
 }
 
+function isPlainIntegerFieldKey(key: string) {
+  const n = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  return n === 'year' || n === 'month' || n === 'day'
+}
+
+function isLikelyExcelSerialDateNumber(n: number) {
+  return Number.isFinite(n) && n >= 30000 && n < 100000
+}
+
+function isLikelyCalendarYearNumber(n: number) {
+  return Number.isFinite(n) && Number.isInteger(n) && n >= 1900 && n <= 2100
+}
+
 function formatMergeFieldDate(value: unknown): string {
   if (value == null || value === '') return ''
   if (value instanceof Date) {
@@ -117,12 +130,16 @@ function formatMergeFieldDate(value: unknown): string {
     const mm = String(value.getMonth() + 1).padStart(2, '0')
     return `${dd}.${mm}.${value.getFullYear()}`
   }
-  if (typeof value === 'number' && Number.isFinite(value) && value > 2000 && value < 100000) {
-    const d = new Date(Math.round((value - 25569) * 86400 * 1000))
-    if (Number.isNaN(d.getTime())) return String(value)
-    const dd = String(d.getUTCDate()).padStart(2, '0')
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-    return `${dd}.${mm}.${d.getUTCFullYear()}`
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (isLikelyCalendarYearNumber(value)) return String(Math.trunc(value))
+    if (isLikelyExcelSerialDateNumber(value)) {
+      const d = new Date(Math.round((value - 25569) * 86400 * 1000))
+      if (Number.isNaN(d.getTime())) return String(value)
+      const dd = String(d.getUTCDate()).padStart(2, '0')
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+      return `${dd}.${mm}.${d.getUTCFullYear()}`
+    }
+    return String(value)
   }
   const s = String(value).trim()
   if (!s) return ''
@@ -146,6 +163,9 @@ function formatMergeFieldDate(value: unknown): string {
 
 function mergeFieldToString(key: string, raw: unknown): string {
   if (raw == null) return ''
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    if (isPlainIntegerFieldKey(key) || isLikelyCalendarYearNumber(raw)) return String(Math.trunc(raw))
+  }
   if (isDateMergeFieldKey(key)) return formatMergeFieldDate(raw)
   if (raw instanceof Date) return formatMergeFieldDate(raw)
   const s = String(raw).trim()
