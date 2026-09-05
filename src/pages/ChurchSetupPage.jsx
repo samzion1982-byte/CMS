@@ -3,7 +3,7 @@ import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
-         Plus, Pencil, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Check, AlertTriangle, Church } from 'lucide-react'
+         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Church } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
@@ -178,9 +178,6 @@ export default function ChurchSetupPage() {
   const [deviceSaveErrorById, setDeviceSaveErrorById] = useState({})
   const [confirmClearPending, setConfirmClearPending] = useState(false)
   const [clearingPending, setClearingPending] = useState(false)
-  const [sidePanelOpen, setSidePanelOpen] = useState(() => {
-    try { return localStorage.getItem('cms_church_setup_side') !== '0' } catch { return true }
-  })
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -393,14 +390,6 @@ export default function ChurchSetupPage() {
     } finally {
       setClearingPending(false)
     }
-  }
-
-  function toggleSidePanel() {
-    setSidePanelOpen(prev => {
-      const next = !prev
-      try { localStorage.setItem('cms_church_setup_side', next ? '1' : '0') } catch { /* ignore */ }
-      return next
-    })
   }
 
   async function loadChurch() {
@@ -1540,24 +1529,8 @@ export default function ChurchSetupPage() {
 
           </div>{/* end left column */}
 
-          {/* ── RIGHT: foldable license / TrustGate panel ── */}
-          {sidePanelOpen ? (
-            <div style={{
-              width: 280, flexShrink: 0, position: 'sticky', top: 16,
-              display: 'flex', flexDirection: 'column', gap: 16,
-            }}>
-              <button
-                type="button"
-                onClick={toggleSidePanel}
-                className="btn btn-ghost btn-sm"
-                title="Collapse side panel"
-                style={{
-                  alignSelf: 'flex-end', color: '#64748b', padding: '4px 8px',
-                  marginBottom: -8,
-                }}
-              >
-                <ChevronRight size={14} /> Hide panel
-              </button>
+          {/* ── RIGHT: license (sticky) ── */}
+          <div style={{width:280, flexShrink:0, position:'sticky', top:16, display:'flex', flexDirection:'column', gap:16}}>
             <div className="card p-5">
               <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
               <p className="text-xs text-slate-400 mb-3">Enter the AUTH CODE provided by {VENDOR.name}.</p>
@@ -1678,30 +1651,7 @@ export default function ChurchSetupPage() {
                 </p>
               )}
             </div>
-            </div>
-          ) : (
-            <div style={{ flexShrink: 0, position: 'sticky', top: 16 }}>
-              <button
-                type="button"
-                onClick={toggleSidePanel}
-                title="Show license, master password & TrustGate"
-                className="card"
-                style={{
-                  width: 40, padding: '12px 0', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', gap: 8, cursor: 'pointer', border: '1px solid var(--border)',
-                  background: 'var(--card-bg, #fff)', color: '#475569',
-                }}
-              >
-                <ChevronLeft size={16} />
-                <span style={{
-                  writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
-                }}>
-                  License · TrustGate
-                </span>
-              </button>
-            </div>
-          )}
+          </div>
 
         </div>
 
@@ -1709,30 +1659,17 @@ export default function ChurchSetupPage() {
         <div className="card p-5" style={{ marginTop: 24 }}>
           <div className="flex items-start justify-between gap-3 mb-1">
             <p className="form-section form-section-blue mb-0" style={{ marginBottom: 0 }}>Device Status</p>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {devices.some(d => !d.approved) && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ color: '#dc2626' }}
-                  onClick={() => setConfirmClearPending(true)}
-                  disabled={devicesLoading || clearingPending}
-                >
-                  <Trash2 size={13} /> Clear pending
-                </button>
-              )}
-              {sidePanelOpen && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  style={{ color: '#64748b' }}
-                  onClick={toggleSidePanel}
-                  title="Collapse side panel for more space"
-                >
-                  <ChevronRight size={13} /> Widen table
-                </button>
-              )}
-            </div>
+            {devices.some(d => !d.approved) && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: '#dc2626', flexShrink: 0 }}
+                onClick={() => setConfirmClearPending(true)}
+                disabled={devicesLoading || clearingPending}
+              >
+                <Trash2 size={13} /> Clear pending
+              </button>
+            )}
           </div>
           <p className="text-xs text-slate-500 mb-3" style={{ lineHeight: 1.45 }}>
             {trustgateEnabled
