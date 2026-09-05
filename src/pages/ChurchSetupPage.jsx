@@ -3,7 +3,7 @@ import { supabase, LICENSE_CSV, VENDOR } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { useToast } from '../lib/toast'
 import { Save, Upload, CheckCircle, XCircle, Loader2, ShieldCheck, Trash2,
-         Plus, Pencil, ChevronUp, ChevronDown, X, Check, AlertTriangle, Church } from 'lucide-react'
+         Plus, Pencil, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Check, AlertTriangle, Church } from 'lucide-react'
 import PageHeader from '../components/ui/PageHeader'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { getZones, addZone, updateZone, deleteZone } from '../lib/zones'
@@ -178,6 +178,9 @@ export default function ChurchSetupPage() {
   const [deviceSaveErrorById, setDeviceSaveErrorById] = useState({})
   const [confirmClearPending, setConfirmClearPending] = useState(false)
   const [clearingPending, setClearingPending] = useState(false)
+  const [sidePanelOpen, setSidePanelOpen] = useState(() => {
+    try { return localStorage.getItem('cms_church_setup_side') !== '0' } catch { return true }
+  })
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -390,6 +393,14 @@ export default function ChurchSetupPage() {
     } finally {
       setClearingPending(false)
     }
+  }
+
+  function toggleSidePanel() {
+    setSidePanelOpen(prev => {
+      const next = !prev
+      try { localStorage.setItem('cms_church_setup_side', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
   }
 
   async function loadChurch() {
@@ -1160,6 +1171,7 @@ export default function ChurchSetupPage() {
 
       {/* Two-column layout for super_admin; section cards for Admin grants; zones for others */}
       {isSuperAdmin ? (
+        <>
         <div style={{display:'flex', gap:24, alignItems:'flex-start'}}>
 
           {/* ── LEFT: main church cards ── */}
@@ -1520,140 +1532,6 @@ export default function ChurchSetupPage() {
               </div>
             </div>
 
-            {/* TRUSTGATE DEVICE STATUS */}
-            <div className="card p-6">
-              <div className="flex items-start justify-between gap-3 mb-1">
-                <p className="form-section form-section-blue mb-0" style={{ marginBottom: 0 }}>Device Status</p>
-                {devices.some(d => !d.approved) && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ color: '#dc2626', flexShrink: 0 }}
-                    onClick={() => setConfirmClearPending(true)}
-                    disabled={devicesLoading || clearingPending}
-                  >
-                    <Trash2 size={13} /> Clear pending
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mb-3" style={{ lineHeight: 1.45 }}>
-                {trustgateEnabled
-                  ? 'Approve TrustGate companion devices before they can open the login page.'
-                  : 'Enable TrustGate (right panel) to require companion authentication. You can still review registered devices below.'}
-              </p>
-              <div className="space-y-3">
-                {devicesLoading ? (
-                  <div className="text-center py-4"><Loader2 className="animate-spin inline" size={20} /></div>
-                ) : devices.length === 0 ? (
-                  <div className="text-sm text-slate-500">No devices registered yet.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm table-fixed">
-                      <thead>
-                        <tr className="text-slate-500 text-xs">
-                          <th className="text-left py-2 w-[18%]">Device ID</th>
-                          <th className="text-left py-2 w-[18%]">Device Name</th>
-                          <th className="text-left py-2 w-[23%]">Location</th>
-                          <th className="text-left py-2 w-[11%]">Status</th>
-                          <th className="text-left py-2 w-[12%]">Validity Upto</th>
-                          <th className="text-left py-2 w-[18%]">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {devices.map(d => (
-                          <tr key={d.device_id} className="border-t">
-                            <td className="py-2 font-mono text-xs break-all">{d.device_id}</td>
-                            <td className="py-2">
-                              <input
-                                className="field-input"
-                                style={{ width: '90%' }}
-                                value={deviceEdits[d.device_id]?.device_name || ''}
-                                onChange={e => setDeviceEdits(prev => ({
-                                  ...prev,
-                                  [d.device_id]: {
-                                    ...prev[d.device_id],
-                                    device_name: e.target.value,
-                                  },
-                                }))}
-                                placeholder="Device name"
-                              />
-                            </td>
-                            <td className="py-2">
-                              <input
-                                className="field-input"
-                                style={{ width: '90%' }}
-                                value={deviceEdits[d.device_id]?.location || ''}
-                                onChange={e => setDeviceEdits(prev => ({
-                                  ...prev,
-                                  [d.device_id]: {
-                                    ...prev[d.device_id],
-                                    location: e.target.value,
-                                  },
-                                }))}
-                                placeholder="Location"
-                              />
-                            </td>
-                            <td className="py-2">{getStatusBadge(d)}</td>
-                            <td className="py-2">
-                              {d.valid_upto && d.approved ? formatDeviceDate(d.valid_upto) : (
-                                <input
-                                  type="date"
-                                  className="field-input"
-                                  value={approvalExpiryById[d.device_id] || ''}
-                                  min={new Date().toISOString().split('T')[0]}
-                                  onChange={e => setApprovalExpiryById(x => ({
-                                    ...x,
-                                    [d.device_id]: e.target.value,
-                                  }))}
-                                />
-                              )}
-                            </td>
-                            <td className="py-2">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className={`btn btn-sm justify-center ${d.approved ? 'bg-red-600 hover:bg-red-700 border-red-600' : 'bg-blue-600 hover:bg-blue-700 border-blue-600'} text-white`}
-                                    style={{
-                                      minWidth: 90,
-                                      borderRadius: 10,
-                                      boxShadow: d.approved
-                                        ? '0 5px 12px rgba(220,38,38,0.16)'
-                                        : '0 5px 12px rgba(59,130,246,0.16)',
-                                    }}
-                                    onClick={() => toggleApproveDevice(d.device_id, !d.approved)}
-                                    disabled={deviceSavingById[d.device_id]}
-                                  >
-                                    {d.approved ? 'Revoke' : 'Approve'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm justify-center bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600"
-                                    style={{
-                                      minWidth: 90,
-                                      borderRadius: 10,
-                                      boxShadow: '0 5px 12px rgba(16,185,129,0.12)',
-                                    }}
-                                    onClick={() => saveDeviceInfo(d.device_id)}
-                                    disabled={deviceSavingById[d.device_id]}
-                                  >
-                                    {deviceSavingById[d.device_id] ? 'Saving...' : 'Save'}
-                                  </button>
-                                </div>
-                                {deviceSaveErrorById[d.device_id] && (
-                                  <div className="text-red-600 text-xs">{deviceSaveErrorById[d.device_id]}</div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* ZONAL AREAS */}
             <ZonesPanel profile={profile} toast={toast} />
 
@@ -1662,8 +1540,24 @@ export default function ChurchSetupPage() {
 
           </div>{/* end left column */}
 
-          {/* ── RIGHT: license (sticky) ── */}
-          <div style={{width:280, flexShrink:0, position:'sticky', top:16, display:'flex', flexDirection:'column', gap:16}}>
+          {/* ── RIGHT: foldable license / TrustGate panel ── */}
+          {sidePanelOpen ? (
+            <div style={{
+              width: 280, flexShrink: 0, position: 'sticky', top: 16,
+              display: 'flex', flexDirection: 'column', gap: 16,
+            }}>
+              <button
+                type="button"
+                onClick={toggleSidePanel}
+                className="btn btn-ghost btn-sm"
+                title="Collapse side panel"
+                style={{
+                  alignSelf: 'flex-end', color: '#64748b', padding: '4px 8px',
+                  marginBottom: -8,
+                }}
+              >
+                <ChevronRight size={14} /> Hide panel
+              </button>
             <div className="card p-5">
               <p className="form-section" style={{color:'#d97706',borderColor:'#fde68a'}}>License validation</p>
               <p className="text-xs text-slate-400 mb-3">Enter the AUTH CODE provided by {VENDOR.name}.</p>
@@ -1784,9 +1678,183 @@ export default function ChurchSetupPage() {
                 </p>
               )}
             </div>
-          </div>
+            </div>
+          ) : (
+            <div style={{ flexShrink: 0, position: 'sticky', top: 16 }}>
+              <button
+                type="button"
+                onClick={toggleSidePanel}
+                title="Show license, master password & TrustGate"
+                className="card"
+                style={{
+                  width: 40, padding: '12px 0', display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', gap: 8, cursor: 'pointer', border: '1px solid var(--border)',
+                  background: 'var(--card-bg, #fff)', color: '#475569',
+                }}
+              >
+                <ChevronLeft size={16} />
+                <span style={{
+                  writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
+                }}>
+                  License · TrustGate
+                </span>
+              </button>
+            </div>
+          )}
 
         </div>
+
+        {/* Device Status — full width below the two-column layout */}
+        <div className="card p-5" style={{ marginTop: 24 }}>
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <p className="form-section form-section-blue mb-0" style={{ marginBottom: 0 }}>Device Status</p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {devices.some(d => !d.approved) && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: '#dc2626' }}
+                  onClick={() => setConfirmClearPending(true)}
+                  disabled={devicesLoading || clearingPending}
+                >
+                  <Trash2 size={13} /> Clear pending
+                </button>
+              )}
+              {sidePanelOpen && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: '#64748b' }}
+                  onClick={toggleSidePanel}
+                  title="Collapse side panel for more space"
+                >
+                  <ChevronRight size={13} /> Widen table
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mb-3" style={{ lineHeight: 1.45 }}>
+            {trustgateEnabled
+              ? 'Approve TrustGate companion devices before they can open the login page.'
+              : 'Enable TrustGate (right panel) to require companion authentication. You can still review registered devices below.'}
+          </p>
+          <div className="space-y-3">
+            {devicesLoading ? (
+              <div className="text-center py-4"><Loader2 className="animate-spin inline" size={20} /></div>
+            ) : devices.length === 0 ? (
+              <div className="text-sm text-slate-500">No devices registered yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full" style={{ fontSize: 12, tableLayout: 'auto' }}>
+                  <thead>
+                    <tr className="text-slate-500" style={{ fontSize: 11 }}>
+                      <th className="text-left py-2 pr-2 whitespace-nowrap">Device ID</th>
+                      <th className="text-left py-2 pr-2" style={{ minWidth: 140 }}>Device Name</th>
+                      <th className="text-left py-2 pr-2" style={{ minWidth: 140 }}>Location</th>
+                      <th className="text-left py-2 pr-2 whitespace-nowrap">Status</th>
+                      <th className="text-left py-2 pr-2 whitespace-nowrap">Validity</th>
+                      <th className="text-left py-2 whitespace-nowrap">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {devices.map(d => (
+                      <tr key={d.device_id} className="border-t">
+                        <td className="py-2 pr-2 font-mono whitespace-nowrap" style={{ fontSize: 11 }} title={d.device_id}>
+                          {d.device_id?.slice(0, 8).toUpperCase() || '—'}
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input
+                            className="field-input"
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                            value={deviceEdits[d.device_id]?.device_name || ''}
+                            onChange={e => setDeviceEdits(prev => ({
+                              ...prev,
+                              [d.device_id]: {
+                                ...prev[d.device_id],
+                                device_name: e.target.value,
+                              },
+                            }))}
+                            placeholder="Device name"
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input
+                            className="field-input"
+                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                            value={deviceEdits[d.device_id]?.location || ''}
+                            onChange={e => setDeviceEdits(prev => ({
+                              ...prev,
+                              [d.device_id]: {
+                                ...prev[d.device_id],
+                                location: e.target.value,
+                              },
+                            }))}
+                            placeholder="Location"
+                          />
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">{getStatusBadge(d)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          {d.valid_upto && d.approved ? (
+                            <span style={{ fontSize: 12 }}>{formatDeviceDate(d.valid_upto)}</span>
+                          ) : (
+                            <input
+                              type="date"
+                              className="field-input"
+                              style={{ fontSize: 12, padding: '6px 8px', minWidth: 130 }}
+                              value={approvalExpiryById[d.device_id] || ''}
+                              min={new Date().toISOString().split('T')[0]}
+                              onChange={e => setApprovalExpiryById(x => ({
+                                ...x,
+                                [d.device_id]: e.target.value,
+                              }))}
+                            />
+                          )}
+                        </td>
+                        <td className="py-2">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                className={`btn btn-sm justify-center ${d.approved ? 'bg-red-600 hover:bg-red-700 border-red-600' : 'bg-blue-600 hover:bg-blue-700 border-blue-600'} text-white`}
+                                style={{
+                                  minWidth: 72, borderRadius: 8, fontSize: 11, padding: '5px 10px',
+                                  boxShadow: d.approved
+                                    ? '0 4px 10px rgba(220,38,38,0.14)'
+                                    : '0 4px 10px rgba(59,130,246,0.14)',
+                                }}
+                                onClick={() => toggleApproveDevice(d.device_id, !d.approved)}
+                                disabled={deviceSavingById[d.device_id]}
+                              >
+                                {d.approved ? 'Revoke' : 'Approve'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm justify-center bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600"
+                                style={{
+                                  minWidth: 72, borderRadius: 8, fontSize: 11, padding: '5px 10px',
+                                  boxShadow: '0 4px 10px rgba(16,185,129,0.12)',
+                                }}
+                                onClick={() => saveDeviceInfo(d.device_id)}
+                                disabled={deviceSavingById[d.device_id]}
+                              >
+                                {deviceSavingById[d.device_id] ? '…' : 'Save'}
+                              </button>
+                            </div>
+                            {deviceSaveErrorById[d.device_id] && (
+                              <div className="text-red-600 text-xs">{deviceSaveErrorById[d.device_id]}</div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
       ) : canEditBasics ? (
         <div style={{ maxWidth: 820, display: 'flex', flexDirection: 'column', gap: 24 }}>
           {canIdentity && (
