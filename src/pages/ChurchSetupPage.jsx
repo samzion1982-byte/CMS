@@ -16,6 +16,12 @@ import {
   clearChurchMasterPasswordBySuperAdmin,
   MASTER_PASSWORD_MIN_LENGTH,
 } from '../lib/masterPassword'
+import {
+  listDevicesForAdmin,
+  updateDeviceApproval,
+  updateDeviceInfo,
+  setTrustGateEnabled,
+} from '../lib/loginLogs'
 
 const IDENTITY_KEYS = [
   'church_name', 'church_code', 'diocese', 'denomination', 'email',
@@ -161,6 +167,14 @@ export default function ChurchSetupPage() {
   const [mpError, setMpError] = useState('')
   const [mpClearing, setMpClearing] = useState(false)
   const [confirmMpRestore, setConfirmMpRestore] = useState(false)
+  const [trustgateEnabled, setTrustgateEnabled] = useState(false)
+  const [trustgateSaving, setTrustgateSaving] = useState(false)
+  const [devices, setDevices] = useState([])
+  const [devicesLoading, setDevicesLoading] = useState(false)
+  const [approvalExpiryById, setApprovalExpiryById] = useState({})
+  const [deviceEdits, setDeviceEdits] = useState({})
+  const [deviceSavingById, setDeviceSavingById] = useState({})
+  const [deviceSaveErrorById, setDeviceSaveErrorById] = useState({})
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -202,6 +216,159 @@ export default function ChurchSetupPage() {
   })
 
   useEffect(() => { loadChurch() }, [])
+
+  useEffect(() => {
+    if (profile?.role === 'super_admin') loadDevices()
+  }, [profile?.role])
+
+  async function loadDevices() {
+    setDevicesLoading(true)
+    try {
+      const data = await listDevicesForAdmin()
+      setDevices(data || [])
+      setDeviceEdits((data || []).reduce((acc, d) => {
+        acc[d.device_id] = {
+          device_name: d.device_name || d.user_name || '',
+          location: d.location || '',
+        }
+        return acc
+      }, {}))
+      setApprovalExpiryById((data || []).reduce((acc, d) => {
+        if (d.valid_upto) acc[d.device_id] = formatDateForInput(d.valid_upto)
+        return acc
+      }, {}))
+    } catch (e) {
+      console.error('[ChurchSetup] loadDevices error:', e)
+      setDevices([])
+      toast(`Unable to load devices: ${e?.message || e}`, 'error')
+    } finally {
+      setDevicesLoading(false)
+    }
+  }
+
+  function formatDeviceDate(dateValue) {
+    if (!dateValue) return ''
+    const parsed = new Date(dateValue)
+    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString('en-GB')
+    return dateValue
+  }
+
+  function formatDateForInput(dateValue) {
+    if (!dateValue) return ''
+    const parsed = new Date(dateValue)
+    if (isNaN(parsed.getTime())) return ''
+    const year = parsed.getFullYear()
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const day = String(parsed.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  function getStatusBadge(device) {
+    const status = device.status || (device.approved ? 'approved' : 'pending')
+    let bgColor = 'bg-slate-100 text-slate-700'
+    let displayText = 'Pending'
+
+    if (status === 'approved') {
+      if (device.valid_upto) {
+        const validUpto = new Date(device.valid_upto)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        if (validUpto < today) {
+          bgColor = 'bg-red-100 text-red-700'
+          displayText = 'Expired'
+        } else {
+          bgColor = 'bg-green-100 text-green-700'
+          displayText = 'Approved'
+        }
+      } else {
+        bgColor = 'bg-green-100 text-green-700'
+        displayText = 'Approved'
+      }
+    } else if (status === 'rejected') {
+      bgColor = 'bg-red-100 text-red-700'
+      displayText = 'Rejected'
+    } else if (status === 'expired') {
+      bgColor = 'bg-red-100 text-red-700'
+      displayText = 'Expired'
+    } else {
+      bgColor = 'bg-blue-100 text-blue-700'
+      displayText = 'Pending'
+    }
+
+    return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor}`}>{displayText}</span>
+  }
+
+  async function saveDeviceInfo(deviceId) {
+    const edit = deviceEdits[deviceId]
+    if (!edit) return
+    setDeviceSavingById(prev => ({ ...prev, [deviceId]: true }))
+    setDeviceSaveErrorById(prev => ({ ...prev, [deviceId]: null }))
+    try {
+      await updateDeviceInfo({
+        deviceId,
+        deviceName: edit.device_name,
+        location: edit.location,
+      })
+      toast('Device details saved.', 'success')
+      await loadDevices()
+    } catch (e) {
+      console.error('[ChurchSetup] saveDeviceInfo error:', e)
+      setDeviceSaveErrorById(prev => ({ ...prev, [deviceId]: e?.message || 'Update failed' }))
+      toast('Failed to save device details: ' + (e?.message || ''), 'error')
+    } finally {
+      setDeviceSavingById(prev => ({ ...prev, [deviceId]: false }))
+    }
+  }
+
+  async function toggleApproveDevice(deviceId, approve) {
+    try {
+      if (approve) {
+        const validUpto = approvalExpiryById[deviceId]
+        if (!validUpto) {
+          toast('Please choose a validity date before approving.', 'error')
+          return
+        }
+        const selectedDate = new Date(validUpto)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        if (selectedDate < today) {
+          toast('Validity date cannot be in the past.', 'error')
+          return
+        }
+      }
+      await updateDeviceApproval({
+        deviceId,
+        approved: approve,
+        approvedBy: profile?.id || null,
+        validUpto: approve ? approvalExpiryById[deviceId] : null,
+      })
+      toast(approve ? 'Device approved.' : 'Device approval revoked.', 'success')
+      loadDevices()
+    } catch (e) {
+      console.error('[ChurchSetup] approve error:', e)
+      toast('Failed to update device approval: ' + (e.message || ''), 'error')
+    }
+  }
+
+  async function toggleTrustGate(next) {
+    setTrustgateSaving(true)
+    try {
+      await setTrustGateEnabled(next)
+      setTrustgateEnabled(next)
+      toast(
+        next
+          ? 'TrustGate enabled. Companion + device approval required at login.'
+          : 'TrustGate disabled. Standard login is restored.',
+        'success'
+      )
+      window.dispatchEvent(new CustomEvent('church-settings-updated'))
+      if (next) loadDevices()
+    } catch (e) {
+      toast('Could not update TrustGate: ' + (e.message || e), 'error')
+    } finally {
+      setTrustgateSaving(false)
+    }
+  }
 
   async function loadChurch() {
     setLoading(true)
@@ -267,8 +434,10 @@ export default function ChurchSetupPage() {
       if (data.treasurer_signature_url) setTreasurerSigPreview(data.treasurer_signature_url)
       if (data.auth_code) setLicenseStatus('valid')
       setMpCustom(!!data.master_password_hash)
+      setTrustgateEnabled(Boolean(data.trustgate_enabled))
     } else {
       setMpCustom(false)
+      setTrustgateEnabled(false)
     }
     setLoading(false)
   }
@@ -705,6 +874,7 @@ export default function ChurchSetupPage() {
         admin1_name:'',    admin1_whatsapp:'',
         auth_code:'', logo_url: null, diocese_logo_url: null, treasurer_seal_url: null,
         receipt_date_mode:'today', whatsapp_receipt_mode:'instant', upi_id:'', site_url:'',
+        trustgate_enabled: false,
         updated_at: new Date().toISOString()
       }
       const { error } = await supabase.from('churches').update(blank).eq('id', church.id)
@@ -718,6 +888,7 @@ export default function ChurchSetupPage() {
       setDioceseLogoFile(null); setDioceseLogoPreview(null)
       setSealFile(null); setSealPreview(null)
       setAuthCode(''); setLicenseStatus(null); setLicenseInfo(null)
+      setTrustgateEnabled(false)
       setShowFlushConfirm(false)
       toast('Church details flushed successfully.', 'success')
       loadChurch()
@@ -1327,6 +1498,127 @@ export default function ChurchSetupPage() {
               </div>
             </div>
 
+            {/* TRUSTGATE DEVICE STATUS */}
+            <div className="card p-6">
+              <p className="form-section form-section-blue">Device Status</p>
+              <p className="text-xs text-slate-500 mb-3" style={{ lineHeight: 1.45 }}>
+                {trustgateEnabled
+                  ? 'Approve TrustGate companion devices before they can open the login page.'
+                  : 'Enable TrustGate (right panel) to require companion authentication. You can still review registered devices below.'}
+              </p>
+              <div className="space-y-3">
+                {devicesLoading ? (
+                  <div className="text-center py-4"><Loader2 className="animate-spin inline" size={20} /></div>
+                ) : devices.length === 0 ? (
+                  <div className="text-sm text-slate-500">No devices registered yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm table-fixed">
+                      <thead>
+                        <tr className="text-slate-500 text-xs">
+                          <th className="text-left py-2 w-[18%]">Device ID</th>
+                          <th className="text-left py-2 w-[18%]">Device Name</th>
+                          <th className="text-left py-2 w-[23%]">Location</th>
+                          <th className="text-left py-2 w-[11%]">Status</th>
+                          <th className="text-left py-2 w-[12%]">Validity Upto</th>
+                          <th className="text-left py-2 w-[18%]">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {devices.map(d => (
+                          <tr key={d.device_id} className="border-t">
+                            <td className="py-2 font-mono text-xs break-all">{d.device_id}</td>
+                            <td className="py-2">
+                              <input
+                                className="field-input"
+                                style={{ width: '90%' }}
+                                value={deviceEdits[d.device_id]?.device_name || ''}
+                                onChange={e => setDeviceEdits(prev => ({
+                                  ...prev,
+                                  [d.device_id]: {
+                                    ...prev[d.device_id],
+                                    device_name: e.target.value,
+                                  },
+                                }))}
+                                placeholder="Device name"
+                              />
+                            </td>
+                            <td className="py-2">
+                              <input
+                                className="field-input"
+                                style={{ width: '90%' }}
+                                value={deviceEdits[d.device_id]?.location || ''}
+                                onChange={e => setDeviceEdits(prev => ({
+                                  ...prev,
+                                  [d.device_id]: {
+                                    ...prev[d.device_id],
+                                    location: e.target.value,
+                                  },
+                                }))}
+                                placeholder="Location"
+                              />
+                            </td>
+                            <td className="py-2">{getStatusBadge(d)}</td>
+                            <td className="py-2">
+                              {d.valid_upto && d.approved ? formatDeviceDate(d.valid_upto) : (
+                                <input
+                                  type="date"
+                                  className="field-input"
+                                  value={approvalExpiryById[d.device_id] || ''}
+                                  min={new Date().toISOString().split('T')[0]}
+                                  onChange={e => setApprovalExpiryById(x => ({
+                                    ...x,
+                                    [d.device_id]: e.target.value,
+                                  }))}
+                                />
+                              )}
+                            </td>
+                            <td className="py-2">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm justify-center ${d.approved ? 'bg-red-600 hover:bg-red-700 border-red-600' : 'bg-blue-600 hover:bg-blue-700 border-blue-600'} text-white`}
+                                    style={{
+                                      minWidth: 90,
+                                      borderRadius: 10,
+                                      boxShadow: d.approved
+                                        ? '0 5px 12px rgba(220,38,38,0.16)'
+                                        : '0 5px 12px rgba(59,130,246,0.16)',
+                                    }}
+                                    onClick={() => toggleApproveDevice(d.device_id, !d.approved)}
+                                    disabled={deviceSavingById[d.device_id]}
+                                  >
+                                    {d.approved ? 'Revoke' : 'Approve'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm justify-center bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600"
+                                    style={{
+                                      minWidth: 90,
+                                      borderRadius: 10,
+                                      boxShadow: '0 5px 12px rgba(16,185,129,0.12)',
+                                    }}
+                                    onClick={() => saveDeviceInfo(d.device_id)}
+                                    disabled={deviceSavingById[d.device_id]}
+                                  >
+                                    {deviceSavingById[d.device_id] ? 'Saving...' : 'Save'}
+                                  </button>
+                                </div>
+                                {deviceSaveErrorById[d.device_id] && (
+                                  <div className="text-red-600 text-xs">{deviceSaveErrorById[d.device_id]}</div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* ZONAL AREAS */}
             <ZonesPanel profile={profile} toast={toast} />
 
@@ -1424,6 +1716,37 @@ export default function ChurchSetupPage() {
                     ? <><Loader2 size={13} className="animate-spin"/> Clearing…</>
                     : 'Restore built-in default'}
                 </button>
+              )}
+            </div>
+
+            <div className="card p-5">
+              <p className="form-section" style={{ color: '#1d4ed8', borderColor: '#bfdbfe' }}>TrustGate</p>
+              <p className="text-xs text-slate-400 mb-3" style={{ lineHeight: 1.45 }}>
+                Optional. When enabled, users must run TrustGate TM Companion and this church must approve the device before login.
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={trustgateEnabled}
+                  disabled={trustgateSaving || !church}
+                  onChange={e => toggleTrustGate(e.target.checked)}
+                />
+                <span>
+                  <span className="text-sm font-semibold text-slate-700 block">
+                    Require TrustGate at login
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {trustgateEnabled
+                      ? 'Gate is ON — companion + approval required.'
+                      : 'Gate is OFF — standard email/password login.'}
+                  </span>
+                </span>
+              </label>
+              {trustgateSaving && (
+                <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                  <Loader2 size={12} className="animate-spin" /> Saving…
+                </p>
               )}
             </div>
           </div>

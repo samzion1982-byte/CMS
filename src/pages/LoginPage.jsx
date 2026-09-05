@@ -4,7 +4,15 @@ import { useAuth } from '../lib/AuthContext'
 import { signIn, signOut, displayFirstName } from '../lib/auth'
 import { VENDOR, getChurch } from '../lib/supabase'
 import { evaluateChurchLicense, licenseBlockMessage } from '../lib/churchLicense'
-import { getOrCreateDeviceId, checkDeviceRegistered, checkDeviceRegisteredByUser, saveDevice, insertLoginLog } from '../lib/loginLogs'
+import { fetchCompanionStatus } from '../lib/companion'
+import {
+  getOrCreateDeviceId,
+  checkDeviceRegistered,
+  checkDeviceRegisteredByUser,
+  saveDevice,
+  insertLoginLog,
+  isTrustGateEnabled,
+} from '../lib/loginLogs'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 /** Prefer CSS disc mask so browsers do not treat the field as a saveable password. */
@@ -98,7 +106,17 @@ export default function LoginPage() {
     sessionStorage.removeItem('device_setup_pending')
 
     try {
-      const devId = getOrCreateDeviceId()
+      const trustGateOn = await isTrustGateEnabled()
+      let emergency = false
+      try { emergency = window.localStorage?.getItem('emergency_bypass') === '1' } catch { /* ignore */ }
+
+      let devId = getOrCreateDeviceId()
+      if (trustGateOn) {
+        try {
+          const companion = await fetchCompanionStatus()
+          if (companion?.deviceId) devId = companion.deviceId
+        } catch { /* keep browser device id */ }
+      }
 
       const license = await evaluateChurchLicense(church)
       await sleep(500)
@@ -173,6 +191,10 @@ export default function LoginPage() {
           }
         }
 
+        const loginType = trustGateOn
+          ? (emergency ? 'emergency' : 'trustgate')
+          : 'standard'
+
         // Await so the row lands with device fields already filled (when known)
         await insertLoginLog({
           userId:    uid,
@@ -180,8 +202,13 @@ export default function LoginPage() {
           fullName:  profile?.full_name,
           role:      profile?.role,
           userAgent: navigator.userAgent,
+          loginType,
           ...(deviceMeta || {}),
         })
+
+        if (emergency) {
+          try { window.localStorage.removeItem('emergency_bypass') } catch { /* ignore */ }
+        }
 
         setAuthStep(2)
         await sleep(1200)

@@ -24,6 +24,12 @@ const ROLE_STYLES = {
   user4:       { label: 'User4',       color: '#0e7490', bg: '#ecfeff' },
 }
 
+const LOGIN_TYPE_STYLES = {
+  trustgate: { label: 'TrustGate', color: '#1e40af', bg: '#dbeafe' },
+  emergency: { label: 'Emergency', color: '#9f1239', bg: '#ffe4e6' },
+  standard:  { label: 'Standard',  color: '#334155', bg: '#f1f5f9' },
+}
+
 function fmtDT(iso) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -132,6 +138,7 @@ export default function LoginLogsPage() {
         { header: 'Area',        key: 'area',       width: 22 },
         { header: 'City',        key: 'city',       width: 18 },
         { header: 'Device ID',   key: 'device_id',  width: 16 },
+        { header: 'Login Type',  key: 'login_type', width: 14 },
         { header: 'Browser/OS',  key: 'browser',    width: 20 },
         { header: 'Logout At',   key: 'logout_at',  width: 20 },
         { header: 'Duration',    key: 'duration',   width: 12 },
@@ -148,6 +155,7 @@ export default function LoginLogsPage() {
           area:      loc.area    || '—',
           city:      loc.city    || '—',
           device_id: r.device_id?.slice(0, 8).toUpperCase() || '—',
+          login_type: LOGIN_TYPE_STYLES[r.login_type]?.label || r.login_type || '—',
           browser:   parseBrowser(r.user_agent),
           logout_at: fmtDT(r.logout_at),
           duration:  fmtDuration(r.login_at, r.logout_at) || '—',
@@ -235,7 +243,7 @@ export default function LoginLogsPage() {
             <table className="w-full" style={{ fontSize: 12 }}>
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                  {['Login At', 'User', 'Role', 'User Name', 'Area', 'City', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
+                  {['Login At', 'User', 'Role', 'User Name', 'Area', 'City', 'Type', 'Browser / OS', 'Logout At', 'Duration'].map(h => (
                     <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -243,6 +251,9 @@ export default function LoginLogsPage() {
               <tbody>
                 {rows.map(r => {
                   const role     = ROLE_STYLES[r.user_role] || { label: r.user_role || '—', color: '#374151', bg: '#f9fafb' }
+                  const loginType = LOGIN_TYPE_STYLES[r.login_type] || (r.login_type
+                    ? { label: r.login_type, color: '#334155', bg: '#f1f5f9' }
+                    : null)
                   const duration = fmtDuration(r.login_at, r.logout_at)
                   const loc      = splitLocation(r)
 
@@ -298,6 +309,18 @@ export default function LoginLogsPage() {
                         )}
                         {r.country && (
                           <div className="text-gray-400" style={{ fontSize: 10, paddingLeft: loc.city ? 15 : 0 }}>{r.country}</div>
+                        )}
+                      </td>
+
+                      {/* Login type */}
+                      <td className="px-3 py-2.5">
+                        {loginType ? (
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{ background: loginType.bg, color: loginType.color }}>
+                            {loginType.label}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 dark:text-gray-600">—</span>
                         )}
                       </td>
 

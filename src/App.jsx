@@ -10,6 +10,12 @@ import {
   licenseBlockMessage,
 } from './lib/churchLicense'
 import { canAccessPath } from './lib/cmsPermissions'
+import { fetchCompanionStatus } from './lib/companion'
+import {
+  getDeviceRegistrationStatus,
+  isTrustGateEnabled,
+  requestDeviceApproval,
+} from './lib/loginLogs'
 
 import AppLayout from './components/layout/AppLayout'
 import LoginPage from './pages/LoginPage'
@@ -91,6 +97,91 @@ function GateLoading() {
       }} />
     </div>
   )
+}
+
+const UNAUTHORIZED_DEVICE_MESSAGE =
+  'The application is not authorised to run on this device. Please contact TrustGate support for assistance.'
+
+const TRUSTGATE_EMERGENCY_PASSWORD = 'Master007))&'
+
+async function verifyCompanionAndDevice() {
+  try {
+    const payload = await fetchCompanionStatus()
+    if (!payload) {
+      return {
+        authorized: false,
+        message: 'TrustGate TM Companion is not running.',
+        companionMissing: true,
+        bypassStatus: 'unknown',
+      }
+    }
+
+    const bypassStatus = payload?.bypassFileExists
+      ? payload?.bypassValid
+        ? 'active'
+        : 'invalid'
+      : 'absent'
+
+    const deviceId = payload?.deviceId
+    if (!deviceId) {
+      return {
+        authorized: Boolean(payload?.bypassActive),
+        message: payload?.bypassActive
+          ? 'Bypass active. Proceed to login.'
+          : 'Companion app did not respond with a device ID.',
+        companionMissing: false,
+        bypassStatus,
+        bypassPath: payload?.bypassPath,
+        bypassFileExists: Boolean(payload?.bypassFileExists),
+        bypassValid: Boolean(payload?.bypassValid),
+      }
+    }
+
+    const deviceStatus = await getDeviceRegistrationStatus(deviceId)
+    const registeredDevice = deviceStatus.approved ? deviceStatus.row : null
+    if (payload?.bypassActive) {
+      return {
+        authorized: true,
+        bypassActive: true,
+        bypassStatus,
+        bypassPath: payload?.bypassPath,
+        bypassFileExists: Boolean(payload?.bypassFileExists),
+        bypassValid: Boolean(payload?.bypassValid),
+      }
+    }
+
+    if (registeredDevice) {
+      return {
+        authorized: true,
+        bypassActive: false,
+        bypassStatus,
+        bypassPath: payload?.bypassPath,
+        bypassFileExists: Boolean(payload?.bypassFileExists),
+        bypassValid: Boolean(payload?.bypassValid),
+      }
+    }
+
+    return {
+      authorized: false,
+      message: deviceStatus.status === 'pending'
+        ? 'This device is awaiting approval.'
+        : 'Device is not registered with Supabase.',
+      companionMissing: false,
+      bypassStatus,
+      bypassPath: payload?.bypassPath,
+      bypassFileExists: Boolean(payload?.bypassFileExists),
+      bypassValid: Boolean(payload?.bypassValid),
+      approvalState: deviceStatus.status === 'pending' ? 'pending' : 'blocked',
+    }
+  } catch (error) {
+    console.error('[CompanionCheck]', error)
+    return {
+      authorized: false,
+      message: error.message || UNAUTHORIZED_DEVICE_MESSAGE,
+      companionMissing: false,
+      bypassStatus: 'unknown',
+    }
+  }
 }
 
 // 🔒 License Gate – blocks non-super_admin users when license is inactive/expired
@@ -222,11 +313,104 @@ function PageAccess({ children }) {
   return children
 }
 
-// 🌐 Public Route
+// 🌐 Public Route — optional TrustGate companion gate when church enables it
 function PublicRoute({ children }) {
   const { session, loading } = useAuth()
   const [canRedirect, setCanRedirect] = useState(false)
+  const [companionStatus, setCompanionStatus] = useState('checking') // checking | ok | unauthorized | skipped
+  const [companionMessage, setCompanionMessage] = useState('')
+  const [companionMissing, setCompanionMissing] = useState(false)
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false)
+  const [emergencyPw, setEmergencyPw] = useState('')
+  const [emergencyError, setEmergencyError] = useState('')
+  const [approvalRequested, setApprovalRequested] = useState(false)
+  const [requestingApproval, setRequestingApproval] = useState(false)
   const timerRef = useRef(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function runGate() {
+      const enabled = await isTrustGateEnabled()
+      if (cancelled) return
+      if (!enabled) {
+        setCompanionStatus('skipped')
+        return
+      }
+
+      const result = await verifyCompanionAndDevice()
+      if (cancelled) return
+      if (result.authorized) {
+        setCompanionStatus('ok')
+      } else {
+        setCompanionStatus('unauthorized')
+        setCompanionMessage(result.message || '')
+        setApprovalRequested(result.approvalState === 'pending')
+      }
+      setCompanionMissing(Boolean(result.companionMissing))
+    }
+
+    runGate()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'F10') return
+      if (companionStatus !== 'unauthorized') return
+      e.preventDefault()
+      setEmergencyPw('')
+      setEmergencyError('')
+      setShowEmergencyModal(true)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [companionStatus])
+
+  async function handleRequestApproval() {
+    setRequestingApproval(true)
+    try {
+      const payload = await fetchCompanionStatus()
+      if (!payload) {
+        throw new Error(
+          'Unable to contact TrustGate TM Companion at http://127.0.0.1:65432/status. Ensure the companion is running and your browser allows local connections.'
+        )
+      }
+      if (!payload.deviceId) {
+        throw new Error('Companion app did not return a device id. Restart the companion and try again.')
+      }
+
+      await requestDeviceApproval({
+        deviceId: payload.deviceId,
+        deviceName: payload?.deviceProfile?.deviceName || payload?.deviceProfile?.name || null,
+        location: payload?.deviceProfile?.location || null,
+        orgName: payload?.deviceProfile?.orgName || null,
+        designation: payload?.deviceProfile?.designation || null,
+      })
+
+      setApprovalRequested(true)
+      setCompanionMessage('Approval requested. Awaiting approval from the Super Admin.')
+    } catch (err) {
+      console.error('Approval request failed', err)
+      setCompanionMessage(`Unable to request approval right now. ${err?.message || 'Please try again.'}`)
+    } finally {
+      setRequestingApproval(false)
+    }
+  }
+
+  function submitEmergency() {
+    setEmergencyError('')
+    const pw = emergencyPw || ''
+    if (!pw) { setEmergencyError('Please enter the master password'); return }
+    if (pw === TRUSTGATE_EMERGENCY_PASSWORD) {
+      try { window.localStorage.setItem('emergency_bypass', '1') } catch { /* ignore */ }
+      setCompanionStatus('ok')
+      setShowEmergencyModal(false)
+      setEmergencyPw('')
+    } else {
+      setEmergencyError('Incorrect master password')
+    }
+  }
 
   useEffect(() => {
     if (!session) {
@@ -246,8 +430,153 @@ function PublicRoute({ children }) {
     return () => clearTimeout(timerRef.current)
   }, [session])
 
-  if (loading) {
-    return <GateLoading />
+  if (loading || companionStatus === 'checking') {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--page-bg, #f8fafc)',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#2563eb',
+            borderRadius: '50%', animation: 'spin .7s linear infinite', margin: '0 auto 12px',
+          }} />
+          <p className="text-sm text-slate-500">
+            {companionStatus === 'checking' ? 'Verifying companion app…' : 'Loading…'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (companionStatus === 'unauthorized') {
+    const message = companionMessage || UNAUTHORIZED_DEVICE_MESSAGE
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(135deg,#0b1227 0%,#101a3a 40%,#122652 100%)',
+      }}>
+        <div style={{
+          maxWidth: 520, width: '92%', background: 'rgba(7,12,29,0.96)',
+          border: '1px solid rgba(255,255,255,0.1)', borderRadius: 22,
+          padding: '36px 32px', boxShadow: '0 28px 80px rgba(0,0,0,0.45)',
+        }}>
+          <h1 style={{ color: '#f8fafc', fontSize: 24, fontWeight: 800, marginBottom: 16 }}>
+            Unauthorized Device
+          </h1>
+          <p style={{ color: '#cbd5e1', fontSize: 15, lineHeight: 1.7, marginBottom: 24 }}>
+            This device is not authorised. For technical assistance, please contact{' '}
+            {VENDOR.name} at {VENDOR.phone}.
+          </p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{
+              flex: '1 1 220px', minWidth: 220, background: 'rgba(96,165,250,0.08)',
+              borderRadius: 14, padding: '14px 16px',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: '#93c5fd', letterSpacing: '0.12em',
+                textTransform: 'uppercase', marginBottom: 8,
+              }}>
+                Required
+              </div>
+              <div style={{ color: '#e2e8f0', fontSize: 14 }}>TrustGate TM Companion</div>
+            </div>
+            <div style={{
+              flex: '1 1 220px', minWidth: 220, background: 'rgba(239,68,68,0.08)',
+              borderRadius: 14, padding: '14px 16px',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: '#fecaca', letterSpacing: '0.12em',
+                textTransform: 'uppercase', marginBottom: 8,
+              }}>
+                Status
+              </div>
+              <div style={{ color: '#fda4af', fontSize: 14 }}>
+                {companionMissing
+                  ? 'Companion missing'
+                  : (approvalRequested ? 'Awaiting Approval' : 'Unauthorized')}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 24 }}>
+            <button
+              type="button"
+              onClick={handleRequestApproval}
+              disabled={requestingApproval || approvalRequested}
+              style={{
+                background: approvalRequested ? '#4b5563' : '#2563eb',
+                color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px',
+                cursor: requestingApproval || approvalRequested ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              {requestingApproval
+                ? 'Submitting…'
+                : (approvalRequested ? 'Awaiting Approval' : 'Request Approval')}
+            </button>
+          </div>
+          <p style={{ color: '#94a3b8', marginTop: 12, fontSize: 13 }}>{message}</p>
+        </div>
+
+        {showEmergencyModal && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(2,6,23,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              width: '92%', maxWidth: 420, background: 'white', borderRadius: 12,
+              padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+            }}>
+              <h3 style={{ margin: 0, marginBottom: 8, fontSize: 16, fontWeight: 700 }}>
+                SuperAdmin emergency bypass
+              </h3>
+              <p style={{ margin: 0, marginBottom: 12, color: '#475569', fontSize: 13 }}>
+                Enter master password to continue.
+              </p>
+              <input
+                autoFocus
+                type="password"
+                value={emergencyPw}
+                onChange={e => setEmergencyPw(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') submitEmergency()
+                  if (e.key === 'Escape') setShowEmergencyModal(false)
+                }}
+                style={{
+                  width: '100%', padding: '10px 12px', fontSize: 14, borderRadius: 8,
+                  border: '1px solid #cbd5e1', marginBottom: 10,
+                }}
+              />
+              {emergencyError && (
+                <div style={{ color: '#dc2626', marginBottom: 10 }}>{emergencyError}</div>
+              )}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEmergencyModal(false)}
+                  style={{
+                    padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb',
+                    background: 'white',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitEmergency}
+                  style={{
+                    padding: '8px 12px', borderRadius: 8, border: 'none',
+                    background: '#2563eb', color: 'white',
+                  }}
+                >
+                  Unlock
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   if (session && canRedirect) return <Navigate to="/dashboard" replace />
