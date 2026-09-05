@@ -21,6 +21,7 @@ import {
   updateDeviceApproval,
   updateDeviceInfo,
   setTrustGateEnabled,
+  clearPendingDevices,
 } from '../lib/loginLogs'
 
 const IDENTITY_KEYS = [
@@ -175,6 +176,8 @@ export default function ChurchSetupPage() {
   const [deviceEdits, setDeviceEdits] = useState({})
   const [deviceSavingById, setDeviceSavingById] = useState({})
   const [deviceSaveErrorById, setDeviceSaveErrorById] = useState({})
+  const [confirmClearPending, setConfirmClearPending] = useState(false)
+  const [clearingPending, setClearingPending] = useState(false)
   const [logoFile, setLogoFile] = useState(null)
   const [logoPreview, setLogoPreview] = useState(null)
   const [dioceseLogoFile, setDioceseLogoFile] = useState(null)
@@ -367,6 +370,25 @@ export default function ChurchSetupPage() {
       toast('Could not update TrustGate: ' + (e.message || e), 'error')
     } finally {
       setTrustgateSaving(false)
+    }
+  }
+
+  async function doClearPendingDevices() {
+    setClearingPending(true)
+    try {
+      const count = await clearPendingDevices()
+      toast(
+        count
+          ? `Cleared ${count} pending device${count === 1 ? '' : 's'}.`
+          : 'No pending devices to clear.',
+        'success'
+      )
+      setConfirmClearPending(false)
+      await loadDevices()
+    } catch (e) {
+      toast('Could not clear pending devices: ' + (e.message || e), 'error')
+    } finally {
+      setClearingPending(false)
     }
   }
 
@@ -1500,7 +1522,20 @@ export default function ChurchSetupPage() {
 
             {/* TRUSTGATE DEVICE STATUS */}
             <div className="card p-6">
-              <p className="form-section form-section-blue">Device Status</p>
+              <div className="flex items-start justify-between gap-3 mb-1">
+                <p className="form-section form-section-blue mb-0" style={{ marginBottom: 0 }}>Device Status</p>
+                {devices.some(d => !d.approved) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: '#dc2626', flexShrink: 0 }}
+                    onClick={() => setConfirmClearPending(true)}
+                    disabled={devicesLoading || clearingPending}
+                  >
+                    <Trash2 size={13} /> Clear pending
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-slate-500 mb-3" style={{ lineHeight: 1.45 }}>
                 {trustgateEnabled
                   ? 'Approve TrustGate companion devices before they can open the login page.'
@@ -2180,6 +2215,17 @@ export default function ChurchSetupPage() {
         busy={mpClearing}
         onCancel={() => { if (!mpClearing) setConfirmMpRestore(false) }}
         onConfirm={confirmRestoreDefaultMasterPassword}
+      />
+
+      <ConfirmDialog
+        open={confirmClearPending}
+        title="Clear all pending devices?"
+        message="This permanently removes every non-approved device row (legacy browser registrations and pending TrustGate requests). Approved devices are kept."
+        confirmLabel="Clear pending"
+        danger
+        busy={clearingPending}
+        onCancel={() => { if (!clearingPending) setConfirmClearPending(false) }}
+        onConfirm={doClearPendingDevices}
       />
 
     </div>

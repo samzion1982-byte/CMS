@@ -465,3 +465,14 @@ export async function listDevicesForAdmin() {
   if (error) throw error
   return data || []
 }
+
+/** Remove non-approved device rows (legacy soft registrations + pending TrustGate requests). */
+export async function clearPendingDevices() {
+  const { data, error } = await supabase
+    .from('user_devices')
+    .delete()
+    .eq('approved', false)
+    .select('device_id')
+  if (error) throw error
+  return data?.length || 0
+}
