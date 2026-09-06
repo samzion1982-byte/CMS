@@ -24,6 +24,7 @@ import {
   saveBackupSettings,
   startGoogleOAuthConnect,
   disconnectGoogleOAuth,
+  verifyGoogleDriveScopes,
   getBackupFunctionVersion,
 } from '../lib/cmsFullBackup'
 import MasterPasswordInput from '../components/MasterPasswordInput'
@@ -657,6 +658,7 @@ export default function BackupPage() {
   const [savingDrive, setSavingDrive] = useState(false)
   const [connectingGoogle, setConnectingGoogle] = useState(false)
   const [disconnectingGoogle, setDisconnectingGoogle] = useState(false)
+  const [verifyingGoogle, setVerifyingGoogle] = useState(false)
   const [clearingKind, setClearingKind] = useState(null)
   const [savingAuto, setSavingAuto] = useState(false)
 
@@ -793,6 +795,22 @@ export default function BackupPage() {
       toast(e.message || 'Disconnect failed', 'error')
     } finally {
       setDisconnectingGoogle(false)
+    }
+  }
+
+  async function handleVerifyGoogle() {
+    setVerifyingGoogle(true)
+    try {
+      const r = await verifyGoogleDriveScopes()
+      if (r?.drive_scope_ok) {
+        toast(`Drive access OK${r.email ? ` (${r.email})` : ''}`, 'success')
+      } else {
+        toast(r?.error || 'Drive scope missing — reconnect Google and keep Drive checked', 'error')
+      }
+    } catch (e) {
+      toast(e.message || 'Could not verify Google Drive', 'error')
+    } finally {
+      setVerifyingGoogle(false)
     }
   }
 
@@ -1168,18 +1186,47 @@ export default function BackupPage() {
                   Connect Google
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="no-lift"
-                  style={secondaryBtn}
-                  disabled={disconnectingGoogle}
-                  onClick={handleDisconnectGoogle}
-                >
-                  {disconnectingGoogle ? <Loader2 size={14} className="spin" /> : <Unlink size={14} />}
-                  Disconnect
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="no-lift"
+                    style={secondaryBtn}
+                    disabled={verifyingGoogle || disconnectingGoogle}
+                    onClick={handleVerifyGoogle}
+                  >
+                    {verifyingGoogle ? <Loader2 size={14} className="spin" /> : <Shield size={14} />}
+                    Check Drive access
+                  </button>
+                  <button
+                    type="button"
+                    className="no-lift"
+                    style={secondaryBtn}
+                    disabled={disconnectingGoogle}
+                    onClick={handleDisconnectGoogle}
+                  >
+                    {disconnectingGoogle ? <Loader2 size={14} className="spin" /> : <Unlink size={14} />}
+                    Disconnect
+                  </button>
+                  <button
+                    type="button"
+                    className="no-lift"
+                    style={secondaryBtn}
+                    disabled={connectingGoogle || disconnectingGoogle}
+                    onClick={handleConnectGoogle}
+                  >
+                    {connectingGoogle ? <Loader2 size={14} className="spin" /> : <Link2 size={14} />}
+                    Reconnect
+                  </button>
+                </>
               )}
             </div>
+            <p style={{ margin: '10px 0 0', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.45 }}>
+              If Issue PDF / backup shows “insufficient authentication scopes”, revoke this app at{' '}
+              <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">
+                Google Account → Permissions
+              </a>
+              , then Disconnect → Connect again and leave <strong>Google Drive</strong> checked on the consent screen.
+            </p>
           </div>
 
           <div>

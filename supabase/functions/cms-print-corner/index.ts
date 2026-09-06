@@ -2578,7 +2578,10 @@ async function driveUploadConvertExport(
   }
   if (!upRes.ok) {
     const reason = upJson?.error?.message || upJson?.error?.errors?.[0]?.reason || `HTTP ${upRes.status}`
-    throw new Error(`Google Drive upload failed: ${reason}`)
+    const scopeHint = /insufficient.*(scope|permission)/i.test(String(reason))
+      ? ' Reconnect Google Drive from Backup: revoke the app at myaccount.google.com/permissions, Disconnect, then Connect again and keep Drive checked on the consent screen.'
+      : ''
+    throw new Error(`Google Drive upload failed: ${reason}${scopeHint}`)
   }
 
   const fileId = upJson.id as string

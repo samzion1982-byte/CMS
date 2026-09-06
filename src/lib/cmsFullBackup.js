@@ -153,6 +153,13 @@ export async function disconnectGoogleOAuth() {
   return invoked.data
 }
 
+/** Confirm the stored refresh token still has Drive (drive.file) scope. */
+export async function verifyGoogleDriveScopes() {
+  const invoked = await invokeEdgeFunction('cms-google-oauth', { action: 'verify' })
+  if (invoked.data) return invoked.data
+  throw new Error(invoked.errorMessage || 'Could not verify Google Drive access')
+}
+
 export async function listBackupLogs({ kind = null, page = 0, pageSize = 30 } = {}) {
   let q = supabase
     .from('cms_backup_log')
@@ -764,7 +771,9 @@ export async function runDriveBackup({
     file_size_bytes: bytes,
     progress_log_id: progressLogId,
     message: driveErrorMsg
-      ? `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included).`
+      ? (/insufficient.*(scope|permission)/i.test(driveErrorMsg)
+          ? `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included). Fix: revoke the CMS app at https://myaccount.google.com/permissions , Disconnect Google here, then Connect again and keep Google Drive checked on the consent screen.`
+          : `${driveErrorMsg} Database JSON was downloaded locally (storage files were not included).`)
       : 'Database JSON downloaded locally. Redeploy cms-full-backup for a complete Drive backup (DB + storage files).',
   }
 }
