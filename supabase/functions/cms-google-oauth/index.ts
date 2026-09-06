@@ -86,6 +86,19 @@ async function tokenInfo(accessToken) {
   return { ok: res.ok, data }
 }
 
+/** True if this access token can call Drive API (more reliable than parsing scope strings). */
+async function probeDriveAccess(accessToken) {
+  const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = data?.error?.message || data?.error?.status || `HTTP ${res.status}`
+    return { ok: false, error: msg, data }
+  }
+  return { ok: true, email: data?.user?.emailAddress || null }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   try {
@@ -155,12 +168,17 @@ serve(async (req) => {
         const info = await tokenInfo(tokenJson.access_token)
         grantedScope = info.data?.scope || grantedScope
       }
-      if (!hasDriveScope(grantedScope)) {
+      // Scope strings are sometimes missing on refresh/exchange — probe Drive API as ground truth.
+      let driveProbe = { ok: hasDriveScope(grantedScope), error: null }
+      if (!driveProbe.ok && tokenJson.access_token) {
+        driveProbe = await probeDriveAccess(tokenJson.access_token)
+      }
+      if (!driveProbe.ok) {
         await revokeGoogleToken(tokenJson.refresh_token)
         await revokeGoogleToken(tokenJson.access_token)
         return json({
           error:
-            `Google connected without Drive permission (got: ${grantedScope || 'none'}). ${SCOPE_HELP}`,
+            `Google connected without working Drive permission (scopes: ${grantedScope || 'none'}; drive: ${driveProbe.error || 'denied'}). ${SCOPE_HELP}`,
           scopes: grantedScope,
         }, 400)
       }
@@ -240,18 +258,20 @@ serve(async (req) => {
         const tokenJson = await refreshAccessToken(data.google_refresh_token)
         const info = await tokenInfo(tokenJson.access_token)
         const scopes = info.data?.scope || tokenJson.scope || ''
-        const driveOk = hasDriveScope(scopes)
+        const probe = await probeDriveAccess(tokenJson.access_token)
+        const driveOk = probe.ok || hasDriveScope(scopes)
         return json({
           ok: driveOk,
           connected: true,
-          email: data.google_connected_email || null,
+          email: data.google_connected_email || probe.email || null,
           connected_at: data.google_connected_at || null,
           drive_folder_id: data.drive_folder_id || null,
           scopes,
           drive_scope_ok: driveOk,
+          drive_probe_error: probe.ok ? null : (probe.error || null),
           error: driveOk
             ? null
-            : `Connected account is missing Drive scope. ${SCOPE_HELP}`,
+            : `Connected account cannot use Google Drive (${probe.error || 'scope missing'}). ${SCOPE_HELP}`,
         })
       } catch (e) {
         return json({
